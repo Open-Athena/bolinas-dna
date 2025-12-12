@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "bolinas-dna"
+version = "0.1.0"
+description = "Research on genomic language models (gLMs)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "Open-Athena"},
+]
+dependencies = [
+    "marin @ git+https://github.com/marin-community/marin.git#subdirectory=lib/marin",
+    "levanter @ git+https://github.com/marin-community/marin.git#subdirectory=lib/levanter",
+    "haliax @ git+https://github.com/marin-community/marin.git#subdirectory=lib/haliax",
+    "fray @ git+https://github.com/marin-community/marin.git#subdirectory=lib/fray",
+    "zephyr @ git+https://github.com/marin-community/marin.git#subdirectory=lib/zephyr",
+]
+
+[project.urls]
+Homepage = "https://github.com/Open-Athena/bolinas-dna"
+Repository = "https://github.com/Open-Athena/bolinas-dna"
+Issues = "https://github.com/Open-Athena/bolinas-dna/issues"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bolinas"]
