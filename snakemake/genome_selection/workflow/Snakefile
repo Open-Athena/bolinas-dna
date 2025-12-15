@@ -1,0 +1,68 @@
+import pandas as pd
+
+
+configfile: "config/config.yaml"
+
+
+TAXONOMIC_RANKS = [
+    "species",
+    "genus",
+    "family",
+    "order",
+    "class",
+    "phylum",
+    "kingdom",
+    "domain",
+]
+
+
+rule all:
+    input:
+        "results/genomes/all.parquet",
+
+
+rule download_genome_list:
+    output:
+        temp("results/genomes/all.raw.tsv"),
+    conda:
+        "envs/ncbi_datasets.yaml",
+    shell:
+        """
+        datasets summary genome taxon {config[taxon]} \
+        --as-json-lines --reference --annotated --exclude-atypical | \
+        dataformat tsv genome \
+        --fields \
+        accession,organism-name,organism-tax-id,assminfo-level,assmstats-total-sequence-len \
+        > {output}
+        """
+
+
+rule download_taxonomy:
+    output:
+        temp("results/taxonomy.jsonl"),
+    conda:
+        "envs/ncbi_datasets.yaml",
+    shell:
+        """
+        datasets summary taxonomy taxon {config[taxon]} \
+        --children --as-json-lines > {output}
+        """
+
+
+rule add_taxonomy_to_genomes:
+    input:
+        "results/genomes/all.raw.tsv",
+        "results/taxonomy.jsonl",
+    output:
+        "results/genomes/all.parquet",
+    run:
+        genomes = pd.read_csv(input[0], sep="\t")
+        taxonomy = pd.read_json(input[1], lines=True)[["taxonomy"]]
+        taxonomy["Organism Taxonomic ID"] = taxonomy.taxonomy.apply(lambda x: x["tax_id"])
+        taxonomy["classification"] = taxonomy.taxonomy.apply(lambda x: x["classification"])
+        taxonomy = taxonomy.drop(columns=["taxonomy"])
+        genomes = genomes.merge(taxonomy, on="Organism Taxonomic ID", how="left")
+        for rank in TAXONOMIC_RANKS:
+            genomes[rank] = genomes.classification.apply(lambda x: x[rank]["name"])
+        genomes = genomes.drop(columns=["classification"])
+        genomes.to_parquet(output[0], index=False)
