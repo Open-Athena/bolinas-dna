@@ -20,6 +20,11 @@ dependencies = [
     "zephyr @ git+https://github.com/marin-community/marin.git#subdirectory=lib/zephyr",
 ]
 
+[project.optional-dependencies]
+gpu = [
+    "jax[cuda12]>=0.4.20",
+]
+
 [project.urls]
 Homepage = "https://github.com/Open-Athena/bolinas-dna"
 Repository = "https://github.com/Open-Athena/bolinas-dna"
