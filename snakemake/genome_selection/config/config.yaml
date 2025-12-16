@@ -1,1 +1,21 @@
-taxon: equidae
+# the pipeline will find all genomes for this taxon
+# to explore which taxa are available, check out
+# https://www.ncbi.nlm.nih.gov/datasets/genome/
+taxon: metazoa
+# 4 Gb, so it works out of the box with faToTwoBit
+max_genome_size: 4000000000
+# more complete genomes are easier to work with but incomplete genomes
+# are probably still very useful especially for models with small context sizes
+# this is a tradeoff to evaluate
+min_assembly_level: Contig
+# will deduplicate on this rank (i.e. keep only one genome per family)
+deduplicate_taxonomic_rank: family
+
+# preference order when deduplicating
+priority_genomes:
+  - GCF_000001405.40  # GRCh38.p14	Homo sapiens
+  - GCF_000001635.27  # GRCm39	Mus musculus
+  - GCF_016699485.2  # bGalGal1.mat.broiler.GRCg7b Gallus gallus
+  - GCF_000001215.4  # Release 6 plus ISO1 MT	Drosophila melanogaster
+  - GCF_049306965.1  # GRCz12tu	Danio rerio
+  - GCF_000002985.6 # WBcel235	Caenorhabditis elegans

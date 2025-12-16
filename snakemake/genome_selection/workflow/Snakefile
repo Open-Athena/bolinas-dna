@@ -15,15 +15,23 @@ TAXONOMIC_RANKS = [
     "domain",
 ]
 
+# from most complete to least complete, expresses our preference when deduplicating
+ASSEMBLY_LEVELS = [
+    "Complete Genome",
+    "Chromosome",
+    "Scaffold",
+    "Contig",
+]
+
 
 rule all:
     input:
-        "results/genomes/all.parquet",
+        "results/genomes/filtered.parquet",
 
 
 rule download_genome_list:
     output:
-        temp("results/genomes/all.raw.tsv"),
+        "results/genomes/all.raw.tsv",
     conda:
         "envs/ncbi_datasets.yaml",
     shell:
@@ -37,16 +45,29 @@ rule download_genome_list:
         """
 
 
-rule download_taxonomy:
+rule extract_tax_ids:
+    input:
+        "results/genomes/all.raw.tsv",
     output:
-        temp("results/taxonomy.jsonl"),
+        "results/tax_ids.txt",
+    run:
+        (
+            pd.read_csv(input[0], sep="\t", usecols=["Organism Taxonomic ID"])
+            .drop_duplicates()
+            .to_csv(output[0], index=False, header=False)
+        )
+
+
+# takes half an hour to run for metazoa
+rule download_taxonomy:
+    input:
+        "results/tax_ids.txt",
+    output:
+        "results/taxonomy.jsonl",
     conda:
         "envs/ncbi_datasets.yaml",
     shell:
-        """
-        datasets summary taxonomy taxon {config[taxon]} \
-        --children --as-json-lines > {output}
-        """
+        "datasets summary taxonomy taxon --inputfile {input} --as-json-lines > {output}"
 
 
 rule add_taxonomy_to_genomes:
@@ -62,7 +83,46 @@ rule add_taxonomy_to_genomes:
         taxonomy["classification"] = taxonomy.taxonomy.apply(lambda x: x["classification"])
         taxonomy = taxonomy.drop(columns=["taxonomy"])
         genomes = genomes.merge(taxonomy, on="Organism Taxonomic ID", how="left")
+        print(genomes)
+
+        def get_rank(x, rank):
+            try:
+                return x[rank]["name"]
+            except:
+                print(f"Missing rank {x} {rank}")
+                return None
+
         for rank in TAXONOMIC_RANKS:
-            genomes[rank] = genomes.classification.apply(lambda x: x[rank]["name"])
+            genomes[rank] = genomes.classification.apply(lambda x: get_rank(x, rank))
         genomes = genomes.drop(columns=["classification"])
+        genomes.to_parquet(output[0], index=False)
+
+
+rule filter_genomes:
+    input:
+        "results/genomes/all.parquet",
+    output:
+        "results/genomes/filtered.parquet",
+    run:
+        genomes = pd.read_parquet(input[0])
+        genomes = genomes.dropna(subset=[config["deduplicate_taxonomic_rank"]])
+        genomes["Assembly Level"] = pd.Categorical(
+            genomes["Assembly Level"],
+            ASSEMBLY_LEVELS,
+            ordered=True,
+        )
+        genomes = genomes[genomes["Assembly Level"] <= config["min_assembly_level"]]
+        genomes = genomes[genomes["Assembly Stats Total Sequence Length"] < config["max_genome_size"]]
+        genomes.loc[:, "Priority"] = "1_Low"
+        genomes.loc[genomes["Assembly Accession"].isin(config["priority_genomes"]), "Priority"] = "0_High"
+        genomes = genomes.sort_values(
+            [
+                "Priority",
+                "Assembly Level",
+                # smaller genomes are both easier to work with and might have
+                # a higher signal to noise ratio
+                "Assembly Stats Total Sequence Length",
+                "Organism Name",  # to break ties
+            ]
+        ).drop(columns=["Priority"]).drop_duplicates(config["deduplicate_taxonomic_rank"])
         genomes.to_parquet(output[0], index=False)

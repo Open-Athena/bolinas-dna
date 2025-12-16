@@ -18,4 +18,4 @@ Additionally, the `conda` command must be available.
 source .venv/bin/activate
 snakemake --cores all --use-conda
 ```
-- Output is `results/genomes/filt.parquet`
+- Output is at `results/genomes/filtered.parquet`
