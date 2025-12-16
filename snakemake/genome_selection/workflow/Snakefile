@@ -33,7 +33,7 @@ rule download_genome_list:
     output:
         "results/genomes/all.raw.tsv",
     conda:
-        "envs/ncbi_datasets.yaml",
+        "envs/ncbi_datasets.yaml"
     shell:
         """
         datasets summary genome taxon {config[taxon]} \
@@ -65,7 +65,7 @@ rule download_taxonomy:
     output:
         "results/taxonomy.jsonl",
     conda:
-        "envs/ncbi_datasets.yaml",
+        "envs/ncbi_datasets.yaml"
     shell:
         "datasets summary taxonomy taxon --inputfile {input} --as-json-lines > {output}"
 
@@ -79,11 +79,16 @@ rule add_taxonomy_to_genomes:
     run:
         genomes = pd.read_csv(input[0], sep="\t")
         taxonomy = pd.read_json(input[1], lines=True)[["taxonomy"]]
-        taxonomy["Organism Taxonomic ID"] = taxonomy.taxonomy.apply(lambda x: x["tax_id"])
-        taxonomy["classification"] = taxonomy.taxonomy.apply(lambda x: x["classification"])
+        taxonomy["Organism Taxonomic ID"] = taxonomy.taxonomy.apply(
+            lambda x: x["tax_id"]
+        )
+        taxonomy["classification"] = taxonomy.taxonomy.apply(
+            lambda x: x["classification"]
+        )
         taxonomy = taxonomy.drop(columns=["taxonomy"])
         genomes = genomes.merge(taxonomy, on="Organism Taxonomic ID", how="left")
         print(genomes)
+
 
         def get_rank(x, rank):
             try:
@@ -91,6 +96,7 @@ rule add_taxonomy_to_genomes:
             except:
                 print(f"Missing rank {x} {rank}")
                 return None
+
 
         for rank in TAXONOMIC_RANKS:
             genomes[rank] = genomes.classification.apply(lambda x: get_rank(x, rank))
@@ -112,17 +118,25 @@ rule filter_genomes:
             ordered=True,
         )
         genomes = genomes[genomes["Assembly Level"] <= config["min_assembly_level"]]
-        genomes = genomes[genomes["Assembly Stats Total Sequence Length"] < config["max_genome_size"]]
+        genomes = genomes[
+            genomes["Assembly Stats Total Sequence Length"] < config["max_genome_size"]
+        ]
         genomes.loc[:, "Priority"] = "1_Low"
-        genomes.loc[genomes["Assembly Accession"].isin(config["priority_genomes"]), "Priority"] = "0_High"
-        genomes = genomes.sort_values(
-            [
-                "Priority",
-                "Assembly Level",
-                # smaller genomes are both easier to work with and might have
-                # a higher signal to noise ratio
-                "Assembly Stats Total Sequence Length",
-                "Organism Name",  # to break ties
-            ]
-        ).drop(columns=["Priority"]).drop_duplicates(config["deduplicate_taxonomic_rank"])
+        genomes.loc[
+            genomes["Assembly Accession"].isin(config["priority_genomes"]), "Priority"
+        ] = "0_High"
+        genomes = (
+            genomes.sort_values(
+                [
+                    "Priority",
+                    "Assembly Level",
+                    # smaller genomes are both easier to work with and might have
+                    # a higher signal to noise ratio
+                    "Assembly Stats Total Sequence Length",
+                    "Organism Name",  # to break ties
+                ]
+            )
+            .drop(columns=["Priority"])
+            .drop_duplicates(config["deduplicate_taxonomic_rank"])
+        )
         genomes.to_parquet(output[0], index=False)
