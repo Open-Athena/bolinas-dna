@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "bolinas"
+version = "0.0.1"
+description = "DNA training dataset creation and genomic interval utilities"
+requires-python = ">=3.12"
+dependencies = [
+    "bioframe",
+    "biopython>=1.85",
+    "huggingface_hub",
+    "numpy",
+    "pandas",
+    "polars",
+    "pyarrow>=21.0.0",
+    "snakemake",
+    "tqdm",
+    "zstandard",
+]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.3.0",
+    "ruff>=0.12.11",
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "snakefmt",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bolinas"]
+
+[tool.ruff.lint]
+# Add any project-specific lint rules here
+ignore = []
