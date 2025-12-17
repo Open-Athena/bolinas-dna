@@ -111,7 +111,9 @@ rule filter_genomes:
         "results/genomes/filtered.parquet",
     run:
         genomes = pd.read_parquet(input[0])
-        genomes = genomes[~genomes["Assembly Accession"].isin(config["exclude_genomes"])]
+        genomes = genomes[
+            ~genomes["Assembly Accession"].isin(config["exclude_genomes"])
+        ]
         genomes = genomes.dropna(subset=[config["deduplicate_taxonomic_rank"]])
         genomes["Assembly Level"] = pd.Categorical(
             genomes["Assembly Level"],
