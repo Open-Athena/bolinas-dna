@@ -2,20 +2,15 @@
 
 ## Setup
 
-```bash
-uv venv --python 3.13
-source .venv/bin/activate
-uv pip install -r requirements.txt
-```
+Python dependencies are managed by the main project. See ../../README.md for installation.
 
-Additionally, the `conda` command must be available.
+Additionally, `conda` must be available for CLI tools.
 
 ## Usage
 
 - Edit `config/config.yaml`
-- Run pipeline
+- Run pipeline:
 ```bash
-source .venv/bin/activate
-snakemake --cores all --use-conda
+uv run snakemake --cores all --use-conda
 ```
 - Output is at `results/genomes/filtered.parquet`

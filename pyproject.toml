@@ -10,9 +10,14 @@ requires-python = ">=3.12"
 dependencies = [
     "bioframe",
     "biopython>=1.85",
+    "huggingface_hub",
     "numpy",
     "pandas",
+    "polars",
     "pyarrow>=21.0.0",
+    "snakemake",
+    "tqdm",
+    "zstandard",
 ]
 
 [dependency-groups]
