@@ -1,7 +1,7 @@
 configfile: "config/config.yaml"
 
 
-SPLITS = ["train", "validation", "test"]
+SPLITS = ["train", "validation"]
 N_SHARDS = config["n_shards"]
 assert N_SHARDS < 1e4
 SHARDS = [f"shard_{i:04}" for i in range(N_SHARDS)]
@@ -11,7 +11,9 @@ include: "rules/common.smk"
 
 
 genomes = load_genome_info(config["genomes_path"])
-genome_sets = load_genome_sets(config["genome_sets_path"])
+genome_sets = load_genome_sets(genomes, config["genome_sets"])
+genome_sets_list = list(genome_sets.keys())
+intervals_list = config["intervals"]
 
 
 include: "rules/download.smk"
@@ -23,6 +25,9 @@ rule all:
     input:
         # download genomes (network constrained)
         # expand("results/genome/{g}.2bit", g=genomes.index),
-        expand("results/intervals/recipe/v1/{g}.bed.gz", g=genomes.index),
         # final output dataset
-        # expand("results/upload.done/{intervals}", intervals=config["intervals"]),
+        expand(
+            "results/upload.done/{genome_set}/{intervals}",
+            genome_set=genome_sets_list,
+            intervals=config["intervals"],
+        ),

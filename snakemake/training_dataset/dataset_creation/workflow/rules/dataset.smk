@@ -18,6 +18,8 @@ rule window_seq:
         "results/intervals_for_window_seq/windows/recipe/{recipe}/{w}/{s}/{g}.bed.gz",
     output:
         temp("results/intervals_seq/{recipe}/{w}/{s}/{g}.fa"),
+    conda:
+        "../envs/bioinformatics.yaml"
     shell:
         "twoBitToFa {input[0]} {output} -bed={input[1]} -bedPos"
 
@@ -43,7 +45,6 @@ rule make_dataset_genome:
         chrom_split.loc[
             chrom_split.chrom.isin(config["validation_chroms"]), "split"
         ] = "validation"
-        chrom_split.loc[chrom_split.chrom.isin(config["test_chroms"]), "split"] = "test"
         df = df.merge(chrom_split, on="chrom", how="left")
         df = pl.from_pandas(df[["id", "seq", "split"]])
         for path, split in zip(output, SPLITS):
@@ -54,15 +55,18 @@ rule merge_datasets:
     input:
         expand(
             "results/dataset_genome/{{intervals}}/{g}/{{split}}.parquet",
-            g=genomes.index,
+            g=lambda wildcards: genome_sets[wildcards.genome_set],
         ),
     output:
         temp(
             expand(
-                "results/dataset/{{intervals}}/data/{{split}}/{shard}.jsonl",
+                "results/dataset/{{genome_set}}/{{intervals}}/data/{{split}}/{shard}.jsonl",
                 shard=SHARDS,
             )
         ),
+    wildcard_constraints:
+        genome_set="|".join(genome_sets_list),
+        intervals="|".join(intervals_list),
     threads: workflow.cores
     run:
         df = pl.concat(
@@ -86,14 +90,20 @@ rule compress_shard:
 rule hf_upload:
     input:
         expand(
-            "results/dataset/{{intervals}}/data/{split}/{shard}.jsonl.zst",
+            "results/dataset/{{genome_set}}/{{intervals}}/data/{split}/{shard}.jsonl.zst",
             split=SPLITS,
             shard=SHARDS,
         ),
     output:
-        touch("results/upload.done/{intervals}"),
+        touch("results/upload.done/{genome_set}/{intervals}"),
+    wildcard_constraints:
+        genome_set="|".join(genome_sets_list),
+        intervals="|".join(intervals_list),
     params:
         lambda wildcards: config["output_hf_prefix"]
+        + "-genome_set-"
+        + wildcards.genome_set
+        + "-intervals-"
         + wildcards.intervals.replace("/", "_"),
     shell:
-        "hf upload-large-folder {params} --repo-type dataset results/dataset/{wildcards.intervals}"
+        "hf upload-large-folder {params} --repo-type dataset results/dataset/{wildcards.genome_set}/{wildcards.intervals}"

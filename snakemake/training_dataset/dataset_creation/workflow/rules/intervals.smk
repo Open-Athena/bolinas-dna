@@ -33,6 +33,18 @@ rule extract_undefined:
         "twoBitInfo {input} {params} -nBed && gzip {params}"
 
 
+rule extract_defined:
+    input:
+        "results/intervals/all/{g}.bed.gz",
+        "results/intervals/undefined/{g}.bed.gz",
+    output:
+        "results/intervals/defined/{g}.bed.gz",
+    conda:
+        "../envs/bioinformatics.yaml"
+    shell:
+        "bedtools subtract -a {input[0]} -b {input[1]} | gzip > {output}"
+
+
 rule make_windows:
     input:
         "results/intervals/{intervals}/{g}.bed.gz",
@@ -53,7 +65,7 @@ rule make_windows:
 rule intervals_recipe_v1:
     input:
         "results/annotation/{g}.gtf.gz",
-        "results/intervals/undefined/{g}.bed.gz",
+        "results/intervals/defined/{g}.bed.gz",
     output:
         "results/intervals/recipe/v1/{g}.bed.gz",
     run:
@@ -67,6 +79,6 @@ rule intervals_recipe_v1:
             mrna_exons, promoter_n_upstream, promoter_n_downstream
         ).to_pandas()
         assert len(promoters) > 0, f"No promoters found for {wildcards.g}"
-        undefined = read_bed_to_pandas(input[1])
-        intervals = GenomicSet(promoters) - GenomicSet(undefined)
+        defined = read_bed_to_pandas(input[1])
+        intervals = GenomicSet(promoters) & GenomicSet(defined)
         write_pandas_to_bed(intervals.to_pandas(), output[0])

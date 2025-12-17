@@ -46,3 +46,5 @@ exclude_genomes:
   - GCA_005406025.1
   - GCA_019973935.1
   - GCA_021605075.1
+  # very slow to process, perhaps due to large number of scaffolds (500k)
+  - GCA_011754075.1
