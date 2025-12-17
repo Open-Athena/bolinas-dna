@@ -1,0 +1,9 @@
+channels:
+- conda-forge
+- bioconda
+dependencies:
+- ncbi-datasets-cli
+- ucsc-fatotwobit
+- ucsc-twobitinfo
+- ucsc-twobittofa
+- bedtools

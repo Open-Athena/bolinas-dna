@@ -1,0 +1,46 @@
+genomes_path: config/genomes.parquet
+
+
+validation_chroms:
+  - NC_000018.10  # human chr18
+#   - NC_000084.7  # mouse chr18
+#   - NC_052549.1  # chicken chr18
+#   - NC_007129.7  # zebrafish chr18
+#   - NT_033779.5  # drosophila chr2L
+#   - NC_003280.10  # c elegans chrII
+
+test_chroms:
+  - NC_000019.10  # human chr19
+#   - NC_000085.7  # mouse chr19
+#   - NC_052550.1  # chicken chr19
+#   - NC_007130.7  # zebrafish chr19
+#   - NT_033778.4  # drosophila chr2R
+#   - NC_003281.10  # c elegans chrIII
+
+shuffle_seed: 42
+
+n_shards: 64
+
+add_rc: true
+
+intervals:
+  - v1/512/256
+
+genome_sets:
+  - name: animals
+    rank_key: kingdom
+    rank_value: Metazoa
+  - name: vertebrates
+    rank_key: phylum
+    rank_value: Chordata
+  - name: mammals
+    rank_key: class
+    rank_value: Mammalia
+  - name: primates
+    rank_key: order
+    rank_value: Primates
+  - name: humans
+    rank_key: species
+    rank_value: "Homo sapiens"
+
+output_hf_prefix: gonzalobenegas/animal-genomes-v2-intervals-
