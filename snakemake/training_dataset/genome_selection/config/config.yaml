@@ -19,3 +19,30 @@ priority_genomes:
   - GCF_000001215.4  # Release 6 plus ISO1 MT	Drosophila melanogaster
   - GCF_049306965.1  # GRCz12tu	Danio rerio
   - GCF_000002985.6 # WBcel235	Caenorhabditis elegans
+
+exclude_genomes:
+  # the filenames have a different pattern, will exclude for now
+  # TODO: handle filename variation to incorporate these genomes
+  - GCA_033026295.1
+  - GCF_000633615.1
+  - GCF_004010195.1
+  - GCF_015706575.1
+  - GCF_028564815.1
+  - GCF_028858775.2
+  - GCF_028885625.2
+  - GCF_028885655.2
+  - GCF_029289425.2
+  # the annotations don't contain exons, but just CDS
+  # TODO: handle this case
+  - GCA_050415755.1
+  - GCA_021605095.1
+  - GCA_019648995.1
+  - GCA_013235015.1
+  - GCA_019974015.1
+  - GCA_013340265.1
+  - GCA_036186465.1
+  - GCA_019973955.1
+  - GCA_001949185.1
+  - GCA_005406025.1
+  - GCA_019973935.1
+  - GCA_021605075.1
