@@ -105,5 +105,6 @@ rule hf_upload:
         + wildcards.genome_set
         + "-intervals-"
         + wildcards.intervals.replace("/", "_"),
+    threads: workflow.cores
     shell:
         "hf upload-large-folder {params} --repo-type dataset results/dataset/{wildcards.genome_set}/{wildcards.intervals}"
