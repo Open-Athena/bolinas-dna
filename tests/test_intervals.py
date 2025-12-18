@@ -931,6 +931,203 @@ def test_genomic_set_expand_min_size_causes_overlaps():
     assert result == expected
 
 
+def test_genomic_set_add_flank_basic():
+    """Test add_flank with basic interval expansion.
+
+    Input: chr1:50-100 (size=50), flank=10
+    Output: chr1:40-110 (expanded by 10 on both sides)
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1"],
+            "start": [50],
+            "end": [100],
+        }
+    )
+    gs = GenomicSet(data)
+    result = gs.add_flank(flank=10)
+
+    expected = GenomicSet(
+        pd.DataFrame(
+            {
+                "chrom": ["chr1"],
+                "start": [40],
+                "end": [110],
+            }
+        )
+    )
+    assert result == expected
+
+
+def test_genomic_set_add_flank_multiple_intervals():
+    """Test add_flank with multiple non-overlapping intervals.
+
+    Input: chr1:50-100, chr2:200-300, flank=20
+    Output: chr1:30-120, chr2:180-320 (both expanded by 20)
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1", "chr2"],
+            "start": [50, 200],
+            "end": [100, 300],
+        }
+    )
+    gs = GenomicSet(data)
+    result = gs.add_flank(flank=20)
+
+    expected = GenomicSet(
+        pd.DataFrame(
+            {
+                "chrom": ["chr1", "chr2"],
+                "start": [30, 180],
+                "end": [120, 320],
+            }
+        )
+    )
+    assert result == expected
+
+
+def test_genomic_set_add_flank_causes_overlaps():
+    """Test add_flank causing overlaps that get merged.
+
+    Input: chr1:50-60, chr1:70-80 (separate, gap 60-70), flank=10
+    Output: chr1:40-90 (expanded intervals overlap and merge)
+
+    Note: After expansion, chr1:40-70 and chr1:60-90 overlap, so they merge.
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [50, 70],
+            "end": [60, 80],
+        }
+    )
+    gs = GenomicSet(data)
+    result = gs.add_flank(flank=10)
+
+    # After flank: 40-70 and 60-90, which overlap and merge to 40-90
+    expected = GenomicSet(
+        pd.DataFrame(
+            {
+                "chrom": ["chr1"],
+                "start": [40],
+                "end": [90],
+            }
+        )
+    )
+    assert result == expected
+
+
+def test_genomic_set_add_flank_negative_start():
+    """Test add_flank with result having negative start values.
+
+    Input: chr1:5-15, flank=10
+    Output: chr1:-5-25 (negative start is allowed)
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1"],
+            "start": [5],
+            "end": [15],
+        }
+    )
+    gs = GenomicSet(data)
+    result = gs.add_flank(flank=10)
+
+    expected = GenomicSet(
+        pd.DataFrame(
+            {
+                "chrom": ["chr1"],
+                "start": [-5],
+                "end": [25],
+            }
+        )
+    )
+    assert result == expected
+
+
+def test_genomic_set_add_flank_zero():
+    """Test add_flank with zero flank (no expansion).
+
+    Input: chr1:50-100, flank=0
+    Output: chr1:50-100 (unchanged)
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1"],
+            "start": [50],
+            "end": [100],
+        }
+    )
+    gs = GenomicSet(data)
+    result = gs.add_flank(flank=0)
+
+    expected = GenomicSet(
+        pd.DataFrame(
+            {
+                "chrom": ["chr1"],
+                "start": [50],
+                "end": [100],
+            }
+        )
+    )
+    assert result == expected
+
+
+def test_genomic_set_add_flank_empty():
+    """Test add_flank with empty set.
+
+    Input: (empty set), flank=10
+    Output: (empty set)
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": [],
+            "start": [],
+            "end": [],
+        }
+    )
+    gs = GenomicSet(data)
+    result = gs.add_flank(flank=10)
+
+    expected = GenomicSet(
+        pd.DataFrame(
+            {
+                "chrom": [],
+                "start": [],
+                "end": [],
+            }
+        )
+    )
+    assert result == expected
+
+
+def test_genomic_set_add_flank_returns_new_instance():
+    """Test that add_flank returns a new GenomicSet instance.
+
+    Input: chr1:50-100, add_flank(10)
+    Output: New GenomicSet, original unchanged
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1"],
+            "start": [50],
+            "end": [100],
+        }
+    )
+    gs = GenomicSet(data)
+    original_df = gs.to_pandas()
+
+    result = gs.add_flank(flank=10)
+
+    # Original should be unchanged
+    assert gs.to_pandas().equals(original_df)
+    # Result should be different
+    assert result != gs
+    # Result should be a new GenomicSet
+    assert isinstance(result, GenomicSet)
+
+
 def test_genomic_set_add_random_shift_different_seeds():
     """Test add_random_shift with different seeds produces different results.
 

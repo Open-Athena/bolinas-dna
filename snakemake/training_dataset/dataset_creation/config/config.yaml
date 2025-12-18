@@ -21,6 +21,8 @@ intervals:
   # take windows of 512 bp with 256 bp overlap
   # which in this case would typically result in 1 window per promoter
   - v1/512/256
+  # mRNA exons + promoters
+  - v2/512/256
 
 genome_sets:
   - name: animals
