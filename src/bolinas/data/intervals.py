@@ -36,8 +36,9 @@ class GenomicSet:
                 {"chrom": str, "start": int, "end": int}
             )
         else:
-            assert bf.is_bedframe(data, raise_errors=True)
-            self._data = bf.merge(data)[INTERVAL_COORDS].sort_values(INTERVAL_COORDS)
+            _data = data[INTERVAL_COORDS]
+            assert bf.is_bedframe(_data, raise_errors=True)
+            self._data = bf.merge(_data)[INTERVAL_COORDS].sort_values(INTERVAL_COORDS)
 
     def __repr__(self) -> str:
         return f"GenomicSet\n{self._data}"
@@ -152,6 +153,24 @@ class GenomicSet:
         res["start"] = res["start"] - res["pad"]
         res["end"] = res["end"] + res["pad"]
         return GenomicSet(res.drop(columns=["size", "pad"]))
+
+    def add_flank(self, flank: int) -> "GenomicSet":
+        """Expand intervals by adding flanking regions on both sides.
+
+        Each interval is expanded by adding `flank` base pairs to both the start
+        (subtracting from start coordinate) and end (adding to end coordinate).
+
+        Args:
+            flank: Number of base pairs to add on each side of the interval.
+
+        Returns:
+            A new GenomicSet with expanded intervals. Overlapping intervals
+            resulting from expansion will be automatically merged.
+        """
+        res = self._data.copy()
+        res["start"] = res["start"] - flank
+        res["end"] = res["end"] + flank
+        return GenomicSet(res)
 
     def add_random_shift(self, max_shift: int, seed: int | None = None) -> "GenomicSet":
         """Add random shift to interval positions.
