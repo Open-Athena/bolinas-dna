@@ -41,4 +41,4 @@ genome_sets:
     rank_key: species
     rank_value: "Homo sapiens"
 
-output_hf_prefix: gonzalobenegas/genomes-v2
+output_hf_prefix: gonzalobenegas/genomes-v3
