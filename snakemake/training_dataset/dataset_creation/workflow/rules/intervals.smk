@@ -9,15 +9,23 @@ rule chrom_sizes:
         "twoBitInfo {input} {output}"
 
 
+# just adds the start=0 column, but in human it also filters to standard chroms
 rule extract_all:
     input:
         "results/chrom_sizes/{g}.tsv",
     output:
         "results/intervals/all/{g}.bed.gz",
-    conda:
-        "../envs/bioinformatics.yaml"
-    shell:
-        """awk 'BEGIN {{OFS="\t"}} {{print $1, 0, $2}}' {input} | gzip > {output}"""
+    run:
+        df = pd.read_csv(input[0], sep="\t", header=None, names=["chrom", "end"])
+        df["start"] = 0
+        # we want to filter to chromosomes, and exclude unplaced scaffolds,
+        # alt. haplotypes, etc.
+        # unfortunately no way to filter chroms based on prefix, AFAIK
+        # in human we want to make sure to keep the standard chroms
+        if wildcards.g == "GCF_000001405.40":
+            df = df[df.chrom.str[:2] == "NC"]
+        df = df[["chrom", "start", "end"]]
+        df.to_csv(output[0], sep="\t", header=False, index=False)
 
 
 rule extract_undefined:
