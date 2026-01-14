@@ -1,0 +1,51 @@
+"""Snakemake workflow for evaluating genomic language models."""
+
+
+configfile: "config/config.yaml"
+
+
+# Helper functions (defined before includes so they're available in all rule files)
+def get_all_datasets():
+    """Get list of all dataset names."""
+    return [d["name"] for d in config["datasets"]]
+
+
+def get_all_model_steps():
+    """Get list of all (model_name, step) combinations."""
+    combinations = []
+    for model in config["models"]:
+        for step in model["steps"]:
+            combinations.append((model["name"], step))
+    return combinations
+
+
+# Include rule files
+include: "rules/inference.smk"
+include: "rules/metrics.smk"
+include: "rules/plots.smk"
+
+
+# Define all output targets
+rule all:
+    input:
+        # All metrics files (cartesian product of datasets and model_steps)
+        [
+            f"results/metrics/{dataset}/{model}/{step}.parquet"
+            for dataset in get_all_datasets()
+            for model, step in get_all_model_steps()
+        ],
+        # Plots for each model
+        [
+            f"results/plots/metrics_vs_step/{model}.svg"
+            for model in [m["name"] for m in config["models"]]
+        ],
+
+
+# Download genome reference
+rule download_genome:
+    output:
+        "results/genome.fa.gz",
+    params:
+        url=config["genome_url"],
+    shell:
+        "wget {params.url} -O {output}"

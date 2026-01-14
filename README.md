@@ -45,6 +45,7 @@ uv run pytest --cov=bolinas --cov-report=term-missing
 
 - `src/bolinas/` - Main Python package
   - `data/` - Genomic data structures (GenomicSet, etc.)
+  - `evals/` - Evaluation utilities (inference, metrics, plotting)
 - `snakemake/` - Snakemake workflows
 - `tests/` - Test suite
 
@@ -54,3 +55,4 @@ The project includes Snakemake workflows for various tasks:
 
 - **Training Dataset Pipeline** (`snakemake/training_dataset/`) - Creates genomic training datasets from NCBI RefSeq genomes. See [snakemake/training_dataset/README.md](snakemake/training_dataset/README.md) for details.
 - **Evaluation Datasets Pipeline** (`snakemake/evals/`) - Downloads and processes evaluation datasets for genomic language models. See [snakemake/evals/README.md](snakemake/evals/README.md) for details.
+- **Model Evaluation Pipeline** (`snakemake/analysis/evals_v1/`) - Evaluates trained models on genomic variant effect prediction tasks. Computes LLR scores, metrics (AUPRC, AUROC, Spearman), and generates comparison plots. See [snakemake/analysis/evals_v1/README.md](snakemake/analysis/evals_v1/README.md) for details.

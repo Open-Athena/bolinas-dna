@@ -9,14 +9,22 @@ description = "DNA training dataset creation and genomic interval utilities"
 requires-python = ">=3.12"
 dependencies = [
     "bioframe",
+    "biofoundation @ git+https://github.com/Open-Athena/biofoundation.git",
     "biopython>=1.85",
+    "datasets",
     "huggingface_hub",
+    "matplotlib",
     "numpy",
     "pandas",
     "polars",
     "pyarrow>=21.0.0",
+    "scikit-learn",
+    "scipy",
+    "seaborn",
     "snakemake",
+    "torch",
     "tqdm",
+    "transformers",
     "zstandard",
 ]
 

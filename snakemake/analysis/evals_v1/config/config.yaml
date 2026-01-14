@@ -1,0 +1,34 @@
+# Genome reference (GRCh38)
+genome_url: http://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz
+
+# Model checkpoints to evaluate
+# Each model has a base name, base path, context size, and list of checkpoint steps
+models:
+  - name: animal_promoters_yolo_repeat_downweight
+    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/animal-promoters-yolo-r01-213a8e
+    context_size: 512
+    steps:
+      - 2000
+      - 20000
+
+# Evaluation datasets from HuggingFace
+# Each dataset should have been created by the snakemake/evals pipeline
+datasets:
+  - name: traitgym_mendelian
+    hf_path: gonzalobenegas/bolinas_evals-traitgym_mendelian
+    split: train
+    metrics:
+      - AUPRC
+
+  - name: traitgym_complex
+    hf_path: gonzalobenegas/bolinas_evals-traitgym_complex
+    split: train
+    metrics:
+      - AUPRC
+
+# Inference configuration (performance settings that don't affect output)
+inference:
+  batch_size: 128
+  num_workers: 4
+  data_transform_on_the_fly: true
+  torch_compile: false
