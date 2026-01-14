@@ -8,6 +8,7 @@ from bolinas.data.intervals import GenomicSet
 from bolinas.data.utils import (
     add_rc,
     get_array_split_pairs,
+    get_cds,
     get_mrna_exons,
     get_promoters,
     load_annotation,

@@ -6,6 +6,7 @@ from Bio.Seq import Seq
 from bolinas.data.utils import (
     add_rc,
     get_array_split_pairs,
+    get_cds,
     get_mrna_exons,
     get_promoters,
     load_annotation,
@@ -458,6 +459,161 @@ def test_get_promoters_deduplicates():
 
     # Should deduplicate to 1 region
     assert len(result) == 1
+
+
+# get_cds tests
+def test_get_cds_basic():
+    """Test get_cds with basic CDS features.
+
+    Input: Annotation with CDS features
+    Output: DataFrame with unique CDS regions [chrom, start, end]
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr1", "chr2"],
+            "start": [100, 200, 300],
+            "end": [150, 250, 350],
+            "strand": ["+", "+", "-"],
+            "feature": ["CDS", "CDS", "CDS"],
+            "attribute": [
+                'transcript_id "trans1"',
+                'transcript_id "trans2"',
+                'transcript_id "trans3"',
+            ],
+            "source": ["test", "test", "test"],
+            "score": [".", ".", "."],
+            "frame": [".", ".", "."],
+        }
+    )
+
+    result = get_cds(ann)
+
+    assert len(result) == 3
+    assert result["chrom"].to_list() == ["chr1", "chr1", "chr2"]
+    assert result["start"].to_list() == [100, 200, 300]
+    assert result["end"].to_list() == [150, 250, 350]
+
+
+def test_get_cds_filters_non_cds():
+    """Test that get_cds filters out non-CDS features.
+
+    Input: Annotation with exon, gene, and CDS features
+    Output: DataFrame with only CDS features
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr1", "chr1"],
+            "start": [100, 200, 300],
+            "end": [150, 250, 350],
+            "strand": ["+", "+", "+"],
+            "feature": ["exon", "CDS", "gene"],
+            "attribute": [
+                'transcript_id "trans1"',
+                'transcript_id "trans2"',
+                'gene_id "gene1"',
+            ],
+            "source": ["test", "test", "test"],
+            "score": [".", ".", "."],
+            "frame": [".", ".", "."],
+        }
+    )
+
+    result = get_cds(ann)
+
+    # Only the CDS feature should be retained
+    assert len(result) == 1
+    assert result["start"].to_list() == [200]
+    assert result["end"].to_list() == [250]
+
+
+def test_get_cds_deduplicates():
+    """Test that get_cds removes duplicate CDS regions.
+
+    Input: Annotation with duplicate CDS regions
+    Output: DataFrame with unique CDS regions
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr1", "chr1"],
+            "start": [100, 100, 200],
+            "end": [150, 150, 250],
+            "strand": ["+", "+", "-"],
+            "feature": ["CDS", "CDS", "CDS"],
+            "attribute": [
+                'transcript_id "trans1"',
+                'transcript_id "trans2"',
+                'transcript_id "trans3"',
+            ],
+            "source": ["test", "test", "test"],
+            "score": [".", ".", "."],
+            "frame": [".", ".", "."],
+        }
+    )
+
+    result = get_cds(ann)
+
+    # Should deduplicate to 2 unique regions
+    assert len(result) == 2
+    assert result["start"].to_list() == [100, 200]
+
+
+def test_get_cds_empty_annotation():
+    """Test get_cds with annotation containing no CDS features.
+
+    Input: Annotation with only exons
+    Output: Empty DataFrame
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [100, 200],
+            "end": [150, 250],
+            "strand": ["+", "+"],
+            "feature": ["exon", "exon"],
+            "attribute": [
+                'transcript_id "trans1"',
+                'transcript_id "trans2"',
+            ],
+            "source": ["test", "test"],
+            "score": [".", "."],
+            "frame": [".", "."],
+        }
+    )
+
+    result = get_cds(ann)
+
+    assert len(result) == 0
+
+
+def test_get_cds_sorted():
+    """Test that get_cds returns sorted output.
+
+    Input: Annotation with unsorted CDS regions
+    Output: Sorted DataFrame by chrom, start, end
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr2", "chr1", "chr1"],
+            "start": [300, 200, 100],
+            "end": [350, 250, 150],
+            "strand": ["+", "+", "+"],
+            "feature": ["CDS", "CDS", "CDS"],
+            "attribute": [
+                'transcript_id "trans1"',
+                'transcript_id "trans2"',
+                'transcript_id "trans3"',
+            ],
+            "source": ["test", "test", "test"],
+            "score": [".", ".", "."],
+            "frame": [".", ".", "."],
+        }
+    )
+
+    result = get_cds(ann)
+
+    # Should be sorted by chrom, start, end
+    assert result["chrom"].to_list() == ["chr1", "chr1", "chr2"]
+    assert result["start"].to_list() == [100, 200, 300]
 
 
 # read_bed_to_pandas and write_pandas_to_bed tests

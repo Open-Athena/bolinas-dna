@@ -99,6 +99,26 @@ def get_mrna_exons(ann: pl.DataFrame) -> pl.DataFrame:
     )
 
 
+def get_cds(ann: pl.DataFrame) -> pl.DataFrame:
+    """
+    Extract CDS regions from an annotation DataFrame.
+
+    Args:
+        ann (pl.DataFrame): Annotation DataFrame from load_annotation() with
+                           columns including 'feature', 'chrom', 'start', 'end'.
+
+    Returns:
+        pl.DataFrame: DataFrame with columns [chrom, start, end] containing
+                     unique CDS regions.
+    """
+    return (
+        ann.filter(pl.col("feature") == "CDS")
+        .select(["chrom", "start", "end"])
+        .unique(["chrom", "start", "end"])
+        .sort(["chrom", "start", "end"])
+    )
+
+
 def get_promoters(
     exons: pl.DataFrame,
     n_upstream: int,
