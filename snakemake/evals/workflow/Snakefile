@@ -1,0 +1,14 @@
+configfile: "config/config.yaml"
+
+
+include: "rules/common.smk"
+include: "rules/traitgym.smk"
+
+
+rule all:
+    input:
+        expand(
+            "results/dataset/{dataset}/{split}.parquet",
+            dataset=config["datasets"],
+            split=SPLITS,
+        ),
