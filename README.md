@@ -53,3 +53,4 @@ uv run pytest --cov=bolinas --cov-report=term-missing
 The project includes Snakemake workflows for various tasks:
 
 - **Training Dataset Pipeline** (`snakemake/training_dataset/`) - Creates genomic training datasets from NCBI RefSeq genomes. See [snakemake/training_dataset/README.md](snakemake/training_dataset/README.md) for details.
+- **Evaluation Datasets Pipeline** (`snakemake/evals/`) - Downloads and processes evaluation datasets for genomic language models. See [snakemake/evals/README.md](snakemake/evals/README.md) for details.
