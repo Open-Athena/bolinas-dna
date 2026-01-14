@@ -2,7 +2,7 @@
 
 from datasets import load_dataset
 
-from bolinas.evals import compute_llr_scores
+from bolinas.evals import compute_variant_scores
 
 
 def get_dataset_config(dataset_name):
@@ -42,8 +42,8 @@ rule compute_scores:
         )
         dataset = hf_dataset.to_pandas()
 
-        # Compute LLR scores (using config for performance settings)
-        scores = compute_llr_scores(
+        # Compute variant scores (using config for performance settings)
+        scores = compute_variant_scores(
             checkpoint_path=checkpoint_path,
             dataset=dataset,
             genome_path=input.genome,

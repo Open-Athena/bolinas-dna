@@ -5,13 +5,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from biofoundation.data import Genome
-from biofoundation.inference import run_llr_clm
-from biofoundation.model.adapters.hf import HFCausalLM, HFTokenizer
+from biofoundation.inference import run_llr_and_embedding_distance
+from biofoundation.model.adapters.hf import HFCausalLMWithEmbeddings, HFTokenizer
 from datasets import Dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
-def compute_llr_scores(
+def compute_variant_scores(
     checkpoint_path: str | Path,
     dataset: pd.DataFrame,
     genome_path: str | Path,
@@ -21,10 +21,10 @@ def compute_llr_scores(
     data_transform_on_the_fly: bool = True,
     torch_compile: bool = False,
 ) -> pd.DataFrame:
-    """Compute log-likelihood ratio scores for genomic variants.
+    """Compute variant scores using LLR and embedding distances from a genomic language model.
 
-    Takes a dataset of genomic variants and computes LLR scores using a causal
-    language model. Returns only scores, preserving input row order for alignment.
+    Takes a dataset of genomic variants and computes LLR scores and embedding distances
+    using a causal language model. Returns only scores, preserving input row order for alignment.
 
     Args:
         checkpoint_path: Path to model checkpoint directory.
@@ -37,11 +37,13 @@ def compute_llr_scores(
         torch_compile: Whether to use torch.compile for faster inference.
 
     Returns:
-        DataFrame with columns [llr, minus_llr, abs_llr] only.
+        DataFrame with columns [llr, minus_llr, abs_llr, embed_last_l2, embed_middle_l2].
         Rows align with input dataset by index.
         - llr: Raw log-likelihood ratio
         - minus_llr: Negated LLR (higher = more deleterious)
         - abs_llr: Absolute LLR (higher = more impactful)
+        - embed_last_l2: L2 distance between reference and alternate embeddings (last layer)
+        - embed_middle_l2: L2 distance between reference and alternate embeddings (middle layer)
     """
     checkpoint_path = Path(checkpoint_path)
     genome_path = Path(genome_path)
@@ -51,7 +53,7 @@ def compute_llr_scores(
 
     # Load tokenizer and model
     tokenizer = HFTokenizer(AutoTokenizer.from_pretrained(checkpoint_path))
-    model = HFCausalLM(
+    model = HFCausalLMWithEmbeddings(
         AutoModelForCausalLM.from_pretrained(
             checkpoint_path,
             trust_remote_code=True,
@@ -61,8 +63,8 @@ def compute_llr_scores(
     # Convert pandas DataFrame to HuggingFace Dataset
     hf_dataset = Dataset.from_pandas(dataset, preserve_index=False)
 
-    # Run LLR inference
-    llr = run_llr_clm(
+    # Run LLR and embedding distance inference
+    results = run_llr_and_embedding_distance(
         model,
         tokenizer,
         hf_dataset,
@@ -78,12 +80,19 @@ def compute_llr_scores(
         },
     )
 
+    # Extract individual arrays from results
+    llr = results[:, 0]
+    embed_last_l2 = results[:, 1]
+    embed_middle_l2 = results[:, 2]
+
     # Return only scores (assumes rows align with input dataset)
     scores = pd.DataFrame(
         {
             "llr": llr,
             "minus_llr": -llr,
             "abs_llr": np.abs(llr),
+            "embed_last_l2": embed_last_l2,
+            "embed_middle_l2": embed_middle_l2,
         }
     )
 

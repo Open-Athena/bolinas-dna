@@ -7,7 +7,7 @@ This pipeline evaluates genomic language models by computing variant effect pred
 The pipeline:
 1. Downloads evaluation datasets from HuggingFace (created by `snakemake/evals/`)
 2. Downloads genome reference (GRCh38)
-3. Runs inference to compute LLR scores for each variant using model checkpoints
+3. Runs inference to compute LLR scores and embedding distances for each variant using model checkpoints
 4. Computes evaluation metrics (AUPRC, AUROC, Spearman) globally and on annotation subsets
 5. Generates comparison plots
 
@@ -91,7 +91,7 @@ results/
 ├── scores/
 │   └── {dataset}/
 │       └── {model}/
-│           └── {step}.parquet         # LLR scores for each variant
+│           └── {step}.parquet         # Variant scores (LLR + embedding distances)
 ├── metrics/
 │   └── {dataset}/
 │       └── {model}/
@@ -107,12 +107,14 @@ Parquet files with columns (aligned by row index with source dataset):
 - `llr`: Raw log-likelihood ratio
 - `minus_llr`: Negated LLR (higher = more deleterious)
 - `abs_llr`: Absolute LLR (higher = more impactful)
+- `embed_last_l2`: L2 distance between reference and alternate embeddings (last layer)
+- `embed_middle_l2`: L2 distance between reference and alternate embeddings (middle layer)
 
 ### Metrics Files
 
 Parquet files with columns:
 - `metric`: Metric name (AUPRC, AUROC, Spearman)
-- `score_type`: Scoring method (minus_llr, abs_llr)
+- `score_type`: Scoring method (minus_llr, abs_llr, embed_last_l2, embed_middle_l2)
 - `subset`: Annotation subset or "global"
 - `value`: Metric value
 
@@ -120,7 +122,7 @@ Note: `step` and `dataset` are encoded in the file path, not as columns.
 
 ### Plots
 
-- **metrics_vs_step/{model}.svg**: Per-model plots showing metric progression across training steps. Each subplot shows a (dataset, subset) combination with lines for each scoring method (minus_llr, abs_llr).
+- **metrics_vs_step/{model}.svg**: Per-model plots showing metric progression across training steps. Each subplot shows a (dataset, subset) combination with lines for each scoring method (minus_llr, abs_llr, embed_last_l2, embed_middle_l2).
 
 ## Annotation Subsets
 
@@ -140,7 +142,7 @@ Metrics are computed both globally (all variants) and separately for each subset
 The pipeline uses a clean separation between Snakemake rules and Python logic:
 
 - **`src/bolinas/evals/`**: Core Python module with type hints and tests
-  - `inference.py`: LLR computation using biofoundation
+  - `inference.py`: LLR and embedding distance computation using biofoundation
   - `metrics.py`: Metric computation functions
   - `plotting.py`: Plotting utilities
 
@@ -151,7 +153,7 @@ The pipeline uses a clean separation between Snakemake rules and Python logic:
 
 ### Dependencies
 
-- **biofoundation**: LLR inference utilities
+- **biofoundation**: LLR and embedding distance inference utilities
 - **transformers**: HuggingFace model loading
 - **datasets**: HuggingFace dataset loading
 - **pandas**: Data manipulation

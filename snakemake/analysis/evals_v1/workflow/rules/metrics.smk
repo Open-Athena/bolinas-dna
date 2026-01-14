@@ -37,7 +37,7 @@ rule compute_metrics:
             dataset=dataset,
             scores=scores,
             metrics=params.dataset_config["metrics"],
-            score_columns=["minus_llr", "abs_llr"],
+            score_columns=["minus_llr", "abs_llr", "embed_last_l2", "embed_middle_l2"],
         )
 
         # Save results
