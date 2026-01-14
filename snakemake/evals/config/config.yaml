@@ -2,3 +2,6 @@ datasets:
   - traitgym_mendelian
   - traitgym_complex
 
+# HuggingFace repository prefix for dataset uploads
+output_hf_prefix: gonzalobenegas/bolinas_evals
+

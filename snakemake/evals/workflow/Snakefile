@@ -3,12 +3,12 @@ configfile: "config/config.yaml"
 
 include: "rules/common.smk"
 include: "rules/traitgym.smk"
+include: "rules/upload.smk"
 
 
 rule all:
     input:
         expand(
-            "results/dataset/{dataset}/{split}.parquet",
+            "results/upload.done/{dataset}",
             dataset=config["datasets"],
-            split=SPLITS,
         ),
