@@ -1,6 +1,6 @@
 # bolinas-dna
 
-DNA training dataset creation and genomic interval utilities.
+Utilities for developing genomic language models (gLMs), including training dataset creation and evaluations.
 
 ## Installation
 
@@ -48,27 +48,8 @@ uv run pytest --cov=bolinas --cov-report=term-missing
 - `snakemake/` - Snakemake workflows
 - `tests/` - Test suite
 
-## Snakemake Workflows
+## Pipelines
 
-The project includes Snakemake workflows for training dataset creation in `snakemake/training_dataset/`.
+The project includes Snakemake workflows for various tasks:
 
-### Prerequisites
-
-- All Python dependencies are managed by the main project (`uv sync`)
-- Conda must be available for bioinformatics CLI tools
-
-### Running Workflows
-
-**Genome Selection:**
-```bash
-cd snakemake/training_dataset/genome_selection
-uv run snakemake --cores all --use-conda
-```
-
-**Dataset Creation:**
-```bash
-cd snakemake/training_dataset/dataset_creation
-uv run snakemake --cores all --use-conda
-```
-
-See individual workflow READMEs for configuration details.
+- **Training Dataset Pipeline** (`snakemake/training_dataset/`) - Creates genomic training datasets from NCBI RefSeq genomes. See [snakemake/training_dataset/README.md](snakemake/training_dataset/README.md) for details.
