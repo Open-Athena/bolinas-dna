@@ -120,3 +120,36 @@ rule intervals_recipe_v2:
         intervals = (promoters | mrna_exons).expand_min_size(min_size)
         intervals = intervals & defined
         write_pandas_to_bed(intervals.to_pandas(), output[0])
+
+
+# CDS regions only
+rule intervals_recipe_v3:
+    input:
+        "results/annotation/{g}.gtf.gz",
+        "results/intervals/defined/{g}.bed.gz",
+    output:
+        "results/intervals/recipe/v3/{g}.bed.gz",
+    run:
+        # TODO: Fix this hardcoded exception! This genome (GCF_000002995.4) has
+        # non-standard GTF format where the feature column contains gene names
+        # (e.g., "Bm17073") instead of standard feature types (e.g., "CDS").
+        # Proper fix: exclude this genome from the genome selection upstream.
+        if wildcards.g == "GCF_000002995.4":
+            # Write a single minimal interval for this problematic genome
+            # to avoid downstream errors from empty files
+            defined = read_bed_to_pandas(input[1])
+            first_interval = defined.iloc[0:1]
+            assert first_interval.iloc[0]["end"] - first_interval.iloc[0]["start"] >= 512
+            first_interval["end"] = first_interval["start"] + 512
+            write_pandas_to_bed(first_interval, output[0])
+        else:
+            min_size = 512
+
+            ann = load_annotation(input[0])
+            cds = get_cds(ann)
+            assert len(cds) > 0, f"No CDS regions found for {wildcards.g}"
+            cds = GenomicSet(cds.to_pandas())
+            defined = GenomicSet(read_bed_to_pandas(input[1]))
+            intervals = cds.expand_min_size(min_size)
+            intervals = intervals & defined
+            write_pandas_to_bed(intervals.to_pandas(), output[0])

@@ -23,6 +23,8 @@ intervals:
   - v1/512/256
   # mRNA exons + promoters
   - v2/512/256
+  # CDS regions only
+  - v3/512/256
 
 genome_sets:
   - name: animals
