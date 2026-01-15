@@ -36,6 +36,7 @@ models:
     context_size: 512
     steps:
       - 2000
+      - 6000
       - 10000
       - 12000
 
@@ -53,6 +54,12 @@ datasets:
     split: train
     metrics:
       - AUPRC
+
+  - name: clinvar_missense
+    hf_path: gonzalobenegas/bolinas_evals-clinvar_missense
+    split: train
+    metrics:
+      - AUROC
 
 # Score types to evaluate and plot
 score_types:
