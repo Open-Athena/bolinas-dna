@@ -9,15 +9,27 @@ models:
     context_size: 512
     steps:
       - 2000
+      - 6000
       - 10000
+      - 12000
+      - 14000
+      - 16000
+      - 18000
       - 20000
+      - 22000
 
   - name: animal_promoters_yolo
     base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/animal-promoters-yolo-standard-r01-a615b7
     context_size: 512
     steps:
       - 2000
+      - 6000
       - 10000
+      - 12000
+      - 14000
+      - 16000
+      - 18000
+      - 20000
 
   - name: animal_mrna_plus_promoters
     base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/animal-mRNA-plus-promoters-yolo-r01-a3e7b3
@@ -25,6 +37,7 @@ models:
     steps:
       - 2000
       - 10000
+      - 12000
 
 # Evaluation datasets from HuggingFace
 # Each dataset should have been created by the snakemake/evals pipeline
@@ -40,6 +53,13 @@ datasets:
     split: train
     metrics:
       - AUPRC
+
+# Score types to evaluate and plot
+score_types:
+  - minus_llr
+  - abs_llr
+  - embed_last_l2
+  - embed_middle_l2
 
 # Inference configuration (performance settings that don't affect output)
 inference:

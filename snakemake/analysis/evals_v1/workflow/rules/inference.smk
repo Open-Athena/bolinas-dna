@@ -2,7 +2,7 @@
 
 from datasets import load_dataset
 
-from bolinas.evals import compute_variant_scores
+from bolinas.evals.inference import compute_variant_scores
 
 
 def get_dataset_config(dataset_name):

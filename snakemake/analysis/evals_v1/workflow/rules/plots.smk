@@ -2,7 +2,7 @@
 
 import pandas as pd
 
-from bolinas.evals import plot_metrics_vs_step
+from bolinas.evals.plotting import plot_metrics_vs_step, plot_models_comparison
 
 
 rule plot_metrics_vs_step:
@@ -33,3 +33,35 @@ rule plot_metrics_vs_step:
 
         # Create plot for this model
         plot_metrics_vs_step(metrics_df, wildcards.model, output[0])
+
+
+rule plot_models_comparison:
+    """Plot metrics vs training step comparing all models for a specific score type."""
+    input:
+        # All metrics for all models across all datasets and steps
+        [
+            f"results/metrics/{dataset}/{model}/{step}.parquet"
+            for dataset in get_all_datasets()
+            for model, step in get_all_model_steps()
+        ],
+    output:
+        "results/plots/models_comparison/{score_type}.svg",
+    run:
+        # Load and aggregate all metrics for all models
+        all_metrics = []
+        for file_path in input:
+            df = pd.read_parquet(file_path)
+            # Extract dataset, model, and step from path: results/metrics/{dataset}/{model}/{step}.parquet
+            parts = file_path.split("/")
+            dataset = parts[2]
+            model = parts[3]
+            step = int(parts[4].replace(".parquet", ""))
+            df["dataset"] = dataset
+            df["model"] = model
+            df["step"] = step
+            all_metrics.append(df)
+
+        metrics_df = pd.concat(all_metrics, ignore_index=True)
+
+        # Create plot comparing all models for this score type
+        plot_models_comparison(metrics_df, wildcards.score_type, output[0])

@@ -3,7 +3,7 @@
 import pandas as pd
 from datasets import load_dataset
 
-from bolinas.evals import aggregate_metrics, compute_metrics
+from bolinas.evals.metrics import aggregate_metrics, compute_metrics
 
 
 def get_dataset_config(dataset_name):
@@ -37,7 +37,7 @@ rule compute_metrics:
             dataset=dataset,
             scores=scores,
             metrics=params.dataset_config["metrics"],
-            score_columns=["minus_llr", "abs_llr", "embed_last_l2", "embed_middle_l2"],
+            score_columns=config["score_types"],
         )
 
         # Save results

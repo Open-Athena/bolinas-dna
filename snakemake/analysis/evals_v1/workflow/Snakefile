@@ -39,6 +39,11 @@ rule all:
             f"results/plots/metrics_vs_step/{model}.svg"
             for model in [m["name"] for m in config["models"]]
         ],
+        # Model comparison plots for each score type
+        [
+            f"results/plots/models_comparison/{score_type}.svg"
+            for score_type in config["score_types"]
+        ],
 
 
 # Download genome reference
