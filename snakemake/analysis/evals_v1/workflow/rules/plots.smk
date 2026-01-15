@@ -109,7 +109,6 @@ rule plot_custom_models_comparison:
                 for ds in plot_cfg["dataset_subsets"]
             }
 
-            # Create filtered plot
         plot_models_comparison(
             metrics_df,
             output[0],
