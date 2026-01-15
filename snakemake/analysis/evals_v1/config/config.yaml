@@ -61,6 +61,22 @@ score_types:
   - embed_last_l2
   - embed_middle_l2
 
+# Custom filtered model comparison plots
+# Each plot can filter which models and which (dataset, subset) combinations to include
+# Each dataset_subset can specify its own score_type
+custom_plots:
+  - name: promoters_v1
+    models:
+      - animal_promoters_yolo
+      - animal_promoters_yolo_repeat_downweight
+    dataset_subsets:
+      - dataset: traitgym_mendelian
+        subset: global
+        score_type: minus_llr
+      - dataset: traitgym_mendelian
+        subset: nonexonic_AND_proximal
+        score_type: minus_llr
+
 # Inference configuration (performance settings that don't affect output)
 inference:
   batch_size: 128

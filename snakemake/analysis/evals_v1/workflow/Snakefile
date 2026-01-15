@@ -19,6 +19,23 @@ def get_all_model_steps():
     return combinations
 
 
+def get_custom_plot_config(plot_name):
+    """Get configuration for a specific custom plot."""
+    if "custom_plots" not in config:
+        raise ValueError("No custom_plots defined in config")
+    for plot in config["custom_plots"]:
+        if plot["name"] == plot_name:
+            return plot
+    raise ValueError(f"Custom plot {plot_name} not found in config")
+
+
+def get_all_custom_plot_names():
+    """Get list of all custom plot names."""
+    if "custom_plots" not in config:
+        return []
+    return [plot["name"] for plot in config["custom_plots"]]
+
+
 # Include rule files
 include: "rules/inference.smk"
 include: "rules/metrics.smk"
@@ -43,6 +60,11 @@ rule all:
         [
             f"results/plots/models_comparison/{score_type}.svg"
             for score_type in config["score_types"]
+        ],
+        # Custom filtered comparison plots
+        [
+            f"results/plots/custom_comparison/{plot_name}.svg"
+            for plot_name in get_all_custom_plot_names()
         ],
 
 
