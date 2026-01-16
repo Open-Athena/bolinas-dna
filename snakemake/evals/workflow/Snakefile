@@ -2,8 +2,10 @@ configfile: "config/config.yaml"
 
 
 include: "rules/common.smk"
-include: "rules/traitgym.smk"
 include: "rules/clinvar.smk"
+include: "rules/cre.smk"
+include: "rules/gnomad.smk"
+include: "rules/traitgym.smk"
 include: "rules/upload.smk"
 
 
