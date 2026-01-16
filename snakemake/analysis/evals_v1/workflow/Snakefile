@@ -61,11 +61,11 @@ rule all:
         #     f"results/plots/models_comparison/{score_type}.svg"
         #     for score_type in config["score_types"]
         # ],
-        # # Custom filtered comparison plots
-        # [
-        #     f"results/plots/custom_comparison/{plot_name}.svg"
-        #     for plot_name in get_all_custom_plot_names()
-        # ],
+        # Custom filtered comparison plots
+        [
+            f"results/plots/custom_comparison/{plot_name}.svg"
+            for plot_name in get_all_custom_plot_names()
+        ],
 
 
 # Download genome reference

@@ -30,15 +30,19 @@ models:
       - 16000
       - 18000
       - 20000
+      - 22000
+      - 24000
+      - 26000
+      - 28000
 
-  - name: animal_mrna_plus_promoters
-    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/animal-mRNA-plus-promoters-yolo-r01-a3e7b3
-    context_size: 512
-    steps:
-      - 2000
-      - 6000
-      - 10000
-      - 12000
+#   - name: animal_mrna_plus_promoters
+#     base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/animal-mRNA-plus-promoters-yolo-r01-a3e7b3
+#     context_size: 512
+#     steps:
+#       - 2000
+#       - 6000
+#       - 10000
+#       - 12000
 
 # Evaluation datasets from HuggingFace
 # Each dataset should have been created by the snakemake/evals pipeline
@@ -49,17 +53,23 @@ datasets:
     metrics:
       - AUPRC
 
-  - name: traitgym_complex
-    hf_path: gonzalobenegas/bolinas_evals-traitgym_complex
+#   - name: traitgym_complex
+#     hf_path: gonzalobenegas/bolinas_evals-traitgym_complex
+#     split: train
+#     metrics:
+#       - AUPRC
+# 
+#   - name: clinvar_missense
+#     hf_path: gonzalobenegas/bolinas_evals-clinvar_missense
+#     split: train
+#     metrics:
+#       - AUROC
+
+  - name: gnomad_pls_v2
+    hf_path: gonzalobenegas/bolinas_evals-gnomad_pls_v2
     split: train
     metrics:
       - AUPRC
-
-  - name: clinvar_missense
-    hf_path: gonzalobenegas/bolinas_evals-clinvar_missense
-    split: train
-    metrics:
-      - AUROC
 
 # Score types to evaluate and plot
 score_types:
