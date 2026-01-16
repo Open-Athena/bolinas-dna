@@ -93,6 +93,9 @@ custom_plots:
       - dataset: traitgym_mendelian
         subset: nonexonic_AND_proximal
         score_type: minus_llr
+      - dataset: gnomad_pls_v2
+        subset: global
+        score_type: minus_llr
 
 # Inference configuration (performance settings that don't affect output)
 inference:
