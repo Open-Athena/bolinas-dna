@@ -28,6 +28,7 @@ models:
       - 16000
       - 24000
       - 32000
+      - 34000
 
   - name: animal_mrna_plus_promoters_yolo_repeat_downweight
     base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/animal-mRNA-plus-promoters-yolo-repeat-weight-0.01-r01-b9ca25
@@ -38,6 +39,7 @@ models:
       - 10000
       - 16000
       - 24000
+      - 26000
 
 #   - name: animal_promoters_yolo
 #     base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/animal-promoters-yolo-standard-r01-a615b7
@@ -85,6 +87,12 @@ datasets:
     split: train
     metrics:
       - AUROC
+
+  - name: gwas_missense
+    hf_path: gonzalobenegas/bolinas_evals-gwas_coding
+    split: train
+    metrics:
+      - AUPRC
 
 #   - name: gnomad_pls_v2
 #     hf_path: gonzalobenegas/bolinas_evals-gnomad_pls_v2
