@@ -4,36 +4,48 @@ genome_url: http://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/dna/Homo_s
 # Model checkpoints to evaluate
 # Each model has a base name, base path, context size, and list of checkpoint steps
 models:
-  - name: animal_promoters_yolo_repeat_downweight
-    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/animal-promoters-yolo-r01-213a8e
-    context_size: 512
-    steps:
-      - 2000
-      - 6000
-      - 10000
-      - 12000
-      - 14000
-      - 16000
-      - 18000
-      - 20000
-      - 22000
+#   - name: animal_promoters_yolo_repeat_downweight
+#     base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/animal-promoters-yolo-r01-213a8e
+#     context_size: 512
+#     steps:
+#       - 2000
+#       - 6000
+#       - 10000
+#       - 12000
+#       - 14000
+#       - 16000
+#       - 18000
+#       - 20000
+#       - 22000
 
-  - name: animal_promoters_yolo
-    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/animal-promoters-yolo-standard-r01-a615b7
+  - name: animal_cds_yolo_repeat_downweight
+    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/animal-cds-yolo-repeat-weight-0.01-r01-e8cb9b
     context_size: 512
     steps:
-      - 2000
-      - 6000
-      - 10000
-      - 12000
-      - 14000
-      - 16000
-      - 18000
-      - 20000
-      - 22000
+      - 32000
+
+  - name: animal_mrna_plus_promoters_yolo_repeat_downweight
+    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/animal-mRNA-plus-promoters-yolo-repeat-weight-0.01-r01-b9ca25
+    context_size: 512
+    steps:
       - 24000
-      - 26000
-      - 28000
+
+#   - name: animal_promoters_yolo
+#     base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/animal-promoters-yolo-standard-r01-a615b7
+#     context_size: 512
+#     steps:
+#       - 2000
+#       - 6000
+#       - 10000
+#       - 12000
+#       - 14000
+#       - 16000
+#       - 18000
+#       - 20000
+#       - 22000
+#       - 24000
+#       - 26000
+#       - 28000
 
 #   - name: animal_mrna_plus_promoters
 #     base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/animal-mRNA-plus-promoters-yolo-r01-a3e7b3
@@ -59,17 +71,17 @@ datasets:
 #     metrics:
 #       - AUPRC
 # 
-#   - name: clinvar_missense
-#     hf_path: gonzalobenegas/bolinas_evals-clinvar_missense
-#     split: train
-#     metrics:
-#       - AUROC
-
-  - name: gnomad_pls_v2
-    hf_path: gonzalobenegas/bolinas_evals-gnomad_pls_v2
+  - name: clinvar_missense
+    hf_path: gonzalobenegas/bolinas_evals-clinvar_missense
     split: train
     metrics:
-      - AUPRC
+      - AUROC
+
+#   - name: gnomad_pls_v2
+#     hf_path: gonzalobenegas/bolinas_evals-gnomad_pls_v2
+#     split: train
+#     metrics:
+#       - AUPRC
 
 # Score types to evaluate and plot
 score_types:
