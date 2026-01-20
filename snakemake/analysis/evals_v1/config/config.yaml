@@ -22,12 +22,21 @@ models:
     base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/animal-cds-yolo-repeat-weight-0.01-r01-e8cb9b
     context_size: 512
     steps:
+      - 2000
+      - 6000
+      - 10000
+      - 16000
+      - 24000
       - 32000
 
   - name: animal_mrna_plus_promoters_yolo_repeat_downweight
     base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/animal-mRNA-plus-promoters-yolo-repeat-weight-0.01-r01-b9ca25
     context_size: 512
     steps:
+      - 2000
+      - 6000
+      - 10000
+      - 16000
       - 24000
 
 #   - name: animal_promoters_yolo
