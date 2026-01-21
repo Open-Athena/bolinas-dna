@@ -85,6 +85,49 @@ def plot_metrics_vs_step(
     plt.close()
 
 
+def _draw_baseline_lines(
+    ax: plt.Axes,
+    baselines: dict[str, float],
+) -> None:
+    """Draw horizontal dashed lines with text labels for baseline model performance.
+
+    Args:
+        ax: Matplotlib axes to draw on.
+        baselines: Dictionary mapping baseline model names to their metric values.
+    """
+    if not baselines:
+        return
+
+    sorted_baselines = sorted(baselines.items(), key=lambda x: x[1])
+
+    x_max = ax.get_xlim()[1]
+    x_pos = x_max * 0.98
+
+    min_separation = 0.01
+    prev_y = None
+    offset_count = 0
+
+    for name, value in sorted_baselines:
+        ax.axhline(y=value, linestyle="--", color="gray", alpha=0.7, linewidth=1)
+
+        if prev_y is not None and abs(value - prev_y) < min_separation:
+            offset_count += 1
+        else:
+            offset_count = 0
+        prev_y = value
+
+        y_offset = offset_count * min_separation * 0.5
+        ax.text(
+            x_pos,
+            value + y_offset,
+            name,
+            fontsize=7,
+            color="gray",
+            va="bottom",
+            ha="right",
+        )
+
+
 def plot_models_comparison(
     metrics_df: pd.DataFrame,
     output_path: str | Path,
@@ -93,6 +136,7 @@ def plot_models_comparison(
     figsize: tuple[int, int] = (15, 10),
     models_filter: list[str] | None = None,
     dataset_subsets_filter: list[tuple[str, str]] | None = None,
+    baseline_data: dict[tuple[str, str], dict[str, float]] | None = None,
 ) -> None:
     """Plot metric values vs training step comparing models for a specific score type.
 
@@ -109,6 +153,8 @@ def plot_models_comparison(
         models_filter: If provided, only include these models. None means include all.
         dataset_subsets_filter: If provided, only include these (dataset, subset) pairs.
             None means include all. Format: [(dataset1, subset1), (dataset2, subset2), ...]
+        baseline_data: Optional mapping of (dataset, subset) -> {baseline_name: metric_value}
+            for drawing horizontal reference lines.
     """
     output_path = Path(output_path)
 
@@ -222,6 +268,11 @@ def plot_models_comparison(
                 label=model,
                 linewidth=2,
             )
+
+        if baseline_data is not None:
+            key = (dataset, subset)
+            if key in baseline_data:
+                _draw_baseline_lines(ax, baseline_data[key])
 
         ax.set_xlabel("Training Step")
         ax.set_ylabel(f"{primary_metric}")

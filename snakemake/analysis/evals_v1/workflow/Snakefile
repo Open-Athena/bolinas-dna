@@ -36,6 +36,35 @@ def get_all_custom_plot_names():
     return [plot["name"] for plot in config["custom_plots"]]
 
 
+def get_baseline_input_files(plot_name: str) -> list[str]:
+    """Get list of baseline metric file paths needed for a custom plot."""
+    plot_config = get_custom_plot_config(plot_name)
+    dataset_subsets = plot_config.get("dataset_subsets", [])
+    baselines_config = config.get("baselines", {})
+    dataset_mapping = baselines_config.get("dataset_mapping", {})
+    all_baselines = baselines_config.get("models", [])
+
+    files = []
+    for ds in dataset_subsets:
+        include_baselines = ds.get("include_baselines", False)
+        if not include_baselines:
+            continue
+
+        dataset = ds["dataset"]
+        if dataset not in dataset_mapping:
+            continue
+
+        if isinstance(include_baselines, list):
+            baselines_to_include = include_baselines
+        else:
+            baselines_to_include = all_baselines
+
+        for baseline in baselines_to_include:
+            files.append(f"results/baselines/metrics/{dataset}/{baseline}.parquet")
+
+    return files
+
+
 # Include rule files
 include: "rules/common.smk"
 include: "rules/inference.smk"

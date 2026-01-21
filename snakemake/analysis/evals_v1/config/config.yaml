@@ -134,9 +134,11 @@ custom_plots:
       - dataset: traitgym_mendelian
         subset: nonexonic_AND_proximal
         score_type: minus_llr
+        include_baselines: true
       - dataset: traitgym_complex
         subset: nonexonic_AND_proximal
         score_type: abs_llr
+        include_baselines: true
   
   # - name: promoters_v1
   #   models:

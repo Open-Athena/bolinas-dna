@@ -50,7 +50,7 @@ rule plot_models_comparison:
 
 rule plot_custom_models_comparison:
     input:
-        lambda wildcards: [
+        metrics=lambda wildcards: [
             f"results/metrics/{dataset}/{model}/{step}.parquet"
             for dataset in {
                 ds["dataset"]
@@ -61,13 +61,14 @@ rule plot_custom_models_comparison:
             for model in get_custom_plot_config(wildcards.plot_name).get("models", [])
             for step in get_model_config(model)["steps"]
         ],
+        baselines=lambda wildcards: get_baseline_input_files(wildcards.plot_name),
     output:
         "results/plots/custom_comparison/{plot_name}.svg",
     params:
         plot_config=lambda wildcards: get_custom_plot_config(wildcards.plot_name),
     run:
         all_metrics = []
-        for file_path in input:
+        for file_path in input.metrics:
             df = pd.read_parquet(file_path)
             # Path: results/metrics/{dataset}/{model}/{step}.parquet
             parts = file_path.split("/")
@@ -88,9 +89,12 @@ rule plot_custom_models_comparison:
                 for ds in plot_cfg["dataset_subsets"]
             }
 
+        baseline_data = load_baseline_data(plot_cfg)
+
         plot_models_comparison(
             metrics_df,
             output[0],
             dataset_subset_score_map=dataset_subset_score_map,
             models_filter=models_filter,
+            baseline_data=baseline_data,
         )
