@@ -9,6 +9,7 @@
 The codebase has two main components:
 
 1. **Python Library** (`src/bolinas/`) - Core utilities for genomic interval manipulation and data processing
+   - Try to move us much shared functionality (e.g. functions) from the pipelines here, so they are subject to higher quality standards (e.g. typing, testing)
 
 2. **Pipelines** (`snakemake/`) - Data processing workflows implemented in Snakemake
    - See individual pipeline READMEs for details on what each pipeline does and how to configure them
