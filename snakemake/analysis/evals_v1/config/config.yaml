@@ -158,7 +158,24 @@ custom_plots:
         score_type: abs_llr
         include_baselines: true
         title: "TraitGym Complex 5' UTR"
-  
+
+  - name: cds_yolo
+    title: "CDS YOLO run (Qwen 1.7B)"
+    models:
+      - animal_cds_yolo_repeat_downweight
+    n_cols: 2
+    dataset_subsets:
+      - dataset: clinvar_missense
+        subset: global
+        score_type: minus_llr
+        include_baselines: true
+        title: "ClinVar missense"
+      - dataset: gwas_missense
+        subset: global
+        score_type: abs_llr
+        include_baselines: true
+        title: "GWAS missense"
+
   # - name: promoters_v1
   #   models:
   #     - animal_promoters_yolo
