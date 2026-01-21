@@ -91,10 +91,23 @@ rule plot_custom_models_comparison:
 
         baseline_data = load_baseline_data(plot_cfg)
 
+        # Build subplot titles map from config
+        subplot_titles = None
+        if "dataset_subsets" in plot_cfg:
+            subplot_titles = {
+                (ds["dataset"], ds["subset"]): ds.get("title")
+                for ds in plot_cfg["dataset_subsets"]
+                if ds.get("title")
+            }
+            if not subplot_titles:
+                subplot_titles = None
+
         plot_models_comparison(
             metrics_df,
             output[0],
             dataset_subset_score_map=dataset_subset_score_map,
             models_filter=models_filter,
             baseline_data=baseline_data,
+            title=plot_cfg.get("title", plot_cfg["name"]),
+            subplot_titles=subplot_titles,
         )

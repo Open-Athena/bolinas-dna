@@ -103,11 +103,16 @@ datasets:
 # Baseline models to compare against (pre-computed on HuggingFace)
 baselines:
   models:
-    - GPN-Star-V100
-    - GPN-Star-M447
-    - GPN-Star-P243
-    - Evo2_40B
-    - Evo2_7B
+    - model: GPN-Star-V100
+      name: "GPN-Star (V)"
+    - model: GPN-Star-M447
+      name: "GPN-Star (M)"
+    - model: GPN-Star-P243
+      name: "GPN-Star (P)"
+    - model: Evo2_40B
+      name: "Evo 2 (40B)"
+    - model: Evo2_7B
+      name: "Evo 2 (7B)"
 
   # Mapping from our dataset names to original TraitGym dataset paths
   dataset_mapping:
@@ -128,6 +133,7 @@ score_types:
 # Each dataset_subset can specify its own score_type
 custom_plots:
   - name: promoters_yolo
+    title: "Promoters YOLO run (Qwen 1.7B)"
     models:
       - animal_promoters_yolo_repeat_downweight
     dataset_subsets:
@@ -135,10 +141,12 @@ custom_plots:
         subset: nonexonic_AND_proximal
         score_type: minus_llr
         include_baselines: true
+        title: "TraitGym Mendelian Promoter VEP"
       - dataset: traitgym_complex
         subset: nonexonic_AND_proximal
         score_type: abs_llr
         include_baselines: true
+        title: "TraitGym Complex Promoter VEP"
   
   # - name: promoters_v1
   #   models:

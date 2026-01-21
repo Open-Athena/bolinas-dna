@@ -36,6 +36,26 @@ def get_all_custom_plot_names():
     return [plot["name"] for plot in config["custom_plots"]]
 
 
+def get_baseline_model_id(baseline_entry) -> str:
+    """Extract the model identifier from a baseline config entry.
+
+    Supports both old format (string) and new format (dict with model/name).
+    """
+    if isinstance(baseline_entry, dict):
+        return baseline_entry["model"]
+    return baseline_entry
+
+
+def get_baseline_display_name(baseline_entry) -> str:
+    """Extract the display name from a baseline config entry.
+
+    Supports both old format (string) and new format (dict with model/name).
+    """
+    if isinstance(baseline_entry, dict):
+        return baseline_entry.get("name", baseline_entry["model"])
+    return baseline_entry
+
+
 def get_baseline_input_files(plot_name: str) -> list[str]:
     """Get list of baseline metric file paths needed for a custom plot."""
     plot_config = get_custom_plot_config(plot_name)
@@ -60,7 +80,8 @@ def get_baseline_input_files(plot_name: str) -> list[str]:
             baselines_to_include = all_baselines
 
         for baseline in baselines_to_include:
-            files.append(f"results/baselines/metrics/{dataset}/{baseline}.parquet")
+            model_id = get_baseline_model_id(baseline)
+            files.append(f"results/baselines/metrics/{dataset}/{model_id}.parquet")
 
     return files
 

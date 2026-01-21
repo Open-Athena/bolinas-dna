@@ -38,7 +38,7 @@ def load_baseline_data(
         plot_config: Custom plot configuration containing dataset_subsets.
 
     Returns:
-        Dictionary mapping (dataset, subset) to {baseline_name: metric_value}.
+        Dictionary mapping (dataset, subset) to {baseline_display_name: metric_value}.
     """
     baselines_config = config.get("baselines", {})
     dataset_mapping = baselines_config.get("dataset_mapping", {})
@@ -66,12 +66,14 @@ def load_baseline_data(
         result[key] = {}
 
         for baseline in baselines_to_include:
-            filepath = f"results/baselines/metrics/{dataset}/{baseline}.parquet"
+            model_id = get_baseline_model_id(baseline)
+            display_name = get_baseline_display_name(baseline)
+            filepath = f"results/baselines/metrics/{dataset}/{model_id}.parquet"
             try:
                 df = pd.read_parquet(filepath)
                 subset_data = df[df["subset"] == subset]
                 if not subset_data.empty:
-                    result[key][baseline] = subset_data["value"].iloc[0]
+                    result[key][display_name] = subset_data["value"].iloc[0]
             except FileNotFoundError:
                 pass
 

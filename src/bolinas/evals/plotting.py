@@ -133,10 +133,12 @@ def plot_models_comparison(
     output_path: str | Path,
     score_type: str | None = None,
     dataset_subset_score_map: dict[tuple[str, str], str] | None = None,
-    figsize: tuple[int, int] = (15, 10),
+    figsize: tuple[int, int] | None = None,
     models_filter: list[str] | None = None,
     dataset_subsets_filter: list[tuple[str, str]] | None = None,
     baseline_data: dict[tuple[str, str], dict[str, float]] | None = None,
+    title: str | None = None,
+    subplot_titles: dict[tuple[str, str], str] | None = None,
 ) -> None:
     """Plot metric values vs training step comparing models for a specific score type.
 
@@ -155,6 +157,8 @@ def plot_models_comparison(
             None means include all. Format: [(dataset1, subset1), (dataset2, subset2), ...]
         baseline_data: Optional mapping of (dataset, subset) -> {baseline_name: metric_value}
             for drawing horizontal reference lines.
+        title: Override the main plot title. If None, uses default based on score_type.
+        subplot_titles: Override titles for specific subplots. Maps (dataset, subset) to title string.
     """
     output_path = Path(output_path)
 
@@ -213,18 +217,23 @@ def plot_models_comparison(
             msg = "No data found after applying filters"
             raise ValueError(msg)
 
-    # Sort by dataset, then put "global" first within each dataset
-    combinations["sort_key"] = combinations["subset"].apply(
-        lambda x: (0, x) if x == "global" else (1, x)
-    )
-    combinations = combinations.sort_values(["dataset", "sort_key"]).drop(
-        columns=["sort_key"]
-    )
+    # Sort combinations only if not using dataset_subset_score_map (preserve config order)
+    if dataset_subset_score_map is None:
+        combinations["sort_key"] = combinations["subset"].apply(
+            lambda x: (0, x) if x == "global" else (1, x)
+        )
+        combinations = combinations.sort_values(["dataset", "sort_key"]).drop(
+            columns=["sort_key"]
+        )
 
-    # Calculate grid dimensions
+    # Calculate grid dimensions with square subplots
     n_plots = len(combinations)
     n_cols = min(3, n_plots)
     n_rows = (n_plots + n_cols - 1) // n_cols
+    subplot_size = 4  # inches per subplot
+
+    if figsize is None:
+        figsize = (subplot_size * n_cols, subplot_size * n_rows)
 
     fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize, squeeze=False)
     axes = axes.flatten()
@@ -277,24 +286,33 @@ def plot_models_comparison(
         ax.set_xlabel("Training Step")
         ax.set_ylabel(f"{primary_metric}")
 
-        # Include score type in title if using per-subplot score types
-        if dataset_subset_score_map is not None:
+        # Set subplot title
+        if subplot_titles is not None and (dataset, subset) in subplot_titles:
+            ax.set_title(subplot_titles[(dataset, subset)], fontsize=10)
+        elif dataset_subset_score_map is not None:
             ax.set_title(f"{dataset}\n{subset}\n{subplot_score_type}", fontsize=10)
         else:
             ax.set_title(f"{dataset}\n{subset}", fontsize=10)
 
-        ax.legend(fontsize=8)
-        ax.grid(True, alpha=0.3)
+        # Conditional legend (only if multiple models)
+        if len(plot_data["model"].unique()) > 1:
+            ax.legend(fontsize=8)
+
+        # Despine
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
 
     # Hide unused subplots
     for idx in range(n_plots, len(axes)):
         axes[idx].axis("off")
 
-    # Set main title based on mode
-    if score_type is not None:
+    # Set main title
+    if title is not None:
+        plt.suptitle(title, fontsize=14, y=0.995)
+    elif score_type is not None:
         plt.suptitle(f"Score Type: {score_type}", fontsize=14, y=0.995)
     else:
-        plt.suptitle("Model Comparison (Multiple Score Types)", fontsize=14, y=0.995)
+        plt.suptitle("Model Comparison", fontsize=14, y=0.995)
 
     plt.tight_layout()
     plt.savefig(output_path, bbox_inches="tight")
