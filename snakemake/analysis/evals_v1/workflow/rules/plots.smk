@@ -110,4 +110,5 @@ rule plot_custom_models_comparison:
             baseline_data=baseline_data,
             title=plot_cfg.get("title", plot_cfg["name"]),
             subplot_titles=subplot_titles,
+            n_cols=plot_cfg.get("n_cols"),
         )

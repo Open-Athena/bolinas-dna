@@ -54,6 +54,8 @@ def compute_metrics(
     # Compute metrics for each subset
     results = []
     for subset_name, subset_data in subsets_to_evaluate:
+        n_pos = int((subset_data["label"] == 1).sum())
+        n_neg = int((subset_data["label"] == 0).sum())
         for metric_name in metrics:
             metric_func = METRIC_FUNCTIONS[metric_name]
             for score_col in score_columns:
@@ -64,6 +66,8 @@ def compute_metrics(
                         "score_type": score_col,
                         "subset": subset_name,
                         "value": value,
+                        "n_pos": n_pos,
+                        "n_neg": n_neg,
                     }
                 )
 

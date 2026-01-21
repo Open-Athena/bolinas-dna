@@ -136,17 +136,28 @@ custom_plots:
     title: "Promoters YOLO run (Qwen 1.7B)"
     models:
       - animal_promoters_yolo_repeat_downweight
+    n_cols: 2
     dataset_subsets:
       - dataset: traitgym_mendelian
         subset: nonexonic_AND_proximal
         score_type: minus_llr
         include_baselines: true
-        title: "TraitGym Mendelian Promoter VEP"
+        title: "TraitGym Mendelian Promoter"
+      - dataset: traitgym_mendelian
+        subset: 5_prime_UTR_variant
+        score_type: minus_llr
+        include_baselines: true
+        title: "TraitGym Mendelian 5' UTR"
       - dataset: traitgym_complex
         subset: nonexonic_AND_proximal
         score_type: abs_llr
         include_baselines: true
-        title: "TraitGym Complex Promoter VEP"
+        title: "TraitGym Complex Promoter"
+      - dataset: traitgym_complex
+        subset: 5_prime_UTR_variant
+        score_type: abs_llr
+        include_baselines: true
+        title: "TraitGym Complex 5' UTR"
   
   # - name: promoters_v1
   #   models:

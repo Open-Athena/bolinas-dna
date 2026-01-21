@@ -139,6 +139,7 @@ def plot_models_comparison(
     baseline_data: dict[tuple[str, str], dict[str, float]] | None = None,
     title: str | None = None,
     subplot_titles: dict[tuple[str, str], str] | None = None,
+    n_cols: int | None = None,
 ) -> None:
     """Plot metric values vs training step comparing models for a specific score type.
 
@@ -159,6 +160,7 @@ def plot_models_comparison(
             for drawing horizontal reference lines.
         title: Override the main plot title. If None, uses default based on score_type.
         subplot_titles: Override titles for specific subplots. Maps (dataset, subset) to title string.
+        n_cols: Number of columns in the subplot grid. If None, defaults to min(3, n_plots).
     """
     output_path = Path(output_path)
 
@@ -228,15 +230,18 @@ def plot_models_comparison(
 
     # Calculate grid dimensions with square subplots
     n_plots = len(combinations)
-    n_cols = min(3, n_plots)
+    if n_cols is None:
+        n_cols = min(3, n_plots)
     n_rows = (n_plots + n_cols - 1) // n_cols
     subplot_size = 4  # inches per subplot
 
     if figsize is None:
         figsize = (subplot_size * n_cols, subplot_size * n_rows)
 
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize, squeeze=False)
-    axes = axes.flatten()
+    fig, axes = plt.subplots(
+        n_rows, n_cols, figsize=figsize, squeeze=False, sharex=True
+    )
+    axes_flat = axes.flatten()
 
     for idx, (_, row) in enumerate(combinations.iterrows()):
         dataset = row["dataset"]
@@ -267,7 +272,7 @@ def plot_models_comparison(
             continue
 
         # Plot each model
-        ax = axes[idx]
+        ax = axes_flat[idx]
         for model in sorted(plot_data["model"].unique()):
             model_data = plot_data[plot_data["model"] == model]
             ax.plot(
@@ -286,13 +291,24 @@ def plot_models_comparison(
         ax.set_xlabel("Training Step")
         ax.set_ylabel(f"{primary_metric}")
 
+        # Build sample size suffix for title if available
+        if "n_pos" in plot_data.columns and "n_neg" in plot_data.columns:
+            n_pos = plot_data["n_pos"].iloc[0]
+            n_neg = plot_data["n_neg"].iloc[0]
+            sample_suffix = f"\n(n={n_pos} vs. {n_neg})"
+        else:
+            sample_suffix = ""
+
         # Set subplot title
         if subplot_titles is not None and (dataset, subset) in subplot_titles:
-            ax.set_title(subplot_titles[(dataset, subset)], fontsize=10)
+            ax.set_title(subplot_titles[(dataset, subset)] + sample_suffix, fontsize=10)
         elif dataset_subset_score_map is not None:
-            ax.set_title(f"{dataset}\n{subset}\n{subplot_score_type}", fontsize=10)
+            ax.set_title(
+                f"{dataset}\n{subset}\n{subplot_score_type}" + sample_suffix,
+                fontsize=10,
+            )
         else:
-            ax.set_title(f"{dataset}\n{subset}", fontsize=10)
+            ax.set_title(f"{dataset}\n{subset}" + sample_suffix, fontsize=10)
 
         # Conditional legend (only if multiple models)
         if len(plot_data["model"].unique()) > 1:
@@ -302,9 +318,16 @@ def plot_models_comparison(
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
 
+    # Hide x-axis labels for non-bottom rows (shared x-axis)
+    for idx in range(n_plots):
+        row = idx // n_cols
+        is_bottom_row = (row == n_rows - 1) or (idx + n_cols >= n_plots)
+        if not is_bottom_row:
+            axes_flat[idx].set_xlabel("")
+
     # Hide unused subplots
-    for idx in range(n_plots, len(axes)):
-        axes[idx].axis("off")
+    for idx in range(n_plots, len(axes_flat)):
+        axes_flat[idx].axis("off")
 
     # Set main title
     if title is not None:
