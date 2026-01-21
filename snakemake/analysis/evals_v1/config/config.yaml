@@ -100,6 +100,22 @@ datasets:
 #     metrics:
 #       - AUPRC
 
+# Baseline models to compare against (pre-computed on HuggingFace)
+baselines:
+  models:
+    - GPN-Star-V100
+    - GPN-Star-M447
+    - GPN-Star-P243
+    - Evo2_40B
+    - Evo2_7B
+
+  # Mapping from our dataset names to original TraitGym dataset paths
+  dataset_mapping:
+    traitgym_mendelian: songlab/omim_traitgym
+    traitgym_complex: songlab/ukb_finemapped_nc_traitgym
+    clinvar_missense: songlab/clinvar_vs_benign
+    gwas_missense: songlab/ukb_finemapped_coding
+
 # Score types to evaluate and plot
 score_types:
   - minus_llr

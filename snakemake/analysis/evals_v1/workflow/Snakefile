@@ -37,9 +37,11 @@ def get_all_custom_plot_names():
 
 
 # Include rule files
+include: "rules/common.smk"
 include: "rules/inference.smk"
 include: "rules/metrics.smk"
 include: "rules/plots.smk"
+include: "rules/baselines.smk"
 
 
 # Define all output targets
