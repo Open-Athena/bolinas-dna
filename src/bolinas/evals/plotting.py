@@ -85,14 +85,60 @@ def plot_metrics_vs_step(
     plt.close()
 
 
+def _draw_baseline_lines(
+    ax: plt.Axes,
+    baselines: dict[str, float],
+) -> None:
+    """Draw horizontal dashed lines with text labels for baseline model performance.
+
+    Args:
+        ax: Matplotlib axes to draw on.
+        baselines: Dictionary mapping baseline model names to their metric values.
+    """
+    if not baselines:
+        return
+
+    sorted_baselines = sorted(baselines.items(), key=lambda x: x[1])
+
+    x_max = ax.get_xlim()[1]
+    x_pos = x_max * 0.98
+
+    min_separation = 0.01
+    prev_y = None
+    offset_count = 0
+
+    for name, value in sorted_baselines:
+        ax.axhline(y=value, linestyle="--", color="gray", alpha=0.7, linewidth=1)
+
+        if prev_y is not None and abs(value - prev_y) < min_separation:
+            offset_count += 1
+        else:
+            offset_count = 0
+        prev_y = value
+
+        y_offset = offset_count * min_separation * 0.5
+        ax.text(
+            x_pos,
+            value + y_offset,
+            name,
+            fontsize=7,
+            color="gray",
+            va="bottom",
+            ha="right",
+        )
+
+
 def plot_models_comparison(
     metrics_df: pd.DataFrame,
     output_path: str | Path,
     score_type: str | None = None,
     dataset_subset_score_map: dict[tuple[str, str], str] | None = None,
-    figsize: tuple[int, int] = (15, 10),
+    figsize: tuple[int, int] | None = None,
     models_filter: list[str] | None = None,
     dataset_subsets_filter: list[tuple[str, str]] | None = None,
+    baseline_data: dict[tuple[str, str], dict[str, float]] | None = None,
+    title: str | None = None,
+    subplot_titles: dict[tuple[str, str], str] | None = None,
 ) -> None:
     """Plot metric values vs training step comparing models for a specific score type.
 
@@ -109,6 +155,10 @@ def plot_models_comparison(
         models_filter: If provided, only include these models. None means include all.
         dataset_subsets_filter: If provided, only include these (dataset, subset) pairs.
             None means include all. Format: [(dataset1, subset1), (dataset2, subset2), ...]
+        baseline_data: Optional mapping of (dataset, subset) -> {baseline_name: metric_value}
+            for drawing horizontal reference lines.
+        title: Override the main plot title. If None, uses default based on score_type.
+        subplot_titles: Override titles for specific subplots. Maps (dataset, subset) to title string.
     """
     output_path = Path(output_path)
 
@@ -167,18 +217,23 @@ def plot_models_comparison(
             msg = "No data found after applying filters"
             raise ValueError(msg)
 
-    # Sort by dataset, then put "global" first within each dataset
-    combinations["sort_key"] = combinations["subset"].apply(
-        lambda x: (0, x) if x == "global" else (1, x)
-    )
-    combinations = combinations.sort_values(["dataset", "sort_key"]).drop(
-        columns=["sort_key"]
-    )
+    # Sort combinations only if not using dataset_subset_score_map (preserve config order)
+    if dataset_subset_score_map is None:
+        combinations["sort_key"] = combinations["subset"].apply(
+            lambda x: (0, x) if x == "global" else (1, x)
+        )
+        combinations = combinations.sort_values(["dataset", "sort_key"]).drop(
+            columns=["sort_key"]
+        )
 
-    # Calculate grid dimensions
+    # Calculate grid dimensions with square subplots
     n_plots = len(combinations)
     n_cols = min(3, n_plots)
     n_rows = (n_plots + n_cols - 1) // n_cols
+    subplot_size = 4  # inches per subplot
+
+    if figsize is None:
+        figsize = (subplot_size * n_cols, subplot_size * n_rows)
 
     fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize, squeeze=False)
     axes = axes.flatten()
@@ -223,27 +278,41 @@ def plot_models_comparison(
                 linewidth=2,
             )
 
+        if baseline_data is not None:
+            key = (dataset, subset)
+            if key in baseline_data:
+                _draw_baseline_lines(ax, baseline_data[key])
+
         ax.set_xlabel("Training Step")
         ax.set_ylabel(f"{primary_metric}")
 
-        # Include score type in title if using per-subplot score types
-        if dataset_subset_score_map is not None:
+        # Set subplot title
+        if subplot_titles is not None and (dataset, subset) in subplot_titles:
+            ax.set_title(subplot_titles[(dataset, subset)], fontsize=10)
+        elif dataset_subset_score_map is not None:
             ax.set_title(f"{dataset}\n{subset}\n{subplot_score_type}", fontsize=10)
         else:
             ax.set_title(f"{dataset}\n{subset}", fontsize=10)
 
-        ax.legend(fontsize=8)
-        ax.grid(True, alpha=0.3)
+        # Conditional legend (only if multiple models)
+        if len(plot_data["model"].unique()) > 1:
+            ax.legend(fontsize=8)
+
+        # Despine
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
 
     # Hide unused subplots
     for idx in range(n_plots, len(axes)):
         axes[idx].axis("off")
 
-    # Set main title based on mode
-    if score_type is not None:
+    # Set main title
+    if title is not None:
+        plt.suptitle(title, fontsize=14, y=0.995)
+    elif score_type is not None:
         plt.suptitle(f"Score Type: {score_type}", fontsize=14, y=0.995)
     else:
-        plt.suptitle("Model Comparison (Multiple Score Types)", fontsize=14, y=0.995)
+        plt.suptitle("Model Comparison", fontsize=14, y=0.995)
 
     plt.tight_layout()
     plt.savefig(output_path, bbox_inches="tight")
