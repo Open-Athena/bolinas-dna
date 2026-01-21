@@ -50,10 +50,16 @@ rule plot_models_comparison:
 
 rule plot_custom_models_comparison:
     input:
-        [
+        lambda wildcards: [
             f"results/metrics/{dataset}/{model}/{step}.parquet"
-            for dataset in get_all_datasets()
-            for model, step in get_all_model_steps()
+            for dataset in {
+                ds["dataset"]
+                for ds in get_custom_plot_config(wildcards.plot_name).get(
+                    "dataset_subsets", []
+                )
+            }
+            for model in get_custom_plot_config(wildcards.plot_name).get("models", [])
+            for step in get_model_config(model)["steps"]
         ],
     output:
         "results/plots/custom_comparison/{plot_name}.svg",
