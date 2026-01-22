@@ -135,7 +135,7 @@ custom_plots:
   - name: promoters_yolo
     title: "Promoters YOLO run (Qwen 1.7B)"
     models:
-      - animal_promoters_yolo_repeat_downweight
+      - model: animal_promoters_yolo_repeat_downweight
     n_cols: 2
     dataset_subsets:
       - dataset: traitgym_mendelian
@@ -162,7 +162,7 @@ custom_plots:
   - name: cds_yolo
     title: "CDS YOLO run (Qwen 1.7B)"
     models:
-      - animal_cds_yolo_repeat_downweight
+      - model: animal_cds_yolo_repeat_downweight
     n_cols: 2
     dataset_subsets:
       - dataset: clinvar_missense
@@ -170,6 +170,50 @@ custom_plots:
         score_type: minus_llr
         include_baselines: true
         title: "ClinVar missense"
+      - dataset: gwas_missense
+        subset: global
+        score_type: abs_llr
+        include_baselines: true
+        title: "GWAS missense"
+
+  - name: all_models_comparison
+    title: "All Models Comparison (Qwen 1.7B)"
+    models:
+      - model: animal_promoters_yolo_repeat_downweight
+        title: "trained on promoters"
+      - model: animal_cds_yolo_repeat_downweight
+        title: "trained on CDS"
+      - model: animal_mrna_plus_promoters_yolo_repeat_downweight
+        title: "trained on promoters + CDS + UTR"
+    n_cols: 3
+    dataset_subsets:
+      # mendelian
+      - dataset: traitgym_mendelian
+        subset: nonexonic_AND_proximal
+        score_type: minus_llr
+        include_baselines: true
+        title: "Mendelian Promoter"
+      - dataset: traitgym_mendelian
+        subset: 5_prime_UTR_variant
+        score_type: minus_llr
+        include_baselines: true
+        title: "Mendelian 5' UTR"
+      - dataset: clinvar_missense
+        subset: global
+        score_type: minus_llr
+        include_baselines: true
+        title: "ClinVar missense"
+      # complex
+      - dataset: traitgym_complex
+        subset: nonexonic_AND_proximal
+        score_type: abs_llr
+        include_baselines: true
+        title: "Complex Promoter"
+      - dataset: traitgym_complex
+        subset: 5_prime_UTR_variant
+        score_type: abs_llr
+        include_baselines: true
+        title: "Complex 5' UTR"
       - dataset: gwas_missense
         subset: global
         score_type: abs_llr
