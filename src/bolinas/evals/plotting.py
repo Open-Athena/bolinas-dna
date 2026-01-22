@@ -140,6 +140,7 @@ def plot_models_comparison(
     title: str | None = None,
     subplot_titles: dict[tuple[str, str], str] | None = None,
     n_cols: int | None = None,
+    model_labels: dict[str, str] | None = None,
 ) -> None:
     """Plot metric values vs training step comparing models for a specific score type.
 
@@ -161,6 +162,7 @@ def plot_models_comparison(
         title: Override the main plot title. If None, uses default based on score_type.
         subplot_titles: Override titles for specific subplots. Maps (dataset, subset) to title string.
         n_cols: Number of columns in the subplot grid. If None, defaults to min(3, n_plots).
+        model_labels: Mapping of model name to display label for legend. If None, uses model name.
     """
     output_path = Path(output_path)
 
@@ -271,15 +273,23 @@ def plot_models_comparison(
         else:
             continue
 
-        # Plot each model
+        # Plot each model (preserve order from models_filter if provided)
         ax = axes_flat[idx]
-        for model in sorted(plot_data["model"].unique()):
+        available_models = set(plot_data["model"].unique())
+        if models_filter is not None:
+            ordered_models = [m for m in models_filter if m in available_models]
+        else:
+            ordered_models = sorted(available_models)
+        for model in ordered_models:
             model_data = plot_data[plot_data["model"] == model]
+            display_label = (
+                model_labels.get(model, model) if model_labels is not None else model
+            )
             ax.plot(
                 model_data["step"],
                 model_data["value"],
                 marker="o",
-                label=model,
+                label=display_label,
                 linewidth=2,
             )
 
@@ -310,10 +320,6 @@ def plot_models_comparison(
         else:
             ax.set_title(f"{dataset}\n{subset}" + sample_suffix, fontsize=10)
 
-        # Conditional legend (only if multiple models)
-        if len(plot_data["model"].unique()) > 1:
-            ax.legend(fontsize=8)
-
         # Despine
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
@@ -337,6 +343,23 @@ def plot_models_comparison(
     else:
         plt.suptitle("Model Comparison", fontsize=14, y=0.995)
 
-    plt.tight_layout()
+    # Add single shared legend if multiple models
+    unique_models = filtered_df["model"].unique()
+    if len(unique_models) > 1:
+        plt.tight_layout()
+        # Get handles and labels from the first subplot
+        handles, labels = axes_flat[0].get_legend_handles_labels()
+        fig.legend(
+            handles,
+            labels,
+            title="Model",
+            loc="upper left",
+            bbox_to_anchor=(1.01, 1.0),
+            fontsize=10,
+            frameon=False,
+        )
+    else:
+        plt.tight_layout()
+
     plt.savefig(output_path, bbox_inches="tight")
     plt.close()

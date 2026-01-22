@@ -56,6 +56,27 @@ def get_baseline_display_name(baseline_entry) -> str:
     return baseline_entry
 
 
+def get_custom_plot_model_id(model_entry) -> str:
+    """Extract the model identifier from a custom plot model entry.
+
+    Supports both old format (string) and new format (dict with model/title).
+    """
+    if isinstance(model_entry, dict):
+        return model_entry["model"]
+    return model_entry
+
+
+def get_custom_plot_model_title(model_entry) -> str:
+    """Extract the display title from a custom plot model entry.
+
+    Supports both old format (string) and new format (dict with model/title).
+    Falls back to model id if title not specified.
+    """
+    if isinstance(model_entry, dict):
+        return model_entry.get("title", model_entry["model"])
+    return model_entry
+
+
 def get_baseline_input_files(plot_name: str) -> list[str]:
     """Get list of baseline metric file paths needed for a custom plot."""
     plot_config = get_custom_plot_config(plot_name)

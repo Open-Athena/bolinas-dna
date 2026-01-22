@@ -51,15 +51,18 @@ rule plot_models_comparison:
 rule plot_custom_models_comparison:
     input:
         metrics=lambda wildcards: [
-            f"results/metrics/{dataset}/{model}/{step}.parquet"
+            f"results/metrics/{dataset}/{model_id}/{step}.parquet"
             for dataset in {
                 ds["dataset"]
                 for ds in get_custom_plot_config(wildcards.plot_name).get(
                     "dataset_subsets", []
                 )
             }
-            for model in get_custom_plot_config(wildcards.plot_name).get("models", [])
-            for step in get_model_config(model)["steps"]
+            for model_entry in get_custom_plot_config(wildcards.plot_name).get(
+                "models", []
+            )
+            for model_id in [get_custom_plot_model_id(model_entry)]
+            for step in get_model_config(model_id)["steps"]
         ],
         baselines=lambda wildcards: get_baseline_input_files(wildcards.plot_name),
     output:
@@ -80,7 +83,22 @@ rule plot_custom_models_comparison:
         metrics_df = pd.concat(all_metrics, ignore_index=True)
 
         plot_cfg = params.plot_config
-        models_filter = plot_cfg.get("models", None)
+
+        # Build models_filter and model_labels from config
+        model_entries = plot_cfg.get("models", [])
+        models_filter = (
+            [get_custom_plot_model_id(m) for m in model_entries]
+            if model_entries
+            else None
+        )
+        model_labels = (
+            {
+                get_custom_plot_model_id(m): get_custom_plot_model_title(m)
+                for m in model_entries
+            }
+            if model_entries
+            else None
+        )
 
         dataset_subset_score_map = None
         if "dataset_subsets" in plot_cfg and plot_cfg["dataset_subsets"] is not None:
@@ -111,4 +129,5 @@ rule plot_custom_models_comparison:
             title=plot_cfg.get("title", plot_cfg["name"]),
             subplot_titles=subplot_titles,
             n_cols=plot_cfg.get("n_cols"),
+            model_labels=model_labels,
         )
