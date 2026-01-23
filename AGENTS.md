@@ -22,6 +22,7 @@ The codebase has two main components:
 - **Bioinformatics tools**: Use Conda for external CLI tools (bedtools, twoBitToFa, etc.)
 - **Testing**: Run `uv run pytest` before committing
 - **Code quality**: Pre-commit hooks enforce ruff formatting and linting
+- **Documentation**: Before merging a PR, make sure all the relevant READMEs are updated.
 
 ### Type Annotations
 - Use Python 3.11+ type annotation syntax throughout
