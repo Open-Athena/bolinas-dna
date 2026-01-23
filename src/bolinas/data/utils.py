@@ -267,6 +267,7 @@ def get_promoters(
     n_upstream: int,
     n_downstream: int,
     mRNA_only: bool = False,
+    within_bounds: GenomicSet | None = None,
 ) -> GenomicSet:
     """Extract promoter regions from annotation DataFrame.
 
@@ -277,6 +278,8 @@ def get_promoters(
         mRNA_only: If True, only include promoters from protein-coding mRNA
             transcripts. If False (default), include promoters from mRNA and
             functional ncRNA transcripts (excluding pseudogenes and precursors).
+        within_bounds: Optional GenomicSet to intersect with. If provided, the
+            result will be clipped to these boundaries (e.g., chromosome bounds).
 
     Returns:
         GenomicSet containing merged promoter regions.
@@ -285,7 +288,10 @@ def get_promoters(
         exons = get_mrna_exons(ann)
     else:
         exons = _get_functional_transcript_exons(ann)
-    return get_promoters_from_exons(exons, n_upstream, n_downstream)
+    result = get_promoters_from_exons(exons, n_upstream, n_downstream)
+    if within_bounds is not None:
+        result = result & within_bounds
+    return result
 
 
 def get_5_prime_utr(ann: pl.DataFrame) -> GenomicSet:

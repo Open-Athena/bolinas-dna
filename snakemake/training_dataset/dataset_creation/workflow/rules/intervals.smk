@@ -172,12 +172,14 @@ rule extract_3_prime_utr:
 rule extract_promoters:
     input:
         "results/annotation/{g}.gtf.gz",
+        "results/intervals/all/{g}.bed.gz",
     output:
         "results/intervals/promoters/{g}.parquet",
     run:
         ann = load_annotation(input[0])
+        bounds = GenomicSet.read_bed(input[1])
         get_promoters(
-            ann, n_upstream=256, n_downstream=256, mRNA_only=False
+            ann, n_upstream=256, n_downstream=256, mRNA_only=False, within_bounds=bounds
         ).write_parquet(output[0])
 
 
