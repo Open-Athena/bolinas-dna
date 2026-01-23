@@ -141,6 +141,8 @@ def _get_cds_per_transcript(ann: pl.DataFrame) -> pl.DataFrame:
             .str.extract(r'transcript_id "(.*?)"')
             .alias("transcript_id"),
         )
+        # Some genomes (e.g., C. elegans, Brugia malayi) use gene names in the
+        # feature column instead of "CDS", so we also check gbkey attribute
         .filter((pl.col("feature") == "CDS") | (pl.col("gbkey") == "CDS"))
         .select(["chrom", "start", "end", "strand", "transcript_id"])
     )
@@ -219,6 +221,8 @@ def get_cds(ann: pl.DataFrame) -> GenomicSet:
     Returns:
         GenomicSet containing merged CDS regions.
     """
+    # Some genomes (e.g., C. elegans, Brugia malayi) use gene names in the
+    # feature column instead of "CDS", so we also check gbkey attribute
     return GenomicSet(
         ann.with_columns(
             pl.col("attribute").str.extract(r'gbkey "(.*?)"').alias("gbkey"),
