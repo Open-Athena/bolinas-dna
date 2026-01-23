@@ -191,3 +191,21 @@ rule extract_ncrna_exons:
     run:
         ann = load_annotation(input[0])
         get_ncrna_exons(ann).write_parquet(output[0])
+
+
+rule parquet_to_bed:
+    input:
+        "results/intervals/{region}/{g}.parquet",
+    output:
+        "results/bed/{g}/{region}.bed",
+    run:
+        GenomicSet.read_parquet(input[0]).write_bed(output[0])
+
+
+rule all_bed:
+    input:
+        expand(
+            "results/bed/{g}/{region}.bed",
+            region=config["functional_regions"],
+            g=config["genome_subset_bed"],
+        ),

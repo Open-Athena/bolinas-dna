@@ -90,3 +90,12 @@ functional_regions:
   - 3_prime_utr
   - promoters
   - ncrna_exons
+
+# Priority genomes for BED export (for visualization in genome browsers)
+genome_subset_bed:
+  - GCF_000001405.40  # Human
+  - GCF_000001635.27  # Mouse
+  - GCF_000001215.4   # Drosophila
+  - GCF_000002985.6   # C. elegans
+  - GCF_016699485.2   # Chicken
+  - GCF_049306965.1   # Zebrafish
