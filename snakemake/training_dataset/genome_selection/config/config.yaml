@@ -31,6 +31,3 @@ exclude_genomes:
   - GCF_028885625.2
   - GCF_028885655.2
   - GCF_029289425.2
-  # non-standard GTF format where the feature column contains gene names
-  # (e.g., "Bm17073") instead of standard feature types (e.g., "CDS").
-  - GCF_000002995.4
