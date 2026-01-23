@@ -13,6 +13,7 @@ The codebase has two main components:
 
 2. **Pipelines** (`snakemake/`) - Data processing workflows implemented in Snakemake
    - See individual pipeline READMEs for details on what each pipeline does and how to configure them
+   - Always do a dry-run first. Be extra careful whenever Snakemake is planning to rerun a very slow step (ask for my permission).
 
 ## Development Practices
 
