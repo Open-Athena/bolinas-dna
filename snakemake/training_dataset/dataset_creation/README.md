@@ -60,6 +60,62 @@ Functions handle both annotation styles:
 
 For CDS extraction, both `feature == "CDS"` and `gbkey == "CDS"` are checked to handle C. elegans-style annotations where gene names appear in the feature column.
 
+### UTR Extraction
+
+The `get_5_prime_utr` and `get_3_prime_utr` functions compute UTR regions by finding exon portions outside the CDS boundaries for each transcript:
+
+- **5' UTR**: Exon regions before CDS start (+ strand) or after CDS end (- strand)
+- **3' UTR**: Exon regions after CDS end (+ strand) or before CDS start (- strand)
+
+**CDS exclusion**: Regions that are CDS in *any* transcript are excluded from UTRs, even if they are UTR in another transcript. This handles alternative transcripts where the same genomic region may be coding in one isoform but non-coding in another.
+
+**Verification identity**: By definition, mRNA exons consist of CDS + 5' UTR + 3' UTR, so:
+
+```
+mRNA - CDS = 5' UTR | 3' UTR
+```
+
+This identity can be used to verify the correctness of UTR extraction:
+
+```python
+mrna_exons = GenomicSet(get_mrna_exons(ann))
+cds = get_cds(ann)
+utr5 = get_5_prime_utr(ann)
+utr3 = get_3_prime_utr(ann)
+
+# These should be equal (or nearly equal)
+mrna_minus_cds = mrna_exons - cds
+utr_union = utr5 | utr3
+
+# Check differences
+diff1 = mrna_minus_cds - utr_union  # Should be ~0
+diff2 = utr_union - mrna_minus_cds  # Should be 0
+```
+
+**Edge cases**: A small number of intervals (17 in human, ~13kb total) satisfy `mRNA - CDS ⊃ 5' UTR | 3' UTR` but not strict equality. These are regions in mRNA exons that are neither CDS nor UTR:
+
+| chrom | start | end | notes |
+|-------|-------|-----|-------|
+| NC_000015.10 | 64691514 | 64691515 | 1bp gap within CDS |
+| NC_000019.10 | 2271442 | 2271443 | 1bp gap within CDS |
+| NT_167249.2 | 941944 | 942223 | unplaced scaffold |
+| NT_187518.1 | 162112 | 162469 | unplaced scaffold |
+| NT_187610.1 | 130379 | 130698 | unplaced scaffold |
+| NT_187633.1 | 301994 | 302395 | unplaced scaffold |
+| NT_187646.1 | 158490 | 158847 | unplaced scaffold |
+| NW_003315955.1 | 78827 | 79107 | unplaced scaffold |
+| NW_009646197.1 | 443494 | 451168 | unplaced scaffold |
+| NW_009646203.1 | 106479 | 106757 | unplaced scaffold |
+| NW_009646203.1 | 107409 | 107495 | unplaced scaffold |
+| NW_018654714.1 | 1278 | 1611 | unplaced scaffold |
+| NW_019805490.1 | 22254 | 22576 | unplaced scaffold |
+| NW_019805490.1 | 22919 | 23010 | unplaced scaffold |
+| NW_019805496.1 | 0 | 22 | unplaced scaffold |
+| NW_025791794.1 | 0 | 1856 | unplaced scaffold |
+| NW_025791802.1 | 234037 | 234878 | unplaced scaffold |
+
+These are typically 1bp gaps within CDS (small introns or frameshift annotations) or unusual annotations on unplaced scaffolds.
+
 ## Setup
 
 Python dependencies are managed by the main project (see `../../../README.md` for installation).
