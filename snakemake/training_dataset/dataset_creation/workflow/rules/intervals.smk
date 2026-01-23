@@ -137,3 +137,55 @@ rule intervals_recipe_v3:
         intervals = cds.expand_min_size(min_size)
         intervals = intervals & defined
         write_pandas_to_bed(intervals.to_pandas(), output[0])
+
+
+rule extract_cds:
+    input:
+        "results/annotation/{g}.gtf.gz",
+    output:
+        "results/intervals/cds/{g}.parquet",
+    run:
+        ann = load_annotation(input[0])
+        get_cds(ann).write_parquet(output[0])
+
+
+rule extract_5_prime_utr:
+    input:
+        "results/annotation/{g}.gtf.gz",
+    output:
+        "results/intervals/5_prime_utr/{g}.parquet",
+    run:
+        ann = load_annotation(input[0])
+        get_5_prime_utr(ann).write_parquet(output[0])
+
+
+rule extract_3_prime_utr:
+    input:
+        "results/annotation/{g}.gtf.gz",
+    output:
+        "results/intervals/3_prime_utr/{g}.parquet",
+    run:
+        ann = load_annotation(input[0])
+        get_3_prime_utr(ann).write_parquet(output[0])
+
+
+rule extract_promoters:
+    input:
+        "results/annotation/{g}.gtf.gz",
+    output:
+        "results/intervals/promoters/{g}.parquet",
+    run:
+        ann = load_annotation(input[0])
+        get_promoters(
+            ann, n_upstream=256, n_downstream=256, mRNA_only=False
+        ).write_parquet(output[0])
+
+
+rule extract_ncrna_exons:
+    input:
+        "results/annotation/{g}.gtf.gz",
+    output:
+        "results/intervals/ncrna_exons/{g}.parquet",
+    run:
+        ann = load_annotation(input[0])
+        get_ncrna_exons(ann).write_parquet(output[0])

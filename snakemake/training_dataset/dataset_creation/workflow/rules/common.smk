@@ -7,9 +7,12 @@ from tqdm import tqdm
 from bolinas.data.intervals import GenomicSet
 from bolinas.data.utils import (
     add_rc,
+    get_3_prime_utr,
+    get_5_prime_utr,
     get_array_split_pairs,
     get_cds,
     get_mrna_exons,
+    get_ncrna_exons,
     get_promoters,
     get_promoters_from_exons,
     load_annotation,

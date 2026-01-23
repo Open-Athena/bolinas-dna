@@ -44,3 +44,49 @@ genome_sets:
     rank_value: "Homo sapiens"
 
 output_hf_prefix: gonzalobenegas/genomes-v3
+
+# Subset of genomes for one-off analysis (6 priority + 30 random, seed=42)
+genome_subset_analysis:
+  - GCF_000001405.40  # Human
+  - GCF_000001635.27  # Mouse
+  - GCF_000001215.4   # Drosophila
+  - GCF_000002985.6   # C. elegans
+  - GCF_016699485.2   # Chicken
+  - GCF_049306965.1   # Zebrafish
+  - GCF_021869965.1
+  - GCF_026250575.1
+  - GCF_024334085.1
+#   - GCF_001417965.1
+#   - GCF_021292245.1
+#   - GCF_018831695.1
+#   - GCF_037975245.1
+#   - GCF_949316345.1
+#   - GCF_012932325.1
+#   - GCF_050436995.1
+#   - GCF_028372415.1
+#   - GCF_000935625.1
+#   - GCF_015852505.1
+#   - GCF_036669915.1
+#   - GCF_964656455.1
+#   - GCF_032884065.1
+#   - GCF_039881205.1
+#   - GCF_917208135.1
+#   - GCF_000237925.1
+#   - GCF_027596085.1
+#   - GCF_904848185.1
+#   - GCF_021730395.1
+#   - GCF_902655055.1
+#   - GCF_014905175.1
+#   - GCF_027244095.1
+#   - GCF_918797505.1
+#   - GCF_000255335.2
+#   - GCF_028021215.1
+#   - GCF_000181795.1
+#   - GCF_013368605.1
+
+functional_regions:
+  - cds
+  - 5_prime_utr
+  - 3_prime_utr
+  - promoters
+  - ncrna_exons

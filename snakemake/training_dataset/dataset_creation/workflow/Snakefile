@@ -18,6 +18,7 @@ intervals_list = config["intervals"]
 
 include: "rules/download.smk"
 include: "rules/intervals.smk"
+include: "rules/stats.smk"
 include: "rules/dataset.smk"
 
 

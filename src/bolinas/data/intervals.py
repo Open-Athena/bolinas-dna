@@ -207,3 +207,43 @@ class GenomicSet:
         res["start"] = res["start"] + shift
         res["end"] = res["end"] + shift
         return GenomicSet(res)
+
+    @classmethod
+    def read_bed(cls, path: str) -> "GenomicSet":
+        """Read intervals from a BED file.
+
+        Args:
+            path: Path to the BED file (can be gzipped).
+
+        Returns:
+            A new GenomicSet with intervals from the file.
+        """
+        return cls(pd.read_csv(path, sep="\t", header=None, names=INTERVAL_COORDS))
+
+    @classmethod
+    def read_parquet(cls, path: str) -> "GenomicSet":
+        """Read intervals from a parquet file.
+
+        Args:
+            path: Path to the parquet file.
+
+        Returns:
+            A new GenomicSet with intervals from the file.
+        """
+        return cls(pd.read_parquet(path))
+
+    def write_bed(self, path: str) -> None:
+        """Write intervals to a BED file.
+
+        Args:
+            path: Path to the output BED file.
+        """
+        self._data.to_csv(path, sep="\t", header=False, index=False)
+
+    def write_parquet(self, path: str) -> None:
+        """Write intervals to a parquet file.
+
+        Args:
+            path: Path to the output parquet file.
+        """
+        self._data.to_parquet(path, index=False)
