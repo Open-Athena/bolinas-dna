@@ -32,19 +32,62 @@ The pipeline uses functions from `bolinas.data.utils` to extract genomic regions
 
 ### ncRNA Filtering Criteria
 
-The `get_ncrna_exons` function includes functional ncRNAs while excluding non-functional annotations:
+The `get_ncrna_exons` function includes functional ncRNAs while excluding non-functional annotations.
 
-**Included biotypes:** lnc_RNA, miRNA, snoRNA, tRNA, snRNA, rRNA, antisense_RNA, ncRNA, scRNA, vault_RNA, Y_RNA, scaRNA, RNase_P_RNA, RNase_MRP_RNA, telomerase_RNA, SRP_RNA, piRNA
+#### Annotation Attributes
 
-**Excluded:**
-- `pseudo "true"` attribute - annotated pseudogenes (~38k in human)
-- `partial "true"` attribute - incomplete annotations (~24k in human)
-- `transcript_biotype` containing "pseudogenic" (e.g., pseudogenic_tRNA in C. elegans)
-- `gene_biotype` containing "pseudogene" (e.g., tRNA_pseudogene)
-- `transcript_biotype == "transcript"` - used for transcribed pseudogenes in human
-- `transcript_biotype == "primary_transcript"` - precursor RNAs before processing
-- `description` or `product` containing "NMD candidate" - nonsense-mediated decay targets (~104 in human)
-- `product` containing "LOW QUALITY" - explicitly flagged low quality (~43 in human)
+NCBI annotations use two key attributes to classify transcripts:
+
+| Attribute | Description | Example values |
+|-----------|-------------|----------------|
+| `gbkey` | High-level category | mRNA, ncRNA, misc_RNA, tRNA, rRNA, precursor_RNA |
+| `transcript_biotype` | Specific transcript type | lnc_RNA, miRNA, snoRNA, transcript, primary_transcript |
+
+The relationship between these attributes (human):
+
+| gbkey | transcript_biotype | Count | Functional? |
+|-------|-------------------|-------|-------------|
+| mRNA | mRNA | 145k | Yes (protein-coding) |
+| ncRNA | lnc_RNA | 33k | Yes |
+| ncRNA | miRNA | 3.2k | Yes |
+| ncRNA | snoRNA | 1.3k | Yes |
+| **misc_RNA** | **transcript** | **15k** | **No (uncertain)** |
+| **precursor_RNA** | **primary_transcript** | **2.1k** | **No (precursors)** |
+| tRNA | tRNA | 691 | Yes |
+| - | V/J/D/C_gene_segment | 896 | No (immunoglobulin) |
+
+#### Included Biotypes
+
+`DEFAULT_NCRNA_BIOTYPES`: lnc_RNA, miRNA, snoRNA, tRNA, snRNA, rRNA, antisense_RNA, ncRNA, scRNA, vault_RNA, Y_RNA, scaRNA, RNase_P_RNA, RNase_MRP_RNA, telomerase_RNA, SRP_RNA, piRNA
+
+#### Excluded Categories
+
+**By transcript_biotype (human exon counts):**
+- `transcript` (167k exons) - misc_RNA, uncertain/uncharacterized transcripts
+- `primary_transcript` (2.1k exons) - precursor RNAs before processing
+- `V/J/D/C_gene_segment` (1.6k exons) - immunoglobulin segments (not ncRNA)
+- `pseudogenic_tRNA`, `pseudogenic_rRNA` - pseudogenic ncRNAs (C. elegans specific)
+
+**By quality attributes:**
+- `pseudo "true"` (~15k exons in human) - annotated pseudogenes
+- `partial "true"` (~1.3k exons) - incomplete annotations
+- `gene_biotype` containing "pseudogene" - pseudogene annotations
+- `description` or `product` containing "NMD candidate" (~1.8k exons) - nonsense-mediated decay targets
+- `product` containing "LOW QUALITY" - explicitly flagged low quality
+
+#### Cross-Species Consistency
+
+The biotype/gbkey system is consistent across species:
+
+| Species | lnc_RNA | miRNA | snoRNA | tRNA | misc_RNA (excluded) |
+|---------|---------|-------|--------|------|---------------------|
+| Human | 33k | 3.2k | 1.3k | 691 | 15k |
+| Mouse | 24k | 2.1k | 1.3k | 422 | 12k |
+| Drosophila | 2.4k | 485 | 270 | 317 | 0 |
+| C. elegans | 202 | 458 | 346 | 634 | 658 |
+| Chicken | 10k | 1.2k | 186 | 303 | 4.2k |
+
+Note: C. elegans has 15k piRNA transcripts (included) and uses `ncRNA` biotype (7.8k) for unclassified ncRNAs.
 
 ### Promoter Options
 
