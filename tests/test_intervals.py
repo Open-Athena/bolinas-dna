@@ -1,4 +1,5 @@
 import pandas as pd
+import polars as pl
 import pytest
 
 from bolinas.data.intervals import GenomicSet
@@ -1420,3 +1421,130 @@ def test_genomic_set_total_size_after_merge():
     # Overlapping intervals merge to chr1:0-60, size=60
     # Original sizes were 50+20=70, but overlap reduces total to 60
     assert gs.total_size() == 60
+
+
+# Polars support tests
+def test_genomic_set_init_from_polars():
+    """Test GenomicSet initialization from polars DataFrame.
+
+    Input: polars DataFrame with chr1:0-50, chr1:100-150
+    Output: GenomicSet with same intervals
+    """
+    data = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [0, 100],
+            "end": [50, 150],
+        }
+    )
+    gs = GenomicSet(data)
+
+    assert gs.n_intervals() == 2
+    assert gs.total_size() == 100
+
+
+def test_genomic_set_init_from_polars_merges_overlapping():
+    """Test that GenomicSet merges overlapping intervals from polars.
+
+    Input: polars DataFrame with chr1:0-50, chr1:40-60 (overlapping)
+    Output: GenomicSet with merged chr1:0-60
+    """
+    data = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [0, 40],
+            "end": [50, 60],
+        }
+    )
+    gs = GenomicSet(data)
+
+    assert gs.n_intervals() == 1
+    assert gs.total_size() == 60
+
+
+def test_genomic_set_init_from_polars_extra_columns():
+    """Test GenomicSet from polars DataFrame with extra columns.
+
+    Input: polars DataFrame with chrom, start, end, strand, transcript_id
+    Output: GenomicSet using only chrom, start, end columns
+    """
+    data = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [0, 100],
+            "end": [50, 150],
+            "strand": ["+", "-"],
+            "transcript_id": ["trans1", "trans2"],
+        }
+    )
+    gs = GenomicSet(data)
+
+    assert gs.n_intervals() == 2
+    # Extra columns should be ignored
+    result_df = gs.to_pandas()
+    assert list(result_df.columns) == ["chrom", "start", "end"]
+
+
+def test_genomic_set_to_polars():
+    """Test conversion to polars DataFrame.
+
+    Input: GenomicSet with chr1:0-50, chr2:100-200
+    Output: polars DataFrame with same intervals
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1", "chr2"],
+            "start": [0, 100],
+            "end": [50, 200],
+        }
+    )
+    gs = GenomicSet(data)
+    result = gs.to_polars()
+
+    assert isinstance(result, pl.DataFrame)
+    assert result.shape == (2, 3)
+    assert result["chrom"].to_list() == ["chr1", "chr2"]
+    assert result["start"].to_list() == [0, 100]
+    assert result["end"].to_list() == [50, 200]
+
+
+def test_genomic_set_to_polars_empty():
+    """Test to_polars with empty GenomicSet.
+
+    Input: Empty GenomicSet
+    Output: Empty polars DataFrame with correct columns
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": [],
+            "start": [],
+            "end": [],
+        }
+    )
+    gs = GenomicSet(data)
+    result = gs.to_polars()
+
+    assert isinstance(result, pl.DataFrame)
+    assert result.shape == (0, 3)
+    assert result.columns == ["chrom", "start", "end"]
+
+
+def test_genomic_set_polars_roundtrip():
+    """Test polars -> GenomicSet -> polars roundtrip.
+
+    Input: polars DataFrame
+    Output: Same data after roundtrip conversion
+    """
+    original = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr2"],
+            "start": [0, 100],
+            "end": [50, 200],
+        }
+    )
+    gs = GenomicSet(original)
+    result = gs.to_polars()
+
+    assert result["chrom"].to_list() == original["chrom"].to_list()
+    assert result["start"].to_list() == original["start"].to_list()
+    assert result["end"].to_list() == original["end"].to_list()

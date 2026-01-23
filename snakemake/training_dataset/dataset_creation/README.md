@@ -15,6 +15,51 @@ This pipeline takes a list of genomes and creates training datasets by extractin
 6. **Merge and shard** - Combines data from multiple genomes and splits into shards
 7. **Upload** - Uploads to HuggingFace Hub
 
+## Genomic Region Extraction
+
+The pipeline uses functions from `bolinas.data.utils` to extract genomic regions. These functions handle cross-species annotation differences (e.g., `transcript_biotype` vs `gbkey` attributes).
+
+### Available Region Types
+
+| Function | Description | Returns |
+|----------|-------------|---------|
+| `get_cds(ann)` | Coding sequences | GenomicSet |
+| `get_promoters(ann, up, down, mRNA_only)` | Promoter regions around TSS | GenomicSet |
+| `get_5_prime_utr(ann)` | 5' untranslated regions | GenomicSet |
+| `get_3_prime_utr(ann)` | 3' untranslated regions | GenomicSet |
+| `get_ncrna_exons(ann, biotypes)` | Functional ncRNA exons | GenomicSet |
+| `get_mrna_exons(ann)` | mRNA exons with transcript_id | pl.DataFrame |
+
+### ncRNA Filtering Criteria
+
+The `get_ncrna_exons` function includes functional ncRNAs while excluding non-functional annotations:
+
+**Included biotypes:** lnc_RNA, miRNA, snoRNA, tRNA, snRNA, rRNA, antisense_RNA, ncRNA, scRNA, vault_RNA, Y_RNA, scaRNA, RNase_P_RNA, RNase_MRP_RNA, telomerase_RNA, SRP_RNA, piRNA
+
+**Excluded:**
+- `pseudo "true"` attribute - annotated pseudogenes (~38k in human)
+- `partial "true"` attribute - incomplete annotations (~24k in human)
+- `transcript_biotype` containing "pseudogenic" (e.g., pseudogenic_tRNA in C. elegans)
+- `gene_biotype` containing "pseudogene" (e.g., tRNA_pseudogene)
+- `transcript_biotype == "transcript"` - used for transcribed pseudogenes in human
+- `transcript_biotype == "primary_transcript"` - precursor RNAs before processing
+- `description` or `product` containing "NMD candidate" - nonsense-mediated decay targets (~104 in human)
+- `product` containing "LOW QUALITY" - explicitly flagged low quality (~43 in human)
+
+### Promoter Options
+
+`get_promoters(ann, n_upstream, n_downstream, mRNA_only=False)`:
+- `mRNA_only=True`: Promoters from protein-coding mRNA transcripts only
+- `mRNA_only=False` (default): Promoters from mRNA + functional ncRNA transcripts
+
+### Cross-Species Compatibility
+
+Functions handle both annotation styles:
+- `transcript_biotype` / `gene_biotype` (human, mouse, most species)
+- `gbkey` (some NCBI genomes like C. elegans, Merops nubicus)
+
+For CDS extraction, both `feature == "CDS"` and `gbkey == "CDS"` are checked to handle C. elegans-style annotations where gene names appear in the feature column.
+
 ## Setup
 
 Python dependencies are managed by the main project (see `../../../README.md` for installation).

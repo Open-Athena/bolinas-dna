@@ -11,6 +11,7 @@ from bolinas.data.utils import (
     get_cds,
     get_mrna_exons,
     get_promoters,
+    get_promoters_from_exons,
     load_annotation,
     load_fasta,
     read_bed_to_pandas,

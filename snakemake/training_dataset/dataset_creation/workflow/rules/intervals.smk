@@ -83,7 +83,7 @@ rule intervals_recipe_v1:
         ann = load_annotation(input[0])
         mrna_exons = get_mrna_exons(ann)
         assert len(mrna_exons) > 0, f"No mRNA exons found for {wildcards.g}"
-        promoters = get_promoters(
+        promoters = get_promoters_from_exons(
             mrna_exons, promoter_n_upstream, promoter_n_downstream
         ).to_pandas()
         assert len(promoters) > 0, f"No promoters found for {wildcards.g}"
@@ -108,10 +108,8 @@ rule intervals_recipe_v2:
         ann = load_annotation(input[0])
         mrna_exons = get_mrna_exons(ann)
         assert len(mrna_exons) > 0, f"No mRNA exons found for {wildcards.g}"
-        promoters = GenomicSet(
-            get_promoters(
-                mrna_exons, promoter_n_upstream, promoter_n_downstream
-            ).to_pandas()
+        promoters = get_promoters_from_exons(
+            mrna_exons, promoter_n_upstream, promoter_n_downstream
         )
         assert promoters.n_intervals() > 0, f"No promoters found for {wildcards.g}"
         mrna_exons = GenomicSet(mrna_exons.to_pandas())
@@ -130,26 +128,12 @@ rule intervals_recipe_v3:
     output:
         "results/intervals/recipe/v3/{g}.bed.gz",
     run:
-        # TODO: Fix this hardcoded exception! This genome (GCF_000002995.4) has
-        # non-standard GTF format where the feature column contains gene names
-        # (e.g., "Bm17073") instead of standard feature types (e.g., "CDS").
-        # Proper fix: exclude this genome from the genome selection upstream.
-        if wildcards.g == "GCF_000002995.4":
-            # Write a single minimal interval for this problematic genome
-            # to avoid downstream errors from empty files
-            defined = read_bed_to_pandas(input[1])
-            first_interval = defined.iloc[0:1]
-            assert first_interval.iloc[0]["end"] - first_interval.iloc[0]["start"] >= 512
-            first_interval["end"] = first_interval["start"] + 512
-            write_pandas_to_bed(first_interval, output[0])
-        else:
-            min_size = 512
+        min_size = 512
 
-            ann = load_annotation(input[0])
-            cds = get_cds(ann)
-            assert len(cds) > 0, f"No CDS regions found for {wildcards.g}"
-            cds = GenomicSet(cds.to_pandas())
-            defined = GenomicSet(read_bed_to_pandas(input[1]))
-            intervals = cds.expand_min_size(min_size)
-            intervals = intervals & defined
-            write_pandas_to_bed(intervals.to_pandas(), output[0])
+        ann = load_annotation(input[0])
+        cds = get_cds(ann)
+        assert cds.n_intervals() > 0, f"No CDS regions found for {wildcards.g}"
+        defined = GenomicSet(read_bed_to_pandas(input[1]))
+        intervals = cds.expand_min_size(min_size)
+        intervals = intervals & defined
+        write_pandas_to_bed(intervals.to_pandas(), output[0])

@@ -23,11 +23,14 @@ include: "rules/dataset.smk"
 
 rule all:
     input:
-        # download genomes (network constrained)
-        # expand("results/genome/{g}.2bit", g=genomes.index),
-        # final output dataset
         expand(
             "results/upload.done/{genome_set}/{intervals}",
             genome_set=genome_sets_list,
             intervals=config["intervals"],
         ),
+
+
+# network-constrained
+rule all_download:
+    input:
+        expand("results/genome/{g}.2bit", g=genomes.index),
