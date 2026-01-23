@@ -116,6 +116,57 @@ diff2 = utr_union - mrna_minus_cds  # Should be 0
 
 These are typically 1bp gaps within CDS (small introns or frameshift annotations) or unusual annotations on unplaced scaffolds.
 
+### Annotation Sources and Data Quality
+
+NCBI genome annotations come from different sources with varying quality levels:
+
+| Source | Description | Transcript Prefix |
+|--------|-------------|-------------------|
+| **BestRefSeq** | Curated, high-confidence | NM_, NR_ |
+| **Gnomon** | Computational predictions | XM_, XR_ |
+| **RefSeq** | Reference sequences | NM_, NR_ |
+| **cmsearch** | RNA structure-based | - |
+| **tRNAscan-SE** | tRNA predictions | - |
+| **Curated Genomic** | Manual curation | - |
+
+**Cross-species distribution** (based on 34 genomes in `genome_subset_analysis`):
+
+| Source | Mean | Median |
+|--------|------|--------|
+| Gnomon | 81% | 97% |
+| RefSeq | 11% | 0% |
+| BestRefSeq | 3% | 0% |
+| cmsearch | 2% | 1% |
+| tRNAscan-SE | 2% | 1% |
+
+**Key findings:**
+- **Gnomon dominates** most genomes (median 97% of transcripts)
+- **BestRefSeq** is only significant in well-studied model organisms:
+  - Human: 53.5%
+  - Mouse: 43.9%
+  - Zebrafish: 13.5%
+  - Chicken: 12.3%
+
+**Implications for training data quality:**
+- Filtering to BestRefSeq-only would work for model organisms but eliminate most data for other species
+- Gnomon predictions tend to have more extreme outliers (very long UTRs from alternative transcripts)
+- Interval length outliers by region (human):
+
+| Region | p99 | Max | >50kb |
+|--------|-----|-----|-------|
+| CDS | 1.3kb | 21kb | 0 |
+| Promoters | 1.2kb | 3.5kb | 0 |
+| 3' UTR | 9kb | 56kb | 1 |
+| 5' UTR | 5kb | 88kb | 3 |
+| ncRNA | 7kb | 92kb | 8 |
+
+CDS regions have no extreme outliers (biological constraint on exon size), while UTRs and ncRNA exons can be very large. Consider applying length filters to UTR/ncRNA regions if outliers are problematic.
+
+To compute annotation source statistics:
+```bash
+uv run snakemake all_annotation_source_stats --cores 4
+```
+
 ## Setup
 
 Python dependencies are managed by the main project (see `../../../README.md` for installation).

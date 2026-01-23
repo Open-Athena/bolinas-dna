@@ -1,9 +1,49 @@
-rule all_stats:
+rule all_functional_region_stats:
     input:
         expand(
-            "results/stats/{g}.parquet",
+            "results/stats/functional_regions/{g}.parquet",
             g=config["genome_subset_analysis"],
         ),
+
+
+rule all_annotation_source_stats:
+    input:
+        expand(
+            "results/stats/annotation_sources/{g}.parquet",
+            g=config["genome_subset_analysis"],
+        ),
+    output:
+        "results/stats/annotation_sources_summary.parquet",
+    run:
+        dfs = []
+        for g, path in zip(config["genome_subset_analysis"], input):
+            df = pd.read_parquet(path)
+            df["genome"] = g
+            dfs.append(df)
+        combined = pd.concat(dfs, ignore_index=True)
+        # Pivot to get all sources as columns, fill missing with 0
+        pivot = combined.pivot(
+            index="genome", columns="source", values="tx_ratio"
+        ).fillna(0)
+        summary = pivot.agg(["mean", "median"]).T.reset_index()
+        summary.columns = ["source", "mean", "median"]
+        summary.to_parquet(output[0], index=False)
+
+
+rule annotation_source_stats:
+    input:
+        "results/annotation/{g}.gtf.gz",
+    output:
+        "results/stats/annotation_sources/{g}.parquet",
+    run:
+        ann = load_annotation(input[0])
+        transcripts = ann.filter(pl.col("feature") == "transcript")
+        stats_df = transcripts.group_by("source").len().to_pandas()
+        stats_df.columns = ["source", "n_transcripts"]
+        stats_df["tx_ratio"] = (
+            stats_df["n_transcripts"] / stats_df["n_transcripts"].sum()
+        )
+        stats_df.to_parquet(output[0], index=False)
 
 
 rule functional_region_stats:
@@ -13,7 +53,7 @@ rule functional_region_stats:
             region=config["functional_regions"],
         ),
     output:
-        "results/stats/{g}.parquet",
+        "results/stats/functional_regions/{g}.parquet",
     run:
         quantiles = [0.01, 0.10, 0.25, 0.50, 0.75, 0.90, 0.99]
         rows = []
