@@ -15,19 +15,27 @@ rule functional_region_stats:
     output:
         "results/stats/{g}.parquet",
     run:
+        quantiles = [0.01, 0.10, 0.25, 0.50, 0.75, 0.90, 0.99]
         rows = []
         for region, path in zip(config["functional_regions"], input):
             gs = GenomicSet.read_parquet(path)
-            df = gs.to_pandas()
+            df = gs.to_polars()
             lengths = df["end"] - df["start"]
-            rows.append(
-                {
-                    "region": region,
-                    "n_intervals": gs.n_intervals(),
-                    "total_size": gs.total_size(),
-                    "mean_length": lengths.mean() if len(lengths) > 0 else 0.0,
-                    "std_length": lengths.std() if len(lengths) > 0 else 0.0,
-                }
-            )
+            row = {
+                "region": region,
+                "n_intervals": gs.n_intervals(),
+                "size_total": gs.total_size(),
+                "size_mean": lengths.mean(),
+                "size_std": lengths.std(),
+            }
+            for q in quantiles:
+                row[f"size_p{int(q*100)}"] = lengths.quantile(q)
+            rows.append(row)
         stats_df = pd.DataFrame(rows)
+        stats_df["size_total_ratio"] = (
+            stats_df["size_total"] / stats_df["size_total"].sum()
+        )
+        stats_df["n_intervals_ratio"] = (
+            stats_df["n_intervals"] / stats_df["n_intervals"].sum()
+        )
         stats_df.to_parquet(output[0], index=False)
