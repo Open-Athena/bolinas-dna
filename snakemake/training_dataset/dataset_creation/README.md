@@ -167,6 +167,39 @@ To compute annotation source statistics:
 uv run snakemake all_annotation_source_stats --cores 4
 ```
 
+### Preferred Transcript Selection
+
+NCBI provides tags to identify "preferred" or "canonical" transcripts, but availability varies by species:
+
+| Tag | Description | Availability |
+|-----|-------------|--------------|
+| **MANE Select** | Matched Annotation from NCBI and EMBL-EBI, one per protein-coding gene | Human only |
+| **RefSeq Select** | NCBI's one-per-gene selection | Mouse only |
+
+**Curated transcript availability by species:**
+
+| Species | MANE Select | RefSeq Select | NM_/NR_ (curated) | Gnomon |
+|---------|-------------|---------------|-------------------|--------|
+| Human | 9.5% | 0% | 52% | 45% |
+| Mouse | 0% | 15% | 42% | 54% |
+| Drosophila | 0% | 0% | 98% | 0% |
+| C. elegans | 0% | 0% | 94% | 0% |
+| Chicken | 0% | 0% | 11% | 87% |
+| Zebrafish | 0% | 0% | - | - |
+| **Other genomes** | 0% | 0% | **0%** | **91-99%** |
+
+**Key findings:**
+- **Model organisms** (human, mouse) have MANE/RefSeq Select tags for preferred transcripts
+- **Well-annotated invertebrates** (Drosophila, C. elegans) have high curated NM_/NR_ coverage but no selection tags
+- **Most other genomes** have **no curated transcripts** - nearly all annotations are Gnomon predictions
+
+**Implications:**
+- For cross-species work, there is no universal way to select "preferred" transcripts
+- Filtering to curated transcripts would eliminate most data for non-model organisms
+- Potential heuristics (not currently implemented): longest CDS per gene, most exons per gene
+
+**Current approach:** All transcripts are used regardless of source or selection tags.
+
 ## Setup
 
 Python dependencies are managed by the main project (see `../../../README.md` for installation).
