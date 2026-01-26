@@ -67,6 +67,24 @@ models:
       - 10000
       - 12000
 
+  - name: promoter_cds_mixture_equal
+    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/promoter-cds-mixture-equal-r01-b67fd1
+    context_size: 512
+    steps:
+      - 2000
+      - 10000
+      - 16000
+      - 26000
+
+  - name: promoter_cds_mixture_proportional
+    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/promoter-cds-mixture-proportional-r01-6705f1
+    context_size: 512
+    steps:
+      - 2000
+      - 10000
+      - 16000
+      - 26000
+
 # Evaluation datasets from HuggingFace
 # Each dataset should have been created by the snakemake/evals pipeline
 datasets:
@@ -290,20 +308,34 @@ custom_plots:
         include_baselines: true
         title: "GWAS missense"
 
-  # - name: promoters_v1
-  #   models:
-  #     - animal_promoters_yolo
-  #     - animal_promoters_yolo_repeat_downweight
-  #   dataset_subsets:
-  #     - dataset: traitgym_mendelian
-  #       subset: global
-  #       score_type: minus_llr
-  #     - dataset: traitgym_mendelian
-  #       subset: nonexonic_AND_proximal
-  #       score_type: minus_llr
-  #     - dataset: gnomad_pls_v2
-  #       subset: global
-  #       score_type: minus_llr
+  - name: promoter_cds_mixture
+    title: "Promoter + CDS mixture (Qwen 1.7B)"
+    # Colors from viridis colormap: plt.cm.viridis(promoter_fraction)
+    models:
+      - model: animal_promoters_yolo_repeat_downweight
+        title: "100% promoters + 0% CDS"
+        color: "#fde725"  # viridis(1.0)
+      - model: promoter_cds_mixture_equal
+        title: "50% promoters + 50% CDS (equal)"
+        color: "#21918c"  # viridis(0.5)
+      - model: promoter_cds_mixture_proportional
+        title: "10% promoters + 90% CDS (proportional)"
+        color: "#482475"  # viridis(0.1)
+      - model: animal_cds_yolo_repeat_downweight
+        title: "0% promoters + 100% CDS"
+        color: "#440154"  # viridis(0.0)
+    n_cols: 2
+    dataset_subsets:
+      - dataset: traitgym_mendelian
+        subset: nonexonic_AND_proximal
+        score_type: minus_llr
+        include_baselines: true
+        title: "Mendelian promoter"
+      - dataset: clinvar_missense
+        subset: global
+        score_type: minus_llr
+        include_baselines: true
+        title: "ClinVar missense"
 
 # Inference configuration (performance settings that don't affect output)
 inference:
