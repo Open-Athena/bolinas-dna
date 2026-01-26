@@ -141,6 +141,7 @@ def plot_models_comparison(
     subplot_titles: dict[tuple[str, str], str] | None = None,
     n_cols: int | None = None,
     model_labels: dict[str, str] | None = None,
+    model_colors: dict[str, str] | None = None,
 ) -> None:
     """Plot metric values vs training step comparing models for a specific score type.
 
@@ -163,6 +164,8 @@ def plot_models_comparison(
         subplot_titles: Override titles for specific subplots. Maps (dataset, subset) to title string.
         n_cols: Number of columns in the subplot grid. If None, defaults to min(3, n_plots).
         model_labels: Mapping of model name to display label for legend. If None, uses model name.
+        model_colors: Mapping of model name to color (hex code or named color). If None, uses
+            matplotlib's default color cycle.
     """
     output_path = Path(output_path)
 
@@ -285,12 +288,14 @@ def plot_models_comparison(
             display_label = (
                 model_labels.get(model, model) if model_labels is not None else model
             )
+            color = model_colors.get(model) if model_colors is not None else None
             ax.plot(
                 model_data["step"],
                 model_data["value"],
                 marker="o",
                 label=display_label,
                 linewidth=2,
+                color=color,
             )
 
         if baseline_data is not None:

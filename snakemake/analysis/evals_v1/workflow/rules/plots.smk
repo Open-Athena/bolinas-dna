@@ -99,6 +99,17 @@ rule plot_custom_models_comparison:
             if model_entries
             else None
         )
+        model_colors = (
+            {
+                get_custom_plot_model_id(m): m.get("color")
+                for m in model_entries
+                if m.get("color")
+            }
+            if model_entries
+            else None
+        )
+        if model_colors is not None and not model_colors:
+            model_colors = None
 
         dataset_subset_score_map = None
         if "dataset_subsets" in plot_cfg and plot_cfg["dataset_subsets"] is not None:
@@ -130,4 +141,5 @@ rule plot_custom_models_comparison:
             subplot_titles=subplot_titles,
             n_cols=plot_cfg.get("n_cols"),
             model_labels=model_labels,
+            model_colors=model_colors,
         )
