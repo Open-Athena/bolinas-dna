@@ -154,7 +154,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--datasets",
-        default="traitgym_mendelian,traitgym_complex,clinvar_missense,gwas_coding",
+        default="traitgym_mendelian,traitgym_complex,clinvar_missense,gnomad_pls_v1,gnomad_pls_v2,gwas_coding",
         help="Comma-separated dataset names to process.",
     )
     parser.add_argument(
@@ -311,6 +311,9 @@ def process_dataset(
     LOG.info("Loading %s", source_path)
     dataset = load_dataset(source_path)
 
+    # Build index in main process before spawning workers to avoid race condition
+    get_genome_index(genome_path)
+
     def _map_fn(batch):
         return materialize_sequences(batch, genome_path, window)
 
@@ -323,6 +326,9 @@ def process_dataset(
             num_proc=num_proc,
             desc=f"materialize {dataset_name}:{split}",
         )
+        # Remove original label column in favor of effect
+        if "label" in processed_split.column_names:
+            processed_split = processed_split.remove_columns(["label"])
         processed[split] = processed_split
 
     return processed
