@@ -22,6 +22,8 @@ from datasets import DatasetDict, load_dataset
 
 LOG = logging.getLogger("bolinas_upload")
 
+GENOME_URL = "http://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz"
+
 _GENOME_INDEX = None
 _GENOME_PATH = None
 
@@ -164,7 +166,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--genome",
-        required=True,
+        default=GENOME_URL,
         help="Path or URL to reference genome FASTA (can be .fa.gz).",
     )
     parser.add_argument(
