@@ -81,43 +81,39 @@ rule intervals_recipe_v1:
         promoter_n_downstream = 256
 
         ann = load_annotation(input[0])
-        mrna_exons = get_mrna_exons(ann)
-        assert len(mrna_exons) > 0, f"No mRNA exons found for {wildcards.g}"
-        promoters = get_promoters_from_exons(
-            mrna_exons, promoter_n_upstream, promoter_n_downstream
-        ).to_pandas()
-        assert len(promoters) > 0, f"No promoters found for {wildcards.g}"
-        defined = read_bed_to_pandas(input[1])
-        intervals = GenomicSet(promoters) & GenomicSet(defined)
-        write_pandas_to_bed(intervals.to_pandas(), output[0])
+        defined = GenomicSet.read_bed(input[1])
+        promoters = get_promoters(
+            ann,
+            n_upstream=promoter_n_upstream,
+            n_downstream=promoter_n_downstream,
+            mRNA_only=True,
+            within_bounds=defined,
+        )
+        assert promoters.n_intervals() > 0, f"No promoters found for {wildcards.g}"
+        promoters.write_bed(output[0])
 
 
-# mRNA exons + promoters
-rule intervals_recipe_v2:
+rule intervals_recipe_v4:
     input:
         "results/annotation/{g}.gtf.gz",
         "results/intervals/defined/{g}.bed.gz",
     output:
-        "results/intervals/recipe/v2/{g}.bed.gz",
+        "results/intervals/recipe/v4/{g}.bed.gz",
     run:
         promoter_n_upstream = 256
         promoter_n_downstream = 256
-        exon_flank = 50
-        min_size = 512
 
         ann = load_annotation(input[0])
-        mrna_exons = get_mrna_exons(ann)
-        assert len(mrna_exons) > 0, f"No mRNA exons found for {wildcards.g}"
-        promoters = get_promoters_from_exons(
-            mrna_exons, promoter_n_upstream, promoter_n_downstream
+        defined = GenomicSet.read_bed(input[1])
+        promoters = get_promoters(
+            ann,
+            n_upstream=promoter_n_upstream,
+            n_downstream=promoter_n_downstream,
+            mRNA_only=False,
+            within_bounds=defined,
         )
         assert promoters.n_intervals() > 0, f"No promoters found for {wildcards.g}"
-        mrna_exons = GenomicSet(mrna_exons.to_pandas())
-        defined = GenomicSet(read_bed_to_pandas(input[1]))
-        mrna_exons = mrna_exons.add_flank(exon_flank)
-        intervals = (promoters | mrna_exons).expand_min_size(min_size)
-        intervals = intervals & defined
-        write_pandas_to_bed(intervals.to_pandas(), output[0])
+        promoters.write_bed(output[0])
 
 
 # CDS regions only
