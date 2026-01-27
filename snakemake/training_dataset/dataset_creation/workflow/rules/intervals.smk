@@ -83,7 +83,7 @@ rule intervals_recipe_v1:
         ann = load_annotation(input[0])
         mrna_exons = get_mrna_exons(ann)
         assert len(mrna_exons) > 0, f"No mRNA exons found for {wildcards.g}"
-        promoters = get_promoters(
+        promoters = get_promoters_from_exons(
             mrna_exons, promoter_n_upstream, promoter_n_downstream
         ).to_pandas()
         assert len(promoters) > 0, f"No promoters found for {wildcards.g}"
@@ -108,10 +108,8 @@ rule intervals_recipe_v2:
         ann = load_annotation(input[0])
         mrna_exons = get_mrna_exons(ann)
         assert len(mrna_exons) > 0, f"No mRNA exons found for {wildcards.g}"
-        promoters = GenomicSet(
-            get_promoters(
-                mrna_exons, promoter_n_upstream, promoter_n_downstream
-            ).to_pandas()
+        promoters = get_promoters_from_exons(
+            mrna_exons, promoter_n_upstream, promoter_n_downstream
         )
         assert promoters.n_intervals() > 0, f"No promoters found for {wildcards.g}"
         mrna_exons = GenomicSet(mrna_exons.to_pandas())
@@ -130,26 +128,84 @@ rule intervals_recipe_v3:
     output:
         "results/intervals/recipe/v3/{g}.bed.gz",
     run:
-        # TODO: Fix this hardcoded exception! This genome (GCF_000002995.4) has
-        # non-standard GTF format where the feature column contains gene names
-        # (e.g., "Bm17073") instead of standard feature types (e.g., "CDS").
-        # Proper fix: exclude this genome from the genome selection upstream.
-        if wildcards.g == "GCF_000002995.4":
-            # Write a single minimal interval for this problematic genome
-            # to avoid downstream errors from empty files
-            defined = read_bed_to_pandas(input[1])
-            first_interval = defined.iloc[0:1]
-            assert first_interval.iloc[0]["end"] - first_interval.iloc[0]["start"] >= 512
-            first_interval["end"] = first_interval["start"] + 512
-            write_pandas_to_bed(first_interval, output[0])
-        else:
-            min_size = 512
+        min_size = 512
 
-            ann = load_annotation(input[0])
-            cds = get_cds(ann)
-            assert len(cds) > 0, f"No CDS regions found for {wildcards.g}"
-            cds = GenomicSet(cds.to_pandas())
-            defined = GenomicSet(read_bed_to_pandas(input[1]))
-            intervals = cds.expand_min_size(min_size)
-            intervals = intervals & defined
-            write_pandas_to_bed(intervals.to_pandas(), output[0])
+        ann = load_annotation(input[0])
+        cds = get_cds(ann)
+        assert cds.n_intervals() > 0, f"No CDS regions found for {wildcards.g}"
+        defined = GenomicSet(read_bed_to_pandas(input[1]))
+        intervals = cds.expand_min_size(min_size)
+        intervals = intervals & defined
+        write_pandas_to_bed(intervals.to_pandas(), output[0])
+
+
+rule extract_cds:
+    input:
+        "results/annotation/{g}.gtf.gz",
+    output:
+        "results/intervals/cds/{g}.parquet",
+    run:
+        ann = load_annotation(input[0])
+        get_cds(ann).write_parquet(output[0])
+
+
+rule extract_5_prime_utr:
+    input:
+        "results/annotation/{g}.gtf.gz",
+    output:
+        "results/intervals/5_prime_utr/{g}.parquet",
+    run:
+        ann = load_annotation(input[0])
+        get_5_prime_utr(ann).write_parquet(output[0])
+
+
+rule extract_3_prime_utr:
+    input:
+        "results/annotation/{g}.gtf.gz",
+    output:
+        "results/intervals/3_prime_utr/{g}.parquet",
+    run:
+        ann = load_annotation(input[0])
+        get_3_prime_utr(ann).write_parquet(output[0])
+
+
+rule extract_promoters:
+    input:
+        "results/annotation/{g}.gtf.gz",
+        "results/intervals/all/{g}.bed.gz",
+    output:
+        "results/intervals/promoters/{g}.parquet",
+    run:
+        ann = load_annotation(input[0])
+        bounds = GenomicSet.read_bed(input[1])
+        get_promoters(
+            ann, n_upstream=256, n_downstream=256, mRNA_only=False, within_bounds=bounds
+        ).write_parquet(output[0])
+
+
+rule extract_ncrna_exons:
+    input:
+        "results/annotation/{g}.gtf.gz",
+    output:
+        "results/intervals/ncrna_exons/{g}.parquet",
+    run:
+        ann = load_annotation(input[0])
+        get_ncrna_exons(ann).write_parquet(output[0])
+
+
+rule parquet_to_bed:
+    input:
+        "results/intervals/{region}/{g}.parquet",
+    output:
+        "results/bed/{g}/{region}.bed",
+    run:
+        GenomicSet.read_parquet(input[0]).write_bed(output[0])
+
+
+rule all_bed:
+    input:
+        expand(
+            "results/bed/{g}/{region}.bed",
+            region=config["functional_regions"],
+            g=config["genome_subset_bed"],
+        ),

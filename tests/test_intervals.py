@@ -1,4 +1,5 @@
 import pandas as pd
+import polars as pl
 import pytest
 
 from bolinas.data.intervals import GenomicSet
@@ -1420,3 +1421,353 @@ def test_genomic_set_total_size_after_merge():
     # Overlapping intervals merge to chr1:0-60, size=60
     # Original sizes were 50+20=70, but overlap reduces total to 60
     assert gs.total_size() == 60
+
+
+# Polars support tests
+def test_genomic_set_init_from_polars():
+    """Test GenomicSet initialization from polars DataFrame.
+
+    Input: polars DataFrame with chr1:0-50, chr1:100-150
+    Output: GenomicSet with same intervals
+    """
+    data = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [0, 100],
+            "end": [50, 150],
+        }
+    )
+    gs = GenomicSet(data)
+
+    assert gs.n_intervals() == 2
+    assert gs.total_size() == 100
+
+
+def test_genomic_set_init_from_polars_merges_overlapping():
+    """Test that GenomicSet merges overlapping intervals from polars.
+
+    Input: polars DataFrame with chr1:0-50, chr1:40-60 (overlapping)
+    Output: GenomicSet with merged chr1:0-60
+    """
+    data = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [0, 40],
+            "end": [50, 60],
+        }
+    )
+    gs = GenomicSet(data)
+
+    assert gs.n_intervals() == 1
+    assert gs.total_size() == 60
+
+
+def test_genomic_set_init_from_polars_extra_columns():
+    """Test GenomicSet from polars DataFrame with extra columns.
+
+    Input: polars DataFrame with chrom, start, end, strand, transcript_id
+    Output: GenomicSet using only chrom, start, end columns
+    """
+    data = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [0, 100],
+            "end": [50, 150],
+            "strand": ["+", "-"],
+            "transcript_id": ["trans1", "trans2"],
+        }
+    )
+    gs = GenomicSet(data)
+
+    assert gs.n_intervals() == 2
+    # Extra columns should be ignored
+    result_df = gs.to_pandas()
+    assert list(result_df.columns) == ["chrom", "start", "end"]
+
+
+def test_genomic_set_to_polars():
+    """Test conversion to polars DataFrame.
+
+    Input: GenomicSet with chr1:0-50, chr2:100-200
+    Output: polars DataFrame with same intervals
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1", "chr2"],
+            "start": [0, 100],
+            "end": [50, 200],
+        }
+    )
+    gs = GenomicSet(data)
+    result = gs.to_polars()
+
+    assert isinstance(result, pl.DataFrame)
+    assert result.shape == (2, 3)
+    assert result["chrom"].to_list() == ["chr1", "chr2"]
+    assert result["start"].to_list() == [0, 100]
+    assert result["end"].to_list() == [50, 200]
+
+
+def test_genomic_set_to_polars_empty():
+    """Test to_polars with empty GenomicSet.
+
+    Input: Empty GenomicSet
+    Output: Empty polars DataFrame with correct columns
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": [],
+            "start": [],
+            "end": [],
+        }
+    )
+    gs = GenomicSet(data)
+    result = gs.to_polars()
+
+    assert isinstance(result, pl.DataFrame)
+    assert result.shape == (0, 3)
+    assert result.columns == ["chrom", "start", "end"]
+
+
+def test_genomic_set_polars_roundtrip():
+    """Test polars -> GenomicSet -> polars roundtrip.
+
+    Input: polars DataFrame
+    Output: Same data after roundtrip conversion
+    """
+    original = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr2"],
+            "start": [0, 100],
+            "end": [50, 200],
+        }
+    )
+    gs = GenomicSet(original)
+    result = gs.to_polars()
+
+    assert result["chrom"].to_list() == original["chrom"].to_list()
+    assert result["start"].to_list() == original["start"].to_list()
+    assert result["end"].to_list() == original["end"].to_list()
+
+
+# read_bed and write_bed tests
+def test_genomic_set_write_bed_read_bed_roundtrip(tmp_path):
+    """Test write_bed and read_bed roundtrip.
+
+    Input: GenomicSet with chr1:0-50, chr2:100-200
+    Output: Same intervals after write and read
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1", "chr2"],
+            "start": [0, 100],
+            "end": [50, 200],
+        }
+    )
+    gs = GenomicSet(data)
+
+    bed_path = tmp_path / "test.bed"
+    gs.write_bed(str(bed_path))
+
+    result = GenomicSet.read_bed(str(bed_path))
+    assert result == gs
+
+
+def test_genomic_set_read_bed_basic(tmp_path):
+    """Test read_bed with basic BED file.
+
+    Input: BED file with chr1:10-100, chr2:200-500
+    Output: GenomicSet with same intervals
+    """
+    bed_path = tmp_path / "test.bed"
+    bed_path.write_text("chr1\t10\t100\nchr2\t200\t500\n")
+
+    gs = GenomicSet.read_bed(str(bed_path))
+
+    assert gs.n_intervals() == 2
+    df = gs.to_pandas()
+    assert df.iloc[0]["chrom"] == "chr1"
+    assert df.iloc[0]["start"] == 10
+    assert df.iloc[0]["end"] == 100
+    assert df.iloc[1]["chrom"] == "chr2"
+    assert df.iloc[1]["start"] == 200
+    assert df.iloc[1]["end"] == 500
+
+
+def test_genomic_set_read_bed_merges_overlapping(tmp_path):
+    """Test read_bed merges overlapping intervals.
+
+    Input: BED file with chr1:0-50, chr1:40-60 (overlapping)
+    Output: GenomicSet with merged chr1:0-60
+    """
+    bed_path = tmp_path / "test.bed"
+    bed_path.write_text("chr1\t0\t50\nchr1\t40\t60\n")
+
+    gs = GenomicSet.read_bed(str(bed_path))
+
+    assert gs.n_intervals() == 1
+    assert gs.total_size() == 60
+
+
+def test_genomic_set_write_bed_format(tmp_path):
+    """Test write_bed produces correct BED format.
+
+    Input: GenomicSet with chr1:0-50, chr2:100-200
+    Output: Tab-separated BED file with no header
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1", "chr2"],
+            "start": [0, 100],
+            "end": [50, 200],
+        }
+    )
+    gs = GenomicSet(data)
+
+    bed_path = tmp_path / "test.bed"
+    gs.write_bed(str(bed_path))
+
+    content = bed_path.read_text()
+    lines = content.strip().split("\n")
+    assert len(lines) == 2
+    assert lines[0] == "chr1\t0\t50"
+    assert lines[1] == "chr2\t100\t200"
+
+
+def test_genomic_set_write_bed_empty(tmp_path):
+    """Test write_bed with empty GenomicSet.
+
+    Input: Empty GenomicSet
+    Output: Empty BED file
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": [],
+            "start": [],
+            "end": [],
+        }
+    )
+    gs = GenomicSet(data)
+
+    bed_path = tmp_path / "test.bed"
+    gs.write_bed(str(bed_path))
+
+    content = bed_path.read_text()
+    assert content == ""
+
+
+# read_parquet and write_parquet tests
+def test_genomic_set_write_parquet_read_parquet_roundtrip(tmp_path):
+    """Test write_parquet and read_parquet roundtrip.
+
+    Input: GenomicSet with chr1:0-50, chr2:100-200
+    Output: Same intervals after write and read
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1", "chr2"],
+            "start": [0, 100],
+            "end": [50, 200],
+        }
+    )
+    gs = GenomicSet(data)
+
+    parquet_path = tmp_path / "test.parquet"
+    gs.write_parquet(str(parquet_path))
+
+    result = GenomicSet.read_parquet(str(parquet_path))
+    assert result == gs
+
+
+def test_genomic_set_read_parquet_basic(tmp_path):
+    """Test read_parquet with basic parquet file.
+
+    Input: Parquet file with chr1:10-100, chr2:200-500
+    Output: GenomicSet with same intervals
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1", "chr2"],
+            "start": [10, 200],
+            "end": [100, 500],
+        }
+    )
+    parquet_path = tmp_path / "test.parquet"
+    data.to_parquet(str(parquet_path), index=False)
+
+    gs = GenomicSet.read_parquet(str(parquet_path))
+
+    assert gs.n_intervals() == 2
+    df = gs.to_pandas()
+    assert df.iloc[0]["chrom"] == "chr1"
+    assert df.iloc[0]["start"] == 10
+    assert df.iloc[0]["end"] == 100
+
+
+def test_genomic_set_read_parquet_merges_overlapping(tmp_path):
+    """Test read_parquet merges overlapping intervals.
+
+    Input: Parquet file with chr1:0-50, chr1:40-60 (overlapping)
+    Output: GenomicSet with merged chr1:0-60
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [0, 40],
+            "end": [50, 60],
+        }
+    )
+    parquet_path = tmp_path / "test.parquet"
+    data.to_parquet(str(parquet_path), index=False)
+
+    gs = GenomicSet.read_parquet(str(parquet_path))
+
+    assert gs.n_intervals() == 1
+    assert gs.total_size() == 60
+
+
+def test_genomic_set_write_parquet_empty(tmp_path):
+    """Test write_parquet with empty GenomicSet.
+
+    Input: Empty GenomicSet
+    Output: Parquet file with no rows
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": [],
+            "start": [],
+            "end": [],
+        }
+    )
+    gs = GenomicSet(data)
+
+    parquet_path = tmp_path / "test.parquet"
+    gs.write_parquet(str(parquet_path))
+
+    result = GenomicSet.read_parquet(str(parquet_path))
+    assert result.n_intervals() == 0
+
+
+def test_genomic_set_parquet_preserves_dtypes(tmp_path):
+    """Test parquet roundtrip preserves column dtypes.
+
+    Input: GenomicSet with string chrom and int start/end
+    Output: Same dtypes after roundtrip
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1", "chr2"],
+            "start": [0, 100],
+            "end": [50, 200],
+        }
+    )
+    gs = GenomicSet(data)
+
+    parquet_path = tmp_path / "test.parquet"
+    gs.write_parquet(str(parquet_path))
+    result = GenomicSet.read_parquet(str(parquet_path))
+
+    result_df = result.to_pandas()
+    assert result_df["chrom"].dtype == object
+    assert result_df["start"].dtype in [int, "int64"]
+    assert result_df["end"].dtype in [int, "int64"]

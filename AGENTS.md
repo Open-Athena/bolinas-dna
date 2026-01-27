@@ -13,6 +13,8 @@ The codebase has two main components:
 
 2. **Pipelines** (`snakemake/`) - Data processing workflows implemented in Snakemake
    - See individual pipeline READMEs for details on what each pipeline does and how to configure them
+   - Always do a dry-run first. Be extra careful whenever Snakemake is planning to rerun a very slow step (ask for my permission).
+   - When working on a feature, do not try to run the whole pipeline, only the step relevant to the feature.
 
 ## Development Practices
 
@@ -20,6 +22,7 @@ The codebase has two main components:
 - **Bioinformatics tools**: Use Conda for external CLI tools (bedtools, twoBitToFa, etc.)
 - **Testing**: Run `uv run pytest` before committing
 - **Code quality**: Pre-commit hooks enforce ruff formatting and linting
+- **Documentation**: Before merging a PR, make sure all the relevant READMEs are updated.
 
 ### Type Annotations
 - Use Python 3.11+ type annotation syntax throughout

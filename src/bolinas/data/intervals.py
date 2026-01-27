@@ -1,6 +1,7 @@
 import bioframe as bf
 import numpy as np
 import pandas as pd
+import polars as pl
 
 INTERVAL_COORDS = ["chrom", "start", "end"]
 
@@ -25,12 +26,14 @@ class GenomicSet:
     stored or considered in any operations.
 
     Args:
-        data: A pandas DataFrame with columns ['chrom', 'start', 'end']. Any
-            overlapping intervals in the input will be merged automatically, and
-            the result will be sorted by chromosome, start, and end coordinates.
+        data: A pandas or polars DataFrame with columns ['chrom', 'start', 'end'].
+            Any overlapping intervals in the input will be merged automatically,
+            and the result will be sorted by chromosome, start, and end coordinates.
     """
 
-    def __init__(self, data: pd.DataFrame) -> None:
+    def __init__(self, data: pd.DataFrame | pl.DataFrame) -> None:
+        if isinstance(data, pl.DataFrame):
+            data = data.to_pandas()
         if len(data) == 0:
             self._data = pd.DataFrame(columns=INTERVAL_COORDS).astype(
                 {"chrom": str, "start": int, "end": int}
@@ -111,6 +114,16 @@ class GenomicSet:
             start, and end coordinates.
         """
         return self._data
+
+    def to_polars(self) -> pl.DataFrame:
+        """Convert the GenomicSet to a polars DataFrame.
+
+        Returns:
+            A polars DataFrame with columns ['chrom', 'start', 'end']
+            containing the non-overlapping intervals, sorted by chromosome,
+            start, and end coordinates.
+        """
+        return pl.from_pandas(self._data)
 
     def n_intervals(self) -> int:
         """Return the number of intervals in the GenomicSet.
@@ -194,3 +207,43 @@ class GenomicSet:
         res["start"] = res["start"] + shift
         res["end"] = res["end"] + shift
         return GenomicSet(res)
+
+    @classmethod
+    def read_bed(cls, path: str) -> "GenomicSet":
+        """Read intervals from a BED file.
+
+        Args:
+            path: Path to the BED file (can be gzipped).
+
+        Returns:
+            A new GenomicSet with intervals from the file.
+        """
+        return cls(pd.read_csv(path, sep="\t", header=None, names=INTERVAL_COORDS))
+
+    @classmethod
+    def read_parquet(cls, path: str) -> "GenomicSet":
+        """Read intervals from a parquet file.
+
+        Args:
+            path: Path to the parquet file.
+
+        Returns:
+            A new GenomicSet with intervals from the file.
+        """
+        return cls(pd.read_parquet(path))
+
+    def write_bed(self, path: str) -> None:
+        """Write intervals to a BED file.
+
+        Args:
+            path: Path to the output BED file.
+        """
+        self._data.to_csv(path, sep="\t", header=False, index=False)
+
+    def write_parquet(self, path: str) -> None:
+        """Write intervals to a parquet file.
+
+        Args:
+            path: Path to the output parquet file.
+        """
+        self._data.to_parquet(path, index=False)

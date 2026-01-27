@@ -15,6 +15,234 @@ This pipeline takes a list of genomes and creates training datasets by extractin
 6. **Merge and shard** - Combines data from multiple genomes and splits into shards
 7. **Upload** - Uploads to HuggingFace Hub
 
+## Genomic Region Extraction
+
+The pipeline uses functions from `bolinas.data.utils` to extract genomic regions. These functions handle cross-species annotation differences (e.g., `transcript_biotype` vs `gbkey` attributes).
+
+### Available Region Types
+
+| Function | Description | Returns |
+|----------|-------------|---------|
+| `get_cds(ann)` | Coding sequences | GenomicSet |
+| `get_promoters(ann, up, down, mRNA_only)` | Promoter regions around TSS | GenomicSet |
+| `get_5_prime_utr(ann)` | 5' untranslated regions | GenomicSet |
+| `get_3_prime_utr(ann)` | 3' untranslated regions | GenomicSet |
+| `get_ncrna_exons(ann, biotypes)` | Functional ncRNA exons | GenomicSet |
+| `get_mrna_exons(ann)` | mRNA exons with transcript_id | pl.DataFrame |
+
+### ncRNA Filtering Criteria
+
+The `get_ncrna_exons` function includes functional ncRNAs while excluding non-functional annotations.
+
+#### Annotation Attributes
+
+NCBI annotations use two key attributes to classify transcripts:
+
+| Attribute | Description | Example values |
+|-----------|-------------|----------------|
+| `gbkey` | High-level category | mRNA, ncRNA, misc_RNA, tRNA, rRNA, precursor_RNA |
+| `transcript_biotype` | Specific transcript type | lnc_RNA, miRNA, snoRNA, transcript, primary_transcript |
+
+The relationship between these attributes (human):
+
+| gbkey | transcript_biotype | Count | Functional? |
+|-------|-------------------|-------|-------------|
+| mRNA | mRNA | 145k | Yes (protein-coding) |
+| ncRNA | lnc_RNA | 33k | Yes |
+| ncRNA | miRNA | 3.2k | Yes |
+| ncRNA | snoRNA | 1.3k | Yes |
+| **misc_RNA** | **transcript** | **15k** | **No (uncertain)** |
+| **precursor_RNA** | **primary_transcript** | **2.1k** | **No (precursors)** |
+| tRNA | tRNA | 691 | Yes |
+| - | V/J/D/C_gene_segment | 896 | No (immunoglobulin) |
+
+#### Included Biotypes
+
+`DEFAULT_NCRNA_BIOTYPES`: lnc_RNA, miRNA, snoRNA, tRNA, snRNA, rRNA, antisense_RNA, ncRNA, scRNA, vault_RNA, Y_RNA, scaRNA, RNase_P_RNA, RNase_MRP_RNA, telomerase_RNA, SRP_RNA, piRNA
+
+#### Excluded Categories
+
+**By transcript_biotype (human exon counts):**
+- `transcript` (167k exons) - misc_RNA, uncertain/uncharacterized transcripts
+- `primary_transcript` (2.1k exons) - precursor RNAs before processing
+- `V/J/D/C_gene_segment` (1.6k exons) - immunoglobulin segments (not ncRNA)
+- `pseudogenic_tRNA`, `pseudogenic_rRNA` - pseudogenic ncRNAs (C. elegans specific)
+
+**By quality attributes:**
+- `pseudo "true"` (~15k exons in human) - annotated pseudogenes
+- `partial "true"` (~1.3k exons) - incomplete annotations
+- `gene_biotype` containing "pseudogene" - pseudogene annotations
+- `description` or `product` containing "NMD candidate" (~1.8k exons) - nonsense-mediated decay targets
+- `product` containing "LOW QUALITY" - explicitly flagged low quality
+
+#### Cross-Species Consistency
+
+The biotype/gbkey system is consistent across species:
+
+| Species | lnc_RNA | miRNA | snoRNA | tRNA | misc_RNA (excluded) |
+|---------|---------|-------|--------|------|---------------------|
+| Human | 33k | 3.2k | 1.3k | 691 | 15k |
+| Mouse | 24k | 2.1k | 1.3k | 422 | 12k |
+| Drosophila | 2.4k | 485 | 270 | 317 | 0 |
+| C. elegans | 202 | 458 | 346 | 634 | 658 |
+| Chicken | 10k | 1.2k | 186 | 303 | 4.2k |
+
+Note: C. elegans has 15k piRNA transcripts (included) and uses `ncRNA` biotype (7.8k) for unclassified ncRNAs.
+
+### Promoter Options
+
+`get_promoters(ann, n_upstream, n_downstream, mRNA_only=False)`:
+- `mRNA_only=True`: Promoters from protein-coding mRNA transcripts only
+- `mRNA_only=False` (default): Promoters from mRNA + functional ncRNA transcripts
+
+### Cross-Species Compatibility
+
+Functions handle both annotation styles:
+- `transcript_biotype` / `gene_biotype` (human, mouse, most species)
+- `gbkey` (some NCBI genomes like C. elegans, Merops nubicus)
+
+For CDS extraction, both `feature == "CDS"` and `gbkey == "CDS"` are checked to handle C. elegans-style annotations where gene names appear in the feature column.
+
+### UTR Extraction
+
+The `get_5_prime_utr` and `get_3_prime_utr` functions compute UTR regions by finding exon portions outside the CDS boundaries for each transcript:
+
+- **5' UTR**: Exon regions before CDS start (+ strand) or after CDS end (- strand)
+- **3' UTR**: Exon regions after CDS end (+ strand) or before CDS start (- strand)
+
+**CDS exclusion**: Regions that are CDS in *any* transcript are excluded from UTRs, even if they are UTR in another transcript. This handles alternative transcripts where the same genomic region may be coding in one isoform but non-coding in another.
+
+**Verification identity**: By definition, mRNA exons consist of CDS + 5' UTR + 3' UTR, so:
+
+```
+mRNA - CDS = 5' UTR | 3' UTR
+```
+
+This identity can be used to verify the correctness of UTR extraction:
+
+```python
+mrna_exons = GenomicSet(get_mrna_exons(ann))
+cds = get_cds(ann)
+utr5 = get_5_prime_utr(ann)
+utr3 = get_3_prime_utr(ann)
+
+# These should be equal (or nearly equal)
+mrna_minus_cds = mrna_exons - cds
+utr_union = utr5 | utr3
+
+# Check differences
+diff1 = mrna_minus_cds - utr_union  # Should be ~0
+diff2 = utr_union - mrna_minus_cds  # Should be 0
+```
+
+**Edge cases**: A small number of intervals (17 in human, ~13kb total) satisfy `mRNA - CDS ⊃ 5' UTR | 3' UTR` but not strict equality. These are regions in mRNA exons that are neither CDS nor UTR:
+
+| chrom | start | end | notes |
+|-------|-------|-----|-------|
+| NC_000015.10 | 64691514 | 64691515 | 1bp gap within CDS |
+| NC_000019.10 | 2271442 | 2271443 | 1bp gap within CDS |
+| NT_167249.2 | 941944 | 942223 | unplaced scaffold |
+| NT_187518.1 | 162112 | 162469 | unplaced scaffold |
+| NT_187610.1 | 130379 | 130698 | unplaced scaffold |
+| NT_187633.1 | 301994 | 302395 | unplaced scaffold |
+| NT_187646.1 | 158490 | 158847 | unplaced scaffold |
+| NW_003315955.1 | 78827 | 79107 | unplaced scaffold |
+| NW_009646197.1 | 443494 | 451168 | unplaced scaffold |
+| NW_009646203.1 | 106479 | 106757 | unplaced scaffold |
+| NW_009646203.1 | 107409 | 107495 | unplaced scaffold |
+| NW_018654714.1 | 1278 | 1611 | unplaced scaffold |
+| NW_019805490.1 | 22254 | 22576 | unplaced scaffold |
+| NW_019805490.1 | 22919 | 23010 | unplaced scaffold |
+| NW_019805496.1 | 0 | 22 | unplaced scaffold |
+| NW_025791794.1 | 0 | 1856 | unplaced scaffold |
+| NW_025791802.1 | 234037 | 234878 | unplaced scaffold |
+
+These are typically 1bp gaps within CDS (small introns or frameshift annotations) or unusual annotations on unplaced scaffolds.
+
+### Annotation Sources and Data Quality
+
+NCBI genome annotations come from different sources with varying quality levels:
+
+| Source | Description | Transcript Prefix |
+|--------|-------------|-------------------|
+| **BestRefSeq** | Curated, high-confidence | NM_, NR_ |
+| **Gnomon** | Computational predictions | XM_, XR_ |
+| **RefSeq** | Reference sequences | NM_, NR_ |
+| **cmsearch** | RNA structure-based | - |
+| **tRNAscan-SE** | tRNA predictions | - |
+| **Curated Genomic** | Manual curation | - |
+
+**Cross-species distribution** (based on 34 genomes in `genome_subset_analysis`):
+
+| Source | Mean | Median |
+|--------|------|--------|
+| Gnomon | 81% | 97% |
+| RefSeq | 11% | 0% |
+| BestRefSeq | 3% | 0% |
+| cmsearch | 2% | 1% |
+| tRNAscan-SE | 2% | 1% |
+
+**Key findings:**
+- **Gnomon dominates** most genomes (median 97% of transcripts)
+- **BestRefSeq** is only significant in well-studied model organisms:
+  - Human: 53.5%
+  - Mouse: 43.9%
+  - Zebrafish: 13.5%
+  - Chicken: 12.3%
+
+**Implications for training data quality:**
+- Filtering to BestRefSeq-only would work for model organisms but eliminate most data for other species
+- Gnomon predictions tend to have more extreme outliers (very long UTRs from alternative transcripts)
+- Interval length outliers by region (human):
+
+| Region | p99 | Max | >50kb |
+|--------|-----|-----|-------|
+| CDS | 1.3kb | 21kb | 0 |
+| Promoters | 1.2kb | 3.5kb | 0 |
+| 3' UTR | 9kb | 56kb | 1 |
+| 5' UTR | 5kb | 88kb | 3 |
+| ncRNA | 7kb | 92kb | 8 |
+
+CDS regions have no extreme outliers (biological constraint on exon size), while UTRs and ncRNA exons can be very large. Consider applying length filters to UTR/ncRNA regions if outliers are problematic.
+
+To compute annotation source statistics:
+```bash
+uv run snakemake all_annotation_source_stats --cores 4
+```
+
+### Preferred Transcript Selection
+
+NCBI provides tags to identify "preferred" or "canonical" transcripts, but availability varies by species:
+
+| Tag | Description | Availability |
+|-----|-------------|--------------|
+| **MANE Select** | Matched Annotation from NCBI and EMBL-EBI, one per protein-coding gene | Human only |
+| **RefSeq Select** | NCBI's one-per-gene selection | Mouse only |
+
+**Curated transcript availability by species:**
+
+| Species | MANE Select | RefSeq Select | NM_/NR_ (curated) | Gnomon |
+|---------|-------------|---------------|-------------------|--------|
+| Human | 9.5% | 0% | 52% | 45% |
+| Mouse | 0% | 15% | 42% | 54% |
+| Drosophila | 0% | 0% | 98% | 0% |
+| C. elegans | 0% | 0% | 94% | 0% |
+| Chicken | 0% | 0% | 11% | 87% |
+| Zebrafish | 0% | 0% | - | - |
+| **Other genomes** | 0% | 0% | **0%** | **91-99%** |
+
+**Key findings:**
+- **Model organisms** (human, mouse) have MANE/RefSeq Select tags for preferred transcripts
+- **Well-annotated invertebrates** (Drosophila, C. elegans) have high curated NM_/NR_ coverage but no selection tags
+- **Most other genomes** have **no curated transcripts** - nearly all annotations are Gnomon predictions
+
+**Implications:**
+- For cross-species work, there is no universal way to select "preferred" transcripts
+- Filtering to curated transcripts would eliminate most data for non-model organisms
+- Potential heuristics (not currently implemented): longest CDS per gene, most exons per gene
+
+**Current approach:** All transcripts are used regardless of source or selection tags.
+
 ## Setup
 
 Python dependencies are managed by the main project (see `../../../README.md` for installation).

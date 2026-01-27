@@ -3,12 +3,17 @@ import pandas as pd
 import polars as pl
 from Bio.Seq import Seq
 
+from bolinas.data.intervals import GenomicSet
 from bolinas.data.utils import (
     add_rc,
+    get_3_prime_utr,
+    get_5_prime_utr,
     get_array_split_pairs,
     get_cds,
     get_mrna_exons,
+    get_ncrna_exons,
     get_promoters,
+    get_promoters_from_exons,
     load_annotation,
     load_fasta,
     read_bed_to_pandas,
@@ -365,9 +370,9 @@ def test_get_mrna_exons_filters_non_exons():
     assert len(result) == 0
 
 
-# get_promoters tests
-def test_get_promoters_positive_strand():
-    """Test get_promoters for genes on positive strand.
+# get_promoters_from_exons tests
+def test_get_promoters_from_exons_positive_strand():
+    """Test get_promoters_from_exons for genes on positive strand.
 
     Input: Exons for gene on '+' strand, n_upstream=100, n_downstream=50
     Output: Promoter region [TSS-100, TSS+50]
@@ -382,17 +387,19 @@ def test_get_promoters_positive_strand():
         }
     )
 
-    result = get_promoters(exons, n_upstream=100, n_downstream=50)
+    result = get_promoters_from_exons(exons, n_upstream=100, n_downstream=50)
 
     # For '+' strand, TSS is at min(start) = 1000
     # Promoter is [1000-100, 1000+50] = [900, 1050]
-    assert len(result) == 1
-    assert result["start"].to_list() == [900]
-    assert result["end"].to_list() == [1050]
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 1
+    df = result.to_pandas()
+    assert df["start"].to_list() == [900]
+    assert df["end"].to_list() == [1050]
 
 
-def test_get_promoters_negative_strand():
-    """Test get_promoters for genes on negative strand.
+def test_get_promoters_from_exons_negative_strand():
+    """Test get_promoters_from_exons for genes on negative strand.
 
     Input: Exons for gene on '-' strand, n_upstream=100, n_downstream=50
     Output: Promoter region [TSS-50, TSS+100]
@@ -407,17 +414,19 @@ def test_get_promoters_negative_strand():
         }
     )
 
-    result = get_promoters(exons, n_upstream=100, n_downstream=50)
+    result = get_promoters_from_exons(exons, n_upstream=100, n_downstream=50)
 
     # For '-' strand, TSS is at max(end) = 1700
     # Promoter is [1700-50, 1700+100] = [1650, 1800]
-    assert len(result) == 1
-    assert result["start"].to_list() == [1650]
-    assert result["end"].to_list() == [1800]
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 1
+    df = result.to_pandas()
+    assert df["start"].to_list() == [1650]
+    assert df["end"].to_list() == [1800]
 
 
-def test_get_promoters_multiple_transcripts():
-    """Test get_promoters with multiple transcripts.
+def test_get_promoters_from_exons_multiple_transcripts():
+    """Test get_promoters_from_exons with multiple transcripts.
 
     Input: Exons for 2 different transcripts
     Output: 2 unique promoter regions
@@ -432,41 +441,42 @@ def test_get_promoters_multiple_transcripts():
         }
     )
 
-    result = get_promoters(exons, n_upstream=100, n_downstream=50)
+    result = get_promoters_from_exons(exons, n_upstream=100, n_downstream=50)
 
     # Should have 2 promoter regions
-    assert len(result) == 2
-    assert result["chrom"].to_list() == ["chr1", "chr2"]
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 2
 
 
-def test_get_promoters_deduplicates():
-    """Test that get_promoters removes duplicate regions.
+def test_get_promoters_from_exons_merges_overlapping():
+    """Test that get_promoters_from_exons merges overlapping regions.
 
-    Input: Two transcripts with identical promoter regions
-    Output: Single unique promoter region
+    Input: Two transcripts with overlapping promoter regions
+    Output: Single merged promoter region
     """
     exons = pl.DataFrame(
         {
             "chrom": ["chr1", "chr1"],
-            "start": [1000, 1000],
-            "end": [1200, 1200],
+            "start": [1000, 1010],
+            "end": [1200, 1210],
             "strand": ["+", "+"],
             "transcript_id": ["trans1", "trans2"],
         }
     )
 
-    result = get_promoters(exons, n_upstream=100, n_downstream=50)
+    result = get_promoters_from_exons(exons, n_upstream=100, n_downstream=50)
 
-    # Should deduplicate to 1 region
-    assert len(result) == 1
+    # GenomicSet merges overlapping intervals
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 1
 
 
 # get_cds tests
-def test_get_cds_basic():
-    """Test get_cds with basic CDS features.
+def test_get_cds_returns_genomic_set():
+    """Test that get_cds returns a GenomicSet.
 
     Input: Annotation with CDS features
-    Output: DataFrame with unique CDS regions [chrom, start, end]
+    Output: GenomicSet with merged CDS regions
     """
     ann = pl.DataFrame(
         {
@@ -488,17 +498,15 @@ def test_get_cds_basic():
 
     result = get_cds(ann)
 
-    assert len(result) == 3
-    assert result["chrom"].to_list() == ["chr1", "chr1", "chr2"]
-    assert result["start"].to_list() == [100, 200, 300]
-    assert result["end"].to_list() == [150, 250, 350]
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 3
 
 
 def test_get_cds_filters_non_cds():
     """Test that get_cds filters out non-CDS features.
 
     Input: Annotation with exon, gene, and CDS features
-    Output: DataFrame with only CDS features
+    Output: GenomicSet with only CDS features
     """
     ann = pl.DataFrame(
         {
@@ -520,48 +528,51 @@ def test_get_cds_filters_non_cds():
 
     result = get_cds(ann)
 
-    # Only the CDS feature should be retained
-    assert len(result) == 1
-    assert result["start"].to_list() == [200]
-    assert result["end"].to_list() == [250]
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 1
+    df = result.to_pandas()
+    assert df["start"].to_list() == [200]
+    assert df["end"].to_list() == [250]
 
 
-def test_get_cds_deduplicates():
-    """Test that get_cds removes duplicate CDS regions.
+def test_get_cds_merges_overlapping():
+    """Test that get_cds merges overlapping CDS regions.
 
-    Input: Annotation with duplicate CDS regions
-    Output: DataFrame with unique CDS regions
+    Input: Annotation with overlapping CDS regions
+    Output: GenomicSet with merged regions
     """
     ann = pl.DataFrame(
         {
-            "chrom": ["chr1", "chr1", "chr1"],
-            "start": [100, 100, 200],
-            "end": [150, 150, 250],
-            "strand": ["+", "+", "-"],
-            "feature": ["CDS", "CDS", "CDS"],
+            "chrom": ["chr1", "chr1"],
+            "start": [100, 120],
+            "end": [150, 170],
+            "strand": ["+", "+"],
+            "feature": ["CDS", "CDS"],
             "attribute": [
                 'transcript_id "trans1"',
                 'transcript_id "trans2"',
-                'transcript_id "trans3"',
             ],
-            "source": ["test", "test", "test"],
-            "score": [".", ".", "."],
-            "frame": [".", ".", "."],
+            "source": ["test", "test"],
+            "score": [".", "."],
+            "frame": [".", "."],
         }
     )
 
     result = get_cds(ann)
 
-    # Should deduplicate to 2 unique regions
-    assert len(result) == 2
-    assert result["start"].to_list() == [100, 200]
+    assert isinstance(result, GenomicSet)
+    # Overlapping [100-150] and [120-170] should merge to [100-170]
+    assert result.n_intervals() == 1
+    df = result.to_pandas()
+    assert df["start"].to_list() == [100]
+    assert df["end"].to_list() == [170]
 
 
 def test_get_cds_empty_annotation():
     """Test get_cds with annotation containing no CDS features.
 
     Input: Annotation with only exons
-    Output: Empty DataFrame
+    Output: Empty GenomicSet
     """
     ann = pl.DataFrame(
         {
@@ -582,38 +593,40 @@ def test_get_cds_empty_annotation():
 
     result = get_cds(ann)
 
-    assert len(result) == 0
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 0
 
 
-def test_get_cds_sorted():
-    """Test that get_cds returns sorted output.
+def test_get_cds_gbkey_fallback():
+    """Test get_cds uses gbkey when feature is not "CDS".
 
-    Input: Annotation with unsorted CDS regions
-    Output: Sorted DataFrame by chrom, start, end
+    Input: Annotation with gene name as feature but gbkey="CDS" (C. elegans style)
+    Output: GenomicSet containing the CDS region
     """
     ann = pl.DataFrame(
         {
-            "chrom": ["chr2", "chr1", "chr1"],
-            "start": [300, 200, 100],
-            "end": [350, 250, 150],
-            "strand": ["+", "+", "+"],
-            "feature": ["CDS", "CDS", "CDS"],
+            "chrom": ["chr1", "chr1"],
+            "start": [100, 300],
+            "end": [200, 400],
+            "strand": ["+", "+"],
+            "feature": ["Y74C9A.3", "exon"],  # Gene name instead of "CDS"
             "attribute": [
-                'transcript_id "trans1"',
-                'transcript_id "trans2"',
-                'transcript_id "trans3"',
+                'transcript_id "trans1"; gbkey "CDS"',
+                'transcript_id "trans1"; transcript_biotype "mRNA"',
             ],
-            "source": ["test", "test", "test"],
-            "score": [".", ".", "."],
-            "frame": [".", ".", "."],
+            "source": ["test", "test"],
+            "score": [".", "."],
+            "frame": [".", "."],
         }
     )
 
     result = get_cds(ann)
 
-    # Should be sorted by chrom, start, end
-    assert result["chrom"].to_list() == ["chr1", "chr1", "chr2"]
-    assert result["start"].to_list() == [100, 200, 300]
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 1
+    df = result.to_pandas()
+    assert df["start"].to_list() == [100]
+    assert df["end"].to_list() == [200]
 
 
 # read_bed_to_pandas and write_pandas_to_bed tests
@@ -849,3 +862,677 @@ def test_add_rc_original_unchanged():
     # Original should be unchanged
     assert len(df) == original_len
     assert df["id"].tolist() == original_id
+
+
+# get_5_prime_utr tests
+def test_get_5_prime_utr_positive_strand():
+    """Test get_5_prime_utr for transcript on positive strand.
+
+    Input: mRNA transcript with exon [100-300] and CDS [200-250] on '+' strand
+    Output: 5' UTR region [100-200]
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [100, 200],
+            "end": [300, 250],
+            "strand": ["+", "+"],
+            "feature": ["exon", "CDS"],
+            "attribute": [
+                'transcript_id "trans1"; transcript_biotype "mRNA"',
+                'transcript_id "trans1"; transcript_biotype "mRNA"',
+            ],
+            "source": ["test", "test"],
+            "score": [".", "."],
+            "frame": [".", "."],
+        }
+    )
+
+    result = get_5_prime_utr(ann)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 1
+    df = result.to_pandas()
+    assert df["start"].to_list() == [100]
+    assert df["end"].to_list() == [200]
+
+
+def test_get_5_prime_utr_negative_strand():
+    """Test get_5_prime_utr for transcript on negative strand.
+
+    Input: mRNA transcript with exon [100-300] and CDS [150-250] on '-' strand
+    Output: 5' UTR region [250-300] (genomically after CDS end)
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [100, 150],
+            "end": [300, 250],
+            "strand": ["-", "-"],
+            "feature": ["exon", "CDS"],
+            "attribute": [
+                'transcript_id "trans1"; transcript_biotype "mRNA"',
+                'transcript_id "trans1"; transcript_biotype "mRNA"',
+            ],
+            "source": ["test", "test"],
+            "score": [".", "."],
+            "frame": [".", "."],
+        }
+    )
+
+    result = get_5_prime_utr(ann)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 1
+    df = result.to_pandas()
+    # For '-' strand, 5' UTR is genomically after CDS end
+    assert df["start"].to_list() == [250]
+    assert df["end"].to_list() == [300]
+
+
+def test_get_5_prime_utr_multi_exon():
+    """Test get_5_prime_utr with multi-exon transcript.
+
+    Input: mRNA with exons [100-200], [300-500] and CDS [350-450]
+    Output: 5' UTR in first exon [100-200] and partial second exon [300-350]
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr1", "chr1"],
+            "start": [100, 300, 350],
+            "end": [200, 500, 450],
+            "strand": ["+", "+", "+"],
+            "feature": ["exon", "exon", "CDS"],
+            "attribute": [
+                'transcript_id "trans1"; transcript_biotype "mRNA"',
+                'transcript_id "trans1"; transcript_biotype "mRNA"',
+                'transcript_id "trans1"; transcript_biotype "mRNA"',
+            ],
+            "source": ["test", "test", "test"],
+            "score": [".", ".", "."],
+            "frame": [".", ".", "."],
+        }
+    )
+
+    result = get_5_prime_utr(ann)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 2
+    df = result.to_pandas()
+    assert df["start"].to_list() == [100, 300]
+    assert df["end"].to_list() == [200, 350]
+
+
+def test_get_5_prime_utr_no_utr():
+    """Test get_5_prime_utr when CDS starts at exon boundary.
+
+    Input: mRNA with exon and CDS both starting at position 100
+    Output: Empty GenomicSet (no 5' UTR)
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [100, 100],
+            "end": [300, 250],
+            "strand": ["+", "+"],
+            "feature": ["exon", "CDS"],
+            "attribute": [
+                'transcript_id "trans1"; transcript_biotype "mRNA"',
+                'transcript_id "trans1"; transcript_biotype "mRNA"',
+            ],
+            "source": ["test", "test"],
+            "score": [".", "."],
+            "frame": [".", "."],
+        }
+    )
+
+    result = get_5_prime_utr(ann)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 0
+
+
+def test_get_5_prime_utr_no_cds():
+    """Test get_5_prime_utr for non-coding transcript.
+
+    Input: mRNA exon without any CDS
+    Output: Empty GenomicSet (no CDS means no UTR by definition)
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1"],
+            "start": [100],
+            "end": [300],
+            "strand": ["+"],
+            "feature": ["exon"],
+            "attribute": ['transcript_id "trans1"; transcript_biotype "mRNA"'],
+            "source": ["test"],
+            "score": ["."],
+            "frame": ["."],
+        }
+    )
+
+    result = get_5_prime_utr(ann)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 0
+
+
+# get_3_prime_utr tests
+def test_get_3_prime_utr_positive_strand():
+    """Test get_3_prime_utr for transcript on positive strand.
+
+    Input: mRNA transcript with exon [100-300] and CDS [150-200] on '+' strand
+    Output: 3' UTR region [200-300]
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [100, 150],
+            "end": [300, 200],
+            "strand": ["+", "+"],
+            "feature": ["exon", "CDS"],
+            "attribute": [
+                'transcript_id "trans1"; transcript_biotype "mRNA"',
+                'transcript_id "trans1"; transcript_biotype "mRNA"',
+            ],
+            "source": ["test", "test"],
+            "score": [".", "."],
+            "frame": [".", "."],
+        }
+    )
+
+    result = get_3_prime_utr(ann)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 1
+    df = result.to_pandas()
+    assert df["start"].to_list() == [200]
+    assert df["end"].to_list() == [300]
+
+
+def test_get_3_prime_utr_negative_strand():
+    """Test get_3_prime_utr for transcript on negative strand.
+
+    Input: mRNA transcript with exon [100-300] and CDS [150-250] on '-' strand
+    Output: 3' UTR region [100-150] (genomically before CDS start)
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [100, 150],
+            "end": [300, 250],
+            "strand": ["-", "-"],
+            "feature": ["exon", "CDS"],
+            "attribute": [
+                'transcript_id "trans1"; transcript_biotype "mRNA"',
+                'transcript_id "trans1"; transcript_biotype "mRNA"',
+            ],
+            "source": ["test", "test"],
+            "score": [".", "."],
+            "frame": [".", "."],
+        }
+    )
+
+    result = get_3_prime_utr(ann)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 1
+    df = result.to_pandas()
+    # For '-' strand, 3' UTR is genomically before CDS start
+    assert df["start"].to_list() == [100]
+    assert df["end"].to_list() == [150]
+
+
+# get_ncrna_exons tests
+def test_get_ncrna_exons_includes_lncrna():
+    """Test that get_ncrna_exons includes lncRNA exons.
+
+    Input: Annotation with lnc_RNA exon
+    Output: GenomicSet containing the lncRNA exon
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1"],
+            "start": [100],
+            "end": [300],
+            "strand": ["+"],
+            "feature": ["exon"],
+            "attribute": ['transcript_id "trans1"; transcript_biotype "lnc_RNA"'],
+            "source": ["test"],
+            "score": ["."],
+            "frame": ["."],
+        }
+    )
+
+    result = get_ncrna_exons(ann)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 1
+
+
+def test_get_ncrna_exons_includes_mirna():
+    """Test that get_ncrna_exons includes miRNA exons.
+
+    Input: Annotation with miRNA exon
+    Output: GenomicSet containing the miRNA exon
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1"],
+            "start": [100],
+            "end": [200],
+            "strand": ["+"],
+            "feature": ["exon"],
+            "attribute": ['transcript_id "trans1"; transcript_biotype "miRNA"'],
+            "source": ["test"],
+            "score": ["."],
+            "frame": ["."],
+        }
+    )
+
+    result = get_ncrna_exons(ann)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 1
+
+
+def test_get_ncrna_exons_excludes_mrna():
+    """Test that get_ncrna_exons excludes mRNA exons.
+
+    Input: Annotation with mRNA exon
+    Output: Empty GenomicSet
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1"],
+            "start": [100],
+            "end": [300],
+            "strand": ["+"],
+            "feature": ["exon"],
+            "attribute": ['transcript_id "trans1"; transcript_biotype "mRNA"'],
+            "source": ["test"],
+            "score": ["."],
+            "frame": ["."],
+        }
+    )
+
+    result = get_ncrna_exons(ann)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 0
+
+
+def test_get_ncrna_exons_excludes_pseudo_true():
+    """Test that get_ncrna_exons excludes exons with pseudo="true".
+
+    Input: Annotation with lncRNA exon marked as pseudo
+    Output: Empty GenomicSet
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1"],
+            "start": [100],
+            "end": [300],
+            "strand": ["+"],
+            "feature": ["exon"],
+            "attribute": [
+                'transcript_id "trans1"; transcript_biotype "lnc_RNA"; pseudo "true"'
+            ],
+            "source": ["test"],
+            "score": ["."],
+            "frame": ["."],
+        }
+    )
+
+    result = get_ncrna_exons(ann)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 0
+
+
+def test_get_ncrna_exons_excludes_pseudogenic_biotypes():
+    """Test that get_ncrna_exons excludes pseudogenic biotypes.
+
+    Input: Annotation with pseudogenic_tRNA exon
+    Output: Empty GenomicSet
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1"],
+            "start": [100],
+            "end": [200],
+            "strand": ["+"],
+            "feature": ["exon"],
+            "attribute": [
+                'transcript_id "trans1"; transcript_biotype "pseudogenic_tRNA"'
+            ],
+            "source": ["test"],
+            "score": ["."],
+            "frame": ["."],
+        }
+    )
+
+    result = get_ncrna_exons(ann)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 0
+
+
+def test_get_ncrna_exons_excludes_transcript_biotype():
+    """Test that get_ncrna_exons excludes transcript_biotype="transcript".
+
+    Input: Annotation with transcript biotype "transcript" (used for pseudogenes)
+    Output: Empty GenomicSet
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1"],
+            "start": [100],
+            "end": [300],
+            "strand": ["+"],
+            "feature": ["exon"],
+            "attribute": ['transcript_id "trans1"; transcript_biotype "transcript"'],
+            "source": ["test"],
+            "score": ["."],
+            "frame": ["."],
+        }
+    )
+
+    result = get_ncrna_exons(ann)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 0
+
+
+def test_get_ncrna_exons_excludes_primary_transcript():
+    """Test that get_ncrna_exons excludes primary_transcript (precursors).
+
+    Input: Annotation with primary_transcript biotype
+    Output: Empty GenomicSet
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1"],
+            "start": [100],
+            "end": [300],
+            "strand": ["+"],
+            "feature": ["exon"],
+            "attribute": [
+                'transcript_id "trans1"; transcript_biotype "primary_transcript"'
+            ],
+            "source": ["test"],
+            "score": ["."],
+            "frame": ["."],
+        }
+    )
+
+    result = get_ncrna_exons(ann)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 0
+
+
+def test_get_ncrna_exons_excludes_gene_biotype_pseudogene():
+    """Test that get_ncrna_exons excludes genes with pseudogene biotype.
+
+    Input: Annotation with gene_biotype containing "pseudogene"
+    Output: Empty GenomicSet
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1"],
+            "start": [100],
+            "end": [200],
+            "strand": ["+"],
+            "feature": ["exon"],
+            "attribute": [
+                'transcript_id "trans1"; transcript_biotype "tRNA"; gene_biotype "tRNA_pseudogene"'
+            ],
+            "source": ["test"],
+            "score": ["."],
+            "frame": ["."],
+        }
+    )
+
+    result = get_ncrna_exons(ann)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 0
+
+
+def test_get_ncrna_exons_excludes_nmd_candidates():
+    """Test that get_ncrna_exons excludes NMD candidate transcripts.
+
+    Input: Annotation with "NMD candidate" in description
+    Output: Empty GenomicSet
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1"],
+            "start": [100],
+            "end": [300],
+            "strand": ["+"],
+            "feature": ["exon"],
+            "attribute": [
+                'transcript_id "trans1"; transcript_biotype "lnc_RNA"; description "NMD candidate alternative"'
+            ],
+            "source": ["test"],
+            "score": ["."],
+            "frame": ["."],
+        }
+    )
+
+    result = get_ncrna_exons(ann)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 0
+
+
+def test_get_ncrna_exons_excludes_partial():
+    """Test that get_ncrna_exons excludes partial annotations.
+
+    Input: Annotation with partial="true"
+    Output: Empty GenomicSet
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1"],
+            "start": [100],
+            "end": [300],
+            "strand": ["+"],
+            "feature": ["exon"],
+            "attribute": [
+                'transcript_id "trans1"; transcript_biotype "lnc_RNA"; partial "true"'
+            ],
+            "source": ["test"],
+            "score": ["."],
+            "frame": ["."],
+        }
+    )
+
+    result = get_ncrna_exons(ann)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 0
+
+
+def test_get_ncrna_exons_excludes_low_quality():
+    """Test that get_ncrna_exons excludes LOW QUALITY transcripts.
+
+    Input: Annotation with "LOW QUALITY" in product
+    Output: Empty GenomicSet
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1"],
+            "start": [100],
+            "end": [300],
+            "strand": ["+"],
+            "feature": ["exon"],
+            "attribute": [
+                'transcript_id "trans1"; transcript_biotype "lnc_RNA"; product "LOW QUALITY PROTEIN"'
+            ],
+            "source": ["test"],
+            "score": ["."],
+            "frame": ["."],
+        }
+    )
+
+    result = get_ncrna_exons(ann)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 0
+
+
+def test_get_ncrna_exons_custom_biotypes():
+    """Test get_ncrna_exons with custom biotypes list.
+
+    Input: Annotation with lncRNA and miRNA, but only requesting miRNA
+    Output: GenomicSet with only miRNA exon
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [100, 500],
+            "end": [300, 600],
+            "strand": ["+", "+"],
+            "feature": ["exon", "exon"],
+            "attribute": [
+                'transcript_id "trans1"; transcript_biotype "lnc_RNA"',
+                'transcript_id "trans2"; transcript_biotype "miRNA"',
+            ],
+            "source": ["test", "test"],
+            "score": [".", "."],
+            "frame": [".", "."],
+        }
+    )
+
+    result = get_ncrna_exons(ann, biotypes=["miRNA"])
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 1
+    df = result.to_pandas()
+    assert df["start"].to_list() == [500]
+
+
+def test_get_ncrna_exons_gbkey_fallback():
+    """Test get_ncrna_exons uses gbkey when transcript_biotype is absent.
+
+    Input: Annotation using gbkey instead of transcript_biotype
+    Output: GenomicSet containing the exon
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1"],
+            "start": [100],
+            "end": [300],
+            "strand": ["+"],
+            "feature": ["exon"],
+            "attribute": ['transcript_id "trans1"; gbkey "lnc_RNA"'],
+            "source": ["test"],
+            "score": ["."],
+            "frame": ["."],
+        }
+    )
+
+    result = get_ncrna_exons(ann)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 1
+
+
+# get_promoters (from annotation) tests
+def test_get_promoters_mrna_only_true():
+    """Test get_promoters with mRNA_only=True.
+
+    Input: Annotation with mRNA and ncRNA transcripts
+    Output: Only mRNA promoters
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr1", "chr2", "chr2"],
+            "start": [100, 100, 500, 500],
+            "end": [200, 150, 600, 550],
+            "strand": ["+", "+", "+", "+"],
+            "feature": ["exon", "CDS", "exon", "exon"],
+            "attribute": [
+                'transcript_id "mRNA1"; transcript_biotype "mRNA"',
+                'transcript_id "mRNA1"; transcript_biotype "mRNA"',
+                'transcript_id "ncRNA1"; transcript_biotype "lnc_RNA"',
+                'transcript_id "ncRNA1"; transcript_biotype "lnc_RNA"',
+            ],
+            "source": ["test"] * 4,
+            "score": ["."] * 4,
+            "frame": ["."] * 4,
+        }
+    )
+
+    result = get_promoters(ann, n_upstream=50, n_downstream=25, mRNA_only=True)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 1
+    df = result.to_pandas()
+    # mRNA promoter at TSS=100: [100-50, 100+25] = [50, 125]
+    assert df["chrom"].to_list() == ["chr1"]
+    assert df["start"].to_list() == [50]
+    assert df["end"].to_list() == [125]
+
+
+def test_get_promoters_mrna_only_false():
+    """Test get_promoters with mRNA_only=False (default).
+
+    Input: Annotation with mRNA and ncRNA transcripts
+    Output: Promoters from both mRNA and ncRNA
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr1", "chr2"],
+            "start": [100, 100, 500],
+            "end": [200, 150, 600],
+            "strand": ["+", "+", "+"],
+            "feature": ["exon", "CDS", "exon"],
+            "attribute": [
+                'transcript_id "mRNA1"; transcript_biotype "mRNA"',
+                'transcript_id "mRNA1"; transcript_biotype "mRNA"',
+                'transcript_id "ncRNA1"; transcript_biotype "lnc_RNA"',
+            ],
+            "source": ["test"] * 3,
+            "score": ["."] * 3,
+            "frame": ["."] * 3,
+        }
+    )
+
+    result = get_promoters(ann, n_upstream=50, n_downstream=25, mRNA_only=False)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 2
+
+
+def test_get_promoters_excludes_pseudogene_promoters():
+    """Test that get_promoters excludes promoters from pseudogene transcripts.
+
+    Input: Annotation with lncRNA marked as pseudo
+    Output: Empty GenomicSet (pseudogene excluded)
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1"],
+            "start": [100],
+            "end": [200],
+            "strand": ["+"],
+            "feature": ["exon"],
+            "attribute": [
+                'transcript_id "trans1"; transcript_biotype "lnc_RNA"; pseudo "true"'
+            ],
+            "source": ["test"],
+            "score": ["."],
+            "frame": ["."],
+        }
+    )
+
+    result = get_promoters(ann, n_upstream=50, n_downstream=25, mRNA_only=False)
+
+    assert isinstance(result, GenomicSet)
+    # Pseudogene should be excluded, and there's no mRNA, so empty
+    assert result.n_intervals() == 0
