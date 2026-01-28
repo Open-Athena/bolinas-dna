@@ -2108,3 +2108,117 @@ def test_genomic_set_filter_size_zero_length_interval():
         )
     )
     assert result == expected
+
+
+def test_genomic_set_subtract_empty_from_nonempty():
+    """Test subtracting empty GenomicSet from non-empty GenomicSet.
+
+    Input set 1: chr1:0-100, chr2:0-50
+    Input set 2: (empty set)
+    Output: chr1:0-100, chr2:0-50 (unchanged when subtracting empty)
+    """
+    data1 = pd.DataFrame(
+        {
+            "chrom": ["chr1", "chr2"],
+            "start": [0, 0],
+            "end": [100, 50],
+        }
+    )
+    data2 = pd.DataFrame(
+        {
+            "chrom": [],
+            "start": [],
+            "end": [],
+        }
+    )
+
+    gs1 = GenomicSet(data1)
+    gs2 = GenomicSet(data2)
+    result = gs1 - gs2
+
+    expected = GenomicSet(
+        pd.DataFrame(
+            {
+                "chrom": ["chr1", "chr2"],
+                "start": [0, 0],
+                "end": [100, 50],
+            }
+        )
+    )
+    assert result == expected
+
+
+def test_genomic_set_subtract_nonempty_from_empty():
+    """Test subtracting non-empty GenomicSet from empty GenomicSet.
+
+    Input set 1: (empty set)
+    Input set 2: chr1:0-100
+    Output: (empty set - nothing to subtract from)
+    """
+    data1 = pd.DataFrame(
+        {
+            "chrom": [],
+            "start": [],
+            "end": [],
+        }
+    )
+    data2 = pd.DataFrame(
+        {
+            "chrom": ["chr1"],
+            "start": [0],
+            "end": [100],
+        }
+    )
+
+    gs1 = GenomicSet(data1)
+    gs2 = GenomicSet(data2)
+    result = gs1 - gs2
+
+    expected = GenomicSet(
+        pd.DataFrame(
+            {
+                "chrom": [],
+                "start": [],
+                "end": [],
+            }
+        )
+    )
+    assert result == expected
+
+
+def test_genomic_set_subtract_empty_from_empty():
+    """Test subtracting empty GenomicSet from empty GenomicSet.
+
+    Input set 1: (empty set)
+    Input set 2: (empty set)
+    Output: (empty set)
+    """
+    data1 = pd.DataFrame(
+        {
+            "chrom": [],
+            "start": [],
+            "end": [],
+        }
+    )
+    data2 = pd.DataFrame(
+        {
+            "chrom": [],
+            "start": [],
+            "end": [],
+        }
+    )
+
+    gs1 = GenomicSet(data1)
+    gs2 = GenomicSet(data2)
+    result = gs1 - gs2
+
+    expected = GenomicSet(
+        pd.DataFrame(
+            {
+                "chrom": [],
+                "start": [],
+                "end": [],
+            }
+        )
+    )
+    assert result == expected

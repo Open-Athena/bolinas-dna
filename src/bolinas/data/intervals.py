@@ -90,6 +90,10 @@ class GenomicSet:
         Returns:
             A new GenomicSet containing the remaining intervals.
         """
+        if len(self._data) == 0:
+            return GenomicSet(self._data.copy())
+        if len(other._data) == 0:
+            return GenomicSet(self._data.copy())
         return GenomicSet(bf.subtract(self._data, other._data))
 
     def __eq__(self, other: object) -> bool:

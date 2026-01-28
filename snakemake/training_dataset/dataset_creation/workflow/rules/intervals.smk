@@ -152,7 +152,7 @@ rule extract_5_prime_utr:
     run:
         ann = load_annotation(input[0])
         utr = get_5_prime_utr(ann)
-        assert utr.n_intervals() > 0, f"No 5' UTR regions found for {wildcards.g}"
+        # Allow empty UTR sets for genomes without UTR annotations
         utr.write_parquet(output[0])
 
 
@@ -164,7 +164,7 @@ rule extract_3_prime_utr:
     run:
         ann = load_annotation(input[0])
         utr = get_3_prime_utr(ann)
-        assert utr.n_intervals() > 0, f"No 3' UTR regions found for {wildcards.g}"
+        # Allow empty UTR sets for genomes without UTR annotations
         utr.write_parquet(output[0])
 
 
@@ -194,7 +194,7 @@ rule extract_ncrna_exons:
     run:
         ann = load_annotation(input[0])
         ncrna = get_ncrna_exons(ann)
-        assert ncrna.n_intervals() > 0, f"No ncRNA exon regions found for {wildcards.g}"
+        # Allow empty ncRNA sets for genomes without ncRNA annotations
         ncrna.write_parquet(output[0])
 
 
