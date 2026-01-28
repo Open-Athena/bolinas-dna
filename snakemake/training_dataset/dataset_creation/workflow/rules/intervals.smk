@@ -89,7 +89,6 @@ rule intervals_recipe_v1:
             mRNA_only=True,
             within_bounds=defined,
         )
-        assert promoters.n_intervals() > 0, f"No promoters found for {wildcards.g}"
         promoters.write_bed(output[0])
 
 
@@ -112,7 +111,6 @@ rule intervals_recipe_v4:
             mRNA_only=False,
             within_bounds=defined,
         )
-        assert promoters.n_intervals() > 0, f"No promoters found for {wildcards.g}"
         promoters.write_bed(output[0])
 
 
@@ -128,7 +126,6 @@ rule intervals_recipe_v3:
 
         ann = load_annotation(input[0])
         cds = get_cds(ann)
-        assert cds.n_intervals() > 0, f"No CDS regions found for {wildcards.g}"
         defined = GenomicSet(read_bed_to_pandas(input[1]))
         intervals = cds.expand_min_size(min_size)
         intervals = intervals & defined
@@ -142,7 +139,9 @@ rule extract_cds:
         "results/intervals/cds/{g}.parquet",
     run:
         ann = load_annotation(input[0])
-        get_cds(ann).write_parquet(output[0])
+        cds = get_cds(ann)
+        assert cds.n_intervals() > 0, f"No CDS regions found for {wildcards.g}"
+        cds.write_parquet(output[0])
 
 
 rule extract_5_prime_utr:
@@ -152,7 +151,9 @@ rule extract_5_prime_utr:
         "results/intervals/5_prime_utr/{g}.parquet",
     run:
         ann = load_annotation(input[0])
-        get_5_prime_utr(ann).write_parquet(output[0])
+        utr = get_5_prime_utr(ann)
+        assert utr.n_intervals() > 0, f"No 5' UTR regions found for {wildcards.g}"
+        utr.write_parquet(output[0])
 
 
 rule extract_3_prime_utr:
@@ -162,7 +163,9 @@ rule extract_3_prime_utr:
         "results/intervals/3_prime_utr/{g}.parquet",
     run:
         ann = load_annotation(input[0])
-        get_3_prime_utr(ann).write_parquet(output[0])
+        utr = get_3_prime_utr(ann)
+        assert utr.n_intervals() > 0, f"No 3' UTR regions found for {wildcards.g}"
+        utr.write_parquet(output[0])
 
 
 rule extract_promoters:
@@ -174,9 +177,13 @@ rule extract_promoters:
     run:
         ann = load_annotation(input[0])
         bounds = GenomicSet.read_bed(input[1])
-        get_promoters(
+        promoters = get_promoters(
             ann, n_upstream=256, n_downstream=256, mRNA_only=False, within_bounds=bounds
-        ).write_parquet(output[0])
+        )
+        assert (
+            promoters.n_intervals() > 0
+        ), f"No promoter regions found for {wildcards.g}"
+        promoters.write_parquet(output[0])
 
 
 rule extract_ncrna_exons:
@@ -186,7 +193,9 @@ rule extract_ncrna_exons:
         "results/intervals/ncrna_exons/{g}.parquet",
     run:
         ann = load_annotation(input[0])
-        get_ncrna_exons(ann).write_parquet(output[0])
+        ncrna = get_ncrna_exons(ann)
+        assert ncrna.n_intervals() > 0, f"No ncRNA exon regions found for {wildcards.g}"
+        ncrna.write_parquet(output[0])
 
 
 rule parquet_to_bed:
@@ -205,3 +214,24 @@ rule all_bed:
             region=config["functional_regions"],
             g=config["genome_subset_bed"],
         ),
+
+
+# CDS, another version
+rule intervals_recipe_v5:
+    input:
+        "results/intervals/cds/{g}.parquet",
+        "results/intervals/defined/{g}.bed.gz",
+    output:
+        "results/intervals/recipe/v5/{g}.bed.gz",
+    run:
+        min_size, max_size = 20, 10_000
+        add_flank = 20  # splice region
+        expand_min_size = 256
+
+        intervals = GenomicSet.read_parquet(input[0])
+        defined = GenomicSet.read_bed(input[1])
+        intervals = intervals.filter_size(min_size, max_size)
+        intervals = intervals.add_flank(add_flank)
+        intervals = intervals.expand_min_size(expand_min_size)
+        intervals = intervals & defined
+        intervals.write_bed(output[0])

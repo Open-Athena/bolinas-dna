@@ -305,9 +305,6 @@ def get_5_prime_utr(ann: pl.DataFrame) -> GenomicSet:
     For + strand, this is the exon region before CDS start.
     For - strand, this is the exon region after CDS end (genomically).
 
-    Regions that are CDS in any transcript are excluded, even if they are
-    5' UTR in another transcript.
-
     Args:
         ann: Annotation DataFrame from load_annotation().
 
@@ -347,11 +344,7 @@ def get_5_prime_utr(ann: pl.DataFrame) -> GenomicSet:
             pl.col("utr_end").alias("end"),
         )
     )
-    # Exclude regions that are CDS in any transcript
-    cds_all = get_cds(ann)
-    if utr.n_intervals() == 0 or cds_all.n_intervals() == 0:
-        return utr
-    return utr - cds_all
+    return utr
 
 
 def get_3_prime_utr(ann: pl.DataFrame) -> GenomicSet:
@@ -360,9 +353,6 @@ def get_3_prime_utr(ann: pl.DataFrame) -> GenomicSet:
     Computes 3' UTR by finding exon portions downstream of CDS end.
     For + strand, this is the exon region after CDS end.
     For - strand, this is the exon region before CDS start (genomically).
-
-    Regions that are CDS in any transcript are excluded, even if they are
-    3' UTR in another transcript.
 
     Args:
         ann: Annotation DataFrame from load_annotation().
@@ -403,11 +393,7 @@ def get_3_prime_utr(ann: pl.DataFrame) -> GenomicSet:
             pl.col("utr_end").alias("end"),
         )
     )
-    # Exclude regions that are CDS in any transcript
-    cds_all = get_cds(ann)
-    if utr.n_intervals() == 0 or cds_all.n_intervals() == 0:
-        return utr
-    return utr - cds_all
+    return utr
 
 
 def get_ncrna_exons(ann: pl.DataFrame, biotypes: list[str] | None = None) -> GenomicSet:

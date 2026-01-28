@@ -20,13 +20,14 @@ intervals:
   # the 512/256 here refers to from those regions how to create windows
   # take windows of 512 bp with 256 bp overlap
   # which in this case would typically result in 1 window per promoter
-  - v1/512/256
-  - v1/256/128
-  - v4/512/256  # promoters from all "functional" transcripts
+  # - v1/512/256
+  # - v1/256/128
+  # - v4/512/256  # promoters from all "functional" transcripts
   # mRNA exons + promoters
 #   - v2/512/256
 #   # CDS regions only
 #   - v3/512/256
+  - v5/256/128  # CDS, new version
 
 genome_sets:
   - name: animals
