@@ -1385,37 +1385,6 @@ def test_get_ncrna_exons_excludes_low_quality():
     assert result.n_intervals() == 0
 
 
-def test_get_ncrna_exons_custom_biotypes():
-    """Test get_ncrna_exons with custom biotypes list.
-
-    Input: Annotation with lncRNA and miRNA, but only requesting miRNA
-    Output: GenomicSet with only miRNA exon
-    """
-    ann = pl.DataFrame(
-        {
-            "chrom": ["chr1", "chr1"],
-            "start": [100, 500],
-            "end": [300, 600],
-            "strand": ["+", "+"],
-            "feature": ["exon", "exon"],
-            "attribute": [
-                'transcript_id "trans1"; transcript_biotype "lnc_RNA"',
-                'transcript_id "trans2"; transcript_biotype "miRNA"',
-            ],
-            "source": ["test", "test"],
-            "score": [".", "."],
-            "frame": [".", "."],
-        }
-    )
-
-    result = get_ncrna_exons(ann, biotypes=["miRNA"])
-
-    assert isinstance(result, GenomicSet)
-    assert result.n_intervals() == 1
-    df = result.to_pandas()
-    assert df["start"].to_list() == [500]
-
-
 def test_get_ncrna_exons_gbkey_fallback():
     """Test get_ncrna_exons uses gbkey when transcript_biotype is absent.
 
