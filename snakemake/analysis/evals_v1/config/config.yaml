@@ -85,6 +85,51 @@ models:
       - 16000
       - 26000
 
+  - name: exp41-genomes-v4-genome_set-animals-intervals-v1_512_256
+    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp41-genomes-v4-genome_set-animals-intervals-v1_512_256-r01-0b8d0b
+    context_size: 512
+    steps:
+      - 1000
+      - 2000
+      - 3000
+      - 4000
+      - 5000
+      - 6000
+      - 7000
+      - 8000
+      - 9000
+      - 9999
+
+  - name: exp41-genomes-v4-genome_set-animals-intervals-v4_512_256
+    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp41-genomes-v4-genome_set-animals-intervals-v4_512_256-r01-e95fd1
+    context_size: 512
+    steps:
+      - 1000
+      - 2000
+      - 3000
+      - 4000
+      - 5000
+      - 6000
+      - 7000
+      - 8000
+      - 9000
+      - 9999
+
+  - name: exp37-genomes-v4-genome_set-animals-intervals-v1_256_128
+    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp37-genomes-v4-genome_set-animals-intervals-v1_256_128-r01-1217dc
+    context_size: 256
+    steps:
+      - 1000
+      - 2000
+      - 3000
+      - 4000
+      - 5000
+      - 6000
+      - 7000
+      - 8000
+      # - 9000
+      # - 9999
+
 # Evaluation datasets from HuggingFace
 # Each dataset should have been created by the snakemake/evals pipeline
 datasets:
@@ -336,6 +381,51 @@ custom_plots:
         score_type: minus_llr
         include_baselines: true
         title: "ClinVar missense"
+
+  - name: exp41_promoters_mrna_ncrna
+    title: "Exp41 promoters from mRNA vs. ncRNA"
+    models:
+      - model: exp41-genomes-v4-genome_set-animals-intervals-v1_512_256
+        title: "mRNA"
+      - model: exp41-genomes-v4-genome_set-animals-intervals-v4_512_256
+        title: "mRNA + ncRNA"
+    n_cols: 2
+    dataset_subsets:
+      - dataset: traitgym_mendelian
+        subset: nonexonic_AND_proximal
+        score_type: minus_llr
+        include_baselines: true
+        title: "Mendelian Promoter"
+      - dataset: traitgym_mendelian
+        subset: 5_prime_UTR_variant
+        score_type: minus_llr
+        include_baselines: true
+        title: "Mendelian 5' UTR"
+      - dataset: traitgym_mendelian
+        subset: non_coding_transcript_exon_variant
+        score_type: minus_llr
+        include_baselines: true
+        title: "Mendelian ncRNA"
+
+  - name: exp37_context_size
+    title: "Exp37 context size"
+    models:
+      - model: exp41-genomes-v4-genome_set-animals-intervals-v1_512_256
+        title: "512bp"
+      - model: exp37-genomes-v4-genome_set-animals-intervals-v1_256_128
+        title: "256bp"
+    n_cols: 2
+    dataset_subsets:
+      - dataset: traitgym_mendelian
+        subset: nonexonic_AND_proximal
+        score_type: minus_llr
+        include_baselines: true
+        title: "Mendelian Promoter"
+      - dataset: traitgym_mendelian
+        subset: 5_prime_UTR_variant
+        score_type: minus_llr
+        include_baselines: true
+        title: "Mendelian 5' UTR"
 
 # Inference configuration (performance settings that don't affect output)
 inference:
