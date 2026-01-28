@@ -235,3 +235,90 @@ rule intervals_recipe_v5:
         intervals = intervals.expand_min_size(expand_min_size)
         intervals = intervals & defined
         intervals.write_bed(output[0])
+
+
+# 5' UTR
+rule intervals_recipe_v6:
+    input:
+        "results/intervals/5_prime_utr/{g}.parquet",
+        "results/intervals/defined/{g}.bed.gz",
+        "results/intervals/cds/{g}.parquet",
+    output:
+        "results/intervals/recipe/v6/{g}.bed.gz",
+    run:
+        min_size, max_size = 20, 10_000
+        add_flank = 20  # splice region
+        expand_min_size = 256
+
+        intervals = GenomicSet.read_parquet(input[0])
+        defined = GenomicSet.read_bed(input[1])
+        subtract_regions = [
+            GenomicSet.read_parquet(input[2]),  # cds
+        ]
+        for region in subtract_regions:
+            intervals = intervals - region
+        intervals = intervals.filter_size(min_size, max_size)
+        intervals = intervals.add_flank(add_flank)
+        intervals = intervals.expand_min_size(expand_min_size)
+        intervals = intervals & defined
+        intervals.write_bed(output[0])
+
+
+# 3' UTR
+rule intervals_recipe_v7:
+    input:
+        "results/intervals/3_prime_utr/{g}.parquet",
+        "results/intervals/defined/{g}.bed.gz",
+        "results/intervals/cds/{g}.parquet",
+        "results/intervals/5_prime_utr/{g}.parquet",
+    output:
+        "results/intervals/recipe/v7/{g}.bed.gz",
+    run:
+        min_size, max_size = 20, 10_000
+        add_flank = 20  # splice region
+        expand_min_size = 256
+
+        intervals = GenomicSet.read_parquet(input[0])
+        defined = GenomicSet.read_bed(input[1])
+        subtract_regions = [
+            GenomicSet.read_parquet(input[2]),  # cds
+            GenomicSet.read_parquet(input[3]),  # 5_prime_utr
+        ]
+        for region in subtract_regions:
+            intervals = intervals - region
+        intervals = intervals.filter_size(min_size, max_size)
+        intervals = intervals.add_flank(add_flank)
+        intervals = intervals.expand_min_size(expand_min_size)
+        intervals = intervals & defined
+        intervals.write_bed(output[0])
+
+
+# ncRNA exons
+rule intervals_recipe_v8:
+    input:
+        "results/intervals/ncrna_exon/{g}.parquet",
+        "results/intervals/defined/{g}.bed.gz",
+        "results/intervals/cds/{g}.parquet",
+        "results/intervals/5_prime_utr/{g}.parquet",
+        "results/intervals/3_prime_utr/{g}.parquet",
+    output:
+        "results/intervals/recipe/v8/{g}.bed.gz",
+    run:
+        min_size, max_size = 20, 10_000
+        add_flank = 20  # splice region
+        expand_min_size = 256
+
+        intervals = GenomicSet.read_parquet(input[0])
+        defined = GenomicSet.read_bed(input[1])
+        subtract_regions = [
+            GenomicSet.read_parquet(input[2]),  # cds
+            GenomicSet.read_parquet(input[3]),  # 5_prime_utr
+            GenomicSet.read_parquet(input[4]),  # 3_prime_utr
+        ]
+        for region in subtract_regions:
+            intervals = intervals - region
+        intervals = intervals.filter_size(min_size, max_size)
+        intervals = intervals.add_flank(add_flank)
+        intervals = intervals.expand_min_size(expand_min_size)
+        intervals = intervals & defined
+        intervals.write_bed(output[0])

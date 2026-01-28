@@ -1771,3 +1771,340 @@ def test_genomic_set_parquet_preserves_dtypes(tmp_path):
     assert result_df["chrom"].dtype == object
     assert result_df["start"].dtype in [int, "int64"]
     assert result_df["end"].dtype in [int, "int64"]
+
+
+# filter_size tests
+def test_genomic_set_filter_size_min_only():
+    """Test filter_size with only min_size specified.
+
+    Input: chr1:0-20 (size=20), chr1:100-150 (size=50), chr2:0-200 (size=200), min_size=30
+    Output: chr1:100-150, chr2:0-200 (only intervals >= 30bp)
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1", "chr1", "chr2"],
+            "start": [0, 100, 0],
+            "end": [20, 150, 200],
+        }
+    )
+    gs = GenomicSet(data)
+    result = gs.filter_size(min_size=30)
+
+    expected = GenomicSet(
+        pd.DataFrame(
+            {
+                "chrom": ["chr1", "chr2"],
+                "start": [100, 0],
+                "end": [150, 200],
+            }
+        )
+    )
+    assert result == expected
+
+
+def test_genomic_set_filter_size_max_only():
+    """Test filter_size with only max_size specified.
+
+    Input: chr1:0-20 (size=20), chr1:100-150 (size=50), chr2:0-300 (size=300), max_size=100
+    Output: chr1:0-20, chr1:100-150 (only intervals <= 100bp)
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1", "chr1", "chr2"],
+            "start": [0, 100, 0],
+            "end": [20, 150, 300],
+        }
+    )
+    gs = GenomicSet(data)
+    result = gs.filter_size(max_size=100)
+
+    expected = GenomicSet(
+        pd.DataFrame(
+            {
+                "chrom": ["chr1", "chr1"],
+                "start": [0, 100],
+                "end": [20, 150],
+            }
+        )
+    )
+    assert result == expected
+
+
+def test_genomic_set_filter_size_both_min_and_max():
+    """Test filter_size with both min_size and max_size.
+
+    Input: chr1:0-15 (size=15), chr1:50-100 (size=50), chr1:200-350 (size=150), min_size=20, max_size=100
+    Output: chr1:50-100 (only interval with 20 <= size <= 100)
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1", "chr1", "chr1"],
+            "start": [0, 50, 200],
+            "end": [15, 100, 350],
+        }
+    )
+    gs = GenomicSet(data)
+    result = gs.filter_size(min_size=20, max_size=100)
+
+    expected = GenomicSet(
+        pd.DataFrame(
+            {
+                "chrom": ["chr1"],
+                "start": [50],
+                "end": [100],
+            }
+        )
+    )
+    assert result == expected
+
+
+def test_genomic_set_filter_size_removes_all():
+    """Test filter_size that removes all intervals.
+
+    Input: chr1:0-20 (size=20), chr1:100-150 (size=50), min_size=100
+    Output: (empty set - no intervals >= 100bp)
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [0, 100],
+            "end": [20, 150],
+        }
+    )
+    gs = GenomicSet(data)
+    result = gs.filter_size(min_size=100)
+
+    expected = GenomicSet(
+        pd.DataFrame(
+            {
+                "chrom": [],
+                "start": [],
+                "end": [],
+            }
+        )
+    )
+    assert result == expected
+
+
+def test_genomic_set_filter_size_keeps_all():
+    """Test filter_size that keeps all intervals.
+
+    Input: chr1:0-50 (size=50), chr1:100-200 (size=100), min_size=10, max_size=200
+    Output: chr1:0-50, chr1:100-200 (all intervals within range)
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [0, 100],
+            "end": [50, 200],
+        }
+    )
+    gs = GenomicSet(data)
+    result = gs.filter_size(min_size=10, max_size=200)
+
+    expected = GenomicSet(
+        pd.DataFrame(
+            {
+                "chrom": ["chr1", "chr1"],
+                "start": [0, 100],
+                "end": [50, 200],
+            }
+        )
+    )
+    assert result == expected
+
+
+def test_genomic_set_filter_size_empty_set():
+    """Test filter_size with empty set.
+
+    Input: (empty set), min_size=20
+    Output: (empty set)
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": [],
+            "start": [],
+            "end": [],
+        }
+    )
+    gs = GenomicSet(data)
+    result = gs.filter_size(min_size=20)
+
+    expected = GenomicSet(
+        pd.DataFrame(
+            {
+                "chrom": [],
+                "start": [],
+                "end": [],
+            }
+        )
+    )
+    assert result == expected
+
+
+def test_genomic_set_filter_size_exact_boundaries():
+    """Test filter_size with intervals exactly matching boundaries.
+
+    Input: chr1:0-20 (size=20), chr1:50-100 (size=50), chr1:200-300 (size=100), min_size=20, max_size=100
+    Output: chr1:0-20, chr1:50-100, chr1:200-300 (all intervals, boundaries are inclusive)
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1", "chr1", "chr1"],
+            "start": [0, 50, 200],
+            "end": [20, 100, 300],
+        }
+    )
+    gs = GenomicSet(data)
+    result = gs.filter_size(min_size=20, max_size=100)
+
+    expected = GenomicSet(
+        pd.DataFrame(
+            {
+                "chrom": ["chr1", "chr1", "chr1"],
+                "start": [0, 50, 200],
+                "end": [20, 100, 300],
+            }
+        )
+    )
+    assert result == expected
+
+
+def test_genomic_set_filter_size_no_parameters():
+    """Test filter_size with no parameters (keeps all).
+
+    Input: chr1:0-50, chr1:100-200, min_size=None, max_size=None
+    Output: chr1:0-50, chr1:100-200 (all intervals kept)
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [0, 100],
+            "end": [50, 200],
+        }
+    )
+    gs = GenomicSet(data)
+    result = gs.filter_size()
+
+    expected = GenomicSet(
+        pd.DataFrame(
+            {
+                "chrom": ["chr1", "chr1"],
+                "start": [0, 100],
+                "end": [50, 200],
+            }
+        )
+    )
+    assert result == expected
+
+
+def test_genomic_set_filter_size_returns_new_instance():
+    """Test that filter_size returns a new GenomicSet instance.
+
+    Input: chr1:0-30, chr1:100-200, filter_size(min_size=40)
+    Output: New GenomicSet, original unchanged, chr1:0-30 filtered out
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [0, 100],
+            "end": [30, 200],
+        }
+    )
+    gs = GenomicSet(data)
+    original_df = gs.to_pandas()
+
+    result = gs.filter_size(min_size=40)
+
+    # Original should be unchanged
+    assert gs.to_pandas().equals(original_df)
+    # Result should be different (one interval filtered out)
+    assert result != gs
+    # Result should be a new GenomicSet
+    assert isinstance(result, GenomicSet)
+    # Result should have only the large interval
+    assert result.n_intervals() == 1
+
+
+def test_genomic_set_filter_size_multiple_chromosomes():
+    """Test filter_size with intervals across multiple chromosomes.
+
+    Input: chr1:0-30 (size=30), chr1:100-200 (size=100), chr2:0-40 (size=40), chr2:100-250 (size=150), min_size=50
+    Output: chr1:100-200, chr2:100-250 (only intervals >= 50bp across all chromosomes)
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1", "chr1", "chr2", "chr2"],
+            "start": [0, 100, 0, 100],
+            "end": [30, 200, 40, 250],
+        }
+    )
+    gs = GenomicSet(data)
+    result = gs.filter_size(min_size=50)
+
+    expected = GenomicSet(
+        pd.DataFrame(
+            {
+                "chrom": ["chr1", "chr2"],
+                "start": [100, 100],
+                "end": [200, 250],
+            }
+        )
+    )
+    assert result == expected
+
+
+def test_genomic_set_filter_size_single_interval():
+    """Test filter_size with single interval.
+
+    Input: chr1:0-100 (size=100), min_size=50, max_size=150
+    Output: chr1:0-100 (interval within range)
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1"],
+            "start": [0],
+            "end": [100],
+        }
+    )
+    gs = GenomicSet(data)
+    result = gs.filter_size(min_size=50, max_size=150)
+
+    expected = GenomicSet(
+        pd.DataFrame(
+            {
+                "chrom": ["chr1"],
+                "start": [0],
+                "end": [100],
+            }
+        )
+    )
+    assert result == expected
+
+
+def test_genomic_set_filter_size_zero_length_interval():
+    """Test filter_size with zero-length intervals.
+
+    Input: chr1:50-50 (size=0), chr1:100-150 (size=50), min_size=1
+    Output: chr1:100-150 (zero-length interval filtered out)
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [50, 100],
+            "end": [50, 150],
+        }
+    )
+    gs = GenomicSet(data)
+    result = gs.filter_size(min_size=1)
+
+    expected = GenomicSet(
+        pd.DataFrame(
+            {
+                "chrom": ["chr1"],
+                "start": [100],
+                "end": [150],
+            }
+        )
+    )
+    assert result == expected
