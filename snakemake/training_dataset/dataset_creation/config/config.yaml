@@ -30,7 +30,9 @@ intervals:
   # - v5/256/128  # CDS, new version
   # - v6/256/128  # 5' UTR
   # - v7/256/128  # 3' UTR
-  - v8/256/128  # ncRNA
+  # - v8/256/128  # ncRNA
+  # - v9/256/128  # promoters (+- 256)
+  - v10/256/128  # promoters (+- 2048)
 
 genome_sets:
   - name: animals

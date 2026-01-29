@@ -172,8 +172,8 @@ models:
       - 6000
       - 7000
       - 8000
-#       - 9000
-#       - 9999
+      - 9000
+      - 9999
 
   - name: exp43-cds-r01-976f2d
     base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp43-cds-r01-976f2d
@@ -185,8 +185,8 @@ models:
       - 4000
       - 5000
       - 6000
-#       - 7000
-#       - 8000
+      - 7000
+      - 8000
 #       - 9000
 #       - 9999
 
