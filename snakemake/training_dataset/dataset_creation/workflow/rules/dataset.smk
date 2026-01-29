@@ -35,20 +35,28 @@ rule make_dataset_genome:
     threads: 2
     run:
         df = load_fasta(input[0]).to_frame().reset_index(names="id")
-        assert len(df) > 0, "No windows found"
-        df.id = df.id.astype(str)  # to handle empty dataframes
-        if config["add_rc"]:
-            df = add_rc(df)
-        df["chrom"] = df.id.str.split(":").str[0]
-        chrom_split = pd.DataFrame(dict(chrom=df.chrom.unique()))
-        chrom_split["split"] = "train"
-        chrom_split.loc[
-            chrom_split.chrom.isin(config["validation_chroms"]), "split"
-        ] = "validation"
-        df = df.merge(chrom_split, on="chrom", how="left")
-        df = pl.from_pandas(df[["id", "seq", "split"]])
-        for path, split in zip(output, SPLITS):
-            df.filter(split=split).drop("split").write_parquet(path)
+
+        if len(df) == 0:
+            # No windows found - create empty output files with correct schema
+            empty_df = pl.DataFrame(
+                {"id": [], "seq": []}, schema={"id": pl.String, "seq": pl.String}
+            )
+            for path in output:
+                empty_df.write_parquet(path)
+        else:
+            df.id = df.id.astype(str)
+            if config["add_rc"]:
+                df = add_rc(df)
+            df["chrom"] = df.id.str.split(":").str[0]
+            chrom_split = pd.DataFrame(dict(chrom=df.chrom.unique()))
+            chrom_split["split"] = "train"
+            chrom_split.loc[
+                chrom_split.chrom.isin(config["validation_chroms"]), "split"
+            ] = "validation"
+            df = df.merge(chrom_split, on="chrom", how="left")
+            df = pl.from_pandas(df[["id", "seq", "split"]])
+            for path, split in zip(output, SPLITS):
+                df.filter(split=split).drop("split").write_parquet(path)
 
 
 rule merge_datasets:

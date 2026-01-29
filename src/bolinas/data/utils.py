@@ -148,22 +148,16 @@ def _get_cds_per_transcript(ann: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def _get_functional_transcript_exons(ann: pl.DataFrame) -> pl.DataFrame:
-    """Extract exons from functional transcripts (mRNA + ncRNA).
-
-    Returns exons from mRNA transcripts and functional ncRNA transcripts,
-    excluding pseudogenes and precursor RNAs. Used for promoter computation.
+def _filter_ncrna_exons(ann: pl.DataFrame) -> pl.DataFrame:
+    """Filter ncRNA exons excluding pseudogenes and low quality entries.
 
     Args:
         ann: Annotation DataFrame from load_annotation().
 
     Returns:
-        DataFrame with columns [chrom, start, end, strand, transcript_id]
-        containing exons from functional transcripts.
+        DataFrame with ncRNA exons passing quality filters.
     """
-    mrna_exons = get_mrna_exons(ann)
-
-    ncrna_exons = (
+    return (
         ann.filter(pl.col("feature") == "exon")
         .with_columns(
             pl.col("attribute")
@@ -195,16 +189,33 @@ def _get_functional_transcript_exons(ann: pl.DataFrame) -> pl.DataFrame:
             ~pl.col("transcript_biotype").fill_null("").str.contains("(?i)pseudogenic")
         )
         .filter(~pl.col("gene_biotype").fill_null("").str.contains("(?i)pseudogene"))
-        .filter(pl.col("transcript_biotype") != "transcript")
-        .filter(pl.col("transcript_biotype") != "primary_transcript")
+        .filter(pl.col("transcript_biotype").fill_null("") != "transcript")
+        .filter(pl.col("transcript_biotype").fill_null("") != "primary_transcript")
         # Exclude NMD candidates
         .filter(~pl.col("description").fill_null("").str.contains("(?i)NMD candidate"))
         .filter(~pl.col("product").fill_null("").str.contains("(?i)NMD candidate"))
         # Exclude low quality
         .filter(~pl.col("product").fill_null("").str.contains("LOW QUALITY"))
-        .select(["chrom", "start", "end", "strand", "transcript_id"])
     )
 
+
+def _get_functional_transcript_exons(ann: pl.DataFrame) -> pl.DataFrame:
+    """Extract exons from functional transcripts (mRNA + ncRNA).
+
+    Returns exons from mRNA transcripts and functional ncRNA transcripts,
+    excluding pseudogenes and precursor RNAs. Used for promoter computation.
+
+    Args:
+        ann: Annotation DataFrame from load_annotation().
+
+    Returns:
+        DataFrame with columns [chrom, start, end, strand, transcript_id]
+        containing exons from functional transcripts.
+    """
+    mrna_exons = get_mrna_exons(ann)
+    ncrna_exons = _filter_ncrna_exons(ann).select(
+        ["chrom", "start", "end", "strand", "transcript_id"]
+    )
     return pl.concat([mrna_exons, ncrna_exons])
 
 
@@ -305,9 +316,6 @@ def get_5_prime_utr(ann: pl.DataFrame) -> GenomicSet:
     For + strand, this is the exon region before CDS start.
     For - strand, this is the exon region after CDS end (genomically).
 
-    Regions that are CDS in any transcript are excluded, even if they are
-    5' UTR in another transcript.
-
     Args:
         ann: Annotation DataFrame from load_annotation().
 
@@ -347,11 +355,7 @@ def get_5_prime_utr(ann: pl.DataFrame) -> GenomicSet:
             pl.col("utr_end").alias("end"),
         )
     )
-    # Exclude regions that are CDS in any transcript
-    cds_all = get_cds(ann)
-    if utr.n_intervals() == 0 or cds_all.n_intervals() == 0:
-        return utr
-    return utr - cds_all
+    return utr
 
 
 def get_3_prime_utr(ann: pl.DataFrame) -> GenomicSet:
@@ -360,9 +364,6 @@ def get_3_prime_utr(ann: pl.DataFrame) -> GenomicSet:
     Computes 3' UTR by finding exon portions downstream of CDS end.
     For + strand, this is the exon region after CDS end.
     For - strand, this is the exon region before CDS start (genomically).
-
-    Regions that are CDS in any transcript are excluded, even if they are
-    3' UTR in another transcript.
 
     Args:
         ann: Annotation DataFrame from load_annotation().
@@ -403,68 +404,24 @@ def get_3_prime_utr(ann: pl.DataFrame) -> GenomicSet:
             pl.col("utr_end").alias("end"),
         )
     )
-    # Exclude regions that are CDS in any transcript
-    cds_all = get_cds(ann)
-    if utr.n_intervals() == 0 or cds_all.n_intervals() == 0:
-        return utr
-    return utr - cds_all
+    return utr
 
 
-def get_ncrna_exons(ann: pl.DataFrame, biotypes: list[str] | None = None) -> GenomicSet:
+def get_ncrna_exons(ann: pl.DataFrame) -> GenomicSet:
     """Extract functional ncRNA exons from an annotation DataFrame.
 
     Extracts exons from non-coding RNA transcripts, excluding pseudogenes,
     precursor RNAs, NMD candidates, partial annotations, and low quality entries.
+    Uses DEFAULT_NCRNA_BIOTYPES which includes lnc_RNA, miRNA, snoRNA, tRNA,
+    snRNA, rRNA, and other functional ncRNA types.
 
     Args:
         ann: Annotation DataFrame from load_annotation().
-        biotypes: List of ncRNA biotypes to include. If None, uses
-            DEFAULT_NCRNA_BIOTYPES which includes lnc_RNA, miRNA, snoRNA, tRNA,
-            snRNA, rRNA, and other functional ncRNA types.
 
     Returns:
         GenomicSet containing merged ncRNA exon regions.
     """
-    if biotypes is None:
-        biotypes = DEFAULT_NCRNA_BIOTYPES
-
-    return GenomicSet(
-        ann.filter(pl.col("feature") == "exon")
-        .with_columns(
-            pl.col("attribute")
-            .str.extract(r'transcript_biotype "(.*?)"')
-            .alias("transcript_biotype"),
-            pl.col("attribute").str.extract(r'gbkey "(.*?)"').alias("gbkey"),
-            pl.col("attribute")
-            .str.extract(r'gene_biotype "(.*?)"')
-            .alias("gene_biotype"),
-            pl.col("attribute").str.contains(r'pseudo "true"').alias("is_pseudo"),
-            pl.col("attribute").str.contains(r'partial "true"').alias("is_partial"),
-            pl.col("attribute")
-            .str.extract(r'description "(.*?)"')
-            .alias("description"),
-            pl.col("attribute").str.extract(r'product "(.*?)"').alias("product"),
-        )
-        # Filter to allowed ncRNA biotypes
-        .filter(
-            pl.col("transcript_biotype").is_in(biotypes)
-            | pl.col("gbkey").is_in(biotypes)
-        )
-        # Exclude pseudogenes
-        .filter(~pl.col("is_pseudo").fill_null(False))
-        .filter(~pl.col("is_partial").fill_null(False))
-        .filter(
-            ~pl.col("transcript_biotype").fill_null("").str.contains("(?i)pseudogenic")
-        )
-        .filter(~pl.col("gene_biotype").fill_null("").str.contains("(?i)pseudogene"))
-        .filter(pl.col("transcript_biotype").fill_null("") != "transcript")
-        .filter(pl.col("transcript_biotype").fill_null("") != "primary_transcript")
-        # Exclude NMD candidates
-        .filter(~pl.col("description").fill_null("").str.contains("(?i)NMD candidate"))
-        .filter(~pl.col("product").fill_null("").str.contains("(?i)NMD candidate"))
-        # Exclude low quality
-        .filter(~pl.col("product").fill_null("").str.contains("LOW QUALITY"))
-    )
+    return GenomicSet(_filter_ncrna_exons(ann))
 
 
 def read_bed_to_pandas(path: str) -> pd.DataFrame:

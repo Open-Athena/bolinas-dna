@@ -90,6 +90,10 @@ class GenomicSet:
         Returns:
             A new GenomicSet containing the remaining intervals.
         """
+        if len(self._data) == 0:
+            return GenomicSet(self._data.copy())
+        if len(other._data) == 0:
+            return GenomicSet(self._data.copy())
         return GenomicSet(bf.subtract(self._data, other._data))
 
     def __eq__(self, other: object) -> bool:
@@ -142,6 +146,28 @@ class GenomicSet:
             actual genomic coverage.
         """
         return int((self._data["end"] - self._data["start"]).sum())
+
+    def filter_size(
+        self, min_size: int | None = None, max_size: int | None = None
+    ) -> "GenomicSet":
+        """Filter intervals by size.
+
+        Keeps only intervals with size (end - start) within the specified range.
+
+        Args:
+            min_size: Minimum size in base pairs (inclusive). If None, no minimum.
+            max_size: Maximum size in base pairs (inclusive). If None, no maximum.
+
+        Returns:
+            A new GenomicSet containing only intervals within the size range.
+        """
+        res = self._data.copy()
+        res["size"] = res["end"] - res["start"]
+        if min_size is not None:
+            res = res[res["size"] >= min_size]
+        if max_size is not None:
+            res = res[res["size"] <= max_size]
+        return GenomicSet(res.drop(columns=["size"]))
 
     def expand_min_size(self, min_size: int) -> "GenomicSet":
         """Expand intervals to at least the specified minimum size.
