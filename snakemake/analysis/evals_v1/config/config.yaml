@@ -135,32 +135,60 @@ models:
     context_size: 256
     steps:
       - 1000
+      - 2000
+      - 3000
+      - 4000
       - 5000
-      # - 9999
+      - 6000
+      - 7000
+      - 8000
+      - 9000
+      - 9999
 
   - name: exp43-five_prime_utr-r01-7742ae
     base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp43-five_prime_utr-r01-7742ae
     context_size: 256
     steps:
       - 1000
+      - 2000
+      - 3000
+      - 4000
       - 5000
-      # - 9999
+      - 6000
+      - 7000
+      - 8000
+      - 9000
+      - 9999
 
   - name: exp43-three_prime_utr-r01-16f6cf
     base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp43-three_prime_utr-r01-16f6cf
     context_size: 256
     steps:
       - 1000
+      - 2000
+      - 3000
+      - 4000
       - 5000
-      # - 9999
+      - 6000
+      - 7000
+      - 8000
+#       - 9000
+#       - 9999
 
   - name: exp43-cds-r01-976f2d
     base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp43-cds-r01-976f2d
     context_size: 256
     steps:
       - 1000
+      - 2000
+      - 3000
+      - 4000
       - 5000
-      # - 9999
+      - 6000
+#       - 7000
+#       - 8000
+#       - 9000
+#       - 9999
 
 # Evaluation datasets from HuggingFace
 # Each dataset should have been created by the snakemake/evals pipeline
@@ -472,7 +500,7 @@ custom_plots:
         title: "ncRNA"
       - model: exp37-genomes-v4-genome_set-animals-intervals-v1_256_128-r02-4e2580
         title: "Promoter (WIP)"
-    n_cols: 2
+    n_cols: 3
     dataset_subsets:
       - dataset: traitgym_mendelian
         subset: nonexonic_AND_proximal
@@ -499,10 +527,15 @@ custom_plots:
         score_type: minus_llr
         include_baselines: true
         title: "Mendelian ncRNA"
+      - dataset: clinvar_missense
+        subset: global
+        score_type: minus_llr
+        include_baselines: true
+        title: "ClinVar missense"
 
 # Inference configuration (performance settings that don't affect output)
 inference:
-  batch_size: 128
+  batch_size: 256
   num_workers: 4
   data_transform_on_the_fly: true
   torch_compile: false
