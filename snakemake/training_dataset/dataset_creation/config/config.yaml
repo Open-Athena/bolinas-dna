@@ -27,9 +27,10 @@ intervals:
 #   - v2/512/256
 #   # CDS regions only
 #   - v3/512/256
-  - v5/256/128  # CDS, new version
-  - v6/256/128  # 5' UTR
-  - v7/256/128  # 3' UTR
+  # - v5/256/128  # CDS, new version
+  # - v6/256/128  # 5' UTR
+  # - v7/256/128  # 3' UTR
+  - v8/256/128  # ncRNA
 
 genome_sets:
   - name: animals

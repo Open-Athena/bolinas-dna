@@ -178,6 +178,23 @@ Genomes without 3' UTR:
 
 This is typical of lower-quality or coding-focused annotations, particularly in non-model organisms. The pipeline handles these cases by creating empty GenomicSets, which work correctly in all downstream operations.
 
+**Missing ncRNA annotations**: Similarly, some genomes lack ncRNA exon annotations. Analysis of 499 genomes shows:
+
+| Region | Genomes with data | Empty genomes | Empty % |
+|--------|------------------|---------------|---------|
+| ncRNA exons | 492 | 7 | 1.4% |
+
+Genomes without ncRNA exons:
+- GCF_031761385.1 (Necator americanus - also missing UTRs)
+- GCF_000524195.1 (also missing 5' UTR)
+- GCF_001040885.1 (also missing 5' UTR)
+- GCF_000150275.1
+- GCF_000327385.1
+- GCF_000715545.1
+- GCF_000326865.2
+
+These genomes have parquet files with the minimum file size (1814 bytes) containing 0 intervals. The pipeline handles empty ncRNA sets the same way as empty UTR sets.
+
 ### Annotation Sources and Data Quality
 
 NCBI genome annotations come from different sources with varying quality levels:

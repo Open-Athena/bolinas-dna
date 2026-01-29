@@ -296,7 +296,7 @@ rule intervals_recipe_v7:
 # ncRNA exons
 rule intervals_recipe_v8:
     input:
-        "results/intervals/ncrna_exon/{g}.parquet",
+        "results/intervals/ncrna_exons/{g}.parquet",
         "results/intervals/defined/{g}.bed.gz",
         "results/intervals/cds/{g}.parquet",
         "results/intervals/5_prime_utr/{g}.parquet",
