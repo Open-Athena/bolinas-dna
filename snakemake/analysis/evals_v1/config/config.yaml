@@ -85,8 +85,8 @@ models:
       - 16000
       - 26000
 
-  - name: exp41-genomes-v4-genome_set-animals-intervals-v1_512_256
-    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp41-genomes-v4-genome_set-animals-intervals-v1_512_256-r01-0b8d0b
+  - name: exp41-genomes-v4-genome_set-animals-intervals-v1_512_256-r02-cea8f7
+    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp41-genomes-v4-genome_set-animals-intervals-v1_512_256-r02-cea8f7
     context_size: 512
     steps:
       - 1000
@@ -100,8 +100,8 @@ models:
       - 9000
       - 9999
 
-  - name: exp41-genomes-v4-genome_set-animals-intervals-v4_512_256
-    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp41-genomes-v4-genome_set-animals-intervals-v4_512_256-r01-e95fd1
+  - name: exp41-genomes-v4-genome_set-animals-intervals-v4_512_256-r02-985ba6
+    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp41-genomes-v4-genome_set-animals-intervals-v4_512_256-r02-985ba6
     context_size: 512
     steps:
       - 1000
@@ -115,8 +115,8 @@ models:
       - 9000
       - 9999
 
-  - name: exp37-genomes-v4-genome_set-animals-intervals-v1_256_128
-    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp37-genomes-v4-genome_set-animals-intervals-v1_256_128-r01-1217dc
+  - name: exp37-genomes-v4-genome_set-animals-intervals-v1_256_128-r02-4e2580
+    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp37-genomes-v4-genome_set-animals-intervals-v1_256_128-r02-4e2580
     context_size: 256
     steps:
       - 1000
@@ -127,7 +127,39 @@ models:
       - 6000
       - 7000
       - 8000
-      # - 9000
+      - 9000
+      - 9999
+
+  - name: exp43-ncrna-r01-1cd7d3
+    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp43-ncrna-r01-1cd7d3
+    context_size: 256
+    steps:
+      - 1000
+      - 5000
+      # - 9999
+
+  - name: exp43-five_prime_utr-r01-7742ae
+    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp43-five_prime_utr-r01-7742ae
+    context_size: 256
+    steps:
+      - 1000
+      - 5000
+      # - 9999
+
+  - name: exp43-three_prime_utr-r01-16f6cf
+    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp43-three_prime_utr-r01-16f6cf
+    context_size: 256
+    steps:
+      - 1000
+      - 5000
+      # - 9999
+
+  - name: exp43-cds-r01-976f2d
+    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp43-cds-r01-976f2d
+    context_size: 256
+    steps:
+      - 1000
+      - 5000
       # - 9999
 
 # Evaluation datasets from HuggingFace
@@ -385,9 +417,9 @@ custom_plots:
   - name: exp41_promoters_mrna_ncrna
     title: "Exp41 promoters from mRNA vs. ncRNA"
     models:
-      - model: exp41-genomes-v4-genome_set-animals-intervals-v1_512_256
+      - model: exp41-genomes-v4-genome_set-animals-intervals-v1_512_256-r02-cea8f7
         title: "mRNA"
-      - model: exp41-genomes-v4-genome_set-animals-intervals-v4_512_256
+      - model: exp41-genomes-v4-genome_set-animals-intervals-v4_512_256-r02-985ba6
         title: "mRNA + ncRNA"
     n_cols: 2
     dataset_subsets:
@@ -410,9 +442,9 @@ custom_plots:
   - name: exp37_context_size
     title: "Exp37 context size"
     models:
-      - model: exp41-genomes-v4-genome_set-animals-intervals-v1_512_256
+      - model: exp41-genomes-v4-genome_set-animals-intervals-v1_512_256-r02-cea8f7
         title: "512bp"
-      - model: exp37-genomes-v4-genome_set-animals-intervals-v1_256_128
+      - model: exp37-genomes-v4-genome_set-animals-intervals-v1_256_128-r02-4e2580
         title: "256bp"
     n_cols: 2
     dataset_subsets:
@@ -426,6 +458,47 @@ custom_plots:
         score_type: minus_llr
         include_baselines: true
         title: "Mendelian 5' UTR"
+
+  - name: exp43_functional_regions
+    title: "Exp43 functional regions"
+    models:
+      - model: exp43-cds-r01-976f2d
+        title: "CDS"
+      - model: exp43-five_prime_utr-r01-7742ae
+        title: "5' UTR"
+      - model: exp43-three_prime_utr-r01-16f6cf
+        title: "3' UTR"
+      - model: exp43-ncrna-r01-1cd7d3
+        title: "ncRNA"
+      - model: exp37-genomes-v4-genome_set-animals-intervals-v1_256_128-r02-4e2580
+        title: "Promoter (WIP)"
+    n_cols: 2
+    dataset_subsets:
+      - dataset: traitgym_mendelian
+        subset: nonexonic_AND_proximal
+        score_type: minus_llr
+        include_baselines: true
+        title: "Mendelian Promoter"
+      - dataset: traitgym_mendelian
+        subset: nonexonic_AND_distal
+        score_type: minus_llr
+        include_baselines: true
+        title: "Mendelian Distal"
+      - dataset: traitgym_mendelian
+        subset: 5_prime_UTR_variant
+        score_type: minus_llr
+        include_baselines: true
+        title: "Mendelian 5' UTR"
+      - dataset: traitgym_mendelian
+        subset: 3_prime_UTR_variant
+        score_type: minus_llr
+        include_baselines: true
+        title: "Mendelian 3' UTR"
+      - dataset: traitgym_mendelian
+        subset: non_coding_transcript_exon_variant
+        score_type: minus_llr
+        include_baselines: true
+        title: "Mendelian ncRNA"
 
 # Inference configuration (performance settings that don't affect output)
 inference:
