@@ -187,8 +187,23 @@ models:
       - 6000
       - 7000
       - 8000
-#       - 9000
-#       - 9999
+      - 9000
+      - 9999
+
+  - name: exp42-promoter_256-r01-e83901
+    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp42-promoter_256-r01-e83901
+    context_size: 256
+    steps:
+      - 1000
+      - 2000
+      - 3000
+      - 4000
+      - 5000
+      - 6000
+      - 7000
+      - 8000
+      - 9000
+      - 9999
 
 # Evaluation datasets from HuggingFace
 # Each dataset should have been created by the snakemake/evals pipeline
@@ -532,6 +547,41 @@ custom_plots:
         score_type: minus_llr
         include_baselines: true
         title: "ClinVar missense"
+
+  - name: exp42_promoter_radius
+    title: "Exp42 promoter radius"
+    models:
+      - model: exp37-genomes-v4-genome_set-animals-intervals-v1_256_128-r02-4e2580
+        title: "Promoter (prev)"
+      - model: exp42-promoter_256-r01-e83901
+        title: "+-256 bp"
+    n_cols: 3
+    dataset_subsets:
+      - dataset: traitgym_mendelian
+        subset: nonexonic_AND_proximal
+        score_type: minus_llr
+        include_baselines: true
+        title: "Mendelian Promoter"
+      - dataset: traitgym_mendelian
+        subset: nonexonic_AND_distal
+        score_type: minus_llr
+        include_baselines: true
+        title: "Mendelian Distal"
+      - dataset: traitgym_mendelian
+        subset: 5_prime_UTR_variant
+        score_type: minus_llr
+        include_baselines: true
+        title: "Mendelian 5' UTR"
+      - dataset: traitgym_mendelian
+        subset: 3_prime_UTR_variant
+        score_type: minus_llr
+        include_baselines: true
+        title: "Mendelian 3' UTR"
+      - dataset: traitgym_mendelian
+        subset: non_coding_transcript_exon_variant
+        score_type: minus_llr
+        include_baselines: true
+        title: "Mendelian ncRNA"
 
 # Inference configuration (performance settings that don't affect output)
 inference:

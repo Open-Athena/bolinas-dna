@@ -1,10 +1,11 @@
 datasets:
   - traitgym_mendelian
   - traitgym_complex
+  - traitgym_mendelian_v2
   - clinvar_missense
   - gnomad_pls_v1
   - gnomad_pls_v2
   - gwas_coding
 
 # HuggingFace repository prefix for dataset uploads
-output_hf_prefix: gonzalobenegas/bolinas_evals
+output_hf_prefix: bolinas-dna/evals
