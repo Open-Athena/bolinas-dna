@@ -1,6 +1,8 @@
 # Core data science libraries
+import numpy as np
 import pandas as pd
 import polars as pl
+import pyBigWig
 from tqdm import tqdm
 
 # Bolinas module imports
