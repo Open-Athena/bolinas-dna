@@ -131,6 +131,10 @@ rule plot_custom_models_comparison:
             if not subplot_titles:
                 subplot_titles = None
 
+        ylim = plot_cfg.get("ylim")
+        if ylim is not None:
+            ylim = tuple(ylim)
+
         plot_models_comparison(
             metrics_df,
             output[0],
@@ -142,4 +146,6 @@ rule plot_custom_models_comparison:
             n_cols=plot_cfg.get("n_cols"),
             model_labels=model_labels,
             model_colors=model_colors,
+            ylim=ylim,
+            scale=plot_cfg.get("scale", 1.0),
         )

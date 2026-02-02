@@ -509,7 +509,9 @@ custom_plots:
         title: "Mendelian 5' UTR"
 
   - name: exp43_functional_regions
-    title: "Exp43 functional regions"
+    title: "Exp43 functional regions (TraitGym Mendelian v2)"
+    ylim: [0.1, 0.65]
+    scale: 0.6
     models:
       - model: exp43-cds-r01-976f2d
         title: "CDS"
@@ -520,71 +522,41 @@ custom_plots:
       - model: exp43-ncrna-r01-1cd7d3
         title: "ncRNA"
       - model: exp37-genomes-v4-genome_set-animals-intervals-v1_256_128-r02-4e2580
-        title: "Promoter (WIP)"
-    n_cols: 3
+        title: "Promoter"
+    n_cols: 4
     dataset_subsets:
-      - dataset: traitgym_mendelian
-        subset: nonexonic_AND_proximal
-        score_type: minus_llr
-        include_baselines: true
-        title: "Mendelian Promoter"
-      - dataset: traitgym_mendelian
-        subset: nonexonic_AND_distal
-        score_type: minus_llr
-        include_baselines: true
-        title: "Mendelian Distal"
-      - dataset: traitgym_mendelian
-        subset: 5_prime_UTR_variant
-        score_type: minus_llr
-        include_baselines: true
-        title: "Mendelian 5' UTR"
-      - dataset: traitgym_mendelian
-        subset: 3_prime_UTR_variant
-        score_type: minus_llr
-        include_baselines: true
-        title: "Mendelian 3' UTR"
-      - dataset: traitgym_mendelian
-        subset: non_coding_transcript_exon_variant
-        score_type: minus_llr
-        include_baselines: true
-        title: "Mendelian ncRNA"
-      - dataset: clinvar_missense
-        subset: global
-        score_type: minus_llr
-        include_baselines: true
-        title: "ClinVar missense"
       - dataset: traitgym_mendelian_v2
         subset: missense_variant
         score_type: minus_llr
-        title: "Mendelian-v2 missense"
-      - dataset: traitgym_mendelian_v2
-        subset: splicing
-        score_type: minus_llr
-        title: "Mendelian-v2 splicing"
+        title: "Missense"
       - dataset: traitgym_mendelian_v2
         subset: tss_proximal
         score_type: minus_llr
-        title: "Mendelian-v2 TSS proximal"
-      - dataset: traitgym_mendelian_v2
-        subset: synonymous_variant
-        score_type: minus_llr
-        title: "Mendelian-v2 synonymous"
-      - dataset: traitgym_mendelian_v2
-        subset: 5_prime_UTR_variant
-        score_type: minus_llr
-        title: "Mendelian-v2 5' UTR"
-      - dataset: traitgym_mendelian_v2
-        subset: non_coding_transcript_exon_variant
-        score_type: minus_llr
-        title: "Mendelian-v2 ncRNA"
+        title: "Promoter"
       - dataset: traitgym_mendelian_v2
         subset: distal
         score_type: minus_llr
-        title: "Mendelian-v2 distal"
+        title: "Distal"
+      - dataset: traitgym_mendelian_v2
+        subset: splicing
+        score_type: minus_llr
+        title: "Splicing"
+      - dataset: traitgym_mendelian_v2
+        subset: synonymous_variant
+        score_type: minus_llr
+        title: "Synonymous"
+      - dataset: traitgym_mendelian_v2
+        subset: 5_prime_UTR_variant
+        score_type: minus_llr
+        title: "5' UTR"
       - dataset: traitgym_mendelian_v2
         subset: 3_prime_UTR_variant
         score_type: minus_llr
-        title: "Mendelian-v2 3' UTR"
+        title: "3' UTR"
+      - dataset: traitgym_mendelian_v2
+        subset: non_coding_transcript_exon_variant
+        score_type: minus_llr
+        title: "ncRNA"
 
   - name: exp42_promoter_radius
     title: "Exp42 promoter radius"
