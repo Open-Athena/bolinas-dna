@@ -26,3 +26,18 @@ rule traitgym_dataset:
         V = V.reset_index()
         for split, path in zip(SPLITS, output):
             V[V.chrom.isin(SPLIT_CHROMS[split])].to_parquet(path, index=False)
+
+
+rule traitgym_mendelian_v2_dataset:
+    output:
+        expand(
+            "results/dataset/traitgym_mendelian_v2/{split}.parquet",
+            split=SPLITS,
+        ),
+    run:
+        V = pd.read_parquet(
+            "hf://datasets/gonzalobenegas/traitgym-mendelian-v2/test.parquet"
+        )
+        V["subset"] = V["consequence_group"]
+        for split, path in zip(SPLITS, output):
+            V[V.chrom.isin(SPLIT_CHROMS[split])].to_parquet(path, index=False)

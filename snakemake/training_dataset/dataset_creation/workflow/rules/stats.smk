@@ -2,6 +2,13 @@
 PLOT_REGIONS = [r for r in config["functional_regions"] if r != "promoters"]
 
 
+rule download_phylop_conservation:
+    output:
+        "results/conservation/cactus241way.phyloP.bw",
+    shell:
+        "wget -O {output} https://hgdownload.soe.ucsc.edu/goldenPath/hg38/cactus241way/cactus241way.phyloP.bw"
+
+
 rule all_functional_region_stats:
     input:
         expand(
@@ -102,6 +109,36 @@ rule functional_region_stats:
             stats_df["n_intervals"] / stats_df["n_intervals"].sum()
         )
         stats_df.to_parquet(output[0], index=False)
+
+
+rule calculate_conservation:
+    input:
+        conservation="results/conservation/cactus241way.phyloP.bw",
+        chrom_mapping="config/human_chrom_mapping.tsv",
+        intervals="results/intervals/{region}/GCF_000001405.40.parquet",
+    output:
+        "results/conservation/{region}.parquet",
+    run:
+        chrom_map = pl.read_csv(input.chrom_mapping, separator="\t")
+        refseq_to_ucsc = dict(zip(chrom_map["refseq"], chrom_map["ucsc"]))
+        df = pl.read_parquet(input.intervals)
+        bw = pyBigWig.open(input.conservation)
+
+        all_scores = []
+        for row in df.iter_rows(named=True):
+            chrom_ucsc = refseq_to_ucsc.get(row["chrom"])
+            if chrom_ucsc is None:
+                continue
+            values = bw.values(chrom_ucsc, row["start"], row["end"], numpy=True)
+            all_scores.append(values)
+
+        bw.close()
+
+        concatenated = np.concatenate(all_scores)
+        clean_scores = concatenated[~np.isnan(concatenated)]
+
+        conservation = pl.DataFrame({"phylop": clean_scores.astype(np.float16)})
+        conservation.write_parquet(output[0])
 
 
 def load_genome_labels(genomes_path: str) -> dict[str, str]:
@@ -416,6 +453,52 @@ rule plot_annotation_sources_per_genome:
         ax.set_title("Annotation Sources by Species (Sorted by Curated Sources)")
         ax.legend(loc="lower right", bbox_to_anchor=(1.2, 0))
         ax.set_xlim(0, 1)
+
+        plt.tight_layout()
+        plt.savefig(output[0], format="svg", bbox_inches="tight")
+        plt.close()
+
+
+rule plot_conservation_histogram:
+    input:
+        "results/conservation/cds.parquet",
+        "results/conservation/5_prime_utr.parquet",
+        "results/conservation/3_prime_utr.parquet",
+        "results/conservation/ncrna_exons.parquet",
+        "results/conservation/promoters/256/256.parquet",
+    output:
+        "results/plots/conservation_histogram.svg",
+    run:
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+
+        regions = ["cds", "5_prime_utr", "3_prime_utr", "ncrna_exons", "promoters"]
+
+        dfs = []
+        for region, path in zip(regions, input):
+            df = pd.read_parquet(path)
+            if len(df) > 100000:
+                df = df.sample(n=100000, random_state=42)
+            df["region"] = region
+            dfs.append(df)
+        combined = pd.concat(dfs, ignore_index=True)
+
+        xlim_low = combined["phylop"].quantile(0.001)
+        xlim_high = combined["phylop"].quantile(0.999)
+
+        region_means = combined.groupby("region")["phylop"].mean()
+
+        g = sns.FacetGrid(
+            combined, row="region", height=2, aspect=3, sharex=True, sharey=False
+        )
+        g.map(sns.histplot, "phylop", bins=100, kde=False)
+
+        for ax, region in zip(g.axes.flat, regions):
+            ax.axvline(region_means[region], color="red", linestyle="--", linewidth=1.5)
+
+        g.set_titles(row_template="{row_name}")
+        g.set_axis_labels("Conservation Score (phyloP)", "Count")
+        g.set(xlim=(xlim_low, xlim_high))
 
         plt.tight_layout()
         plt.savefig(output[0], format="svg", bbox_inches="tight")
