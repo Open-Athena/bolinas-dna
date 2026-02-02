@@ -34,6 +34,9 @@ rule all_stats_plots:
         # Annotation source plots
         "results/plots/annotation_sources.svg",
         "results/plots/annotation_sources_per_genome.svg",
+        # Conservation summary
+        "results/plots/conservation_summary.svg",
+        "results/plots/conservation_total_bases.svg",
 
 
 rule all_annotation_source_stats:
@@ -119,26 +122,69 @@ rule calculate_conservation:
     output:
         "results/conservation/{region}.parquet",
     run:
+        phylop_cutoff = config["conservation"]["phylop_cutoff"]
         chrom_map = pl.read_csv(input.chrom_mapping, separator="\t")
         refseq_to_ucsc = dict(zip(chrom_map["refseq"], chrom_map["ucsc"]))
-        df = pl.read_parquet(input.intervals)
+
+        # Map RefSeq to UCSC chrom names and filter to mapped chroms
+        df = (
+            pl.read_parquet(input.intervals)
+            .with_columns(
+                pl.col("chrom")
+                .replace_strict(refseq_to_ucsc, default=None)
+                .alias("chrom_ucsc")
+            )
+            .filter(pl.col("chrom_ucsc").is_not_null())
+        )
+
+        # Total bases from interval sizes (NaN = valid but not conserved)
+        total_bases = (df["end"] - df["start"]).sum()
+
+        # Count conserved bases per interval (NaN >= cutoff is False, so excluded)
         bw = pyBigWig.open(input.conservation)
-
-        all_scores = []
-        for row in df.iter_rows(named=True):
-            chrom_ucsc = refseq_to_ucsc.get(row["chrom"])
-            if chrom_ucsc is None:
-                continue
-            values = bw.values(chrom_ucsc, row["start"], row["end"], numpy=True)
-            all_scores.append(values)
-
+        conserved_counts = df.select(
+            pl.struct(["chrom_ucsc", "start", "end"])
+            .map_elements(
+                lambda x: int(
+                    np.sum(
+                        bw.values(x["chrom_ucsc"], x["start"], x["end"], numpy=True)
+                        >= phylop_cutoff
+                    )
+                ),
+                return_dtype=pl.Int64,
+            )
+            .alias("conserved")
+        )
         bw.close()
 
-        concatenated = np.concatenate(all_scores)
-        clean_scores = concatenated[~np.isnan(concatenated)]
+        conserved_bases = conserved_counts["conserved"].sum()
+        pct_conserved = (
+            (conserved_bases / total_bases * 100) if total_bases > 0 else 0.0
+        )
 
-        conservation = pl.DataFrame({"phylop": clean_scores.astype(np.float16)})
-        conservation.write_parquet(output[0])
+        result = pl.DataFrame(
+            {
+                "region": [wildcards.region],
+                "total_bases": [int(total_bases)],
+                "conserved_bases": [int(conserved_bases)],
+                "pct_conserved": [pct_conserved],
+            }
+        )
+        result.write_parquet(output[0])
+
+
+rule combine_conservation_stats:
+    input:
+        expand(
+            "results/conservation/{region}.parquet",
+            region=config["functional_regions"],
+        ),
+    output:
+        "results/conservation/summary.parquet",
+    run:
+        dfs = [pl.read_parquet(path) for path in input]
+        combined = pl.concat(dfs)
+        combined.write_parquet(output[0])
 
 
 def load_genome_labels(genomes_path: str) -> dict[str, str]:
@@ -200,15 +246,16 @@ rule plot_functional_regions_per_genome:
 
         regions = df["region"].tolist()
         x = np.arange(len(regions))
+        labels = [config["region_labels"][r] for r in regions]
+        colors = [config["region_colors"][r] for r in regions]
 
         fig, axes = plt.subplots(1, 3, figsize=(15, 5))
 
         # Panel 1: Number of intervals
         ax1 = axes[0]
-        colors = plt.cm.Set2(np.linspace(0, 1, len(regions)))
         bars = ax1.bar(x, df["n_intervals"], color=colors)
         ax1.set_xticks(x)
-        ax1.set_xticklabels(regions, rotation=45, ha="right")
+        ax1.set_xticklabels(labels, rotation=45, ha="right")
         ax1.set_ylabel("Count")
         ax1.set_title("Number of Intervals")
         ax1.grid(axis="y", alpha=0.3)
@@ -231,7 +278,7 @@ rule plot_functional_regions_per_genome:
             ax2.hlines(p10, i - 0.15, i + 0.15, colors="black", linewidth=1)
             ax2.hlines(p90, i - 0.15, i + 0.15, colors="black", linewidth=1)
         ax2.set_xticks(x)
-        ax2.set_xticklabels(regions, rotation=45, ha="right")
+        ax2.set_xticklabels(labels, rotation=45, ha="right")
         ax2.set_ylabel("Interval Size (bp)")
         ax2.set_title("Size Distribution (p10-p90)")
         ax2.grid(axis="y", alpha=0.3)
@@ -240,7 +287,7 @@ rule plot_functional_regions_per_genome:
         ax3 = axes[2]
         bars = ax3.bar(x, df["size_total"] / 1e6, color=colors)
         ax3.set_xticks(x)
-        ax3.set_xticklabels(regions, rotation=45, ha="right")
+        ax3.set_xticklabels(labels, rotation=45, ha="right")
         ax3.set_ylabel("Total Size (Mb)")
         ax3.set_title("Total Size")
         ax3.grid(axis="y", alpha=0.3)
@@ -264,6 +311,8 @@ rule plot_functional_regions_overall:
         df = df[df["region"].isin(PLOT_REGIONS)]
         regions = PLOT_REGIONS
         x = np.arange(len(regions))
+        labels = [config["region_labels"][r] for r in regions]
+        colors = [config["region_colors"][r] for r in regions]
 
         # Aggregate stats across genomes (using median interval size = size_p50)
         agg = (
@@ -280,7 +329,6 @@ rule plot_functional_regions_overall:
         )
 
         fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-        colors = plt.cm.Set2(np.linspace(0, 1, len(regions)))
 
         # Panel 1: Number of intervals
         ax1 = axes[0]
@@ -292,7 +340,7 @@ rule plot_functional_regions_overall:
             capsize=3,
         )
         ax1.set_xticks(x)
-        ax1.set_xticklabels(regions, rotation=45, ha="right")
+        ax1.set_xticklabels(labels, rotation=45, ha="right")
         ax1.set_ylabel("Count")
         ax1.set_title("Number of Intervals (mean ± std)")
         ax1.grid(axis="y", alpha=0.3)
@@ -307,7 +355,7 @@ rule plot_functional_regions_overall:
             capsize=3,
         )
         ax2.set_xticks(x)
-        ax2.set_xticklabels(regions, rotation=45, ha="right")
+        ax2.set_xticklabels(labels, rotation=45, ha="right")
         ax2.set_ylabel("Median Interval Size (bp)")
         ax2.set_title("Median Interval Size (mean ± std)")
         ax2.grid(axis="y", alpha=0.3)
@@ -322,7 +370,7 @@ rule plot_functional_regions_overall:
             capsize=3,
         )
         ax3.set_xticks(x)
-        ax3.set_xticklabels(regions, rotation=45, ha="right")
+        ax3.set_xticklabels(labels, rotation=45, ha="right")
         ax3.set_ylabel("Total Size (Mb)")
         ax3.set_title("Total Size (mean ± std)")
         ax3.grid(axis="y", alpha=0.3)
@@ -459,47 +507,84 @@ rule plot_annotation_sources_per_genome:
         plt.close()
 
 
-rule plot_conservation_histogram:
+rule plot_conservation_summary:
     input:
-        "results/conservation/cds.parquet",
-        "results/conservation/5_prime_utr.parquet",
-        "results/conservation/3_prime_utr.parquet",
-        "results/conservation/ncrna_exons.parquet",
-        "results/conservation/promoters/256/256.parquet",
+        "results/conservation/summary.parquet",
     output:
-        "results/plots/conservation_histogram.svg",
+        "results/plots/conservation_summary.svg",
     run:
         import matplotlib.pyplot as plt
-        import seaborn as sns
 
-        regions = ["cds", "5_prime_utr", "3_prime_utr", "ncrna_exons", "promoters"]
+        phylop_cutoff = config["conservation"]["phylop_cutoff"]
+        df = pd.read_parquet(input[0]).sort_values("pct_conserved", ascending=False)
 
-        dfs = []
-        for region, path in zip(regions, input):
-            df = pd.read_parquet(path)
-            if len(df) > 100000:
-                df = df.sample(n=100000, random_state=42)
-            df["region"] = region
-            dfs.append(df)
-        combined = pd.concat(dfs, ignore_index=True)
+        fig, ax = plt.subplots(figsize=(10, 6))
 
-        xlim_low = combined["phylop"].quantile(0.001)
-        xlim_high = combined["phylop"].quantile(0.999)
+        labels = [config["region_labels"][r] for r in df["region"]]
+        colors = [config["region_colors"][r] for r in df["region"]]
+        bars = ax.bar(labels, df["pct_conserved"], color=colors, edgecolor="black")
 
-        region_means = combined.groupby("region")["phylop"].mean()
+        for bar, pct in zip(bars, df["pct_conserved"]):
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height() + 0.5,
+                f"{pct:.1f}%",
+                ha="center",
+                va="bottom",
+                fontsize=10,
+                fontweight="bold",
+            )
 
-        g = sns.FacetGrid(
-            combined, row="region", height=2, aspect=3, sharex=True, sharey=False
+        ax.set_xlabel("Functional Region")
+        ax.set_ylabel("Bases Conserved (%)")
+        ax.set_title(f"Conservation by Functional Region (phyloP >= {phylop_cutoff})")
+        ax.set_ylim(0, max(df["pct_conserved"]) * 1.15)
+        ax.grid(axis="y", alpha=0.3)
+
+        plt.xticks(rotation=45, ha="right")
+        plt.tight_layout()
+        plt.savefig(output[0], format="svg", bbox_inches="tight")
+        plt.close()
+
+
+rule plot_conservation_total_bases:
+    input:
+        "results/conservation/summary.parquet",
+    output:
+        "results/plots/conservation_total_bases.svg",
+    run:
+        import matplotlib.pyplot as plt
+
+        phylop_cutoff = config["conservation"]["phylop_cutoff"]
+        df = pd.read_parquet(input[0]).sort_values("conserved_bases", ascending=False)
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        labels = [config["region_labels"][r] for r in df["region"]]
+        colors = [config["region_colors"][r] for r in df["region"]]
+        conserved_mb = df["conserved_bases"] / 1e6
+        bars = ax.bar(labels, conserved_mb, color=colors, edgecolor="black")
+
+        for bar, mb in zip(bars, conserved_mb):
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height() + 0.3,
+                f"{mb:.1f}M",
+                ha="center",
+                va="bottom",
+                fontsize=10,
+                fontweight="bold",
+            )
+
+        ax.set_xlabel("Functional Region")
+        ax.set_ylabel("Conserved Bases (millions)")
+        ax.set_title(
+            f"Total Conserved Bases by Functional Region (phyloP >= {phylop_cutoff})"
         )
-        g.map(sns.histplot, "phylop", bins=100, kde=False)
+        ax.set_ylim(0, max(conserved_mb) * 1.15)
+        ax.grid(axis="y", alpha=0.3)
 
-        for ax, region in zip(g.axes.flat, regions):
-            ax.axvline(region_means[region], color="red", linestyle="--", linewidth=1.5)
-
-        g.set_titles(row_template="{row_name}")
-        g.set_axis_labels("Conservation Score (phyloP)", "Count")
-        g.set(xlim=(xlim_low, xlim_high))
-
+        plt.xticks(rotation=45, ha="right")
         plt.tight_layout()
         plt.savefig(output[0], format="svg", bbox_inches="tight")
         plt.close()
