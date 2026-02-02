@@ -96,8 +96,39 @@ functional_regions:
   - cds
   - 5_prime_utr
   - 3_prime_utr
-  - promoters
+  - promoters_mRNA/256/256
   - ncrna_exons
+
+# Color palette for functional regions (consistent across all plots)
+region_colors:
+  cds: "#66c2a5"
+  5_prime_utr: "#fc8d62"
+  3_prime_utr: "#8da0cb"
+  promoters: "#e78ac3"
+  promoters_mRNA/256/256: "#e78ac3"
+  ncrna_exons: "#a6d854"
+
+# Display labels for functional regions
+region_labels:
+  cds: "CDS"
+  5_prime_utr: "5' UTR"
+  3_prime_utr: "3' UTR"
+  promoters: "Promoter"
+  promoters_mRNA/256/256: "Promoter"
+  ncrna_exons: "ncRNA"
+
+# Conservation analysis settings
+# Cutoff from: Christmas, Matthew J., et al. "Evolutionary constraint and
+# innovation across hundreds of placental mammals." Science 380.6643 (2023): eabn3943.
+conservation:
+  phylop_cutoff: 2.27  # bases with phyloP >= this value are considered conserved
+
+# Promoter variants for comparison plot
+promoter_comparison_regions:
+  - promoters_mRNA/256/256
+  - promoters_mRNA/2048/2048
+  - promoters/256/256
+  - promoters/2048/2048
 
 # Priority genomes for BED export (for visualization in genome browsers)
 genome_subset_bed:
