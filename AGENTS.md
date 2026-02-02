@@ -15,6 +15,7 @@ The codebase has two main components:
    - See individual pipeline READMEs for details on what each pipeline does and how to configure them
    - Always do a dry-run first. Be extra careful whenever Snakemake is planning to rerun a very slow step (ask for my permission).
    - When working on a feature, do not try to run the whole pipeline, only the step relevant to the feature.
+   - Run with `uv run snakemake`
 
 ## Development Practices
 

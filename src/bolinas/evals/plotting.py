@@ -142,6 +142,8 @@ def plot_models_comparison(
     n_cols: int | None = None,
     model_labels: dict[str, str] | None = None,
     model_colors: dict[str, str] | None = None,
+    ylim: tuple[float, float] | None = None,
+    scale: float = 1.0,
 ) -> None:
     """Plot metric values vs training step comparing models for a specific score type.
 
@@ -166,6 +168,9 @@ def plot_models_comparison(
         model_labels: Mapping of model name to display label for legend. If None, uses model name.
         model_colors: Mapping of model name to color (hex code or named color). If None, uses
             matplotlib's default color cycle.
+        ylim: Optional y-axis limits as (min, max) tuple. If None, uses auto-scaling.
+        scale: Scale factor for subplot size. Default 1.0 gives 4 inches per subplot.
+            Use >1.0 for larger plots, <1.0 for smaller.
     """
     output_path = Path(output_path)
 
@@ -238,7 +243,7 @@ def plot_models_comparison(
     if n_cols is None:
         n_cols = min(3, n_plots)
     n_rows = (n_plots + n_cols - 1) // n_cols
-    subplot_size = 4  # inches per subplot
+    subplot_size = 4 * scale  # inches per subplot
 
     if figsize is None:
         figsize = (subplot_size * n_cols, subplot_size * n_rows)
@@ -328,6 +333,10 @@ def plot_models_comparison(
         # Despine
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
+
+        # Apply y-axis limits if specified
+        if ylim is not None:
+            ax.set_ylim(ylim)
 
     # Hide x-axis labels for non-bottom rows (shared x-axis)
     for idx in range(n_plots):
