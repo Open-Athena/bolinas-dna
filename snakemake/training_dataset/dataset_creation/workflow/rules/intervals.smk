@@ -190,6 +190,28 @@ rule extract_promoters:
         promoters.write_parquet(output[0])
 
 
+rule extract_promoters_mRNA:
+    input:
+        "results/annotation/{g}.gtf.gz",
+        "results/intervals/all/{g}.bed.gz",
+    output:
+        "results/intervals/promoters_mRNA/{upstream}/{downstream}/{g}.parquet",
+    run:
+        ann = load_annotation(input[0])
+        bounds = GenomicSet.read_bed(input[1])
+        promoters = get_promoters(
+            ann,
+            n_upstream=int(wildcards.upstream),
+            n_downstream=int(wildcards.downstream),
+            mRNA_only=True,
+            within_bounds=bounds,
+        )
+        assert (
+            promoters.n_intervals() > 0
+        ), f"No mRNA promoter regions found for {wildcards.g}"
+        promoters.write_parquet(output[0])
+
+
 rule extract_ncrna_exons:
     input:
         "results/annotation/{g}.gtf.gz",

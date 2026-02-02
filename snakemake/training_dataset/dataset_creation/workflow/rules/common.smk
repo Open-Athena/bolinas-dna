@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import polars as pl
 import pyBigWig
+import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 # Bolinas module imports

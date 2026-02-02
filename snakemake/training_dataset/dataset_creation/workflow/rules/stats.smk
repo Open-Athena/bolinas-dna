@@ -1,5 +1,4 @@
-# Functional regions to include in plots (excluding promoters since radius is arbitrary)
-PLOT_REGIONS = [r for r in config["functional_regions"] if r != "promoters"]
+PLOT_REGIONS = config["functional_regions"]
 
 
 rule download_phylop_conservation:
@@ -37,6 +36,7 @@ rule all_stats_plots:
         # Conservation summary
         "results/plots/conservation_summary.svg",
         "results/plots/conservation_total_bases.svg",
+        "results/plots/promoter_comparison.svg",
 
 
 rule all_annotation_source_stats:
@@ -236,9 +236,6 @@ rule plot_functional_regions_per_genome:
     output:
         "results/plots/functional_regions/{g}.svg",
     run:
-        import matplotlib.pyplot as plt
-        import numpy as np
-
         df = pd.read_parquet(input.stats)
         df = df[df["region"].isin(PLOT_REGIONS)]
         genome_labels = load_genome_labels(input.genomes)
@@ -304,9 +301,6 @@ rule plot_functional_regions_overall:
     output:
         "results/plots/functional_regions_overall.svg",
     run:
-        import matplotlib.pyplot as plt
-        import numpy as np
-
         df = pd.read_parquet(input.stats)
         df = df[df["region"].isin(PLOT_REGIONS)]
         regions = PLOT_REGIONS
@@ -392,9 +386,6 @@ rule plot_functional_regions_size_histogram:
     output:
         "results/plots/functional_regions_size_histogram/{region}.svg",
     run:
-        import matplotlib.pyplot as plt
-        import numpy as np
-
         # Collect all interval sizes across genomes
         all_sizes = []
         for path in input.intervals:
@@ -443,8 +434,6 @@ rule plot_annotation_sources:
     output:
         "results/plots/annotation_sources.svg",
     run:
-        import matplotlib.pyplot as plt
-
         df = pd.read_parquet(input[0])
         df = df.sort_values("mean", ascending=True)
 
@@ -473,9 +462,6 @@ rule plot_annotation_sources_per_genome:
     output:
         "results/plots/annotation_sources_per_genome.svg",
     run:
-        import matplotlib.pyplot as plt
-        import numpy as np
-
         df = pd.read_parquet(input.stats)
         genome_labels = load_genome_labels(input.genomes)
 
@@ -513,8 +499,6 @@ rule plot_conservation_summary:
     output:
         "results/plots/conservation_summary.svg",
     run:
-        import matplotlib.pyplot as plt
-
         phylop_cutoff = config["conservation"]["phylop_cutoff"]
         df = pd.read_parquet(input[0]).sort_values("pct_conserved", ascending=False)
 
@@ -553,8 +537,6 @@ rule plot_conservation_total_bases:
     output:
         "results/plots/conservation_total_bases.svg",
     run:
-        import matplotlib.pyplot as plt
-
         phylop_cutoff = config["conservation"]["phylop_cutoff"]
         df = pd.read_parquet(input[0]).sort_values("conserved_bases", ascending=False)
 
@@ -585,6 +567,89 @@ rule plot_conservation_total_bases:
         ax.grid(axis="y", alpha=0.3)
 
         plt.xticks(rotation=45, ha="right")
+        plt.tight_layout()
+        plt.savefig(output[0], format="svg", bbox_inches="tight")
+        plt.close()
+
+
+rule plot_promoter_comparison:
+    input:
+        expand(
+            "results/conservation/{region}.parquet",
+            region=config["promoter_comparison_regions"],
+        ),
+    output:
+        "results/plots/promoter_comparison.svg",
+    run:
+        # Labels specific to this plot
+        labels = {
+            "promoters_mRNA/256/256": "mRNA ±256",
+            "promoters_mRNA/2048/2048": "mRNA ±2048",
+            "promoters/256/256": "All ±256",
+            "promoters/2048/2048": "All ±2048",
+        }
+        colors = {
+            "promoters_mRNA/256/256": "#e78ac3",
+            "promoters_mRNA/2048/2048": "#c994b0",
+            "promoters/256/256": "#fbb4ae",
+            "promoters/2048/2048": "#d9a09b",
+        }
+
+        phylop_cutoff = config["conservation"]["phylop_cutoff"]
+
+        # Read and combine conservation data
+        dfs = [pl.read_parquet(path) for path in input]
+        df = pl.concat(dfs).to_pandas()
+
+        fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+        region_labels = [labels[r] for r in df["region"]]
+        region_colors = [colors[r] for r in df["region"]]
+
+        # Panel 1: Total bases
+        ax1 = axes[0]
+        total_mb = df["total_bases"] / 1e6
+        bars1 = ax1.bar(region_labels, total_mb, color=region_colors, edgecolor="black")
+        for bar, mb in zip(bars1, total_mb):
+            ax1.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height() + 0.5,
+                f"{mb:.1f}M",
+                ha="center",
+                va="bottom",
+                fontsize=10,
+                fontweight="bold",
+            )
+        ax1.set_ylabel("Total Bases (millions)")
+        ax1.set_title("Total Bases")
+        ax1.set_ylim(0, max(total_mb) * 1.15)
+        ax1.grid(axis="y", alpha=0.3)
+        plt.sca(ax1)
+        plt.xticks(rotation=45, ha="right")
+
+        # Panel 2: Conservation %
+        ax2 = axes[1]
+        bars2 = ax2.bar(
+            region_labels, df["pct_conserved"], color=region_colors, edgecolor="black"
+        )
+        for bar, pct in zip(bars2, df["pct_conserved"]):
+            ax2.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height() + 0.3,
+                f"{pct:.1f}%",
+                ha="center",
+                va="bottom",
+                fontsize=10,
+                fontweight="bold",
+            )
+        ax2.set_ylabel("Bases Conserved (%)")
+        ax2.set_title(f"Conservation (phyloP ≥ {phylop_cutoff})")
+        ax2.set_ylim(0, max(df["pct_conserved"]) * 1.15)
+        ax2.grid(axis="y", alpha=0.3)
+        plt.sca(ax2)
+        plt.xticks(rotation=45, ha="right")
+
+        fig.suptitle("Promoter Region Comparison", fontsize=14)
         plt.tight_layout()
         plt.savefig(output[0], format="svg", bbox_inches="tight")
         plt.close()
