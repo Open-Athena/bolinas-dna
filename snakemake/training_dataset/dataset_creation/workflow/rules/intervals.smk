@@ -400,3 +400,16 @@ rule intervals_recipe_v10:
             intervals = intervals - region
         intervals = intervals & defined
         intervals.write_bed(output[0])
+
+
+rule intervals_recipe_v11:
+    input:
+        "results/intervals/promoters_mRNA/2048/2048/{g}.parquet",
+        "results/intervals/defined/{g}.bed.gz",
+    output:
+        "results/intervals/recipe/v11/{g}.bed.gz",
+    run:
+        intervals = GenomicSet.read_parquet(input[0])
+        defined = GenomicSet.read_bed(input[1])
+        intervals = intervals & defined
+        intervals.write_bed(output[0])
