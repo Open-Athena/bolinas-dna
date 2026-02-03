@@ -1505,3 +1505,184 @@ def test_get_promoters_excludes_pseudogene_promoters():
     assert isinstance(result, GenomicSet)
     # Pseudogene should be excluded, and there's no mRNA, so empty
     assert result.n_intervals() == 0
+
+
+# =============================================================================
+# Integration Tests with chrY fixture
+# =============================================================================
+# These tests use the chrY annotation fixture to verify functions work
+# correctly with real annotation data.
+# Note: chrY_annotation fixture is defined in conftest.py
+
+
+def test_load_annotation_chrY(chrY_annotation):
+    """Integration test: load_annotation with real chrY GTF.
+
+    Verifies that the chrY annotation loads correctly and has expected structure.
+    """
+    ann = chrY_annotation
+
+    # Should have many features
+    assert len(ann) > 10000
+
+    # Check required columns exist
+    required_cols = ["chrom", "feature", "start", "end", "strand", "attribute"]
+    for col in required_cols:
+        assert col in ann.columns
+
+    # All should be on chrY (NC_000024.10)
+    assert ann["chrom"].unique().to_list() == ["NC_000024.10"]
+
+    # Should have various feature types
+    features = set(ann["feature"].unique().to_list())
+    assert "exon" in features
+    assert "CDS" in features
+    assert "gene" in features
+    assert "transcript" in features
+
+    # Start should be less than end (0-based coordinates)
+    assert (ann["start"] < ann["end"]).all()
+
+
+def test_get_mrna_exons_chrY(chrY_annotation):
+    """Integration test: get_mrna_exons with real chrY annotation.
+
+    Verifies mRNA exon extraction works with real data.
+    """
+    result = get_mrna_exons(chrY_annotation)
+
+    # Should have mRNA exons
+    assert len(result) > 0
+
+    # Check required columns
+    required_cols = ["chrom", "start", "end", "strand", "transcript_id"]
+    for col in required_cols:
+        assert col in result.columns
+
+    # All on chrY
+    assert result["chrom"].unique().to_list() == ["NC_000024.10"]
+
+    # Strands should be valid
+    assert set(result["strand"].unique().to_list()).issubset({"+", "-"})
+
+    # All transcript IDs should be non-null
+    assert result["transcript_id"].null_count() == 0
+
+
+def test_get_cds_chrY(chrY_annotation):
+    """Integration test: get_cds with real chrY annotation.
+
+    Verifies CDS extraction and merging works with real data.
+    """
+    result = get_cds(chrY_annotation)
+
+    # Should return a GenomicSet
+    assert isinstance(result, GenomicSet)
+
+    # Should have CDS regions
+    assert result.n_intervals() > 0
+
+    # Convert to DataFrame for inspection
+    df = result.to_polars()
+    assert df["chrom"].unique().to_list() == ["NC_000024.10"]
+
+
+def test_get_ncrna_exons_chrY(chrY_annotation):
+    """Integration test: get_ncrna_exons with real chrY annotation.
+
+    Verifies ncRNA exon extraction works with real data.
+    """
+    result = get_ncrna_exons(chrY_annotation)
+
+    # Should return a GenomicSet
+    assert isinstance(result, GenomicSet)
+
+    # chrY should have some ncRNAs (though fewer than autosomes)
+    # If none found, that's also valid - just check it doesn't error
+    if result.n_intervals() > 0:
+        df = result.to_polars()
+        assert df["chrom"].unique().to_list() == ["NC_000024.10"]
+
+
+def test_get_5_prime_utr_chrY(chrY_annotation):
+    """Integration test: get_5_prime_utr with real chrY annotation.
+
+    Verifies 5' UTR extraction works with real data.
+    """
+    result = get_5_prime_utr(chrY_annotation)
+
+    # Should return a GenomicSet
+    assert isinstance(result, GenomicSet)
+
+    # Should have 5' UTR regions
+    assert result.n_intervals() > 0
+
+    df = result.to_polars()
+    assert df["chrom"].unique().to_list() == ["NC_000024.10"]
+
+    # Start should be less than end
+    assert (df["start"] < df["end"]).all()
+
+
+def test_get_3_prime_utr_chrY(chrY_annotation):
+    """Integration test: get_3_prime_utr with real chrY annotation.
+
+    Verifies 3' UTR extraction works with real data.
+    """
+    result = get_3_prime_utr(chrY_annotation)
+
+    # Should return a GenomicSet
+    assert isinstance(result, GenomicSet)
+
+    # Should have 3' UTR regions
+    assert result.n_intervals() > 0
+
+    df = result.to_polars()
+    assert df["chrom"].unique().to_list() == ["NC_000024.10"]
+
+    # Start should be less than end
+    assert (df["start"] < df["end"]).all()
+
+
+def test_get_promoters_chrY(chrY_annotation):
+    """Integration test: get_promoters with real chrY annotation.
+
+    Verifies promoter extraction works with real data.
+    """
+    result = get_promoters(
+        chrY_annotation,
+        n_upstream=2000,
+        n_downstream=500,
+        mRNA_only=True,
+    )
+
+    # Should return a GenomicSet
+    assert isinstance(result, GenomicSet)
+
+    # Should have promoter regions
+    assert result.n_intervals() > 0
+
+    df = result.to_polars()
+    assert df["chrom"].unique().to_list() == ["NC_000024.10"]
+
+
+def test_get_promoters_from_exons_chrY(chrY_annotation):
+    """Integration test: get_promoters_from_exons with real chrY annotation.
+
+    Verifies promoter extraction from exons works with real data.
+    """
+    mrna_exons = get_mrna_exons(chrY_annotation)
+    result = get_promoters_from_exons(
+        mrna_exons,
+        n_upstream=2000,
+        n_downstream=500,
+    )
+
+    # Should return a GenomicSet
+    assert isinstance(result, GenomicSet)
+
+    # Should have promoter regions
+    assert result.n_intervals() > 0
+
+    df = result.to_polars()
+    assert df["chrom"].unique().to_list() == ["NC_000024.10"]
