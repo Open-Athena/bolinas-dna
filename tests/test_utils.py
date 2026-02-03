@@ -10,10 +10,12 @@ from bolinas.data.utils import (
     get_5_prime_utr,
     get_array_split_pairs,
     get_cds,
+    get_downstream_of_CDS,
     get_mrna_exons,
     get_ncrna_exons,
     get_promoters,
     get_promoters_from_exons,
+    get_upstream_of_CDS,
     load_annotation,
     load_fasta,
     read_bed_to_pandas,
@@ -1682,6 +1684,285 @@ def test_get_promoters_from_exons_chrY(chrY_annotation):
     assert isinstance(result, GenomicSet)
 
     # Should have promoter regions
+    assert result.n_intervals() > 0
+
+    df = result.to_polars()
+    assert df["chrom"].unique().to_list() == ["NC_000024.10"]
+
+
+# get_upstream_of_CDS tests
+def test_get_upstream_of_CDS_positive_strand():
+    """Test get_upstream_of_CDS for transcript on positive strand.
+
+    Input: mRNA transcript with CDS [200-300] on '+' strand
+    Output: Upstream region [100-200] (100bp upstream of CDS start)
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [100, 200],
+            "end": [400, 300],
+            "strand": ["+", "+"],
+            "feature": ["exon", "CDS"],
+            "attribute": [
+                'transcript_id "trans1"; transcript_biotype "mRNA"',
+                'transcript_id "trans1"; transcript_biotype "mRNA"',
+            ],
+            "source": ["test", "test"],
+            "score": [".", "."],
+            "frame": [".", "."],
+        }
+    )
+
+    result = get_upstream_of_CDS(ann, dist=100)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 1
+    df = result.to_pandas()
+    assert df["start"].to_list() == [100]
+    assert df["end"].to_list() == [200]
+
+
+def test_get_upstream_of_CDS_negative_strand():
+    """Test get_upstream_of_CDS for transcript on negative strand.
+
+    Input: mRNA transcript with CDS [200-300] on '-' strand
+    Output: Upstream region [300-400] (100bp upstream of CDS, which is past CDS end)
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [100, 200],
+            "end": [400, 300],
+            "strand": ["-", "-"],
+            "feature": ["exon", "CDS"],
+            "attribute": [
+                'transcript_id "trans1"; transcript_biotype "mRNA"',
+                'transcript_id "trans1"; transcript_biotype "mRNA"',
+            ],
+            "source": ["test", "test"],
+            "score": [".", "."],
+            "frame": [".", "."],
+        }
+    )
+
+    result = get_upstream_of_CDS(ann, dist=100)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 1
+    df = result.to_pandas()
+    assert df["start"].to_list() == [300]
+    assert df["end"].to_list() == [400]
+
+
+def test_get_upstream_of_CDS_with_bounds():
+    """Test get_upstream_of_CDS with within_bounds clipping.
+
+    Input: CDS at [200-300] on '+' strand, dist=200, bounds [50-150]
+    Output: Should be clipped from [0-200] to [50-150]
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [100, 200],
+            "end": [400, 300],
+            "strand": ["+", "+"],
+            "feature": ["exon", "CDS"],
+            "attribute": [
+                'transcript_id "trans1"; transcript_biotype "mRNA"',
+                'transcript_id "trans1"; transcript_biotype "mRNA"',
+            ],
+            "source": ["test", "test"],
+            "score": [".", "."],
+            "frame": [".", "."],
+        }
+    )
+
+    bounds = GenomicSet(pl.DataFrame({"chrom": ["chr1"], "start": [50], "end": [150]}))
+
+    result = get_upstream_of_CDS(ann, dist=200, within_bounds=bounds)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 1
+    df = result.to_pandas()
+    assert df["start"].to_list() == [50]
+    assert df["end"].to_list() == [150]
+
+
+def test_get_upstream_of_CDS_no_cds():
+    """Test get_upstream_of_CDS with annotation that has no CDS.
+
+    Input: Annotation with only exons, no CDS
+    Output: Empty GenomicSet
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1"],
+            "start": [100],
+            "end": [300],
+            "strand": ["+"],
+            "feature": ["exon"],
+            "attribute": ['transcript_id "trans1"; transcript_biotype "mRNA"'],
+            "source": ["test"],
+            "score": ["."],
+            "frame": ["."],
+        }
+    )
+
+    result = get_upstream_of_CDS(ann, dist=100)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 0
+
+
+# get_downstream_of_CDS tests
+def test_get_downstream_of_CDS_positive_strand():
+    """Test get_downstream_of_CDS for transcript on positive strand.
+
+    Input: mRNA transcript with CDS [200-300] on '+' strand
+    Output: Downstream region [300-400] (100bp downstream of CDS end)
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [100, 200],
+            "end": [500, 300],
+            "strand": ["+", "+"],
+            "feature": ["exon", "CDS"],
+            "attribute": [
+                'transcript_id "trans1"; transcript_biotype "mRNA"',
+                'transcript_id "trans1"; transcript_biotype "mRNA"',
+            ],
+            "source": ["test", "test"],
+            "score": [".", "."],
+            "frame": [".", "."],
+        }
+    )
+
+    result = get_downstream_of_CDS(ann, dist=100)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 1
+    df = result.to_pandas()
+    assert df["start"].to_list() == [300]
+    assert df["end"].to_list() == [400]
+
+
+def test_get_downstream_of_CDS_negative_strand():
+    """Test get_downstream_of_CDS for transcript on negative strand.
+
+    Input: mRNA transcript with CDS [200-300] on '-' strand
+    Output: Downstream region [100-200] (100bp downstream of CDS, before CDS start)
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [100, 200],
+            "end": [400, 300],
+            "strand": ["-", "-"],
+            "feature": ["exon", "CDS"],
+            "attribute": [
+                'transcript_id "trans1"; transcript_biotype "mRNA"',
+                'transcript_id "trans1"; transcript_biotype "mRNA"',
+            ],
+            "source": ["test", "test"],
+            "score": [".", "."],
+            "frame": [".", "."],
+        }
+    )
+
+    result = get_downstream_of_CDS(ann, dist=100)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 1
+    df = result.to_pandas()
+    assert df["start"].to_list() == [100]
+    assert df["end"].to_list() == [200]
+
+
+def test_get_downstream_of_CDS_with_bounds():
+    """Test get_downstream_of_CDS with within_bounds clipping.
+
+    Input: CDS at [200-300] on '+' strand, dist=200, bounds [350-450]
+    Output: Should be clipped from [300-500] to [350-450]
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [100, 200],
+            "end": [600, 300],
+            "strand": ["+", "+"],
+            "feature": ["exon", "CDS"],
+            "attribute": [
+                'transcript_id "trans1"; transcript_biotype "mRNA"',
+                'transcript_id "trans1"; transcript_biotype "mRNA"',
+            ],
+            "source": ["test", "test"],
+            "score": [".", "."],
+            "frame": [".", "."],
+        }
+    )
+
+    bounds = GenomicSet(pl.DataFrame({"chrom": ["chr1"], "start": [350], "end": [450]}))
+
+    result = get_downstream_of_CDS(ann, dist=200, within_bounds=bounds)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 1
+    df = result.to_pandas()
+    assert df["start"].to_list() == [350]
+    assert df["end"].to_list() == [450]
+
+
+def test_get_downstream_of_CDS_no_cds():
+    """Test get_downstream_of_CDS with annotation that has no CDS.
+
+    Input: Annotation with only exons, no CDS
+    Output: Empty GenomicSet
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1"],
+            "start": [100],
+            "end": [300],
+            "strand": ["+"],
+            "feature": ["exon"],
+            "attribute": ['transcript_id "trans1"; transcript_biotype "mRNA"'],
+            "source": ["test"],
+            "score": ["."],
+            "frame": ["."],
+        }
+    )
+
+    result = get_downstream_of_CDS(ann, dist=100)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 0
+
+
+# Integration tests with chrY annotation
+def test_get_upstream_of_CDS_chrY(chrY_annotation):
+    """Integration test: get_upstream_of_CDS with real chrY annotation.
+
+    Verifies upstream CDS region extraction works with real data.
+    """
+    result = get_upstream_of_CDS(chrY_annotation, dist=1000)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() > 0
+
+    df = result.to_polars()
+    assert df["chrom"].unique().to_list() == ["NC_000024.10"]
+
+
+def test_get_downstream_of_CDS_chrY(chrY_annotation):
+    """Integration test: get_downstream_of_CDS with real chrY annotation.
+
+    Verifies downstream CDS region extraction works with real data.
+    """
+    result = get_downstream_of_CDS(chrY_annotation, dist=1000)
+
+    assert isinstance(result, GenomicSet)
     assert result.n_intervals() > 0
 
     df = result.to_polars()
