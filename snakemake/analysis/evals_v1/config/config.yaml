@@ -622,8 +622,7 @@ custom_plots:
 
 # Inference configuration (performance settings that don't affect output)
 inference:
-  # batch_size: 256
-  batch_size: 128  # FIXME: only for the 512bp context size, should change
+  batch_size: 256
   num_workers: 4
   data_transform_on_the_fly: true
   torch_compile: false
