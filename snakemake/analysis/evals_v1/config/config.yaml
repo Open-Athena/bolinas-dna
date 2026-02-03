@@ -470,23 +470,20 @@ custom_plots:
         title: "mRNA"
       - model: exp41-genomes-v4-genome_set-animals-intervals-v4_512_256-r02-985ba6
         title: "mRNA + ncRNA"
-    n_cols: 2
+    n_cols: 3
     dataset_subsets:
-      - dataset: traitgym_mendelian
-        subset: nonexonic_AND_proximal
+      - dataset: traitgym_mendelian_v2
+        subset: tss_proximal
         score_type: minus_llr
-        include_baselines: true
-        title: "Mendelian Promoter"
-      - dataset: traitgym_mendelian
+        title: "Promoter"
+      - dataset: traitgym_mendelian_v2
         subset: 5_prime_UTR_variant
         score_type: minus_llr
-        include_baselines: true
-        title: "Mendelian 5' UTR"
-      - dataset: traitgym_mendelian
+        title: "5' UTR"
+      - dataset: traitgym_mendelian_v2
         subset: non_coding_transcript_exon_variant
         score_type: minus_llr
-        include_baselines: true
-        title: "Mendelian ncRNA"
+        title: "ncRNA"
 
   - name: exp37_context_size
     title: "Exp37 context size"
@@ -497,16 +494,14 @@ custom_plots:
         title: "256bp"
     n_cols: 2
     dataset_subsets:
-      - dataset: traitgym_mendelian
-        subset: nonexonic_AND_proximal
+      - dataset: traitgym_mendelian_v2
+        subset: tss_proximal
         score_type: minus_llr
-        include_baselines: true
-        title: "Mendelian Promoter"
-      - dataset: traitgym_mendelian
+        title: "Promoter"
+      - dataset: traitgym_mendelian_v2
         subset: 5_prime_UTR_variant
         score_type: minus_llr
-        include_baselines: true
-        title: "Mendelian 5' UTR"
+        title: "5' UTR"
 
   - name: exp43_functional_regions
     title: "Exp43 functional regions (TraitGym Mendelian v2)"
