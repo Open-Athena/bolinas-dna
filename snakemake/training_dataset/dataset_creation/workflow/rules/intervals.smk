@@ -413,3 +413,51 @@ rule intervals_recipe_v11:
         defined = GenomicSet.read_bed(input[1])
         intervals = intervals & defined
         intervals.write_bed(output[0])
+
+
+rule intervals_recipe_v12:
+    input:
+        "results/intervals/3_prime_utr/{g}.parquet",
+        "results/intervals/defined/{g}.bed.gz",
+    output:
+        "results/intervals/recipe/v12/{g}.bed.gz",
+    run:
+        min_size, max_size = 20, 10_000
+        add_flank = 20  # splice region
+        expand_min_size = 256
+
+        intervals = GenomicSet.read_parquet(input[0])
+        defined = GenomicSet.read_bed(input[1])
+        intervals = intervals.filter_size(min_size, max_size)
+        intervals = intervals.add_flank(add_flank)
+        intervals = intervals.expand_min_size(expand_min_size)
+        intervals = intervals & defined
+        intervals.write_bed(output[0])
+
+
+# 512bp upstream of CDS (5' direction)
+rule intervals_recipe_v13:
+    input:
+        "results/annotation/{g}.gtf.gz",
+        "results/intervals/defined/{g}.bed.gz",
+    output:
+        "results/intervals/recipe/v13/{g}.bed.gz",
+    run:
+        ann = load_annotation(input[0])
+        defined = GenomicSet.read_bed(input[1])
+        intervals = get_upstream_of_CDS(ann, dist=512, within_bounds=defined)
+        intervals.write_bed(output[0])
+
+
+# 512bp downstream of CDS (3' direction)
+rule intervals_recipe_v14:
+    input:
+        "results/annotation/{g}.gtf.gz",
+        "results/intervals/defined/{g}.bed.gz",
+    output:
+        "results/intervals/recipe/v14/{g}.bed.gz",
+    run:
+        ann = load_annotation(input[0])
+        defined = GenomicSet.read_bed(input[1])
+        intervals = get_downstream_of_CDS(ann, dist=512, within_bounds=defined)
+        intervals.write_bed(output[0])

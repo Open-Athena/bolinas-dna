@@ -33,7 +33,10 @@ intervals:
   # - v8/256/128  # ncRNA
   # - v9/256/128  # promoters (+- 256)
   # - v10/256/128  # promoters (+- 2048)
-  - v11/256/128
+  # - v11/256/128
+  - v12/256/128
+  - v13/256/128
+  - v14/256/128
 
 genome_sets:
   - name: animals

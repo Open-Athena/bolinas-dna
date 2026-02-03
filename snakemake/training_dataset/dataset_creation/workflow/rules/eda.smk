@@ -860,6 +860,200 @@ rule eda_plot_ncrna_distance_to_coding:
 
 
 # =============================================================================
+# Rule: Extract transcript-level CDS boundaries (one row per transcript)
+# =============================================================================
+# For each transcript, get the minimum CDS start and maximum CDS end.
+# This is used to compute position-wise conservation around CDS boundaries.
+rule eda_extract_transcript_cds_boundaries:
+    input:
+        annotation="results/annotation/GCF_000001405.40.gtf.gz",
+    output:
+        "results/eda/annotation/transcript_cds_boundaries.parquet",
+    run:
+        ann = load_annotation(input.annotation)
+
+        # Get CDS features with transcript IDs
+        cds = ann.filter(pl.col("feature") == "CDS").with_columns(
+            pl.col("attribute")
+            .str.extract(r'transcript_id "(.*?)"')
+            .alias("transcript_id"),
+        )
+
+        # Group by transcript to get min start and max end
+        cds_bounds = cds.group_by("transcript_id").agg(
+            pl.col("chrom").first(),
+            pl.col("strand").first(),
+            pl.col("start").min().alias("cds_start"),
+            pl.col("end").max().alias("cds_end"),
+        )
+
+        cds_bounds.write_parquet(output[0])
+
+
+# =============================================================================
+# Rule: Compute position-wise conservation around CDS boundaries
+# =============================================================================
+# For each position from -2000 to +2000 (excluding 0), compute the proportion
+# of bases that are conserved (phyloP >= threshold) across all transcripts.
+# Strand-aware: upstream (-) is 5' of CDS, downstream (+) is 3' of CDS.
+rule eda_compute_cds_flanking_conservation:
+    input:
+        cds_bounds="results/eda/annotation/transcript_cds_boundaries.parquet",
+        phylop="results/conservation/cactus241way.phyloP.bw",
+        chrom_mapping="config/human_chrom_mapping.tsv",
+    output:
+        "results/eda/cds_flanking_conservation.parquet",
+    run:
+        # Load config for conservation threshold
+        phylop_cutoff = config["conservation"]["phylop_cutoff"]
+
+        # Load chromosome mapping (RefSeq -> UCSC)
+        chrom_map = pl.read_csv(input.chrom_mapping, separator="\t")
+        refseq_to_ucsc = dict(zip(chrom_map["refseq"], chrom_map["ucsc"]))
+
+        # Load CDS boundaries and filter to chr1 (NC_000001.11)
+        cds_bounds = pl.read_parquet(input.cds_bounds)
+        cds_bounds = cds_bounds.filter(pl.col("chrom") == "NC_000001.11")
+
+        # Map chromosome to UCSC
+        chrom_ucsc = refseq_to_ucsc.get("NC_000001.11")
+
+        # Create relative positions array
+        positions = list(range(-2000, 0)) + list(range(1, 2001))
+
+        # Open phyloP bigWig and get chromosome length
+        bw = pyBigWig.open(input.phylop)
+        chrom_len = bw.chroms().get(chrom_ucsc, 0)
+
+        # Initialize counts for each position
+        counts = {pos: {"n_total": 0, "n_conserved": 0} for pos in positions}
+
+        # Process transcripts in batches to avoid memory issues
+        print(f"Processing {len(cds_bounds)} transcripts...")
+        batch_size = 100
+        cds_list = cds_bounds.to_dicts()
+
+        for batch_start in tqdm(range(0, len(cds_list), batch_size)):
+            batch = cds_list[batch_start : batch_start + batch_size]
+
+            # Collect all genomic positions for this batch
+            batch_queries = []  # (rel_pos, genomic_pos)
+            for row in batch:
+                strand = row["strand"]
+                cds_start = row["cds_start"]
+                cds_end = row["cds_end"]
+
+                for rel_pos in positions:
+                    if rel_pos < 0:
+                        # Upstream (5' of CDS)
+                        if strand == "+":
+                            genomic_pos = cds_start + rel_pos
+                        else:
+                            genomic_pos = cds_end - rel_pos - 1
+                    else:
+                        # Downstream (3' of CDS)
+                        if strand == "+":
+                            genomic_pos = cds_end + rel_pos - 1
+                        else:
+                            genomic_pos = cds_start - rel_pos
+
+                            # Check bounds
+                    if 0 <= genomic_pos < chrom_len:
+                        batch_queries.append((rel_pos, genomic_pos))
+
+                        # Get unique genomic positions for this batch
+            unique_genomic = sorted(set(gp for _, gp in batch_queries))
+
+            # Query phyloP values for unique positions
+            phylop_cache = {}
+            for gp in unique_genomic:
+                vals = bw.values(chrom_ucsc, gp, gp + 1)
+                phylop_cache[gp] = vals[0] if (vals and vals[0] is not None) else 0.0
+
+                # Accumulate counts
+            for rel_pos, genomic_pos in batch_queries:
+                counts[rel_pos]["n_total"] += 1
+                if phylop_cache[genomic_pos] >= phylop_cutoff:
+                    counts[rel_pos]["n_conserved"] += 1
+
+        bw.close()
+
+        # Build result dataframe
+        result = pl.DataFrame(
+            {
+                "position": positions,
+                "n_total": [counts[p]["n_total"] for p in positions],
+                "n_conserved": [counts[p]["n_conserved"] for p in positions],
+            }
+        ).with_columns(
+            (pl.col("n_conserved") / pl.col("n_total") * 100).alias("pct_conserved")
+        )
+
+        result.write_parquet(output[0])
+
+
+# =============================================================================
+# Plot: Position-wise conservation around CDS boundaries
+# =============================================================================
+rule eda_plot_cds_flanking_conservation:
+    input:
+        "results/eda/cds_flanking_conservation.parquet",
+    output:
+        "results/plots/eda/cds_flanking_conservation.svg",
+    run:
+        df = pl.read_parquet(input[0]).to_pandas()
+
+        fig, ax = plt.subplots(figsize=(12, 6))
+
+        # Plot the conservation profile
+        ax.plot(
+            df["position"],
+            df["pct_conserved"],
+            color="#3498db",
+            linewidth=0.8,
+            alpha=0.9,
+        )
+
+        # Add vertical line at x=0 (CDS boundary)
+        ax.axvline(x=0, color="red", linestyle="--", linewidth=1.5, alpha=0.8)
+
+        # Add region labels
+        ax.text(
+            -1000,
+            ax.get_ylim()[1] * 0.95,
+            "Upstream (5' of CDS)",
+            ha="center",
+            va="top",
+            fontsize=11,
+            color="#2c3e50",
+        )
+        ax.text(
+            1000,
+            ax.get_ylim()[1] * 0.95,
+            "Downstream (3' of CDS)",
+            ha="center",
+            va="top",
+            fontsize=11,
+            color="#2c3e50",
+        )
+
+        # Formatting
+        ax.set_xlabel("Position Relative to CDS Boundary (bp)", fontsize=12)
+        ax.set_ylabel("Proportion Conserved (%)", fontsize=12)
+        ax.set_title(
+            "Conservation Around CDS Boundaries (chr1)\n"
+            f"(phyloP ≥ {config['conservation']['phylop_cutoff']})",
+            fontsize=13,
+        )
+        ax.set_xlim(-2000, 2000)
+        ax.grid(axis="both", alpha=0.3)
+
+        plt.tight_layout()
+        plt.savefig(output[0], format="svg", bbox_inches="tight")
+        plt.close()
+
+
+# =============================================================================
 # Master target: all EDA outputs for both datasets
 # =============================================================================
 rule all_eda:
@@ -935,3 +1129,5 @@ rule all_eda:
             "results/plots/eda/{dataset}/ncrna/distance_to_mrna_log.svg",
             dataset=EDA_DATASETS.keys(),
         ),
+        # CDS flanking conservation plot
+        "results/plots/eda/cds_flanking_conservation.svg",

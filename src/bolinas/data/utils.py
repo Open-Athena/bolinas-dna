@@ -407,6 +407,108 @@ def get_3_prime_utr(ann: pl.DataFrame) -> GenomicSet:
     return utr
 
 
+def get_upstream_of_CDS(
+    ann: pl.DataFrame,
+    dist: int,
+    within_bounds: GenomicSet | None = None,
+) -> GenomicSet:
+    """Extract regions upstream of CDS start (5' direction).
+
+    Returns fixed-size regions upstream of CDS boundaries per transcript.
+    This provides an alternative to annotated 5' UTRs that may be more
+    robust for non-model organisms with incomplete UTR annotations.
+
+    Args:
+        ann: Annotation DataFrame from load_annotation().
+        dist: Number of bases upstream of CDS start to include.
+        within_bounds: Optional GenomicSet to clip results to.
+
+    Returns:
+        GenomicSet containing merged upstream regions. For + strand, this is
+        [cds_start - dist, cds_start]. For - strand, this is [cds_end, cds_end + dist].
+    """
+    cds = _get_cds_per_transcript(ann)
+
+    # Get CDS boundaries per transcript
+    cds_bounds = cds.group_by("transcript_id").agg(
+        pl.col("chrom").first(),
+        pl.col("start").min().alias("cds_start"),
+        pl.col("end").max().alias("cds_end"),
+        pl.col("strand").first(),
+    )
+
+    # Compute strand-aware upstream regions
+    # + strand: upstream is [cds_start - dist, cds_start]
+    # - strand: upstream is [cds_end, cds_end + dist]
+    result = GenomicSet(
+        cds_bounds.with_columns(
+            pl.when(pl.col("strand") == "+")
+            .then(pl.col("cds_start") - dist)
+            .otherwise(pl.col("cds_end"))
+            .alias("start"),
+            pl.when(pl.col("strand") == "+")
+            .then(pl.col("cds_start"))
+            .otherwise(pl.col("cds_end") + dist)
+            .alias("end"),
+        ).select(["chrom", "start", "end"])
+    )
+
+    if within_bounds is not None:
+        result = result & within_bounds
+    return result
+
+
+def get_downstream_of_CDS(
+    ann: pl.DataFrame,
+    dist: int,
+    within_bounds: GenomicSet | None = None,
+) -> GenomicSet:
+    """Extract regions downstream of CDS end (3' direction).
+
+    Returns fixed-size regions downstream of CDS boundaries per transcript.
+    This provides an alternative to annotated 3' UTRs that may be more
+    robust for non-model organisms with incomplete UTR annotations.
+
+    Args:
+        ann: Annotation DataFrame from load_annotation().
+        dist: Number of bases downstream of CDS end to include.
+        within_bounds: Optional GenomicSet to clip results to.
+
+    Returns:
+        GenomicSet containing merged downstream regions. For + strand, this is
+        [cds_end, cds_end + dist]. For - strand, this is [cds_start - dist, cds_start].
+    """
+    cds = _get_cds_per_transcript(ann)
+
+    # Get CDS boundaries per transcript
+    cds_bounds = cds.group_by("transcript_id").agg(
+        pl.col("chrom").first(),
+        pl.col("start").min().alias("cds_start"),
+        pl.col("end").max().alias("cds_end"),
+        pl.col("strand").first(),
+    )
+
+    # Compute strand-aware downstream regions
+    # + strand: downstream is [cds_end, cds_end + dist]
+    # - strand: downstream is [cds_start - dist, cds_start]
+    result = GenomicSet(
+        cds_bounds.with_columns(
+            pl.when(pl.col("strand") == "+")
+            .then(pl.col("cds_end"))
+            .otherwise(pl.col("cds_start") - dist)
+            .alias("start"),
+            pl.when(pl.col("strand") == "+")
+            .then(pl.col("cds_end") + dist)
+            .otherwise(pl.col("cds_start"))
+            .alias("end"),
+        ).select(["chrom", "start", "end"])
+    )
+
+    if within_bounds is not None:
+        result = result & within_bounds
+    return result
+
+
 def get_ncrna_exons(ann: pl.DataFrame) -> GenomicSet:
     """Extract functional ncRNA exons from an annotation DataFrame.
 
