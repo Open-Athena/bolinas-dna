@@ -265,6 +265,59 @@ models:
       - 9000
       - 9999
 
+  - name: exp55-humans-r01-0fa9f3
+    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp55-humans-r01-0fa9f3
+    context_size: 256
+    steps:
+      - 1000
+      - 2000
+      - 3000
+      - 4000
+      - 5000
+
+  - name: exp55-primates-r01-70b1a5
+    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp55-primates-r01-70b1a5
+    context_size: 256
+    steps:
+      - 1000
+      - 2000
+      - 3000
+      - 4000
+      - 5000
+      - 6000
+
+  - name: exp55-mammals-r01-52f413
+    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp55-mammals-r01-52f413
+    context_size: 256
+    steps:
+      - 1000
+      - 2000
+      - 3000
+      - 4000
+      - 5000
+      - 6000
+
+  - name: exp55-vertebrates-r01-64b0da
+    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp55-vertebrates-r01-64b0da
+    context_size: 256
+    steps:
+      - 1000
+      - 2000
+      - 3000
+      - 4000
+      - 5000
+      - 6000
+
+  - name: exp55-animals-r01-c5dd2f
+    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp55-animals-r01-c5dd2f
+    context_size: 256
+    steps:
+      - 1000
+      - 2000
+      - 3000
+      - 4000
+      - 5000
+
 # Evaluation datasets from HuggingFace
 # Each dataset should have been created by the snakemake/evals pipeline
 datasets:
@@ -712,6 +765,32 @@ custom_plots:
       - dataset: traitgym_mendelian_v2
         subset: 5_prime_UTR_variant
         score_type: minus_llr
+        title: "5' UTR"
+
+  - name: exp55_evolutionary_timescales
+    title: "Exp55 Evolutionary Timescales"
+    models:
+      - model: exp55-humans-r01-0fa9f3
+        title: "Humans"
+      - model: exp55-primates-r01-70b1a5
+        title: "Primates"
+      - model: exp55-mammals-r01-52f413
+        title: "Mammals"
+      - model: exp55-vertebrates-r01-64b0da
+        title: "Vertebrates"
+      - model: exp55-animals-r01-c5dd2f
+        title: "Animals"
+    n_cols: 2
+    dataset_subsets:
+      - dataset: traitgym_mendelian_v2
+        subset: tss_proximal
+        score_type: minus_llr
+        include_baselines: false
+        title: "Promoter"
+      - dataset: traitgym_mendelian_v2
+        subset: 5_prime_UTR_variant
+        score_type: minus_llr
+        include_baselines: false
         title: "5' UTR"
 
 # Inference configuration (performance settings that don't affect output)
