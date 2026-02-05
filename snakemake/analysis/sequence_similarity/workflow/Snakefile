@@ -1,0 +1,41 @@
+"""Snakemake workflow for analyzing sequence similarity across genomic datasets.
+
+This pipeline measures sequence similarity between validation and training splits
+across different taxonomic scales to understand potential data leakage in
+genomic language model training.
+"""
+
+configfile: "config/config.yaml"
+
+
+def get_all_datasets():
+    """Get list of all dataset names."""
+    return [d["name"] for d in config["datasets"]]
+
+
+def get_all_identity_thresholds():
+    """Get list of all identity thresholds to test."""
+    return config["mmseqs2"]["identity_thresholds"]
+
+
+# Include rule files
+include: "rules/common.smk"
+include: "rules/download.smk"
+include: "rules/clustering.smk"
+include: "rules/analysis.smk"
+
+
+# Define all output targets
+rule all:
+    input:
+        # Clustering results for all datasets and thresholds
+        expand(
+            "results/clustering/{dataset}/clusters_{identity}.tsv",
+            dataset=get_all_datasets(),
+            identity=get_all_identity_thresholds(),
+        ),
+        # Leakage analysis summary
+        "results/analysis/leakage_summary.parquet",
+        # Visualization
+        "results/plots/leakage_heatmap.png",
+        "results/plots/leakage_by_threshold.png",
