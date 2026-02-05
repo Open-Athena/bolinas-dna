@@ -274,6 +274,10 @@ models:
       - 3000
       - 4000
       - 5000
+      - 6000
+      - 7000
+      - 8000
+      - 9000
 
   - name: exp55-primates-r01-70b1a5
     base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp55-primates-r01-70b1a5
@@ -285,6 +289,10 @@ models:
       - 4000
       - 5000
       - 6000
+      - 7000
+      - 8000
+      - 9000
+      - 10000
 
   - name: exp55-mammals-r01-52f413
     base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp55-mammals-r01-52f413
@@ -296,6 +304,10 @@ models:
       - 4000
       - 5000
       - 6000
+      - 7000
+      - 8000
+      - 9000
+      - 10000
 
   - name: exp55-vertebrates-r01-64b0da
     base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp55-vertebrates-r01-64b0da
@@ -307,6 +319,10 @@ models:
       - 4000
       - 5000
       - 6000
+      - 7000
+      - 8000
+      - 9000
+      - 10000
 
   - name: exp55-animals-r01-c5dd2f
     base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp55-animals-r01-c5dd2f
@@ -317,6 +333,10 @@ models:
       - 3000
       - 4000
       - 5000
+      - 6000
+      - 7000
+      - 8000
+      - 9000
 
 # Evaluation datasets from HuggingFace
 # Each dataset should have been created by the snakemake/evals pipeline
@@ -769,17 +789,24 @@ custom_plots:
 
   - name: exp55_evolutionary_timescales
     title: "Exp55 Evolutionary Timescales"
+    # Colors from viridis colormap: plt.cm.viridis(evolutionary_distance)
+    # Divergence times represent approximate time since divergence from human lineage
     models:
       - model: exp55-humans-r01-0fa9f3
-        title: "Humans"
+        title: "Humans (0 Mya)"
+        color: "#440154"  # viridis(0.0)
       - model: exp55-primates-r01-70b1a5
-        title: "Primates"
+        title: "Primates (~65 Mya)"
+        color: "#3B528B"  # viridis(0.25)
       - model: exp55-mammals-r01-52f413
-        title: "Mammals"
+        title: "Mammals (~100 Mya)"
+        color: "#21918C"  # viridis(0.5)
       - model: exp55-vertebrates-r01-64b0da
-        title: "Vertebrates"
+        title: "Vertebrates (~600 Mya)"
+        color: "#5EC962"  # viridis(0.75)
       - model: exp55-animals-r01-c5dd2f
-        title: "Animals"
+        title: "Animals (~800 Mya)"
+        color: "#FDE725"  # viridis(1.0)
     n_cols: 2
     dataset_subsets:
       - dataset: traitgym_mendelian_v2
