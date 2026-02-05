@@ -28,6 +28,11 @@ include: "rules/analysis.smk"
 # Define all output targets
 rule all:
     input:
+        # Sanity check (run first to verify pipeline)
+        expand(
+            "results/sanity_check/{dataset}/summary.parquet",
+            dataset=get_all_datasets(),
+        ),
         # Clustering results for all datasets and thresholds
         expand(
             "results/clustering/{dataset}/clusters_{identity}.tsv",
@@ -39,3 +44,20 @@ rule all:
         # Visualization
         "results/plots/leakage_heatmap.png",
         "results/plots/leakage_by_threshold.png",
+
+
+# Sanity check target: run this first to verify the pipeline works
+rule sanity_check:
+    """Run only the sanity check (validation self-similarity analysis).
+
+    This clusters validation sequences against themselves to verify:
+    - RC handling: sequences should cluster with their reverse complement
+    - Overlap handling: adjacent windows should show similarity
+
+    Usage: snakemake sanity_check --cores 8
+    """
+    input:
+        expand(
+            "results/sanity_check/{dataset}/summary.parquet",
+            dataset=get_all_datasets(),
+        ),

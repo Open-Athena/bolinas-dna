@@ -90,9 +90,32 @@ cd snakemake/analysis/sequence_similarity
 # Dry-run (validate workflow without executing)
 snakemake -n --cores 1
 
+# Run sanity check first (recommended)
+snakemake sanity_check --cores 8
+
 # Run the full pipeline
 snakemake --cores 16
 ```
+
+### Sanity Check
+
+Before running the full analysis, run the sanity check to verify the pipeline works:
+
+```bash
+snakemake sanity_check --cores 8
+```
+
+This clusters validation sequences against themselves and verifies:
+
+1. **Reverse complement handling**: With RC augmentation in the dataset, each sequence should cluster with its reverse complement (expect ~50% of sequences to have matches at 100% identity, since RC pairs become identical after canonicalization)
+
+2. **Sliding window overlap**: With 256bp windows and 128bp step, adjacent windows share 128bp (50% overlap). At 100% identity but lower coverage thresholds, these should cluster together.
+
+**Expected output** at 90% identity threshold:
+- Most sequences should have at least one match
+- Average cluster size > 1
+
+If you see mostly singletons (no matches), something may be wrong with the configuration.
 
 ### Configuration
 
@@ -147,11 +170,18 @@ results/
 │       └── metadata.parquet      # Sequence IDs and split labels
 ├── mmseqs/
 │   └── {dataset}/
-│       ├── seqDB*                # MMseqs2 database
-│       └── clusters_{identity}/  # Cluster databases
+│       ├── seqDB*                # MMseqs2 sequence database
+│       ├── valDB*                # Validation-only database (sanity check)
+│       ├── clusters_{identity}/  # Train+val cluster databases
+│       └── val_self_clusters_{identity}/  # Val self-clustering (sanity check)
+├── sanity_check/
+│   └── {dataset}/
+│       ├── val_self_clusters_{identity}.tsv  # Validation self-clustering
+│       ├── val_self_stats_{identity}.parquet # Statistics per threshold
+│       └── summary.parquet       # Sanity check summary
 ├── clustering/
 │   └── {dataset}/
-│       └── clusters_{identity}.tsv  # Cluster assignments
+│       └── clusters_{identity}.tsv  # Train+val cluster assignments
 ├── analysis/
 │   ├── {dataset}/
 │   │   └── leakage_stats_{identity}.parquet
