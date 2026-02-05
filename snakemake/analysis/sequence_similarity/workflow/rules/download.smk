@@ -10,14 +10,21 @@ rule download_dataset:
     params:
         hf_path=lambda wildcards: get_hf_path(wildcards.dataset),
         seq_column=config["analysis"]["sequence_column"],
+        canonicalize=config["analysis"]["consider_reverse_complement"],
     run:
         from pathlib import Path
 
         # Load train and validation splits
         print(f"Loading dataset from {params.hf_path}...")
+        if params.canonicalize:
+            print("  Canonicalizing sequences (treating seq and reverse complement as identical)")
 
-        train_df = load_sequences_from_hf(params.hf_path, "train", params.seq_column)
-        val_df = load_sequences_from_hf(params.hf_path, "validation", params.seq_column)
+        train_df = load_sequences_from_hf(
+            params.hf_path, "train", params.seq_column, canonicalize=params.canonicalize
+        )
+        val_df = load_sequences_from_hf(
+            params.hf_path, "validation", params.seq_column, canonicalize=params.canonicalize
+        )
 
         print(f"  Train sequences: {len(train_df):,}")
         print(f"  Validation sequences: {len(val_df):,}")
