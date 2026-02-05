@@ -205,9 +205,23 @@ models:
       - 9000
       - 9999
 
-
   - name: exp53-upstream_of_cds_512-r01-104557
     base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp53-upstream_of_cds_512-r01-104557
+    context_size: 256
+    steps:
+      - 1000
+      - 2000
+      - 3000
+      - 4000
+      - 5000
+      - 6000
+      - 7000
+      - 8000
+      - 9000
+      - 9999
+
+  - name: exp53-three_prime_utr_baseline-r01-5d901d
+    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp53-three_prime_utr_baseline-r01-5d901d
     context_size: 256
     steps:
       - 1000
@@ -236,8 +250,8 @@ models:
       - 9000
       - 9999
 
-  - name: exp53-three_prime_utr_baseline-r01-5d901d
-    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp53-three_prime_utr_baseline-r01-5d901d
+  - name: exp53-downstream_of_cds_256-r01-34c9cc
+    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp53-downstream_of_cds_256-r01-34c9cc
     context_size: 256
     steps:
       - 1000
@@ -248,8 +262,8 @@ models:
       - 6000
       - 7000
       - 8000
-      # - 9000
-      # - 9999
+      - 9000
+      - 9999
 
 # Evaluation datasets from HuggingFace
 # Each dataset should have been created by the snakemake/evals pipeline
@@ -673,6 +687,8 @@ custom_plots:
         title: "3' UTR"
       - model: exp53-downstream_of_cds_512-r01-6f73b5
         title: "512bp downstream of CDS"
+      - model: exp53-downstream_of_cds_256-r01-34c9cc
+        title: "256bp downstream of CDS"
     n_cols: 1
     dataset_subsets:
       - dataset: traitgym_mendelian_v2
