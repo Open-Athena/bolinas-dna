@@ -205,6 +205,66 @@ models:
       - 9000
       - 9999
 
+  - name: exp53-upstream_of_cds_512-r01-104557
+    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp53-upstream_of_cds_512-r01-104557
+    context_size: 256
+    steps:
+      - 1000
+      - 2000
+      - 3000
+      - 4000
+      - 5000
+      - 6000
+      - 7000
+      - 8000
+      - 9000
+      - 9999
+
+  - name: exp53-three_prime_utr_baseline-r01-5d901d
+    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp53-three_prime_utr_baseline-r01-5d901d
+    context_size: 256
+    steps:
+      - 1000
+      - 2000
+      - 3000
+      - 4000
+      - 5000
+      - 6000
+      - 7000
+      - 8000
+      - 9000
+      - 9999
+
+  - name: exp53-downstream_of_cds_512-r01-6f73b5
+    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp53-downstream_of_cds_512-r01-6f73b5
+    context_size: 256
+    steps:
+      - 1000
+      - 2000
+      - 3000
+      - 4000
+      - 5000
+      - 6000
+      - 7000
+      - 8000
+      - 9000
+      - 9999
+
+  - name: exp53-downstream_of_cds_256-r01-34c9cc
+    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp53-downstream_of_cds_256-r01-34c9cc
+    context_size: 256
+    steps:
+      - 1000
+      - 2000
+      - 3000
+      - 4000
+      - 5000
+      - 6000
+      - 7000
+      - 8000
+      - 9000
+      - 9999
+
 # Evaluation datasets from HuggingFace
 # Each dataset should have been created by the snakemake/evals pipeline
 datasets:
@@ -619,6 +679,40 @@ custom_plots:
         subset: 3_prime_UTR_variant
         score_type: minus_llr
         title: "Mendelian-v2 3' UTR"
+
+  - name: exp53_alt_dataset_downstream
+    title: "Exp53 alt dataset downstream"
+    models:
+      - model: exp53-three_prime_utr_baseline-r01-5d901d
+        title: "3' UTR"
+      - model: exp53-downstream_of_cds_512-r01-6f73b5
+        title: "512bp downstream of CDS"
+      - model: exp53-downstream_of_cds_256-r01-34c9cc
+        title: "256bp downstream of CDS"
+    n_cols: 1
+    dataset_subsets:
+      - dataset: traitgym_mendelian_v2
+        subset: 3_prime_UTR_variant
+        score_type: minus_llr
+        title: "3' UTR"
+
+  - name: exp53_alt_dataset_upstream
+    title: "Exp53 alt dataset upstream"
+    models:
+      - model: exp37-genomes-v4-genome_set-animals-intervals-v1_256_128-r02-4e2580
+        title: "TSS +- 256"
+      - model: exp53-upstream_of_cds_512-r01-104557
+        title: "CDS - 512"
+    n_cols: 2
+    dataset_subsets:
+      - dataset: traitgym_mendelian_v2
+        subset: tss_proximal
+        score_type: minus_llr
+        title: "Promoter"
+      - dataset: traitgym_mendelian_v2
+        subset: 5_prime_UTR_variant
+        score_type: minus_llr
+        title: "5' UTR"
 
 # Inference configuration (performance settings that don't affect output)
 inference:
