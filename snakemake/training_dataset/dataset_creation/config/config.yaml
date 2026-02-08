@@ -27,7 +27,7 @@ intervals:
 #   - v2/512/256
 #   # CDS regions only
 #   - v3/512/256
-  # - v5/256/128  # CDS, new version
+  - v5/256/128  # CDS, new version
   # - v6/256/128  # 5' UTR
   # - v7/256/128  # 3' UTR
   # - v8/256/128  # ncRNA
@@ -37,24 +37,24 @@ intervals:
   # - v12/256/128
   # - v13/256/128
   # - v14/256/128
-  # - v15/256/128
+  - v15/256/128
 
 genome_sets:
-  - name: animals
-    rank_key: kingdom
-    rank_value: Metazoa
-  - name: vertebrates
-    rank_key: phylum
-    rank_value: Chordata
+#   - name: animals
+#     rank_key: kingdom
+#     rank_value: Metazoa
+#   - name: vertebrates
+#     rank_key: phylum
+#     rank_value: Chordata
   - name: mammals
     rank_key: class
     rank_value: Mammalia
-  - name: primates
-    rank_key: order
-    rank_value: Primates
-  - name: humans
-    rank_key: species
-    rank_value: "Homo sapiens"
+#   - name: primates
+#     rank_key: order
+#     rank_value: Primates
+#   - name: humans
+#     rank_key: species
+#     rank_value: "Homo sapiens"
 
 output_hf_prefix: bolinas-dna/genomes-v4
 

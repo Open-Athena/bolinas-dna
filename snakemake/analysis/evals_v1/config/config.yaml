@@ -205,6 +205,20 @@ models:
       - 9000
       - 9999
 
+  - name: exp42-promoter_2048_v2-r01-ec24fd
+    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp42-promoter_2048_v2-r01-ec24fd
+    context_size: 256
+    steps:
+      - 1000
+      - 2000
+      - 3000
+      - 4000
+      - 5000
+      - 6000
+      - 7000
+      - 8000
+      - 9000
+
   - name: exp53-upstream_of_cds_512-r01-104557
     base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp53-upstream_of_cds_512-r01-104557
     context_size: 256
@@ -278,6 +292,14 @@ models:
       - 7000
       - 8000
       - 9000
+      - 10000
+      - 11000
+      - 12000
+      - 13000
+      - 14000
+      - 15000
+      - 16000
+      - 16999
 
   - name: exp55-primates-r01-70b1a5
     base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp55-primates-r01-70b1a5
@@ -293,6 +315,13 @@ models:
       - 8000
       - 9000
       - 10000
+      - 11000
+      - 12000
+      - 13000
+      - 14000
+      - 15000
+      - 16000
+      - 16999
 
   - name: exp55-mammals-r01-52f413
     base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp55-mammals-r01-52f413
@@ -308,6 +337,13 @@ models:
       - 8000
       - 9000
       - 10000
+      - 11000
+      - 12000
+      - 13000
+      - 14000
+      - 15000
+      - 16000
+      - 16999
 
   - name: exp55-vertebrates-r01-64b0da
     base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp55-vertebrates-r01-64b0da
@@ -323,6 +359,13 @@ models:
       - 8000
       - 9000
       - 10000
+      - 11000
+      - 12000
+      - 13000
+      - 14000
+      - 15000
+      - 16000
+      - 16999
 
   - name: exp55-animals-r01-c5dd2f
     base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp55-animals-r01-c5dd2f
@@ -337,6 +380,14 @@ models:
       - 7000
       - 8000
       - 9000
+      - 10000
+      - 11000
+      - 12000
+      - 13000
+      - 14000
+      - 15000
+      - 16000
+      - 16999
 
 # Evaluation datasets from HuggingFace
 # Each dataset should have been created by the snakemake/evals pipeline
@@ -687,71 +738,46 @@ custom_plots:
         title: "ncRNA"
 
   - name: exp42_promoter_radius
-    title: "Exp42 promoter radius"
+    title: "Exp42 promoter radius - context size fixed, just changing training data"
     models:
       - model: exp37-genomes-v4-genome_set-animals-intervals-v1_256_128-r02-4e2580
-        title: "Promoter (prev)"
-      - model: exp42-promoter_256-r01-e83901
-        title: "+-256 bp"
+        title: "TSS +- 256"
+      - model: exp42-promoter_2048_v2-r01-ec24fd 
+        title: "TSS +- 2048"
     n_cols: 3
     dataset_subsets:
-      - dataset: traitgym_mendelian
-        subset: nonexonic_AND_proximal
-        score_type: minus_llr
-        include_baselines: true
-        title: "Mendelian Promoter"
-      - dataset: traitgym_mendelian
-        subset: nonexonic_AND_distal
-        score_type: minus_llr
-        include_baselines: true
-        title: "Mendelian Distal"
-      - dataset: traitgym_mendelian
-        subset: 5_prime_UTR_variant
-        score_type: minus_llr
-        include_baselines: true
-        title: "Mendelian 5' UTR"
-      - dataset: traitgym_mendelian
-        subset: 3_prime_UTR_variant
-        score_type: minus_llr
-        include_baselines: true
-        title: "Mendelian 3' UTR"
-      - dataset: traitgym_mendelian
-        subset: non_coding_transcript_exon_variant
-        score_type: minus_llr
-        include_baselines: true
-        title: "Mendelian ncRNA"
-      - dataset: traitgym_mendelian_v2
-        subset: missense_variant
-        score_type: minus_llr
-        title: "Mendelian-v2 missense"
-      - dataset: traitgym_mendelian_v2
-        subset: splicing
-        score_type: minus_llr
-        title: "Mendelian-v2 splicing"
       - dataset: traitgym_mendelian_v2
         subset: tss_proximal
         score_type: minus_llr
-        title: "Mendelian-v2 TSS proximal"
-      - dataset: traitgym_mendelian_v2
-        subset: synonymous_variant
-        score_type: minus_llr
-        title: "Mendelian-v2 synonymous"
+        title: "Promoter"
       - dataset: traitgym_mendelian_v2
         subset: 5_prime_UTR_variant
         score_type: minus_llr
-        title: "Mendelian-v2 5' UTR"
-      - dataset: traitgym_mendelian_v2
-        subset: non_coding_transcript_exon_variant
-        score_type: minus_llr
-        title: "Mendelian-v2 ncRNA"
+        title: "5' UTR"
       - dataset: traitgym_mendelian_v2
         subset: distal
         score_type: minus_llr
-        title: "Mendelian-v2 distal"
+        title: "Distal"
+      - dataset: traitgym_mendelian_v2
+        subset: missense_variant
+        score_type: minus_llr
+        title: "Missense"
+      - dataset: traitgym_mendelian_v2
+        subset: splicing
+        score_type: minus_llr
+        title: "Splicing"
+      - dataset: traitgym_mendelian_v2
+        subset: synonymous_variant
+        score_type: minus_llr
+        title: "Synonymous"
+      - dataset: traitgym_mendelian_v2
+        subset: non_coding_transcript_exon_variant
+        score_type: minus_llr
+        title: "ncRNA"
       - dataset: traitgym_mendelian_v2
         subset: 3_prime_UTR_variant
         score_type: minus_llr
-        title: "Mendelian-v2 3' UTR"
+        title: "3' UTR"
 
   - name: exp53_alt_dataset_downstream
     title: "Exp53 alt dataset downstream"
@@ -788,24 +814,24 @@ custom_plots:
         title: "5' UTR"
 
   - name: exp55_evolutionary_timescales
-    title: "Exp55 Evolutionary Timescales"
+    title: "Exp55 Evolutionary Timescales - promoters, Qwen 0.6B"
     # Colors from viridis colormap: plt.cm.viridis(evolutionary_distance)
     # Divergence times represent approximate time since divergence from human lineage
     models:
       - model: exp55-humans-r01-0fa9f3
-        title: "Humans (0 Mya)"
+        title: "Humans (0 Mya, 1 species)"
         color: "#440154"  # viridis(0.0)
       - model: exp55-primates-r01-70b1a5
-        title: "Primates (~65 Mya)"
+        title: "Primates (~65 Mya, 11 species)"
         color: "#3B528B"  # viridis(0.25)
       - model: exp55-mammals-r01-52f413
-        title: "Mammals (~100 Mya)"
+        title: "Mammals (~100 Mya, 81 species)"
         color: "#21918C"  # viridis(0.5)
       - model: exp55-vertebrates-r01-64b0da
-        title: "Vertebrates (~600 Mya)"
+        title: "Vertebrates (~600 Mya, 317 species)"
         color: "#5EC962"  # viridis(0.75)
       - model: exp55-animals-r01-c5dd2f
-        title: "Animals (~800 Mya)"
+        title: "Animals (~800 Mya, 499 species)"
         color: "#FDE725"  # viridis(1.0)
     n_cols: 2
     dataset_subsets:
@@ -819,6 +845,16 @@ custom_plots:
         score_type: minus_llr
         include_baselines: false
         title: "5' UTR"
+      # - dataset: traitgym_complex
+      #   subset: nonexonic_AND_proximal
+      #   score_type: abs_llr
+      #   include_baselines: false
+      #   title: "TraitGym Complex Promoter"
+      # - dataset: traitgym_complex
+      #   subset: 5_prime_UTR_variant
+      #   score_type: abs_llr
+      #   include_baselines: false
+      #   title: "TraitGym Complex 5' UTR"
 
 # Inference configuration (performance settings that don't affect output)
 inference:
