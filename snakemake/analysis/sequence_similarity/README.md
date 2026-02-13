@@ -9,52 +9,102 @@ When training genomic language models on multi-species datasets, traditional tra
 1. **Within a genome**: Duplicated genes, paralogs, repetitive elements
 2. **Across species**: Orthologs, conserved regulatory elements
 
-This is analogous to the problem identified in protein language models like ESM2, which removes training sequences that share >50% identity with validation sequences.
+This is a well-known problem in both protein and genomic foundation models.
 
-### References
+### Prior Work and References
 
-- [ESM2 paper](https://www.science.org/doi/10.1126/science.ade2574): "All train sequences which match a validation sequence with 50% sequence identity are removed from the train set."
-- [Detecting and avoiding homology-based data leakage](https://www.biorxiv.org/content/10.1101/2025.01.22.634321v1): Analysis of data leakage in genome-trained sequence models.
+| Model/Paper | Approach | Thresholds |
+|------------|----------|------------|
+| **ESM2** (protein) | Remove train seqs matching val | 50% identity |
+| **Fungal DNA LM** (Chao et al.) | Minimap2 alignment, remove train seqs | Coverage ≥5% AND Identity ≥30% |
+| **hashFrag** | BLAST + union-find clustering | Alignment score threshold |
+
+**Key References:**
+
+- **ESM2**: [Lin et al., Science 2023](https://www.science.org/doi/10.1126/science.ade2574)
+  > "All train sequences which match a validation sequence with 50% sequence identity under this search are removed from the train set."
+
+- **Fungal DNA Language Model**: [Chao, Kuan-Hao et al., bioRxiv 2025](https://www.biorxiv.org/content/10.1101/2025.09.19.677475v1)
+  > "We aligned every training sequence against both the validation and test sets using Minimap2 (v2.28-r1209; assembly-to-assembly mode, '-x asm'). We removed any training sequence for which both coverage ≥ 5% and identity ≥ 30% in any alignment."
+
+- **hashFrag**: [de Boer Lab, bioRxiv 2025](https://www.biorxiv.org/content/10.1101/2025.01.22.634321v1)
+  > Analysis of homology-based data leakage in genome-trained sequence models.
 
 ## Goals
 
-1. **Quantify leakage**: Measure what percentage of validation sequences have similar sequences in the training set at various identity thresholds.
+1. **Quantify leakage**: Measure what percentage of training/validation sequences have similar sequences across splits at various thresholds.
 
 2. **Compare across taxonomic scales**: Using datasets with increasing phylogenetic diversity (humans → primates → mammals → vertebrates → animals), understand how cross-species similarity contributes to potential leakage.
 
 3. **Inform filtering thresholds**: Determine appropriate identity/coverage thresholds for filtering similar sequences in future dataset creation.
 
+4. **Compare methodologies**: Evaluate both MMseqs2 clustering and minimap2 alignment approaches.
+
 ## Implementation
 
-### Approach
+This pipeline implements **two complementary approaches**:
 
-We use [MMseqs2 linclust](https://github.com/soedinglab/MMseqs2) for sequence clustering because:
+### Approach 1: MMseqs2 Clustering
 
-- **Linear time complexity O(N)**: Can handle billions of sequences
-- **Scalable**: Designed for massive metagenomic datasets
-- **Nucleotide support**: Works with DNA sequences directly
+[MMseqs2 linclust](https://github.com/soedinglab/MMseqs2) provides **O(N) linear-time clustering**, ideal for very large datasets (billions of sequences).
 
-### Pipeline Steps
+**Pros:**
+- Extremely fast and scalable
+- Good for exploratory analysis at multiple thresholds
+- Single identity threshold (simpler)
+
+**Cons:**
+- Less granular control (single combined threshold)
+- Clustering-based (transitive relationships)
+
+### Approach 2: Minimap2 Alignment (Chao et al. Methodology)
+
+[Minimap2](https://github.com/lh3/minimap2) provides **pairwise alignment with detailed statistics**.
+
+**Pros:**
+- Independent coverage AND identity thresholds
+- Alignment coordinates for detailed analysis
+- Follows published Chao et al. methodology
+- Non-transitive (direct pairwise comparisons)
+
+**Cons:**
+- O(N×M) complexity (slower for very large datasets)
+- More complex threshold tuning (2D space)
+
+### Methodology Comparison
+
+| Aspect | MMseqs2 linclust | Minimap2 (Chao et al.) |
+|--------|------------------|-----------------|
+| Algorithm | k-mer + Smith-Waterman clustering | Pairwise alignment |
+| Complexity | O(N) linear | O(N_train × N_val) |
+| Thresholds | Single: identity ≥ X% | Dual: coverage ≥ X% AND identity ≥ Y% |
+| Default | 50% identity | 5% coverage, 30% identity |
+| Output | Cluster assignments | PAF with coordinates |
+| Best for | Very large datasets, exploration | Final filtering, published method |
+
+### Pipeline Flow
 
 ```
 1. Download datasets from HuggingFace
    └── Convert to FASTA format
-   └── Canonicalize sequences (optional, for reverse complement handling)
+   └── Canonicalize sequences (for reverse complement handling)
 
-2. Create MMseqs2 database
+2. MMseqs2 Analysis:
+   └── Create database
+   └── Cluster at multiple identity thresholds
+   └── Analyze cluster composition (train/val mixing)
 
-3. Cluster sequences at multiple identity thresholds (50%, 60%, 70%, 80%, 90%)
+3. Minimap2 Analysis (Chao et al.):
+   └── Align train → validation
+   └── Parse PAF, compute coverage & identity
+   └── Identify leaked sequences at threshold combinations
 
-4. Analyze cluster composition
-   └── Count validation sequences that cluster with training sequences
-   └── This represents potential "leakage"
-
-5. Generate summary statistics and visualizations
+4. Generate summary statistics and visualizations
 ```
 
 ### Reverse Complement Handling
 
-DNA sequences and their reverse complements encode the same information. The pipeline can optionally canonicalize sequences by converting each to the lexicographically smaller of (sequence, reverse_complement), ensuring that a sequence and its RC are treated as identical.
+DNA sequences and their reverse complements encode the same information. The pipeline canonicalizes sequences by converting each to the lexicographically smaller of (sequence, reverse_complement), ensuring that a sequence and its RC are treated as identical.
 
 ## Installation
 
@@ -68,6 +118,13 @@ brew install mmseqs2      # macOS with Homebrew
 # or
 apt install mmseqs2       # Ubuntu/Debian
 
+# Minimap2 (choose one method)
+conda install -c bioconda minimap2
+# or
+brew install minimap2     # macOS with Homebrew
+# or
+apt install minimap2      # Ubuntu/Debian
+
 # Python dependencies (if not already installed via bolinas)
 pip install datasets polars snakemake matplotlib seaborn
 ```
@@ -76,6 +133,7 @@ pip install datasets polars snakemake matplotlib seaborn
 
 ```bash
 mmseqs version
+minimap2 --version
 python -c "from datasets import load_dataset; print('OK')"
 snakemake --version
 ```
@@ -93,8 +151,12 @@ snakemake -n --cores 1
 # Run sanity check first (recommended)
 snakemake sanity_check --cores 8
 
-# Run the full pipeline
+# Run the full pipeline (both MMseqs2 and minimap2)
 snakemake --cores 16
+
+# Or run specific analyses:
+snakemake mmseqs2_analysis --cores 16   # MMseqs2 only
+snakemake minimap2_analysis --cores 16  # Minimap2 only (Chao et al.)
 ```
 
 ### Sanity Check
@@ -128,18 +190,25 @@ datasets:
     hf_path: bolinas-dna/genomes-v4-genome_set-humans-intervals-v1_256_128
   - name: primates
     hf_path: bolinas-dna/genomes-v4-genome_set-primates-intervals-v1_256_128
-  # Add more as needed...
 
-# Clustering parameters
+# MMseqs2 parameters
 mmseqs2:
   identity_thresholds: [0.5, 0.6, 0.7, 0.8, 0.9]
   coverage: 0.8
   cov_mode: 0  # Both query AND target must have coverage
-  threads: 16
+
+# Minimap2 parameters (Chao et al. methodology)
+minimap2:
+  preset: asm  # Assembly-to-assembly mode
+  coverage_threshold: 0.05   # 5% (Chao et al. default)
+  identity_threshold: 0.30   # 30% (Chao et al. default)
+  # Additional thresholds for 2D analysis
+  coverage_thresholds: [0.05, 0.10, 0.20, 0.50]
+  identity_thresholds: [0.30, 0.50, 0.70, 0.90]
 
 # Analysis settings
 analysis:
-  consider_reverse_complement: true  # Canonicalize sequences
+  consider_reverse_complement: true
   sequence_column: seq
 ```
 
@@ -149,11 +218,14 @@ analysis:
 # Only download data
 snakemake results/data/humans/metadata.parquet --cores 1
 
-# Only run clustering for one dataset/threshold
+# Only run MMseqs2 clustering for one dataset/threshold
 snakemake results/clustering/humans/clusters_0.5.tsv --cores 16
 
-# Generate plots only (requires prior steps)
-snakemake results/plots/leakage_heatmap.png --cores 1
+# Only run minimap2 alignment for one dataset
+snakemake results/minimap2/humans/train_vs_val_parsed.parquet --cores 16
+
+# Generate minimap2 scatter plot
+snakemake results/plots/humans_minimap2_scatter.png --cores 1
 ```
 
 ## Output
@@ -164,49 +236,86 @@ snakemake results/plots/leakage_heatmap.png --cores 1
 results/
 ├── data/
 │   └── {dataset}/
-│       ├── train.fasta           # Training sequences
-│       ├── validation.fasta      # Validation sequences
-│       ├── all_sequences.fasta   # Combined for clustering
-│       └── metadata.parquet      # Sequence IDs and split labels
-├── mmseqs/
+│       ├── train.fasta              # Training sequences
+│       ├── validation.fasta         # Validation sequences
+│       ├── all_sequences.fasta      # Combined for MMseqs2
+│       └── metadata.parquet         # Sequence IDs and split labels
+│
+├── mmseqs/                          # MMseqs2 intermediate files
 │   └── {dataset}/
-│       ├── seqDB*                # MMseqs2 sequence database
-│       ├── valDB*                # Validation-only database (sanity check)
-│       ├── clusters_{identity}/  # Train+val cluster databases
-│       └── val_self_clusters_{identity}/  # Val self-clustering (sanity check)
-├── sanity_check/
+│       ├── seqDB*                   # Sequence database
+│       ├── valDB*                   # Validation-only database
+│       └── clusters_{identity}/     # Cluster databases
+│
+├── sanity_check/                    # Validation self-similarity
 │   └── {dataset}/
-│       ├── val_self_clusters_{identity}.tsv  # Validation self-clustering
-│       ├── val_self_stats_{identity}.parquet # Statistics per threshold
-│       └── summary.parquet       # Sanity check summary
-├── clustering/
+│       └── summary.parquet
+│
+├── clustering/                      # MMseqs2 results
 │   └── {dataset}/
-│       └── clusters_{identity}.tsv  # Train+val cluster assignments
-├── analysis/
+│       └── clusters_{identity}.tsv
+│
+├── analysis/                        # MMseqs2 leakage analysis
 │   ├── {dataset}/
 │   │   └── leakage_stats_{identity}.parquet
-│   └── leakage_summary.parquet   # Combined statistics
+│   └── leakage_summary.parquet
+│
+├── minimap2/                        # Minimap2 results (Chao et al.)
+│   ├── {dataset}/
+│   │   ├── train_vs_val.paf         # Raw alignments
+│   │   ├── train_vs_val_parsed.parquet  # Parsed with metrics
+│   │   ├── leakage_stats.parquet    # Leakage at default threshold
+│   │   ├── threshold_analysis.parquet   # 2D threshold sweep
+│   │   └── leaked_train_ids.txt     # IDs to filter
+│   └── leakage_summary.parquet
+│
 └── plots/
-    ├── leakage_heatmap.png       # Heatmap: dataset × threshold
-    └── leakage_by_threshold.png  # Line plot: leakage vs threshold
+    ├── leakage_heatmap.png              # MMseqs2: dataset × threshold
+    ├── leakage_by_threshold.png         # MMseqs2: line plot
+    ├── {dataset}_minimap2_scatter.png   # Coverage vs identity scatter
+    └── {dataset}_minimap2_heatmap.png   # 2D threshold heatmap
 ```
 
 ### Interpreting Results
+
+#### MMseqs2 Results
 
 The key metric is **leaked_pct**: the percentage of validation sequences that cluster with at least one training sequence at a given identity threshold.
 
 Example interpretation:
 - `humans @ 90% identity: 5% leaked` → 5% of validation sequences are near-identical to training
-- `primates @ 50% identity: 30% leaked` → 30% of validation sequences share distant homology with primate training sequences
+- `primates @ 50% identity: 30% leaked` → 30% of validation sequences share distant homology
 
-High leakage at strict thresholds (80-90%) suggests near-duplicate sequences that should definitely be filtered. Leakage at looser thresholds (50-60%) indicates evolutionary homology that may or may not be problematic depending on the evaluation task.
+#### Minimap2 Results (Chao et al.)
+
+The key metrics are:
+- **leaked_train_pct**: % of training sequences with alignment to validation exceeding thresholds
+- **matched_val_pct**: % of validation sequences that have matching training sequences
+
+The scatter plot shows the 2D distribution of (coverage, identity) for all alignments. The "leaked region" (coverage ≥ 5%, identity ≥ 30% by default) is highlighted.
+
+The threshold heatmap shows how leakage varies across different threshold combinations, helping to choose appropriate filtering parameters.
 
 ## Next Steps
 
 Based on the analysis results, the next phase is to implement filtering in the dataset creation pipeline:
 
-1. After creating train/validation splits, run MMseqs2 clustering
-2. Remove training sequences that cluster with validation sequences (ESM2 approach)
-3. This preserves the validation set size while reducing leakage
+1. After creating train/validation splits, run minimap2 alignment (train → val)
+2. Remove training sequences that exceed coverage AND identity thresholds
+3. This follows the ESM2/Chao et al. approach: preserve validation set, filter training
+
+The `leaked_train_ids.txt` file can be used directly for filtering.
 
 See [Issue #28](https://github.com/Open-Athena/bolinas-dna/issues/28) for the full implementation plan.
+
+## References
+
+1. Lin, Z. et al. (2023). Evolutionary-scale prediction of atomic-level protein structure with a language model. *Science*, 379(6637), 1123-1130. https://doi.org/10.1126/science.ade2574
+
+2. Chao, K.-H. et al. (2025). Predicting dynamic expression patterns in budding yeast with a fungal DNA language model. *bioRxiv*. https://doi.org/10.1101/2025.09.19.677475
+
+3. Rafi, A.M. et al. (2025). Detecting and avoiding homology-based data leakage in genome-trained sequence models. *bioRxiv*. https://doi.org/10.1101/2025.01.22.634321
+
+4. Steinegger, M. & Söding, J. (2017). MMseqs2 enables sensitive protein sequence searching for the analysis of massive data sets. *Nature Biotechnology*, 35(11), 1026-1028.
+
+5. Li, H. (2018). Minimap2: pairwise alignment for nucleotide sequences. *Bioinformatics*, 34(18), 3094-3100.

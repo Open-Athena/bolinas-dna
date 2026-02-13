@@ -1,5 +1,14 @@
 # Sequence similarity analysis configuration
 # Analyzes cross-genome sequence similarity for train/test leakage detection
+#
+# This pipeline implements two complementary approaches:
+# 1. MMseqs2 linclust - Fast clustering for exploratory analysis
+# 2. Minimap2 alignment - Pairwise alignment following Chao et al. methodology
+#
+# References:
+# - ESM2: 50% identity threshold for protein sequences
+# - Chao et al. (Fungal DNA LM): coverage >= 5% AND identity >= 30%
+#   https://www.biorxiv.org/content/10.1101/2025.09.19.677475v1
 
 # HuggingFace datasets to analyze
 # Format: bolinas-dna/genomes-v4-genome_set-{timescale}-intervals-v1_256_128
@@ -17,7 +26,11 @@ datasets:
   # - name: animals
   #   hf_path: bolinas-dna/genomes-v4-genome_set-animals-intervals-v1_256_128
 
+# =============================================================================
 # MMseqs2 clustering parameters
+# =============================================================================
+# MMseqs2 linclust provides O(N) linear-time clustering, ideal for very large
+# datasets (billions of sequences). Good for exploratory analysis.
 # See: https://github.com/soedinglab/MMseqs2/wiki
 mmseqs2:
   # Sequence identity thresholds to test (0-1)
@@ -47,7 +60,49 @@ mmseqs2:
   # Additional parameters
   threads: 16
 
+# =============================================================================
+# Minimap2 alignment parameters (Chao et al. methodology)
+# =============================================================================
+# Minimap2 provides pairwise alignment with detailed statistics.
+# Following Chao et al.: align train sequences against validation, compute coverage
+# and identity, remove train sequences exceeding thresholds.
+#
+# From Chao et al. paper:
+# "We removed any training sequence for which both coverage >= 5% and
+#  identity >= 30% in any alignment"
+#
+# See: https://github.com/lh3/minimap2
+minimap2:
+  # Preset mode for alignment
+  # -x asm = assembly-to-assembly (used by Chao et al.)
+  # -x sr = short reads
+  # -x map-ont = Oxford Nanopore
+  preset: asm
+
+  # Thresholds for filtering (Chao et al. defaults)
+  # A training sequence is removed if BOTH conditions are met:
+  coverage_threshold: 0.05   # 5% of query must align
+  identity_threshold: 0.30   # 30% identity in aligned region
+
+  # Additional thresholds to test for analysis
+  # This generates a 2D heatmap of coverage vs identity
+  coverage_thresholds:
+    - 0.05
+    - 0.10
+    - 0.20
+    - 0.50
+
+  identity_thresholds:
+    - 0.30
+    - 0.50
+    - 0.70
+    - 0.90
+
+  threads: 16
+
+# =============================================================================
 # Analysis settings
+# =============================================================================
 analysis:
   # Whether to treat reverse complements as the same sequence
   consider_reverse_complement: true

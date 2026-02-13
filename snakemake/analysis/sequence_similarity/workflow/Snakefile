@@ -3,6 +3,15 @@
 This pipeline measures sequence similarity between validation and training splits
 across different taxonomic scales to understand potential data leakage in
 genomic language model training.
+
+Two complementary approaches are implemented:
+1. MMseqs2 linclust - Fast O(N) clustering for exploratory analysis
+2. Minimap2 alignment - Pairwise alignment following Chao et al. methodology
+
+References:
+- ESM2: https://www.science.org/doi/10.1126/science.ade2574
+- Chao et al.: https://www.biorxiv.org/content/10.64898/2025.12.22.695963v1
+- hashFrag: https://www.biorxiv.org/content/10.1101/2025.01.22.634321v1
 """
 
 configfile: "config/config.yaml"
@@ -14,7 +23,7 @@ def get_all_datasets():
 
 
 def get_all_identity_thresholds():
-    """Get list of all identity thresholds to test."""
+    """Get list of all identity thresholds to test (MMseqs2)."""
     return config["mmseqs2"]["identity_thresholds"]
 
 
@@ -23,30 +32,41 @@ include: "rules/common.smk"
 include: "rules/download.smk"
 include: "rules/clustering.smk"
 include: "rules/analysis.smk"
+include: "rules/minimap2.smk"
 
 
-# Define all output targets
+# =============================================================================
+# Main targets
+# =============================================================================
+
 rule all:
+    """Run both MMseqs2 and minimap2 analyses."""
     input:
-        # Sanity check (run first to verify pipeline)
+        # Sanity check
         expand(
             "results/sanity_check/{dataset}/summary.parquet",
             dataset=get_all_datasets(),
         ),
-        # Clustering results for all datasets and thresholds
-        expand(
-            "results/clustering/{dataset}/clusters_{identity}.tsv",
-            dataset=get_all_datasets(),
-            identity=get_all_identity_thresholds(),
-        ),
-        # Leakage analysis summary
+        # MMseqs2 clustering analysis
         "results/analysis/leakage_summary.parquet",
-        # Visualization
         "results/plots/leakage_heatmap.png",
         "results/plots/leakage_by_threshold.png",
+        # Minimap2 alignment analysis (Chao et al. methodology)
+        "results/minimap2/leakage_summary.parquet",
+        expand(
+            "results/plots/{dataset}_minimap2_scatter.png",
+            dataset=get_all_datasets(),
+        ),
+        expand(
+            "results/plots/{dataset}_minimap2_heatmap.png",
+            dataset=get_all_datasets(),
+        ),
 
 
-# Sanity check target: run this first to verify the pipeline works
+# =============================================================================
+# Individual analysis targets
+# =============================================================================
+
 rule sanity_check:
     """Run only the sanity check (validation self-similarity analysis).
 
@@ -59,5 +79,47 @@ rule sanity_check:
     input:
         expand(
             "results/sanity_check/{dataset}/summary.parquet",
+            dataset=get_all_datasets(),
+        ),
+
+
+rule mmseqs2_analysis:
+    """Run only MMseqs2 clustering analysis.
+
+    Fast O(N) clustering at multiple identity thresholds.
+
+    Usage: snakemake mmseqs2_analysis --cores 16
+    """
+    input:
+        expand(
+            "results/clustering/{dataset}/clusters_{identity}.tsv",
+            dataset=get_all_datasets(),
+            identity=get_all_identity_thresholds(),
+        ),
+        "results/analysis/leakage_summary.parquet",
+        "results/plots/leakage_heatmap.png",
+        "results/plots/leakage_by_threshold.png",
+
+
+rule minimap2_analysis:
+    """Run only minimap2 alignment analysis (Chao et al. methodology).
+
+    Pairwise alignment with coverage AND identity thresholds.
+    Default thresholds from Chao et al.: coverage >= 5%, identity >= 30%
+
+    Usage: snakemake minimap2_analysis --cores 16
+    """
+    input:
+        "results/minimap2/leakage_summary.parquet",
+        expand(
+            "results/minimap2/{dataset}/threshold_analysis.parquet",
+            dataset=get_all_datasets(),
+        ),
+        expand(
+            "results/plots/{dataset}_minimap2_scatter.png",
+            dataset=get_all_datasets(),
+        ),
+        expand(
+            "results/plots/{dataset}_minimap2_heatmap.png",
             dataset=get_all_datasets(),
         ),
