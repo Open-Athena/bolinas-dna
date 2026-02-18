@@ -42,11 +42,8 @@ include: "rules/minimap2.smk"
 rule all:
     """Run both MMseqs2 and minimap2 analyses."""
     input:
-        # Sanity check
-        expand(
-            "results/sanity_check/{dataset}/summary.parquet",
-            dataset=get_all_datasets(),
-        ),
+        # Sanity check (validation set is identical across datasets)
+        "results/sanity_check/humans/summary.parquet",
         # MMseqs2 clustering analysis
         "results/analysis/leakage_summary.parquet",
         "results/plots/leakage_heatmap.png",
@@ -77,10 +74,8 @@ rule sanity_check:
     Usage: snakemake sanity_check --cores 8
     """
     input:
-        expand(
-            "results/sanity_check/{dataset}/summary.parquet",
-            dataset=get_all_datasets(),
-        ),
+        # Validation set is identical across all datasets, so only run once
+        "results/sanity_check/humans/summary.parquet",
 
 
 rule mmseqs2_analysis:

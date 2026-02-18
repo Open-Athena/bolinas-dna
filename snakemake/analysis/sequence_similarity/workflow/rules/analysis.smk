@@ -104,8 +104,6 @@ rule analyze_validation_self_similarity:
     output:
         stats="results/sanity_check/{dataset}/val_self_stats_{identity}.parquet",
     run:
-        import polars as pl
-
         # Load cluster assignments
         clusters = pl.read_csv(
             input.clusters,
@@ -176,8 +174,6 @@ rule aggregate_sanity_check:
     output:
         summary="results/sanity_check/{dataset}/summary.parquet",
     run:
-        import polars as pl
-
         dfs = [pl.read_parquet(f) for f in input.stats]
         summary = pl.concat(dfs).sort("identity_threshold")
 
@@ -208,8 +204,6 @@ rule compute_leakage_stats:
     output:
         stats="results/analysis/{dataset}/leakage_stats_{identity}.parquet",
     run:
-        import polars as pl
-
         # Load cluster assignments
         # Format: representative_id \t member_id
         clusters = pl.read_csv(
@@ -294,8 +288,6 @@ rule aggregate_leakage_stats:
     output:
         summary="results/analysis/leakage_summary.parquet",
     run:
-        import polars as pl
-
         dfs = [pl.read_parquet(f) for f in input.stats]
         summary = pl.concat(dfs)
 
@@ -314,10 +306,6 @@ rule plot_leakage_heatmap:
     output:
         plot="results/plots/leakage_heatmap.png",
     run:
-        import matplotlib.pyplot as plt
-        import polars as pl
-        import seaborn as sns
-
         df = pl.read_parquet(input.summary).to_pandas()
 
         # Pivot for heatmap
@@ -354,9 +342,6 @@ rule plot_leakage_by_threshold:
     output:
         plot="results/plots/leakage_by_threshold.png",
     run:
-        import matplotlib.pyplot as plt
-        import polars as pl
-
         df = pl.read_parquet(input.summary).to_pandas()
 
         fig, ax = plt.subplots(figsize=(10, 6))

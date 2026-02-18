@@ -12,8 +12,6 @@ rule download_dataset:
         seq_column=config["analysis"]["sequence_column"],
         canonicalize=config["analysis"]["consider_reverse_complement"],
     run:
-        from pathlib import Path
-
         # Load train and validation splits
         print(f"Loading dataset from {params.hf_path}...")
         if params.canonicalize:

@@ -89,8 +89,6 @@ rule parse_paf_alignments:
     output:
         parquet="results/minimap2/{dataset}/{alignment_type}_parsed.parquet",
     run:
-        import polars as pl
-
         # PAF column names
         columns = [
             "query_name", "query_length", "query_start", "query_end",
@@ -140,8 +138,6 @@ rule analyze_minimap2_leakage:
         coverage_threshold=config["minimap2"]["coverage_threshold"],
         identity_threshold=config["minimap2"]["identity_threshold"],
     run:
-        import polars as pl
-
         # Load alignments
         alignments = pl.read_parquet(input.alignments)
 
@@ -213,8 +209,6 @@ rule analyze_minimap2_thresholds:
         coverage_thresholds=config["minimap2"]["coverage_thresholds"],
         identity_thresholds=config["minimap2"]["identity_thresholds"],
     run:
-        import polars as pl
-
         # Load alignments
         alignments = pl.read_parquet(input.alignments)
 
@@ -260,9 +254,6 @@ rule plot_minimap2_scatter:
         coverage_threshold=config["minimap2"]["coverage_threshold"],
         identity_threshold=config["minimap2"]["identity_threshold"],
     run:
-        import matplotlib.pyplot as plt
-        import polars as pl
-
         alignments = pl.read_parquet(input.alignments).to_pandas()
 
         fig, ax = plt.subplots(figsize=(10, 8))
@@ -319,10 +310,6 @@ rule plot_minimap2_heatmap:
     output:
         plot="results/plots/{dataset}_minimap2_heatmap.png",
     run:
-        import matplotlib.pyplot as plt
-        import polars as pl
-        import seaborn as sns
-
         df = pl.read_parquet(input.stats).to_pandas()
 
         # Pivot for heatmap
@@ -362,8 +349,6 @@ rule aggregate_minimap2_stats:
     output:
         summary="results/minimap2/leakage_summary.parquet",
     run:
-        import polars as pl
-
         dfs = [pl.read_parquet(f) for f in input.stats]
         summary = pl.concat(dfs)
 

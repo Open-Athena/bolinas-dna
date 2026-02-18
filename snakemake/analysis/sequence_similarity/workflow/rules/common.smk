@@ -2,8 +2,10 @@
 
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import pandas as pd
 import polars as pl
+import seaborn as sns
 from datasets import load_dataset
 
 
