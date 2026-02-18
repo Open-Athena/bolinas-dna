@@ -28,16 +28,16 @@ Development is driven by experiments tracked as GitHub issues.
 | [#13](https://github.com/Open-Athena/bolinas-dna/issues/13) Mixing different genomic regions | Closed - balanced mixing gives balanced performance; proportional mixing dominated by CDS |
 | [#53](https://github.com/Open-Athena/bolinas-dna/issues/53) Alternative datasets based on distance from CDS | Closed - distance-based heuristic (a la SpeciesLM) instead of UTR annotations |
 | [#9](https://github.com/Open-Athena/bolinas-dna/issues/9) Repeat downweighting | Closed - downweighting repetitive elements improves VEP and stabilizes training |
-| [#42](https://github.com/Open-Athena/bolinas-dna/issues/42) Promoter radius | Open |
-| [#43](https://github.com/Open-Athena/bolinas-dna/issues/43) Mixing 5 different regions | Open |
+| [#42](https://github.com/Open-Athena/bolinas-dna/issues/42) Promoter radius | Closed - smaller radius performs better; expanding to ±2kb degrades performance |
+| [#43](https://github.com/Open-Athena/bolinas-dna/issues/43) Mixing 5 different regions | Closed - CDS, promoters, and 5' UTR learn well; 3' UTR and ncRNA show limited improvement |
 
 #### Evolutionary Timescales
 
 | Experiment | Status |
 |-----------|--------|
 | [#55](https://github.com/Open-Athena/bolinas-dna/issues/55) Promoters from different evolutionary timescales | Closed - mammals-trained model reaches good VEP performance fastest |
-| [#58](https://github.com/Open-Athena/bolinas-dna/issues/58) CDS from different evolutionary timescales | Open |
-| [#59](https://github.com/Open-Athena/bolinas-dna/issues/59) Downstream regions from different evolutionary timescales | Open |
+| [#58](https://github.com/Open-Athena/bolinas-dna/issues/58) CDS from different evolutionary timescales | Closed - longer timescales (animals) perform better for missense variants |
+| [#59](https://github.com/Open-Athena/bolinas-dna/issues/59) Downstream regions from different evolutionary timescales | Closed - mammals trains fastest but all timescales converge with sufficient training |
 
 ### Modeling
 
