@@ -114,18 +114,17 @@ External tools (MMseqs2, minimap2) are managed automatically by Snakemake:
 - **MMseqs2**: Installed via conda environment (`workflow/envs/mmseqs2.yaml`) when using `--use-conda`
 - **minimap2**: Installed via [Snakemake wrapper](https://snakemake-wrappers.readthedocs.io/en/stable/wrappers/minimap2/aligner.html) (auto-downloaded)
 
-You only need to install the Python/Snakemake dependencies:
+You only need [uv](https://docs.astral.sh/uv/) and the project's Python dependencies:
 
 ```bash
-# Python dependencies (if not already installed via bolinas)
-pip install datasets polars snakemake matplotlib seaborn
+uv sync
 ```
 
 ### Verify Installation
 
 ```bash
-python -c "from datasets import load_dataset; print('OK')"
-snakemake --version
+uv run python -c "from datasets import load_dataset; print('OK')"
+uv run snakemake --version
 ```
 
 ## Usage
@@ -136,17 +135,17 @@ snakemake --version
 cd snakemake/analysis/sequence_similarity
 
 # Dry-run (validate workflow without executing)
-snakemake -n --cores all
+uv run snakemake -n --cores all
 
 # Run sanity check first (recommended)
-snakemake sanity_check --cores all --use-conda
+uv run snakemake sanity_check --cores all --use-conda
 
 # Run the full pipeline (both MMseqs2 and minimap2)
-snakemake --cores all --use-conda
+uv run snakemake --cores all --use-conda
 
 # Or run specific analyses:
-snakemake mmseqs2_analysis --cores all --use-conda   # MMseqs2 only
-snakemake minimap2_analysis --cores all --use-conda  # Minimap2 only (Chao et al.)
+uv run snakemake mmseqs2_analysis --cores all --use-conda   # MMseqs2 only
+uv run snakemake minimap2_analysis --cores all --use-conda  # Minimap2 only (Chao et al.)
 ```
 
 > **Note**: The `--use-conda` flag is required to automatically install external tools
@@ -158,7 +157,7 @@ snakemake minimap2_analysis --cores all --use-conda  # Minimap2 only (Chao et al
 Before running the full analysis, run the sanity check to verify the pipeline works:
 
 ```bash
-snakemake sanity_check --cores all --use-conda
+uv run snakemake sanity_check --cores all --use-conda
 ```
 
 This clusters validation sequences against themselves and verifies:
@@ -210,16 +209,16 @@ analysis:
 
 ```bash
 # Only download data
-snakemake results/data/humans/metadata.parquet --cores all
+uv run snakemake results/data/humans/metadata.parquet --cores all
 
 # Only run MMseqs2 clustering for one dataset/threshold
-snakemake results/clustering/humans/clusters_0.5.tsv --cores all --use-conda
+uv run snakemake results/clustering/humans/clusters_0.5.tsv --cores all --use-conda
 
 # Only run minimap2 alignment for one dataset
-snakemake results/minimap2/humans/train_vs_val_parsed.parquet --cores all --use-conda
+uv run snakemake results/minimap2/humans/train_vs_val_parsed.parquet --cores all --use-conda
 
 # Generate minimap2 scatter plot
-snakemake results/plots/humans_minimap2_scatter.png --cores all
+uv run snakemake results/plots/humans_minimap2_scatter.png --cores all
 ```
 
 ## Output

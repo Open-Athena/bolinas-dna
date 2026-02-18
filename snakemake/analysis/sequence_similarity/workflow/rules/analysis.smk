@@ -35,7 +35,7 @@ rule cluster_validation_self:
         db="results/mmseqs/{dataset}/valDB",
         db_type="results/mmseqs/{dataset}/valDB.dbtype",
     output:
-        cluster_db="results/mmseqs/{dataset}/val_self_clusters_{identity}/clusterDB",
+        cluster_db="results/mmseqs/{dataset}/val_self_clusters_{identity}/clusterDB.index",
         cluster_db_type="results/mmseqs/{dataset}/val_self_clusters_{identity}/clusterDB.dbtype",
     params:
         db_prefix="results/mmseqs/{dataset}/valDB",
@@ -71,7 +71,7 @@ rule extract_validation_self_clusters:
     input:
         db="results/mmseqs/{dataset}/valDB",
         db_type="results/mmseqs/{dataset}/valDB.dbtype",
-        cluster_db="results/mmseqs/{dataset}/val_self_clusters_{identity}/clusterDB",
+        cluster_db="results/mmseqs/{dataset}/val_self_clusters_{identity}/clusterDB.index",
         cluster_db_type="results/mmseqs/{dataset}/val_self_clusters_{identity}/clusterDB.dbtype",
     output:
         tsv="results/sanity_check/{dataset}/val_self_clusters_{identity}.tsv",

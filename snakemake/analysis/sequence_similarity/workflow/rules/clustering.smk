@@ -29,7 +29,7 @@ rule cluster_sequences:
         db="results/mmseqs/{dataset}/seqDB",
         db_type="results/mmseqs/{dataset}/seqDB.dbtype",
     output:
-        cluster_db="results/mmseqs/{dataset}/clusters_{identity}/clusterDB",
+        cluster_db="results/mmseqs/{dataset}/clusters_{identity}/clusterDB.index",
         cluster_db_type="results/mmseqs/{dataset}/clusters_{identity}/clusterDB.dbtype",
     params:
         db_prefix="results/mmseqs/{dataset}/seqDB",
@@ -65,7 +65,7 @@ rule extract_cluster_tsv:
     input:
         db="results/mmseqs/{dataset}/seqDB",
         db_type="results/mmseqs/{dataset}/seqDB.dbtype",
-        cluster_db="results/mmseqs/{dataset}/clusters_{identity}/clusterDB",
+        cluster_db="results/mmseqs/{dataset}/clusters_{identity}/clusterDB.index",
         cluster_db_type="results/mmseqs/{dataset}/clusters_{identity}/clusterDB.dbtype",
     output:
         tsv="results/clustering/{dataset}/clusters_{identity}.tsv",
