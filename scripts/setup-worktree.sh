@@ -43,9 +43,14 @@ fi
 
 echo "Creating worktree for branch '$BRANCH_NAME' at $WORKTREE_DIR"
 
-# Create the worktree with a new branch
+# Create the worktree, reusing an existing branch or creating a new one
 cd "$MAIN_REPO"
-git worktree add -b "$BRANCH_NAME" "$WORKTREE_DIR"
+git fetch origin "$BRANCH_NAME" 2>/dev/null || true
+if git show-ref --verify --quiet "refs/heads/$BRANCH_NAME" || git show-ref --verify --quiet "refs/remotes/origin/$BRANCH_NAME"; then
+    git worktree add "$WORKTREE_DIR" "$BRANCH_NAME"
+else
+    git worktree add -b "$BRANCH_NAME" "$WORKTREE_DIR"
+fi
 
 echo ""
 echo "Symlinking results directories..."
