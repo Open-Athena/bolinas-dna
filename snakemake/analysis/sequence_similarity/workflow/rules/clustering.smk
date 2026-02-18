@@ -11,6 +11,8 @@ rule create_mmseqs_db:
     params:
         db_prefix="results/mmseqs/{dataset}/seqDB",
     threads: 1
+    conda:
+        "../envs/mmseqs2.yaml"
     shell:
         """
         mmseqs createdb {input.fasta} {params.db_prefix}
@@ -40,6 +42,8 @@ rule cluster_sequences:
     threads: config["mmseqs2"]["threads"]
     resources:
         mem_mb=64000,
+    conda:
+        "../envs/mmseqs2.yaml"
     shell:
         """
         mkdir -p {params.tmp_dir}
@@ -69,6 +73,8 @@ rule extract_cluster_tsv:
         db_prefix="results/mmseqs/{dataset}/seqDB",
         cluster_prefix="results/mmseqs/{dataset}/clusters_{identity}/clusterDB",
     threads: 1
+    conda:
+        "../envs/mmseqs2.yaml"
     shell:
         """
         mmseqs createtsv \

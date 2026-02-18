@@ -21,6 +21,8 @@ rule create_validation_only_db:
     params:
         db_prefix="results/mmseqs/{dataset}/valDB",
     threads: 1
+    conda:
+        "../envs/mmseqs2.yaml"
     shell:
         """
         mmseqs createdb {input.fasta} {params.db_prefix}
@@ -46,6 +48,8 @@ rule cluster_validation_self:
     threads: config["mmseqs2"]["threads"]
     resources:
         mem_mb=32000,
+    conda:
+        "../envs/mmseqs2.yaml"
     shell:
         """
         mkdir -p {params.tmp_dir}
@@ -75,6 +79,8 @@ rule extract_validation_self_clusters:
         db_prefix="results/mmseqs/{dataset}/valDB",
         cluster_prefix="results/mmseqs/{dataset}/val_self_clusters_{identity}/clusterDB",
     threads: 1
+    conda:
+        "../envs/mmseqs2.yaml"
     shell:
         """
         mmseqs createtsv \

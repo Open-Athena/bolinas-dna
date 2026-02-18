@@ -28,19 +28,18 @@ rule align_train_to_val:
     This produces a PAF file with alignment statistics for each train-val pair.
     """
     input:
-        train="results/data/{dataset}/train.fasta",
-        val="results/data/{dataset}/validation.fasta",
+        query="results/data/{dataset}/train.fasta",
+        target="results/data/{dataset}/validation.fasta",
     output:
-        paf="results/minimap2/{dataset}/train_vs_val.paf",
+        "results/minimap2/{dataset}/train_vs_val.paf",
     params:
-        preset=config["minimap2"]["preset"],
+        extra=f"-x {config['minimap2']['preset']}",
+        sorting="none",
     threads: config["minimap2"]["threads"]
-    shell:
-        """
-        minimap2 -x {params.preset} -t {threads} \
-            {input.val} {input.train} \
-            > {output.paf}
-        """
+    log:
+        "results/logs/minimap2/{dataset}/align_train_to_val.log",
+    wrapper:
+        "v9.0.1/bio/minimap2/aligner"
 
 
 rule align_val_to_val:
@@ -50,18 +49,18 @@ rule align_val_to_val:
     reverse complements (if RC augmentation is present).
     """
     input:
-        val="results/data/{dataset}/validation.fasta",
+        query="results/data/{dataset}/validation.fasta",
+        target="results/data/{dataset}/validation.fasta",
     output:
-        paf="results/minimap2/{dataset}/val_vs_val.paf",
+        "results/minimap2/{dataset}/val_vs_val.paf",
     params:
-        preset=config["minimap2"]["preset"],
+        extra=f"-x {config['minimap2']['preset']}",
+        sorting="none",
     threads: config["minimap2"]["threads"]
-    shell:
-        """
-        minimap2 -x {params.preset} -t {threads} \
-            {input.val} {input.val} \
-            > {output.paf}
-        """
+    log:
+        "results/logs/minimap2/{dataset}/align_val_to_val.log",
+    wrapper:
+        "v9.0.1/bio/minimap2/aligner"
 
 
 rule parse_paf_alignments:

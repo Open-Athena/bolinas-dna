@@ -5,6 +5,11 @@
 # 1. MMseqs2 linclust - Fast clustering for exploratory analysis
 # 2. Minimap2 alignment - Pairwise alignment following Chao et al. methodology
 #
+# External tools are managed automatically:
+# - MMseqs2: installed via conda env (workflow/envs/mmseqs2.yaml)
+# - Minimap2: installed via Snakemake wrapper
+# Run with: snakemake --cores all --use-conda
+#
 # References:
 # - ESM2: 50% identity threshold for protein sequences
 # - Chao et al. (Fungal DNA LM): coverage >= 5% AND identity >= 30%
