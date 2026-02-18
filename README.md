@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="assets/logo.png" width="200" />
+  <img src="assets/logo.png" width="100" />
 </p>
 
 <h1 align="center">Bolinas</h1>
 
-<p align="center">Open development of genomic language models — data, model, and evaluation.</p>
+<p align="center">Open development of genomic language models — data, modeling, and evaluation.</p>
 
 ## Experiments
 
@@ -12,58 +12,58 @@ Development is driven by experiments tracked as GitHub issues.
 
 ### Baseline Runs
 
-| # | Experiment | Status |
-|---|-----------|--------|
-| [#21](https://github.com/Open-Athena/bolinas-dna/issues/21) | Promoters YOLO run | Closed -- matches Evo 2 on promoter VEP but still behind GPN-Star |
-| [#22](https://github.com/Open-Athena/bolinas-dna/issues/22) | mRNA + promoters YOLO run | Closed -- combined model consumed by coding regions; poor on promoter variants |
-| [#27](https://github.com/Open-Athena/bolinas-dna/issues/27) | CDS YOLO run | Closed -- matches Evo 2 on missense variants but falls behind GPN-Star |
+| Experiment | Status |
+|-----------|--------|
+| [#21](https://github.com/Open-Athena/bolinas-dna/issues/21) Promoters YOLO run | Closed - matches Evo 2 on promoter VEP but still behind GPN-Star |
+| [#22](https://github.com/Open-Athena/bolinas-dna/issues/22) mRNA + promoters YOLO run | Closed - combined model consumed by coding regions; poor on promoter variants |
+| [#27](https://github.com/Open-Athena/bolinas-dna/issues/27) CDS YOLO run | Closed - matches Evo 2 on missense variants but falls behind GPN-Star |
 
 ### Data
 
 #### Genomic Regions
 
-| # | Experiment | Status |
-|---|-----------|--------|
-| [#41](https://github.com/Open-Athena/bolinas-dna/issues/41) | Promoters from mRNA vs. ncRNA | Closed -- adding ncRNA promoters shows no significant difference in VEP performance |
-| [#13](https://github.com/Open-Athena/bolinas-dna/issues/13) | Mixing different genomic regions | Closed -- balanced mixing gives balanced performance; proportional mixing dominated by CDS |
-| [#53](https://github.com/Open-Athena/bolinas-dna/issues/53) | Alternative datasets based on distance from CDS | Closed -- distance-based heuristic (a la SpeciesLM) instead of UTR annotations |
-| [#9](https://github.com/Open-Athena/bolinas-dna/issues/9) | Repeat downweighting | Closed -- downweighting repetitive elements improves VEP and stabilizes training |
-| [#42](https://github.com/Open-Athena/bolinas-dna/issues/42) | Promoter radius | Open |
-| [#43](https://github.com/Open-Athena/bolinas-dna/issues/43) | Mixing 5 different regions | Open |
+| Experiment | Status |
+|-----------|--------|
+| [#41](https://github.com/Open-Athena/bolinas-dna/issues/41) Promoters from mRNA vs. ncRNA | Closed - adding ncRNA promoters shows no significant difference in VEP performance |
+| [#13](https://github.com/Open-Athena/bolinas-dna/issues/13) Mixing different genomic regions | Closed - balanced mixing gives balanced performance; proportional mixing dominated by CDS |
+| [#53](https://github.com/Open-Athena/bolinas-dna/issues/53) Alternative datasets based on distance from CDS | Closed - distance-based heuristic (a la SpeciesLM) instead of UTR annotations |
+| [#9](https://github.com/Open-Athena/bolinas-dna/issues/9) Repeat downweighting | Closed - downweighting repetitive elements improves VEP and stabilizes training |
+| [#42](https://github.com/Open-Athena/bolinas-dna/issues/42) Promoter radius | Open |
+| [#43](https://github.com/Open-Athena/bolinas-dna/issues/43) Mixing 5 different regions | Open |
 
 #### Evolutionary Timescales
 
-| # | Experiment | Status |
-|---|-----------|--------|
-| [#55](https://github.com/Open-Athena/bolinas-dna/issues/55) | Promoters from different evolutionary timescales | Closed -- mammals-trained model reaches good VEP performance fastest |
-| [#58](https://github.com/Open-Athena/bolinas-dna/issues/58) | CDS from different evolutionary timescales | Open |
-| [#59](https://github.com/Open-Athena/bolinas-dna/issues/59) | Downstream regions from different evolutionary timescales | Open |
+| Experiment | Status |
+|-----------|--------|
+| [#55](https://github.com/Open-Athena/bolinas-dna/issues/55) Promoters from different evolutionary timescales | Closed - mammals-trained model reaches good VEP performance fastest |
+| [#58](https://github.com/Open-Athena/bolinas-dna/issues/58) CDS from different evolutionary timescales | Open |
+| [#59](https://github.com/Open-Athena/bolinas-dna/issues/59) Downstream regions from different evolutionary timescales | Open |
 
 ### Modeling
 
 #### Training Objectives
 
-| # | Experiment | Status |
-|---|-----------|--------|
-| [#3](https://github.com/Open-Athena/bolinas-dna/issues/3) | Different training objectives | Closed -- CLM appears to do better than MLM at initial steps |
+| Experiment | Status |
+|-----------|--------|
+| [#3](https://github.com/Open-Athena/bolinas-dna/issues/3) Different training objectives | Closed - CLM appears to do better than MLM at initial steps |
 
 #### Architecture
 
-| # | Experiment | Status |
-|---|-----------|--------|
-| [#37](https://github.com/Open-Athena/bolinas-dna/issues/37) | Context size | Closed -- 256bp and 512bp contexts perform similarly on VEP |
+| Experiment | Status |
+|-----------|--------|
+| [#37](https://github.com/Open-Athena/bolinas-dna/issues/37) Context size | Closed - 256bp and 512bp contexts perform similarly on VEP |
 
 #### Scaling
 
-| # | Experiment | Status |
-|---|-----------|--------|
-| [#57](https://github.com/Open-Athena/bolinas-dna/issues/57) | Scaling on a mixture dataset | Open |
+| Experiment | Status |
+|-----------|--------|
+| [#57](https://github.com/Open-Athena/bolinas-dna/issues/57) Scaling on a mixture dataset | Open |
 
 ### Evaluation
 
-| # | Experiment | Status |
-|---|-----------|--------|
-| [#8](https://github.com/Open-Athena/bolinas-dna/issues/8) | Understand relationship between perplexity and other metrics | Open |
+| Experiment | Status |
+|-----------|--------|
+| [#8](https://github.com/Open-Athena/bolinas-dna/issues/8) Understand relationship between perplexity and other metrics | Open |
 
 ---
 
