@@ -356,10 +356,6 @@ results/
 
 The key metric is **leaked_pct**: the percentage of validation sequences that cluster with at least one training sequence at a given identity threshold.
 
-Example interpretation:
-- `humans @ 90% identity: 5% leaked` → 5% of validation sequences are near-identical to training
-- `primates @ 50% identity: 30% leaked` → 30% of validation sequences share distant homology
-
 #### Minimap2 Results (Chao et al.)
 
 The key metrics are:
@@ -370,15 +366,111 @@ The scatter plot shows the 2D distribution of (coverage, identity) for all align
 
 The threshold heatmap shows how leakage varies across different threshold combinations, helping to choose appropriate filtering parameters.
 
+## Results
+
+### Dataset Summary
+
+| Dataset | Train seqs | Val seqs | Taxonomic scope |
+|---------|-----------|----------|-----------------|
+| humans | 212,066 | 14,030 | Single genome (Homo sapiens), val = held-out chromosome |
+| primates | 1,814,468 | 14,030 | Multiple primate genomes, val = same human held-out chromosome |
+
+### Repeat Masking Test
+
+The synthetic masking test (`test_masking` target) confirms `--mask-lower-case 1` works correctly:
+
+| Pair | Without masking | With masking | Status |
+|------|----------------|-------------|--------|
+| `genuine_A` / `genuine_B` (true homologs) | Same cluster | Same cluster | PASS |
+| `repeat_only_A` / `repeat_only_B` (share only repeat) | Same cluster | **Different clusters** | PASS |
+| `mixed_A` / `mixed_B` (homologs + repeat) | Same cluster | Same cluster | PASS |
+
+All 6 assertions passed. This validates that `mmseqs cluster --mask-lower-case 1` correctly
+ignores soft-masked repeats when determining sequence similarity, while preserving genuine
+homology signal.
+
+### Sanity Check (Validation Self-Similarity)
+
+Clustering validation sequences against themselves confirms the pipeline works correctly.
+At 90% identity, 100% of validation sequences have at least one match (their reverse
+complement), and cluster sizes decrease as thresholds become more stringent:
+
+| Identity | Coverage | Clusters | Singletons | Avg cluster size |
+|----------|----------|----------|------------|-----------------|
+| 0.3 | 0.3 | 2,728 | 6 (0.0%) | 5.2 |
+| 0.5 | 0.6 | 6,324 | 0 (0.0%) | 2.2 |
+| 0.7 | 1.0 | 6,954 | 0 (0.0%) | 2.0 |
+| 0.9 | 1.0 | 6,988 | 0 (0.0%) | 2.0 |
+
+At coverage = 1.0 (full-length match), cluster size ~2.0 confirms that nearly every sequence
+clusters with exactly its reverse complement, as expected.
+
+### MMseqs2 Leakage Analysis
+
+**Key finding: cross-species similarity is the dominant source of leakage.** Within a single
+human genome, leakage is modest (0.3–6.4%). But when training includes other primate genomes,
+50–68% of human validation sequences have a similar training sequence — this is genuine
+homology from conserved genomic regions, not repetitive elements (repeats are masked).
+
+#### Humans (single genome)
+
+| Identity threshold | Leaked val seqs | Leaked % | Mixed clusters |
+|-------------------|----------------|----------|----------------|
+| 50% | 891 | 6.35% | 199 |
+| 60% | 653 | 4.65% | 131 |
+| 70% | 527 | 3.76% | 80 |
+| 80% | 292 | 2.08% | 48 |
+| 90% | 40 | 0.29% | 14 |
+
+Within-genome leakage comes from segmental duplications and paralogs. Even at the ESM2-style
+50% threshold, only ~6% of validation sequences cluster with training — the chromosome-based
+split is reasonably effective for a single genome.
+
+#### Primates (multi-species)
+
+| Identity threshold | Leaked val seqs | Leaked % | Mixed clusters |
+|-------------------|----------------|----------|----------------|
+| 50% | 9,512 | 67.80% | 4,479 |
+| 60% | 9,366 | 66.76% | 4,399 |
+| 70% | 9,334 | 66.53% | 4,385 |
+| 80% | 7,482 | 53.33% | 3,566 |
+| 90% | 6,988 | 49.81% | 3,419 |
+
+The leakage is dramatically higher: ~67% at 50% identity and still ~50% at 90% identity.
+This is expected — orthologous regions across primates are highly conserved. The plateau
+between 50–70% identity (all ~67%) suggests most cross-species matches are high-identity
+orthologs, not borderline hits.
+
+#### Implications
+
+1. **Chromosome holdout is insufficient for multi-species datasets.** A held-out human
+   chromosome will have orthologs in every other primate genome in the training set.
+
+2. **Filtering must operate across species.** Simply removing duplicates within a genome
+   is not enough; training sequences from other species that are orthologous to validation
+   regions must also be filtered.
+
+3. **The 50–70% identity plateau in primates** means that lowering the threshold below 70%
+   captures very few additional leaked sequences. A 70–80% threshold may be a practical
+   choice that removes most genuine leakage without being overly aggressive.
+
+### Plots
+
+![Leakage Heatmap](results/plots/leakage_heatmap.png)
+
+![Leakage by Threshold](results/plots/leakage_by_threshold.png)
+
 ## Next Steps
 
-Based on the analysis results, the next phase is to implement filtering in the dataset creation pipeline:
+1. **Run minimap2 analysis** (Chao et al. methodology) for a complementary 2D
+   coverage × identity view of the same data.
 
-1. After creating train/validation splits, run minimap2 alignment (train → val)
-2. Remove training sequences that exceed coverage AND identity thresholds
-3. This follows the ESM2/Chao et al. approach: preserve validation set, filter training
+2. **Expand to additional taxonomic scales** (mammals, vertebrates, animals) to see how
+   leakage scales with phylogenetic distance.
 
-The `leaked_train_ids.txt` file can be used directly for filtering.
+3. **Implement filtering in the dataset creation pipeline**: after creating train/validation
+   splits, remove training sequences that exceed similarity thresholds against validation.
+   This follows the ESM2/Chao et al. approach: preserve validation set, filter training.
 
 See [Issue #28](https://github.com/Open-Athena/bolinas-dna/issues/28) for the full implementation plan.
 
