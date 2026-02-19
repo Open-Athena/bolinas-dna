@@ -1,13 +1,9 @@
 # Sequence similarity analysis configuration
 # Analyzes cross-genome sequence similarity for train/test leakage detection
-#
-# This pipeline implements two complementary approaches:
-# 1. MMseqs2 linclust - Fast clustering for exploratory analysis
-# 2. Minimap2 alignment - Pairwise alignment following Chao et al. methodology
+# using MMseqs2 clustering.
 #
 # External tools are managed automatically:
 # - MMseqs2: installed via conda env (workflow/envs/mmseqs2.yaml)
-# - Minimap2: installed via Snakemake wrapper
 # Run with: uv run snakemake --cores all --use-conda
 #
 # References:
@@ -63,46 +59,6 @@ mmseqs2:
   cluster_mode: 0
 
   # Additional parameters
-  threads: 16
-
-# =============================================================================
-# Minimap2 alignment parameters (Chao et al. methodology)
-# =============================================================================
-# Minimap2 provides pairwise alignment with detailed statistics.
-# Following Chao et al.: align train sequences against validation, compute coverage
-# and identity, remove train sequences exceeding thresholds.
-#
-# From Chao et al. paper:
-# "We removed any training sequence for which both coverage >= 5% and
-#  identity >= 30% in any alignment"
-#
-# See: https://github.com/lh3/minimap2
-minimap2:
-  # Preset mode for alignment
-  # -x asm = assembly-to-assembly (used by Chao et al.)
-  # -x sr = short reads
-  # -x map-ont = Oxford Nanopore
-  preset: asm
-
-  # Thresholds for filtering (Chao et al. defaults)
-  # A training sequence is removed if BOTH conditions are met:
-  coverage_threshold: 0.05   # 5% of query must align
-  identity_threshold: 0.30   # 30% identity in aligned region
-
-  # Additional thresholds to test for analysis
-  # This generates a 2D heatmap of coverage vs identity
-  coverage_thresholds:
-    - 0.05
-    - 0.10
-    - 0.20
-    - 0.50
-
-  identity_thresholds:
-    - 0.30
-    - 0.50
-    - 0.70
-    - 0.90
-
   threads: 16
 
 # =============================================================================

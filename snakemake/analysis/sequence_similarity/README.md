@@ -38,50 +38,9 @@ This is a well-known problem in both protein and genomic foundation models.
 
 3. **Inform filtering thresholds**: Determine appropriate identity/coverage thresholds for filtering similar sequences in future dataset creation.
 
-4. **Compare methodologies**: Evaluate both MMseqs2 clustering and minimap2 alignment approaches.
-
 ## Implementation
 
-This pipeline implements **two complementary approaches**:
-
-### Approach 1: MMseqs2 Clustering
-
-[MMseqs2 cluster](https://github.com/soedinglab/MMseqs2) provides **sensitive sequence clustering with lowercase repeat masking** (`--mask-lower-case 1`), ensuring that soft-masked repeats (from RepeatMasker) are excluded from k-mer seeding so that clustering reflects genuine homology.
-
-**Pros:**
-- Sensitive cascade prefilter + alignment pipeline
-- Honors `--mask-lower-case 1` for repeat-aware clustering
-- Good for exploratory analysis at multiple thresholds
-- Single identity threshold (simpler)
-
-**Cons:**
-- Slower than `linclust` (but still fast for typical dataset sizes)
-- Clustering-based (transitive relationships)
-
-### Approach 2: Minimap2 Alignment (Chao et al. Methodology)
-
-[Minimap2](https://github.com/lh3/minimap2) provides **pairwise alignment with detailed statistics**.
-
-**Pros:**
-- Independent coverage AND identity thresholds
-- Alignment coordinates for detailed analysis
-- Follows published Chao et al. methodology
-- Non-transitive (direct pairwise comparisons)
-
-**Cons:**
-- O(N×M) complexity (slower for very large datasets)
-- More complex threshold tuning (2D space)
-
-### Methodology Comparison
-
-| Aspect | MMseqs2 cluster | Minimap2 (Chao et al.) |
-|--------|------------------|-----------------|
-| Algorithm | Cascade prefilter + Smith-Waterman clustering | Pairwise alignment |
-| Repeat masking | `--mask-lower-case 1` (honors soft-masking) | N/A |
-| Thresholds | Single: identity ≥ X% | Dual: coverage ≥ X% AND identity ≥ Y% |
-| Default | 50% identity | 5% coverage, 30% identity |
-| Output | Cluster assignments | PAF with coordinates |
-| Best for | Repeat-aware exploration at multiple thresholds | Final filtering, published method |
+This pipeline uses [MMseqs2 cluster](https://github.com/soedinglab/MMseqs2) for **sensitive sequence clustering with lowercase repeat masking** (`--mask-lower-case 1`), ensuring that soft-masked repeats (from RepeatMasker) are excluded from k-mer seeding so that clustering reflects genuine homology.
 
 ### Pipeline Flow
 
@@ -95,12 +54,7 @@ This pipeline implements **two complementary approaches**:
    └── Cluster at multiple identity thresholds (mmseqs cluster --mask-lower-case 1)
    └── Analyze cluster composition (train/val mixing)
 
-3. Minimap2 Analysis (Chao et al.):
-   └── Align train → validation
-   └── Parse PAF, compute coverage & identity
-   └── Identify leaked sequences at threshold combinations
-
-4. Generate summary statistics and visualizations
+3. Generate summary statistics and visualizations
 ```
 
 ### Reverse Complement Handling
@@ -111,9 +65,8 @@ DNA sequences and their reverse complements encode the same information. The pip
 
 ### Dependencies
 
-External tools (MMseqs2, minimap2) are managed automatically by Snakemake:
+MMseqs2 is managed automatically by Snakemake:
 - **MMseqs2**: Installed via conda environment (`workflow/envs/mmseqs2.yaml`) when using `--use-conda`
-- **minimap2**: Installed via [Snakemake wrapper](https://snakemake-wrappers.readthedocs.io/en/stable/wrappers/minimap2/aligner.html) (auto-downloaded)
 
 You only need [uv](https://docs.astral.sh/uv/) and the project's Python dependencies:
 
@@ -141,17 +94,15 @@ uv run snakemake -n --cores all
 # Run sanity check first (recommended)
 uv run snakemake sanity_check --cores all --use-conda
 
-# Run the full pipeline (both MMseqs2 and minimap2)
+# Run the full pipeline
 uv run snakemake --cores all --use-conda
 
-# Or run specific analyses:
-uv run snakemake mmseqs2_analysis --cores all --use-conda   # MMseqs2 only
-uv run snakemake minimap2_analysis --cores all --use-conda  # Minimap2 only (Chao et al.)
+# Or run just the MMseqs2 analysis:
+uv run snakemake mmseqs2_analysis --cores all --use-conda
 ```
 
-> **Note**: The `--use-conda` flag is required to automatically install external tools
-> (MMseqs2 via conda, minimap2 via Snakemake wrapper). Conda envs are cached after the
-> first run.
+> **Note**: The `--use-conda` flag is required to automatically install MMseqs2 via conda.
+> Conda envs are cached after the first run.
 
 ### Sanity Check
 
@@ -265,15 +216,6 @@ mmseqs2:
   coverage: 0.8
   cov_mode: 0  # Both query AND target must have coverage
 
-# Minimap2 parameters (Chao et al. methodology)
-minimap2:
-  preset: asm  # Assembly-to-assembly mode
-  coverage_threshold: 0.05   # 5% (Chao et al. default)
-  identity_threshold: 0.30   # 30% (Chao et al. default)
-  # Additional thresholds for 2D analysis
-  coverage_thresholds: [0.05, 0.10, 0.20, 0.50]
-  identity_thresholds: [0.30, 0.50, 0.70, 0.90]
-
 # Analysis settings
 analysis:
   consider_reverse_complement: true
@@ -288,12 +230,6 @@ uv run snakemake results/data/humans/metadata.parquet --cores all
 
 # Only run MMseqs2 clustering for one dataset/threshold
 uv run snakemake results/clustering/humans/clusters_0.5.tsv --cores all --use-conda
-
-# Only run minimap2 alignment for one dataset
-uv run snakemake results/minimap2/humans/train_vs_val_parsed.parquet --cores all --use-conda
-
-# Generate minimap2 scatter plot
-uv run snakemake results/plots/humans_minimap2_scatter.png --cores all
 ```
 
 ## Output
@@ -328,15 +264,6 @@ results/
 │   │   └── leakage_stats_{identity}.parquet
 │   └── leakage_summary.parquet
 │
-├── minimap2/                        # Minimap2 results (Chao et al.)
-│   ├── {dataset}/
-│   │   ├── train_vs_val.paf         # Raw alignments
-│   │   ├── train_vs_val_parsed.parquet  # Parsed with metrics
-│   │   ├── leakage_stats.parquet    # Leakage at default threshold
-│   │   ├── threshold_analysis.parquet   # 2D threshold sweep
-│   │   └── leaked_train_ids.txt     # IDs to filter
-│   └── leakage_summary.parquet
-│
 ├── tests/                           # Synthetic masking test
 │   ├── synthetic.fasta              # 6 synthetic sequences
 │   ├── clusters_masklc0.tsv         # Clusters without masking
@@ -345,26 +272,12 @@ results/
 │
 └── plots/
     ├── leakage_heatmap.png              # MMseqs2: dataset × threshold
-    ├── leakage_by_threshold.png         # MMseqs2: line plot
-    ├── {dataset}_minimap2_scatter.png   # Coverage vs identity scatter
-    └── {dataset}_minimap2_heatmap.png   # 2D threshold heatmap
+    └── leakage_by_threshold.png         # MMseqs2: line plot
 ```
 
 ### Interpreting Results
 
-#### MMseqs2 Results
-
 The key metric is **leaked_pct**: the percentage of validation sequences that cluster with at least one training sequence at a given identity threshold.
-
-#### Minimap2 Results (Chao et al.)
-
-The key metrics are:
-- **leaked_train_pct**: % of training sequences with alignment to validation exceeding thresholds
-- **matched_val_pct**: % of validation sequences that have matching training sequences
-
-The scatter plot shows the 2D distribution of (coverage, identity) for all alignments. The "leaked region" (coverage ≥ 5%, identity ≥ 30% by default) is highlighted.
-
-The threshold heatmap shows how leakage varies across different threshold combinations, helping to choose appropriate filtering parameters.
 
 ## Results
 
@@ -462,13 +375,10 @@ orthologs, not borderline hits.
 
 ## Next Steps
 
-1. **Run minimap2 analysis** (Chao et al. methodology) for a complementary 2D
-   coverage × identity view of the same data.
-
-2. **Expand to additional taxonomic scales** (mammals, vertebrates, animals) to see how
+1. **Expand to additional taxonomic scales** (mammals, vertebrates, animals) to see how
    leakage scales with phylogenetic distance.
 
-3. **Implement filtering in the dataset creation pipeline**: after creating train/validation
+2. **Implement filtering in the dataset creation pipeline**: after creating train/validation
    splits, remove training sequences that exceed similarity thresholds against validation.
    This follows the ESM2/Chao et al. approach: preserve validation set, filter training.
 

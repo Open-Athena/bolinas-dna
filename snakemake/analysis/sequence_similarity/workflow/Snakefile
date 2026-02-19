@@ -2,11 +2,7 @@
 
 This pipeline measures sequence similarity between validation and training splits
 across different taxonomic scales to understand potential data leakage in
-genomic language model training.
-
-Two complementary approaches are implemented:
-1. MMseqs2 linclust - Fast O(N) clustering for exploratory analysis
-2. Minimap2 alignment - Pairwise alignment following Chao et al. methodology
+genomic language model training using MMseqs2 clustering.
 
 References:
 - ESM2: https://www.science.org/doi/10.1126/science.ade2574
@@ -42,7 +38,6 @@ include: "rules/common.smk"
 include: "rules/download.smk"
 include: "rules/clustering.smk"
 include: "rules/analysis.smk"
-include: "rules/minimap2.smk"
 include: "rules/tests.smk"
 
 
@@ -51,7 +46,7 @@ include: "rules/tests.smk"
 # =============================================================================
 
 rule all:
-    """Run both MMseqs2 and minimap2 analyses."""
+    """Run MMseqs2 clustering analysis."""
     input:
         # Sanity check (validation set is identical across datasets)
         "results/sanity_check/humans/summary.parquet",
@@ -59,16 +54,6 @@ rule all:
         "results/analysis/leakage_summary.parquet",
         "results/plots/leakage_heatmap.png",
         "results/plots/leakage_by_threshold.png",
-        # Minimap2 alignment analysis (Chao et al. methodology)
-        "results/minimap2/leakage_summary.parquet",
-        expand(
-            "results/plots/{dataset}_minimap2_scatter.png",
-            dataset=get_all_datasets(),
-        ),
-        expand(
-            "results/plots/{dataset}_minimap2_heatmap.png",
-            dataset=get_all_datasets(),
-        ),
 
 
 # =============================================================================
@@ -107,25 +92,3 @@ rule mmseqs2_analysis:
         "results/plots/leakage_by_threshold.png",
 
 
-rule minimap2_analysis:
-    """Run only minimap2 alignment analysis (Chao et al. methodology).
-
-    Pairwise alignment with coverage AND identity thresholds.
-    Default thresholds from Chao et al.: coverage >= 5%, identity >= 30%
-
-    Usage: snakemake minimap2_analysis --cores 16
-    """
-    input:
-        "results/minimap2/leakage_summary.parquet",
-        expand(
-            "results/minimap2/{dataset}/threshold_analysis.parquet",
-            dataset=get_all_datasets(),
-        ),
-        expand(
-            "results/plots/{dataset}_minimap2_scatter.png",
-            dataset=get_all_datasets(),
-        ),
-        expand(
-            "results/plots/{dataset}_minimap2_heatmap.png",
-            dataset=get_all_datasets(),
-        ),
