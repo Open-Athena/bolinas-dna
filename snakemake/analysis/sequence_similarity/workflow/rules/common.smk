@@ -23,9 +23,13 @@ def get_hf_path(dataset_name: str) -> str:
 
 
 def reverse_complement(seq: str) -> str:
-    """Return the reverse complement of a DNA sequence."""
-    complement = {"A": "T", "T": "A", "G": "C", "C": "G", "N": "N"}
-    return "".join(complement.get(base, "N") for base in reversed(seq.upper()))
+    """Return the reverse complement of a DNA sequence.
+
+    Preserves case (soft-masking): lowercase bases remain lowercase,
+    uppercase bases remain uppercase.
+    """
+    complement = str.maketrans("ACGTNacgtn", "TGCANtgcan")
+    return seq.translate(complement)[::-1]
 
 
 def canonical_sequence(seq: str) -> str:
@@ -34,10 +38,14 @@ def canonical_sequence(seq: str) -> str:
     The canonical form is the lexicographically smaller of the sequence
     and its reverse complement. This ensures that a sequence and its
     reverse complement are treated as identical for clustering purposes.
+
+    Comparison is case-insensitive so that soft-masking (lowercase = repeats)
+    does not affect which strand is chosen. The original case is preserved
+    in the output so that downstream tools (e.g. MMseqs2 --mask-lower-case)
+    can use it.
     """
-    seq_upper = seq.upper()
-    rc = reverse_complement(seq_upper)
-    return seq_upper if seq_upper <= rc else rc
+    rc = reverse_complement(seq)
+    return seq if seq.upper() <= rc.upper() else rc
 
 
 def load_sequences_from_hf(

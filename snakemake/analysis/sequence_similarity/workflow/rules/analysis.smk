@@ -35,14 +35,14 @@ rule cluster_validation_self:
         db="results/mmseqs/{dataset}/valDB",
         db_type="results/mmseqs/{dataset}/valDB.dbtype",
     output:
-        cluster_db="results/mmseqs/{dataset}/val_self_clusters_{identity}/clusterDB.index",
-        cluster_db_type="results/mmseqs/{dataset}/val_self_clusters_{identity}/clusterDB.dbtype",
+        cluster_db="results/mmseqs/{dataset}/val_self_id{identity}_cov{coverage}/clusterDB.index",
+        cluster_db_type="results/mmseqs/{dataset}/val_self_id{identity}_cov{coverage}/clusterDB.dbtype",
     params:
         db_prefix="results/mmseqs/{dataset}/valDB",
-        cluster_prefix="results/mmseqs/{dataset}/val_self_clusters_{identity}/clusterDB",
-        tmp_dir="results/mmseqs/{dataset}/val_tmp_{identity}",
+        cluster_prefix="results/mmseqs/{dataset}/val_self_id{identity}_cov{coverage}/clusterDB",
+        tmp_dir="results/mmseqs/{dataset}/val_tmp_id{identity}_cov{coverage}",
         identity=lambda wildcards: float(wildcards.identity),
-        coverage=config["mmseqs2"]["coverage"],
+        coverage=lambda wildcards: float(wildcards.coverage),
         cov_mode=config["mmseqs2"]["cov_mode"],
         cluster_mode=config["mmseqs2"]["cluster_mode"],
     threads: config["mmseqs2"]["threads"]
@@ -71,13 +71,13 @@ rule extract_validation_self_clusters:
     input:
         db="results/mmseqs/{dataset}/valDB",
         db_type="results/mmseqs/{dataset}/valDB.dbtype",
-        cluster_db="results/mmseqs/{dataset}/val_self_clusters_{identity}/clusterDB.index",
-        cluster_db_type="results/mmseqs/{dataset}/val_self_clusters_{identity}/clusterDB.dbtype",
+        cluster_db="results/mmseqs/{dataset}/val_self_id{identity}_cov{coverage}/clusterDB.index",
+        cluster_db_type="results/mmseqs/{dataset}/val_self_id{identity}_cov{coverage}/clusterDB.dbtype",
     output:
-        tsv="results/sanity_check/{dataset}/val_self_clusters_{identity}.tsv",
+        tsv="results/sanity_check/{dataset}/val_self_id{identity}_cov{coverage}.tsv",
     params:
         db_prefix="results/mmseqs/{dataset}/valDB",
-        cluster_prefix="results/mmseqs/{dataset}/val_self_clusters_{identity}/clusterDB",
+        cluster_prefix="results/mmseqs/{dataset}/val_self_id{identity}_cov{coverage}/clusterDB",
     threads: 1
     conda:
         "../envs/mmseqs2.yaml"
@@ -99,10 +99,10 @@ rule analyze_validation_self_similarity:
     - At lower identity with coverage: adjacent sliding windows should cluster
     """
     input:
-        clusters="results/sanity_check/{dataset}/val_self_clusters_{identity}.tsv",
+        clusters="results/sanity_check/{dataset}/val_self_id{identity}_cov{coverage}.tsv",
         metadata="results/data/{dataset}/metadata.parquet",
     output:
-        stats="results/sanity_check/{dataset}/val_self_stats_{identity}.parquet",
+        stats="results/sanity_check/{dataset}/val_self_stats_id{identity}_cov{coverage}.parquet",
     run:
         # Load cluster assignments
         clusters = pl.read_csv(
@@ -143,6 +143,7 @@ rule analyze_validation_self_similarity:
         stats = pl.DataFrame({
             "dataset": [wildcards.dataset],
             "identity_threshold": [float(wildcards.identity)],
+            "coverage_threshold": [float(wildcards.coverage)],
             "total_val_sequences": [total_val],
             "n_clusters": [n_clusters],
             "n_singletons": [n_singletons],
@@ -155,7 +156,7 @@ rule analyze_validation_self_similarity:
 
         stats.write_parquet(output.stats)
 
-        print(f"\n=== Sanity Check: {wildcards.dataset} @ {wildcards.identity} identity ===")
+        print(f"\n=== Sanity Check: {wildcards.dataset} @ id={wildcards.identity} cov={wildcards.coverage} ===")
         print(f"  Total validation sequences: {total_val:,}")
         print(f"  Number of clusters: {n_clusters:,}")
         print(f"  Singletons (no matches): {n_singletons:,} ({n_singletons/total_val*100:.1f}%)")
@@ -165,17 +166,18 @@ rule analyze_validation_self_similarity:
 
 
 rule aggregate_sanity_check:
-    """Aggregate sanity check results across thresholds."""
+    """Aggregate sanity check results across identity × coverage thresholds."""
     input:
         stats=expand(
-            "results/sanity_check/{{dataset}}/val_self_stats_{identity}.parquet",
-            identity=get_all_identity_thresholds(),
+            "results/sanity_check/{{dataset}}/val_self_stats_id{identity}_cov{coverage}.parquet",
+            identity=get_sanity_check_identity_thresholds(),
+            coverage=get_sanity_check_coverage_thresholds(),
         ),
     output:
         summary="results/sanity_check/{dataset}/summary.parquet",
     run:
         dfs = [pl.read_parquet(f) for f in input.stats]
-        summary = pl.concat(dfs).sort("identity_threshold")
+        summary = pl.concat(dfs).sort(["coverage_threshold", "identity_threshold"])
 
         summary.write_parquet(output.summary)
 

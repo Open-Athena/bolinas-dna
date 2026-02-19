@@ -172,6 +172,82 @@ This clusters validation sequences against themselves and verifies:
 
 If you see mostly singletons (no matches), something may be wrong with the configuration.
 
+### Repeat Masking Test
+
+Genomic sequences contain repetitive elements (transposons, satellites, etc.) that can cause
+spurious similarity between unrelated sequences. The input data is expected to be
+**pre-masked by RepeatMasker**, where lowercase letters indicate repetitive regions and
+uppercase letters indicate non-repetitive ("unique") sequence.
+
+MMseqs2's `--mask-lower-case 1` flag excludes lowercase regions from k-mer matching, so
+that clustering reflects genuine homology rather than shared repeats.
+
+Run the synthetic masking test to verify this works correctly:
+
+```bash
+uv run snakemake test_masking --cores 1 --use-conda --resources mem_mb=512
+```
+
+#### What the test does
+
+The test generates 6 synthetic 256bp sequences (`results/tests/synthetic.fasta`) and
+clusters them with and without lowercase masking:
+
+| Sequence | Description |
+|----------|-------------|
+| `genuine_A` | Random uppercase DNA (non-repetitive) |
+| `genuine_B` | `genuine_A` with ~10% point mutations |
+| `repeat_only_A` | Random uppercase flanks + **lowercase** repeat (~200bp) in middle |
+| `repeat_only_B` | **Different** uppercase flanks + **same** lowercase repeat |
+| `mixed_A` | Copy of `genuine_A` with a ~50bp lowercase repeat inserted |
+| `mixed_B` | Copy of `genuine_B` with the same ~50bp lowercase repeat inserted |
+
+The "repeat" block is a random high-complexity lowercase sequence (simulating a transposable
+element fragment), not a simple dinucleotide repeat (see gotchas below).
+
+#### Expected results
+
+| Pair | `--mask-lower-case 0` | `--mask-lower-case 1` |
+|------|----------------------|----------------------|
+| `genuine_A` / `genuine_B` | Same cluster | Same cluster |
+| `repeat_only_A` / `repeat_only_B` | Same cluster | **Different clusters** |
+| `mixed_A` / `mixed_B` | Same cluster | Same cluster |
+
+The key assertion: with masking on, sequences that share **only** a repeat (and have
+unrelated flanking regions) should **not** cluster, while sequences with genuine homology
+should still cluster regardless of masking.
+
+#### Soft-masking and `canonical_sequence()`
+
+The `canonical_sequence()` function in `common.smk` converts each sequence to the
+lexicographically smaller of (sequence, reverse complement) so that both strands are treated
+identically. This function **preserves case**: it compares strands case-insensitively but
+returns the original (mixed-case) sequence. This is critical — if `canonical_sequence()`
+called `.upper()`, it would destroy the soft-masking before sequences reach MMseqs2.
+
+#### MMseqs2 gotchas discovered during development
+
+1. **`linclust` silently ignores `--mask-lower-case`.** Only `mmseqs cluster` (which uses
+   the cascade prefilter + alignment pipeline) honors the flag. The test therefore uses
+   `mmseqs cluster`, not `linclust`. This means the main pipeline's `linclust`-based
+   clustering does **not** benefit from `--mask-lower-case` — repeat masking must be handled
+   upstream (e.g., by filtering or by switching to `mmseqs cluster` for the filtering step).
+
+2. **`--mask-lower-case` must be passed to both `createdb` and `cluster`.** The `createdb`
+   step stores masking metadata in the database; the `cluster` step uses it during k-mer
+   seeding. Passing the flag only to `cluster` has no effect.
+
+3. **Simple dinucleotide repeats (e.g., `atatat...`) are not suitable test sequences.**
+   They produce only 2 unique k-mers (for any k), which makes them behave unpredictably
+   in k-mer-based algorithms. The test uses a random high-complexity lowercase block
+   (simulating a realistic transposable element fragment) to isolate `--mask-lower-case`
+   behaviour from MMseqs2's built-in compositional bias filtering (`--mask`).
+
+4. **`--mask` (compositional bias / tandem repeat masking) is a separate parameter** from
+   `--mask-lower-case`. The former uses an algorithm similar to DUST/SEG to detect and mask
+   low-complexity regions at runtime; the latter uses pre-existing case information in the
+   input FASTA. Both default to 0 in `linclust` but `--mask` defaults to 1 in `cluster`.
+
 ### Configuration
 
 Edit `config/config.yaml` to customize:
@@ -261,6 +337,12 @@ results/
 │   │   ├── threshold_analysis.parquet   # 2D threshold sweep
 │   │   └── leaked_train_ids.txt     # IDs to filter
 │   └── leakage_summary.parquet
+│
+├── tests/                           # Synthetic masking test
+│   ├── synthetic.fasta              # 6 synthetic sequences
+│   ├── clusters_masklc0.tsv         # Clusters without masking
+│   ├── clusters_masklc1.tsv         # Clusters with masking
+│   └── masking_test_summary.txt     # Pass/fail assertions
 │
 └── plots/
     ├── leakage_heatmap.png              # MMseqs2: dataset × threshold

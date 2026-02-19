@@ -106,6 +106,22 @@ minimap2:
   threads: 16
 
 # =============================================================================
+# Sanity check parameters
+# =============================================================================
+# Clusters validation sequences against themselves to verify pipeline behavior.
+# Sweeps over identity × coverage thresholds.
+sanity_check:
+  identity_thresholds:
+    - 0.3
+    - 0.5
+    - 0.7
+    - 0.9
+  coverage_thresholds:
+    - 0.3
+    - 0.6
+    - 1.0
+
+# =============================================================================
 # Analysis settings
 # =============================================================================
 analysis:

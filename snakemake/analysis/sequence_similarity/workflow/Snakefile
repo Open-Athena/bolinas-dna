@@ -27,12 +27,23 @@ def get_all_identity_thresholds():
     return config["mmseqs2"]["identity_thresholds"]
 
 
+def get_sanity_check_identity_thresholds():
+    """Get identity thresholds for sanity check."""
+    return config["sanity_check"]["identity_thresholds"]
+
+
+def get_sanity_check_coverage_thresholds():
+    """Get coverage thresholds for sanity check."""
+    return config["sanity_check"]["coverage_thresholds"]
+
+
 # Include rule files
 include: "rules/common.smk"
 include: "rules/download.smk"
 include: "rules/clustering.smk"
 include: "rules/analysis.smk"
 include: "rules/minimap2.smk"
+include: "rules/tests.smk"
 
 
 # =============================================================================
