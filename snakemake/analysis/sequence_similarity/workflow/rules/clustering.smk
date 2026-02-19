@@ -15,16 +15,12 @@ rule create_mmseqs_db:
         "../envs/mmseqs2.yaml"
     shell:
         """
-        mmseqs createdb {input.fasta} {params.db_prefix}
+        mmseqs createdb {input.fasta} {params.db_prefix} --mask-lower-case 1
         """
 
 
 rule cluster_sequences:
-    """Cluster sequences using MMseqs2 linclust (linear time clustering).
-
-    This uses linclust for scalability - it can handle billions of sequences
-    in linear time O(N).
-    """
+    """Cluster sequences using MMseqs2 cluster with lowercase repeat masking."""
     input:
         db="results/mmseqs/{dataset}/seqDB",
         db_type="results/mmseqs/{dataset}/seqDB.dbtype",
@@ -47,10 +43,11 @@ rule cluster_sequences:
     shell:
         """
         mkdir -p {params.tmp_dir}
-        mmseqs linclust \
+        mmseqs cluster \
             {params.db_prefix} \
             {params.cluster_prefix} \
             {params.tmp_dir} \
+            --mask-lower-case 1 \
             --min-seq-id {params.identity} \
             -c {params.coverage} \
             --cov-mode {params.cov_mode} \

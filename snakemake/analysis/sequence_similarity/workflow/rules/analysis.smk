@@ -25,7 +25,7 @@ rule create_validation_only_db:
         "../envs/mmseqs2.yaml"
     shell:
         """
-        mmseqs createdb {input.fasta} {params.db_prefix}
+        mmseqs createdb {input.fasta} {params.db_prefix} --mask-lower-case 1
         """
 
 
@@ -53,10 +53,11 @@ rule cluster_validation_self:
     shell:
         """
         mkdir -p {params.tmp_dir}
-        mmseqs linclust \
+        mmseqs cluster \
             {params.db_prefix} \
             {params.cluster_prefix} \
             {params.tmp_dir} \
+            --mask-lower-case 1 \
             --min-seq-id {params.identity} \
             -c {params.coverage} \
             --cov-mode {params.cov_mode} \

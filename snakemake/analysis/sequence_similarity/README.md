@@ -46,15 +46,16 @@ This pipeline implements **two complementary approaches**:
 
 ### Approach 1: MMseqs2 Clustering
 
-[MMseqs2 linclust](https://github.com/soedinglab/MMseqs2) provides **O(N) linear-time clustering**, ideal for very large datasets (billions of sequences).
+[MMseqs2 cluster](https://github.com/soedinglab/MMseqs2) provides **sensitive sequence clustering with lowercase repeat masking** (`--mask-lower-case 1`), ensuring that soft-masked repeats (from RepeatMasker) are excluded from k-mer seeding so that clustering reflects genuine homology.
 
 **Pros:**
-- Extremely fast and scalable
+- Sensitive cascade prefilter + alignment pipeline
+- Honors `--mask-lower-case 1` for repeat-aware clustering
 - Good for exploratory analysis at multiple thresholds
 - Single identity threshold (simpler)
 
 **Cons:**
-- Less granular control (single combined threshold)
+- Slower than `linclust` (but still fast for typical dataset sizes)
 - Clustering-based (transitive relationships)
 
 ### Approach 2: Minimap2 Alignment (Chao et al. Methodology)
@@ -73,14 +74,14 @@ This pipeline implements **two complementary approaches**:
 
 ### Methodology Comparison
 
-| Aspect | MMseqs2 linclust | Minimap2 (Chao et al.) |
+| Aspect | MMseqs2 cluster | Minimap2 (Chao et al.) |
 |--------|------------------|-----------------|
-| Algorithm | k-mer + Smith-Waterman clustering | Pairwise alignment |
-| Complexity | O(N) linear | O(N_train × N_val) |
+| Algorithm | Cascade prefilter + Smith-Waterman clustering | Pairwise alignment |
+| Repeat masking | `--mask-lower-case 1` (honors soft-masking) | N/A |
 | Thresholds | Single: identity ≥ X% | Dual: coverage ≥ X% AND identity ≥ Y% |
 | Default | 50% identity | 5% coverage, 30% identity |
 | Output | Cluster assignments | PAF with coordinates |
-| Best for | Very large datasets, exploration | Final filtering, published method |
+| Best for | Repeat-aware exploration at multiple thresholds | Final filtering, published method |
 
 ### Pipeline Flow
 
@@ -90,8 +91,8 @@ This pipeline implements **two complementary approaches**:
    └── Canonicalize sequences (for reverse complement handling)
 
 2. MMseqs2 Analysis:
-   └── Create database
-   └── Cluster at multiple identity thresholds
+   └── Create database (with --mask-lower-case 1)
+   └── Cluster at multiple identity thresholds (mmseqs cluster --mask-lower-case 1)
    └── Analyze cluster composition (train/val mixing)
 
 3. Minimap2 Analysis (Chao et al.):
@@ -228,10 +229,8 @@ called `.upper()`, it would destroy the soft-masking before sequences reach MMse
 #### MMseqs2 gotchas discovered during development
 
 1. **`linclust` silently ignores `--mask-lower-case`.** Only `mmseqs cluster` (which uses
-   the cascade prefilter + alignment pipeline) honors the flag. The test therefore uses
-   `mmseqs cluster`, not `linclust`. This means the main pipeline's `linclust`-based
-   clustering does **not** benefit from `--mask-lower-case` — repeat masking must be handled
-   upstream (e.g., by filtering or by switching to `mmseqs cluster` for the filtering step).
+   the cascade prefilter + alignment pipeline) honors the flag. The pipeline uses
+   `mmseqs cluster` (not `linclust`) everywhere to ensure consistent repeat masking.
 
 2. **`--mask-lower-case` must be passed to both `createdb` and `cluster`.** The `createdb`
    step stores masking metadata in the database; the `cluster` step uses it during k-mer
