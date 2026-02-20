@@ -210,11 +210,10 @@ datasets:
   - name: primates
     hf_path: bolinas-dna/genomes-v4-genome_set-primates-intervals-v1_256_128
 
-# MMseqs2 parameters
+# MMseqs2 parameters (identity × coverage grid)
 mmseqs2:
-  identity_thresholds: [0.5, 0.6, 0.7, 0.8, 0.9]
-  coverage: 0.8
-  cov_mode: 0  # Both query AND target must have coverage
+  identity_thresholds: [0.3, 0.5, 0.7, 0.9]
+  coverage_thresholds: [0.3, 0.6, 1.0]
 
 # Analysis settings
 analysis:
@@ -228,8 +227,8 @@ analysis:
 # Only download data
 uv run snakemake results/data/humans/metadata.parquet --cores all
 
-# Only run MMseqs2 clustering for one dataset/threshold
-uv run snakemake results/clustering/humans/clusters_0.5.tsv --cores all --use-conda
+# Only run MMseqs2 clustering for one dataset/threshold combo
+uv run snakemake results/clustering/humans/clusters_id0.5_cov0.6.tsv --cores all --use-conda
 ```
 
 ## Output
@@ -249,7 +248,7 @@ results/
 │   └── {dataset}/
 │       ├── seqDB*                   # Sequence database
 │       ├── valDB*                   # Validation-only database
-│       └── clusters_{identity}/     # Cluster databases
+│       └── clusters_id{identity}_cov{coverage}/  # Cluster databases
 │
 ├── sanity_check/                    # Validation self-similarity
 │   └── {dataset}/
@@ -257,11 +256,11 @@ results/
 │
 ├── clustering/                      # MMseqs2 results
 │   └── {dataset}/
-│       └── clusters_{identity}.tsv
+│       └── clusters_id{identity}_cov{coverage}.tsv
 │
 ├── analysis/                        # MMseqs2 leakage analysis
 │   ├── {dataset}/
-│   │   └── leakage_stats_{identity}.parquet
+│   │   └── leakage_stats_id{identity}_cov{coverage}.parquet
 │   └── leakage_summary.parquet
 │
 ├── tests/                           # Synthetic masking test
@@ -271,8 +270,7 @@ results/
 │   └── masking_test_summary.txt     # Pass/fail assertions
 │
 └── plots/
-    ├── leakage_heatmap.png              # MMseqs2: dataset × threshold
-    └── leakage_by_threshold.png         # MMseqs2: line plot
+    └── leakage_heatmap.svg              # MMseqs2: identity × coverage per dataset
 ```
 
 ### Interpreting Results
@@ -320,58 +318,45 @@ clusters with exactly its reverse complement, as expected.
 
 ### MMseqs2 Leakage Analysis
 
-**Key finding: cross-species similarity is the dominant source of leakage.** Within a single
-human genome, leakage is modest (0.3–6.4%). But when training includes other primate genomes,
-50–68% of human validation sequences have a similar training sequence — this is genuine
-homology from conserved genomic regions, not repetitive elements (repeats are masked).
+Clustering sweeps a 2D grid of identity × coverage thresholds. For each validation
+sequence, we count how many training sequences share its cluster.
 
-#### Humans (single genome)
+#### Median train matches per validation sequence
 
-| Identity threshold | Leaked val seqs | Leaked % | Mixed clusters |
-|-------------------|----------------|----------|----------------|
-| 50% | 891 | 6.35% | 199 |
-| 60% | 653 | 4.65% | 131 |
-| 70% | 527 | 3.76% | 80 |
-| 80% | 292 | 2.08% | 48 |
-| 90% | 40 | 0.29% | 14 |
+| Identity \ Coverage | 0.3 | 0.6 | 1.0 |
+|---------------------|-----|-----|-----|
+| **Humans** | | | |
+| 0.3 | 0 | 0 | 0 |
+| 0.5 | 0 | 0 | 0 |
+| 0.7 | 0 | 0 | 0 |
+| 0.9 | 0 | 0 | 0 |
+| **Primates** | | | |
+| 0.3 | 9 | 4 | 0 |
+| 0.5 | 9 | 4 | 0 |
+| 0.7 | 10 | 4 | 0 |
+| 0.9 | 4 | 2 | 0 |
 
-Within-genome leakage comes from segmental duplications and paralogs. Even at the ESM2-style
-50% threshold, only ~6% of validation sequences cluster with training — the chromosome-based
-split is reasonably effective for a single genome.
+#### Key observations
 
-#### Primates (multi-species)
+1. **Humans: median is 0 everywhere.** Within a single genome, most validation sequences
+   have no similar training sequence. Leakage is concentrated in a small minority of
+   sequences from segmental duplications and gene families (mean up to 29, max up to 2,000).
 
-| Identity threshold | Leaked val seqs | Leaked % | Mixed clusters |
-|-------------------|----------------|----------|----------------|
-| 50% | 9,512 | 67.80% | 4,479 |
-| 60% | 9,366 | 66.76% | 4,399 |
-| 70% | 9,334 | 66.53% | 4,385 |
-| 80% | 7,482 | 53.33% | 3,566 |
-| 90% | 6,988 | 49.81% | 3,419 |
+2. **Primates: median is non-zero at lower coverage.** The typical validation sequence has
+   orthologous matches in multiple primate species — cross-species similarity is the norm,
+   not an outlier phenomenon. With 11 primate genomes in training, most of the held-out
+   human chromosome has homologs in the training set.
 
-The leakage is dramatically higher: ~67% at 50% identity and still ~50% at 90% identity.
-This is expected — orthologous regions across primates are highly conserved. The plateau
-between 50–70% identity (all ~67%) suggests most cross-species matches are high-identity
-orthologs, not borderline hits.
+3. **Coverage is the dominant factor, not identity.** At cov=1.0 (full-length match),
+   the median drops to 0 for both datasets regardless of identity threshold. The difference
+   between id=0.3 and id=0.7 is negligible at any given coverage.
 
-#### Implications
+4. **Identity 0.3 and 0.5 give identical results.** MMseqs2's cascade clustering converges
+   to the same clusters at both thresholds — there is no additional signal below 0.5
+   identity for 256bp DNA sequences.
 
-1. **Chromosome holdout is insufficient for multi-species datasets.** A held-out human
-   chromosome will have orthologs in every other primate genome in the training set.
-
-2. **Filtering must operate across species.** Simply removing duplicates within a genome
-   is not enough; training sequences from other species that are orthologous to validation
-   regions must also be filtered.
-
-3. **The 50–70% identity plateau in primates** means that lowering the threshold below 70%
-   captures very few additional leaked sequences. A 70–80% threshold may be a practical
-   choice that removes most genuine leakage without being overly aggressive.
-
-### Plots
-
-![Leakage Heatmap](results/plots/leakage_heatmap.png)
-
-![Leakage by Threshold](results/plots/leakage_by_threshold.png)
+5. **Even at id=0.9/cov=1.0, primates retain matches.** Near-identical full-length orthologs
+   are an irreducible floor for chromosome-based holdout with multi-species data.
 
 ## Next Steps
 

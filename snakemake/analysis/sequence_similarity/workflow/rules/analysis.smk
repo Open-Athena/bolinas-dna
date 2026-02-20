@@ -43,9 +43,9 @@ rule cluster_validation_self:
         tmp_dir="results/mmseqs/{dataset}/val_tmp_id{identity}_cov{coverage}",
         identity=lambda wildcards: float(wildcards.identity),
         coverage=lambda wildcards: float(wildcards.coverage),
-        cov_mode=config["mmseqs2"]["cov_mode"],
-        cluster_mode=config["mmseqs2"]["cluster_mode"],
-    threads: config["mmseqs2"]["threads"]
+        cov_mode=MMSEQS_COV_MODE,
+        cluster_mode=MMSEQS_CLUSTER_MODE,
+    threads: workflow.cores
     resources:
         mem_mb=32000,
     conda:
@@ -171,8 +171,8 @@ rule aggregate_sanity_check:
     input:
         stats=expand(
             "results/sanity_check/{{dataset}}/val_self_stats_id{identity}_cov{coverage}.parquet",
-            identity=get_sanity_check_identity_thresholds(),
-            coverage=get_sanity_check_coverage_thresholds(),
+            identity=get_identity_thresholds(),
+            coverage=get_coverage_thresholds(),
         ),
     output:
         summary="results/sanity_check/{dataset}/summary.parquet",
@@ -194,21 +194,18 @@ rule aggregate_sanity_check:
 # =============================================================================
 
 
-rule compute_leakage_stats:
-    """Compute leakage statistics from cluster assignments.
+rule compute_similarity_stats:
+    """Compute train/val similarity statistics from cluster assignments.
 
-    For each cluster, check if it contains both validation and training sequences.
-    A validation sequence that clusters with training sequences represents
-    potential data leakage.
+    For each validation sequence, count how many training sequences share
+    its cluster at the given identity × coverage threshold.
     """
     input:
-        clusters="results/clustering/{dataset}/clusters_{identity}.tsv",
+        clusters="results/clustering/{dataset}/clusters_id{identity}_cov{coverage}.tsv",
         metadata="results/data/{dataset}/metadata.parquet",
     output:
-        stats="results/analysis/{dataset}/leakage_stats_{identity}.parquet",
+        stats="results/analysis/{dataset}/similarity_stats_id{identity}_cov{coverage}.parquet",
     run:
-        # Load cluster assignments
-        # Format: representative_id \t member_id
         clusters = pl.read_csv(
             input.clusters,
             separator="\t",
@@ -216,10 +213,8 @@ rule compute_leakage_stats:
             new_columns=["representative", "member"],
         )
 
-        # Load metadata to get split info
         metadata = pl.read_parquet(input.metadata)
 
-        # Join to get split information for each member
         clusters_with_split = clusters.join(
             metadata.select(["id", "split"]),
             left_on="member",
@@ -227,7 +222,7 @@ rule compute_leakage_stats:
             how="left",
         )
 
-        # For each cluster (representative), check composition
+        # For each cluster, count train and val members
         cluster_composition = (
             clusters_with_split
             .group_by("representative")
@@ -238,137 +233,96 @@ rule compute_leakage_stats:
             ])
         )
 
-        # Identify "leaked" validation sequences
-        # A validation sequence is leaked if it's in a cluster with training sequences
-        val_in_mixed_clusters = (
+        # For each val sequence, how many train sequences share its cluster?
+        train_counts = (
             clusters_with_split
             .join(cluster_composition, on="representative")
-            .filter(
-                (pl.col("split") == "validation") &
-                (pl.col("n_train") > 0)
-            )
+            .filter(pl.col("split") == "validation")
+            ["n_train"]
         )
 
-        # Compute summary statistics
         total_val = metadata.filter(pl.col("split") == "validation").height
         total_train = metadata.filter(pl.col("split") == "train").height
-        leaked_val = val_in_mixed_clusters.height
-        leaked_pct = (leaked_val / total_val * 100) if total_val > 0 else 0
-
-        # Also count validation sequences in pure validation clusters (no leakage)
-        val_in_pure_clusters = total_val - leaked_val
 
         stats = pl.DataFrame({
             "dataset": [wildcards.dataset],
             "identity_threshold": [float(wildcards.identity)],
+            "coverage_threshold": [float(wildcards.coverage)],
             "total_train": [total_train],
             "total_val": [total_val],
-            "leaked_val": [leaked_val],
-            "leaked_pct": [leaked_pct],
-            "pure_val": [val_in_pure_clusters],
-            "pure_val_pct": [(val_in_pure_clusters / total_val * 100) if total_val > 0 else 0],
             "n_clusters": [cluster_composition.height],
-            "n_mixed_clusters": [cluster_composition.filter(
-                (pl.col("n_train") > 0) & (pl.col("n_val") > 0)
-            ).height],
+            "train_matches_min": [int(train_counts.min()) if train_counts.len() > 0 else 0],
+            "train_matches_max": [int(train_counts.max()) if train_counts.len() > 0 else 0],
+            "train_matches_mean": [float(train_counts.mean()) if train_counts.len() > 0 else 0.0],
+            "train_matches_median": [float(train_counts.median()) if train_counts.len() > 0 else 0.0],
         })
 
         stats.write_parquet(output.stats)
-        print(f"\n{wildcards.dataset} @ {wildcards.identity} identity:")
-        print(f"  Total validation sequences: {total_val:,}")
-        print(f"  Leaked (cluster with train): {leaked_val:,} ({leaked_pct:.2f}%)")
-        print(f"  Pure (no train in cluster): {val_in_pure_clusters:,}")
+        print(f"\n{wildcards.dataset} @ id={wildcards.identity} cov={wildcards.coverage}:")
+        print(f"  Train matches per val seq: min={stats['train_matches_min'][0]}, median={stats['train_matches_median'][0]:.0f}, mean={stats['train_matches_mean'][0]:.1f}, max={stats['train_matches_max'][0]}")
 
 
-rule aggregate_leakage_stats:
-    """Aggregate leakage statistics across all datasets and thresholds."""
+rule aggregate_similarity_stats:
+    """Aggregate similarity statistics across all datasets and thresholds."""
     input:
         stats=expand(
-            "results/analysis/{dataset}/leakage_stats_{identity}.parquet",
+            "results/analysis/{dataset}/similarity_stats_id{identity}_cov{coverage}.parquet",
             dataset=get_all_datasets(),
-            identity=get_all_identity_thresholds(),
+            identity=get_identity_thresholds(),
+            coverage=get_coverage_thresholds(),
         ),
     output:
-        summary="results/analysis/leakage_summary.parquet",
+        summary="results/analysis/similarity_summary.parquet",
     run:
         dfs = [pl.read_parquet(f) for f in input.stats]
         summary = pl.concat(dfs)
-
-        # Sort by dataset and threshold
-        summary = summary.sort(["dataset", "identity_threshold"])
+        summary = summary.sort(["dataset", "coverage_threshold", "identity_threshold"])
 
         summary.write_parquet(output.summary)
-        print("\n=== Leakage Summary ===")
+        print("\n=== Similarity Summary ===")
         print(summary.to_pandas().to_string(index=False))
 
 
-rule plot_leakage_heatmap:
-    """Create heatmap of leakage percentages across datasets and thresholds."""
+rule plot_train_matches_heatmap:
+    """Create heatmap of median train matches per val sequence."""
     input:
-        summary="results/analysis/leakage_summary.parquet",
+        summary="results/analysis/similarity_summary.parquet",
     output:
-        plot="results/plots/leakage_heatmap.png",
+        plot="results/plots/train_matches_heatmap.svg",
     run:
         df = pl.read_parquet(input.summary).to_pandas()
+        datasets = sorted(df["dataset"].unique())
 
-        # Pivot for heatmap
-        pivot = df.pivot(
-            index="identity_threshold",
-            columns="dataset",
-            values="leaked_pct",
-        )
+        vmin = df["train_matches_median"].min()
+        vmax = df["train_matches_median"].max()
 
-        # Create heatmap
-        fig, ax = plt.subplots(figsize=(10, 6))
-        sns.heatmap(
-            pivot,
-            annot=True,
-            fmt=".1f",
-            cmap="YlOrRd",
-            cbar_kws={"label": "Validation sequences with train similarity (%)"},
-            ax=ax,
-        )
-        ax.set_xlabel("Dataset (Taxonomic Scope)")
-        ax.set_ylabel("Sequence Identity Threshold")
-        ax.set_title("Train/Validation Sequence Similarity (Potential Leakage)")
+        fig, axes = plt.subplots(1, len(datasets), figsize=(7 * len(datasets), 6))
+        if len(datasets) == 1:
+            axes = [axes]
 
+        for ax, dataset in zip(axes, datasets):
+            subset = df[df["dataset"] == dataset]
+            pivot = subset.pivot(
+                index="identity_threshold",
+                columns="coverage_threshold",
+                values="train_matches_median",
+            )
+            sns.heatmap(
+                pivot,
+                annot=True,
+                fmt=".0f",
+                cmap="YlOrRd",
+                vmin=vmin,
+                vmax=vmax,
+                cbar_kws={"label": "Median train matches per val seq"},
+                ax=ax,
+            )
+            ax.set_xlabel("Coverage Threshold")
+            ax.set_ylabel("Identity Threshold")
+            ax.set_title(f"{dataset}")
+
+        fig.suptitle("Median Train Matches per Validation Sequence", fontsize=14)
         plt.tight_layout()
-        plt.savefig(output.plot, dpi=150)
+        plt.savefig(output.plot, format="svg")
         plt.close()
         print(f"Saved heatmap to {output.plot}")
-
-
-rule plot_leakage_by_threshold:
-    """Create line plot of leakage vs threshold for each dataset."""
-    input:
-        summary="results/analysis/leakage_summary.parquet",
-    output:
-        plot="results/plots/leakage_by_threshold.png",
-    run:
-        df = pl.read_parquet(input.summary).to_pandas()
-
-        fig, ax = plt.subplots(figsize=(10, 6))
-
-        for dataset in df["dataset"].unique():
-            subset = df[df["dataset"] == dataset]
-            ax.plot(
-                subset["identity_threshold"],
-                subset["leaked_pct"],
-                marker="o",
-                label=dataset,
-                linewidth=2,
-                markersize=8,
-            )
-
-        ax.set_xlabel("Sequence Identity Threshold")
-        ax.set_ylabel("Validation Sequences with Similar Train Seq (%)")
-        ax.set_title("Cross-Genome Sequence Similarity at Different Thresholds")
-        ax.legend(title="Training Dataset")
-        ax.grid(True, alpha=0.3)
-        ax.set_xlim(0.45, 0.95)
-        ax.set_ylim(0, None)
-
-        plt.tight_layout()
-        plt.savefig(output.plot, dpi=150)
-        plt.close()
-        print(f"Saved line plot to {output.plot}")

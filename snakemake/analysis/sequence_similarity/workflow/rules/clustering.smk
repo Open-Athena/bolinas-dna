@@ -25,17 +25,17 @@ rule cluster_sequences:
         db="results/mmseqs/{dataset}/seqDB",
         db_type="results/mmseqs/{dataset}/seqDB.dbtype",
     output:
-        cluster_db="results/mmseqs/{dataset}/clusters_{identity}/clusterDB.index",
-        cluster_db_type="results/mmseqs/{dataset}/clusters_{identity}/clusterDB.dbtype",
+        cluster_db="results/mmseqs/{dataset}/clusters_id{identity}_cov{coverage}/clusterDB.index",
+        cluster_db_type="results/mmseqs/{dataset}/clusters_id{identity}_cov{coverage}/clusterDB.dbtype",
     params:
         db_prefix="results/mmseqs/{dataset}/seqDB",
-        cluster_prefix="results/mmseqs/{dataset}/clusters_{identity}/clusterDB",
-        tmp_dir="results/mmseqs/{dataset}/tmp_{identity}",
+        cluster_prefix="results/mmseqs/{dataset}/clusters_id{identity}_cov{coverage}/clusterDB",
+        tmp_dir="results/mmseqs/{dataset}/tmp_id{identity}_cov{coverage}",
         identity=lambda wildcards: float(wildcards.identity),
-        coverage=config["mmseqs2"]["coverage"],
-        cov_mode=config["mmseqs2"]["cov_mode"],
-        cluster_mode=config["mmseqs2"]["cluster_mode"],
-    threads: config["mmseqs2"]["threads"]
+        coverage=lambda wildcards: float(wildcards.coverage),
+        cov_mode=MMSEQS_COV_MODE,
+        cluster_mode=MMSEQS_CLUSTER_MODE,
+    threads: workflow.cores
     resources:
         mem_mb=64000,
     conda:
@@ -62,13 +62,13 @@ rule extract_cluster_tsv:
     input:
         db="results/mmseqs/{dataset}/seqDB",
         db_type="results/mmseqs/{dataset}/seqDB.dbtype",
-        cluster_db="results/mmseqs/{dataset}/clusters_{identity}/clusterDB.index",
-        cluster_db_type="results/mmseqs/{dataset}/clusters_{identity}/clusterDB.dbtype",
+        cluster_db="results/mmseqs/{dataset}/clusters_id{identity}_cov{coverage}/clusterDB.index",
+        cluster_db_type="results/mmseqs/{dataset}/clusters_id{identity}_cov{coverage}/clusterDB.dbtype",
     output:
-        tsv="results/clustering/{dataset}/clusters_{identity}.tsv",
+        tsv="results/clustering/{dataset}/clusters_id{identity}_cov{coverage}.tsv",
     params:
         db_prefix="results/mmseqs/{dataset}/seqDB",
-        cluster_prefix="results/mmseqs/{dataset}/clusters_{identity}/clusterDB",
+        cluster_prefix="results/mmseqs/{dataset}/clusters_id{identity}_cov{coverage}/clusterDB",
     threads: 1
     conda:
         "../envs/mmseqs2.yaml"

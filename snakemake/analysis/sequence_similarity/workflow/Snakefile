@@ -12,25 +12,24 @@ References:
 
 configfile: "config/config.yaml"
 
+# All sequences are equal length (256bp windows), so cov_mode is irrelevant.
+MMSEQS_COV_MODE = 0  # bidirectional coverage
+MMSEQS_CLUSTER_MODE = 0  # Set-Cover (greedy)
+
 
 def get_all_datasets():
     """Get list of all dataset names."""
     return [d["name"] for d in config["datasets"]]
 
 
-def get_all_identity_thresholds():
-    """Get list of all identity thresholds to test (MMseqs2)."""
+def get_identity_thresholds():
+    """Get list of all identity thresholds to test."""
     return config["mmseqs2"]["identity_thresholds"]
 
 
-def get_sanity_check_identity_thresholds():
-    """Get identity thresholds for sanity check."""
-    return config["sanity_check"]["identity_thresholds"]
-
-
-def get_sanity_check_coverage_thresholds():
-    """Get coverage thresholds for sanity check."""
-    return config["sanity_check"]["coverage_thresholds"]
+def get_coverage_thresholds():
+    """Get list of all coverage thresholds to test."""
+    return config["mmseqs2"]["coverage_thresholds"]
 
 
 # Include rule files
@@ -51,9 +50,8 @@ rule all:
         # Sanity check (validation set is identical across datasets)
         "results/sanity_check/humans/summary.parquet",
         # MMseqs2 clustering analysis
-        "results/analysis/leakage_summary.parquet",
-        "results/plots/leakage_heatmap.png",
-        "results/plots/leakage_by_threshold.png",
+        "results/analysis/similarity_summary.parquet",
+        "results/plots/train_matches_heatmap.svg",
 
 
 # =============================================================================
@@ -77,18 +75,16 @@ rule sanity_check:
 rule mmseqs2_analysis:
     """Run only MMseqs2 clustering analysis.
 
-    Fast O(N) clustering at multiple identity thresholds.
+    Clustering at multiple identity × coverage thresholds.
 
     Usage: snakemake mmseqs2_analysis --cores 16
     """
     input:
         expand(
-            "results/clustering/{dataset}/clusters_{identity}.tsv",
+            "results/clustering/{dataset}/clusters_id{identity}_cov{coverage}.tsv",
             dataset=get_all_datasets(),
-            identity=get_all_identity_thresholds(),
+            identity=get_identity_thresholds(),
+            coverage=get_coverage_thresholds(),
         ),
-        "results/analysis/leakage_summary.parquet",
-        "results/plots/leakage_heatmap.png",
-        "results/plots/leakage_by_threshold.png",
-
-
+        "results/analysis/similarity_summary.parquet",
+        "results/plots/train_matches_heatmap.svg",

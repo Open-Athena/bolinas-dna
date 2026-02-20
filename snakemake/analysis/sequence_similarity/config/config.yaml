@@ -1,25 +1,11 @@
 # Sequence similarity analysis configuration
-# Analyzes cross-genome sequence similarity for train/test leakage detection
-# using MMseqs2 clustering.
-#
-# External tools are managed automatically:
-# - MMseqs2: installed via conda env (workflow/envs/mmseqs2.yaml)
-# Run with: uv run snakemake --cores all --use-conda
-#
-# References:
-# - ESM2: 50% identity threshold for protein sequences
-# - Chao et al. (Fungal DNA LM): coverage >= 5% AND identity >= 30%
-#   https://www.biorxiv.org/content/10.1101/2025.09.19.677475v1
+# See README.md for full documentation.
 
-# HuggingFace datasets to analyze
-# Format: bolinas-dna/genomes-v4-genome_set-{timescale}-intervals-v1_256_128
-# Validation split is always human held-out chromosome (constant across timescales)
 datasets:
   - name: humans
     hf_path: bolinas-dna/genomes-v4-genome_set-humans-intervals-v1_256_128
   - name: primates
     hf_path: bolinas-dna/genomes-v4-genome_set-primates-intervals-v1_256_128
-  # Future expansion:
   # - name: mammals
   #   hf_path: bolinas-dna/genomes-v4-genome_set-mammals-intervals-v1_256_128
   # - name: vertebrates
@@ -27,65 +13,10 @@ datasets:
   # - name: animals
   #   hf_path: bolinas-dna/genomes-v4-genome_set-animals-intervals-v1_256_128
 
-# =============================================================================
-# MMseqs2 clustering parameters
-# =============================================================================
-# MMseqs2 linclust provides O(N) linear-time clustering, ideal for very large
-# datasets (billions of sequences). Good for exploratory analysis.
-# See: https://github.com/soedinglab/MMseqs2/wiki
 mmseqs2:
-  # Sequence identity thresholds to test (0-1)
-  identity_thresholds:
-    - 0.5
-    - 0.6
-    - 0.7
-    - 0.8
-    - 0.9
+  identity_thresholds: [0.3, 0.5, 0.7, 0.9]
+  coverage_thresholds: [0.3, 0.6, 1.0]
 
-  # Coverage threshold (fraction of shorter sequence that must align)
-  coverage: 0.8
-
-  # Coverage mode:
-  # 0 = coverage of query AND target
-  # 1 = coverage of target
-  # 2 = coverage of query
-  # 3 = coverage of query OR target
-  cov_mode: 0
-
-  # Clustering mode:
-  # 0 = Set-Cover (greedy)
-  # 1 = Connected component (slower, more accurate)
-  # 2 = Greedy incremental (CD-HIT-like)
-  cluster_mode: 0
-
-  # Additional parameters
-  threads: 16
-
-# =============================================================================
-# Sanity check parameters
-# =============================================================================
-# Clusters validation sequences against themselves to verify pipeline behavior.
-# Sweeps over identity × coverage thresholds.
-sanity_check:
-  identity_thresholds:
-    - 0.3
-    - 0.5
-    - 0.7
-    - 0.9
-  coverage_thresholds:
-    - 0.3
-    - 0.6
-    - 1.0
-
-# =============================================================================
-# Analysis settings
-# =============================================================================
 analysis:
-  # Whether to treat reverse complements as the same sequence
   consider_reverse_complement: true
-
-  # Sequence column name in the dataset
   sequence_column: seq
-
-  # ID column (if not present, will use row index)
-  id_column: null
