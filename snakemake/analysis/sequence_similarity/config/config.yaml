@@ -14,8 +14,8 @@ datasets:
   #   hf_path: bolinas-dna/genomes-v4-genome_set-animals-intervals-v1_256_128
 
 mmseqs2:
-  identity_thresholds: [0.3, 0.5, 0.7, 0.9]
-  coverage_thresholds: [0.3, 0.6, 1.0]
+  identity_thresholds: [0.3, 0.5]
+  coverage_thresholds: [0.3, 0.5, 0.7]
 
 analysis:
   consider_reverse_complement: true

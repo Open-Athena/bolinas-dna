@@ -212,8 +212,8 @@ datasets:
 
 # MMseqs2 parameters (identity × coverage grid)
 mmseqs2:
-  identity_thresholds: [0.3, 0.5, 0.7, 0.9]
-  coverage_thresholds: [0.3, 0.6, 1.0]
+  identity_thresholds: [0.3, 0.5]
+  coverage_thresholds: [0.3, 0.5, 0.7]
 
 # Analysis settings
 analysis:
@@ -309,12 +309,15 @@ complement), and cluster sizes decrease as thresholds become more stringent:
 | Identity | Coverage | Clusters | Singletons | Avg cluster size |
 |----------|----------|----------|------------|-----------------|
 | 0.3 | 0.3 | 2,728 | 6 (0.0%) | 5.2 |
-| 0.5 | 0.6 | 6,324 | 0 (0.0%) | 2.2 |
-| 0.7 | 1.0 | 6,954 | 0 (0.0%) | 2.0 |
-| 0.9 | 1.0 | 6,988 | 0 (0.0%) | 2.0 |
+| 0.5 | 0.3 | 2,728 | 6 (0.0%) | 5.2 |
+| 0.3 | 0.5 | 2,774 | 2 (0.0%) | 5.1 |
+| 0.5 | 0.5 | 2,774 | 2 (0.0%) | 5.1 |
+| 0.3 | 0.7 | 6,372 | 0 (0.0%) | 2.2 |
+| 0.5 | 0.7 | 6,372 | 0 (0.0%) | 2.2 |
 
-At coverage = 1.0 (full-length match), cluster size ~2.0 confirms that nearly every sequence
-clusters with exactly its reverse complement, as expected.
+At coverage = 0.7, cluster size ~2.2 reflects that most sequences cluster with exactly their
+reverse complement, as expected. At lower coverage, adjacent sliding windows (50% overlap)
+also cluster together, producing larger clusters.
 
 ### MMseqs2 Leakage Analysis
 
@@ -323,40 +326,34 @@ sequence, we count how many training sequences share its cluster.
 
 #### Median train matches per validation sequence
 
-| Identity \ Coverage | 0.3 | 0.6 | 1.0 |
+| Identity \ Coverage | 0.3 | 0.5 | 0.7 |
 |---------------------|-----|-----|-----|
 | **Humans** | | | |
 | 0.3 | 0 | 0 | 0 |
 | 0.5 | 0 | 0 | 0 |
-| 0.7 | 0 | 0 | 0 |
-| 0.9 | 0 | 0 | 0 |
 | **Primates** | | | |
-| 0.3 | 9 | 4 | 0 |
-| 0.5 | 9 | 4 | 0 |
-| 0.7 | 10 | 4 | 0 |
-| 0.9 | 4 | 2 | 0 |
+| 0.3 | 9 | 7 | 4 |
+| 0.5 | 9 | 7 | 4 |
 
 #### Key observations
 
 1. **Humans: median is 0 everywhere.** Within a single genome, most validation sequences
    have no similar training sequence. Leakage is concentrated in a small minority of
-   sequences from segmental duplications and gene families (mean up to 29, max up to 2,000).
+   sequences from segmental duplications and gene families (mean up to 19, max up to 1,035).
 
-2. **Primates: median is non-zero at lower coverage.** The typical validation sequence has
-   orthologous matches in multiple primate species — cross-species similarity is the norm,
-   not an outlier phenomenon. With 11 primate genomes in training, most of the held-out
-   human chromosome has homologs in the training set.
+2. **Primates: median is non-zero at all coverage levels.** The typical validation sequence
+   has orthologous matches in multiple primate species — cross-species similarity is the
+   norm, not an outlier phenomenon. With 11 primate genomes in training, most of the
+   held-out human chromosome has homologs in the training set.
 
-3. **Coverage is the dominant factor, not identity.** At cov=1.0 (full-length match),
-   the median drops to 0 for both datasets regardless of identity threshold. The difference
-   between id=0.3 and id=0.7 is negligible at any given coverage.
+3. **Coverage is the dominant factor, not identity.** The median drops from 9 → 7 → 4 as
+   coverage increases from 0.3 → 0.5 → 0.7 for primates. The difference between id=0.3
+   and id=0.5 is zero at every coverage level.
 
 4. **Identity 0.3 and 0.5 give identical results.** MMseqs2's cascade clustering converges
    to the same clusters at both thresholds — there is no additional signal below 0.5
-   identity for 256bp DNA sequences.
-
-5. **Even at id=0.9/cov=1.0, primates retain matches.** Near-identical full-length orthologs
-   are an irreducible floor for chromosome-based holdout with multi-species data.
+   identity for 256bp DNA sequences. This confirms that the ESM2 (50%) and Chao et al.
+   (30%) thresholds are equivalent for short DNA sequences.
 
 ## Next Steps
 
