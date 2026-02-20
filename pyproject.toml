@@ -25,6 +25,7 @@ dependencies = [
     "snakemake",
     "torch",
     "tqdm",
+    "tokenizers",
     "transformers",
     "zstandard",
 ]
