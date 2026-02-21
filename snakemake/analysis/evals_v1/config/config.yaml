@@ -556,6 +556,26 @@ models:
       - 6000
       - 8000
 
+  - name: exp64-genomes-v4-genome_set-mammals-intervals-v1_256_128-8me-r01-eee19b
+    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp64-genomes-v4-genome_set-mammals-intervals-v1_256_128-8me-r01-eee19b
+    context_size: 256
+    steps:
+      - 1000
+      - 3000
+      - 5000
+      - 7000
+      - 9999
+
+  - name: exp64-genomes-v4-genome_set-mammals-intervals-v1_256_128-4me-r01-0ed540
+    base_path: /home/ubuntu/efs/projects/biofoundation/data/marin_checkpoints/exp64-genomes-v4-genome_set-mammals-intervals-v1_256_128-4me-r01-0ed540
+    context_size: 256
+    steps:
+      - 1000
+      - 3000
+      - 5000
+      - 7000
+      - 9999
+
 # Evaluation datasets from HuggingFace
 # Each dataset should have been created by the snakemake/evals pipeline
 datasets:
@@ -1147,6 +1167,31 @@ custom_plots:
         subset: 3_prime_UTR_variant
         score_type: minus_llr
         title: "3' UTR"
+
+  - name: exp64_kmer_tokenization
+    title: "Exp64 K-mer Tokenization - promoters, Qwen 0.6B"
+    models:
+      - model: exp55-mammals-r01-52f413
+        title: "Character-level (1-mer)"
+        color: "#440154"  # viridis(0.0)
+      - model: exp64-genomes-v4-genome_set-mammals-intervals-v1_256_128-4me-r01-0ed540
+        title: "4-mer"
+        color: "#21918C"  # viridis(0.5)
+      - model: exp64-genomes-v4-genome_set-mammals-intervals-v1_256_128-8me-r01-eee19b
+        title: "8-mer"
+        color: "#FDE725"  # viridis(1.0)
+    n_cols: 2
+    dataset_subsets:
+      - dataset: traitgym_mendelian_v2
+        subset: tss_proximal
+        score_type: minus_llr
+        include_baselines: false
+        title: "Promoter"
+      - dataset: traitgym_mendelian_v2
+        subset: 5_prime_UTR_variant
+        score_type: minus_llr
+        include_baselines: false
+        title: "5' UTR"
 
 # Inference configuration (performance settings that don't affect output)
 inference:
