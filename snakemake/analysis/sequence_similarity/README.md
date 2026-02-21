@@ -345,7 +345,8 @@ sequence, we count how many training sequences share its cluster.
 
 1. **Humans: median is 0 everywhere.** Within a single genome, most validation sequences
    have no similar training sequence. Leakage is concentrated in a small minority of
-   sequences from segmental duplications and gene families (mean up to 19, max up to 1,035).
+   sequences (mean up to 19, max up to 1,035), likely from segmental duplications or
+   repetitive elements not flagged by RepeatMasker.
 
 2. **Primates: median is non-zero at all coverage levels.** The typical validation sequence
    has orthologous matches in multiple primate species — cross-species similarity is the
@@ -354,8 +355,10 @@ sequence, we count how many training sequences share its cluster.
 
 3. **Mammals: leakage scales with phylogenetic breadth.** With 81 mammalian genomes in
    training, the median validation sequence has 12 training matches at cov=0.3, increasing
-   from 9 in primates. The mean is much higher (37–38), indicating a long tail of highly
-   conserved regions with up to 1,342–1,494 matches across mammalian genomes.
+   from 9 in primates. The mean is much higher (37–38) due to outlier sequences with up
+   to 1,342–1,494 matches — far exceeding the ~81 expected from 1:1 orthologs, suggesting
+   these are repetitive elements or multi-copy gene families (e.g. rRNA) that evade
+   RepeatMasker's soft-masking.
 
 4. **Coverage is the dominant factor, not identity.** The median drops from 12 → 9 → 5
    (mammals) and 9 → 7 → 4 (primates) as coverage increases from 0.3 → 0.5 → 0.7. The
