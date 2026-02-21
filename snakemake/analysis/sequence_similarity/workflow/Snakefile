@@ -52,7 +52,8 @@ rule all:
         "results/sanity_check/humans_cds/summary.parquet",
         # MMseqs2 clustering analysis
         "results/analysis/similarity_summary.parquet",
-        "results/plots/train_matches_heatmap.svg",
+        "results/plots/train_matches_median.svg",
+        "results/plots/train_matches_mean.svg",
 
 
 # =============================================================================
@@ -89,4 +90,5 @@ rule mmseqs2_analysis:
             coverage=get_coverage_thresholds(),
         ),
         "results/analysis/similarity_summary.parquet",
-        "results/plots/train_matches_heatmap.svg",
+        "results/plots/train_matches_median.svg",
+        "results/plots/train_matches_mean.svg",

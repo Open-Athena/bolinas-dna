@@ -278,7 +278,8 @@ results/
 │   └── masking_test_summary.txt     # Pass/fail assertions
 │
 └── plots/
-    └── train_matches_heatmap.svg         # MMseqs2: identity × coverage per dataset
+    ├── train_matches_median.svg     # Median train matches heatmap
+    └── train_matches_mean.svg       # Mean train matches heatmap
 ```
 
 ### Interpreting Results
