@@ -205,12 +205,18 @@ Edit `config/config.yaml` to customize:
 ```yaml
 # Datasets to analyze
 datasets:
-  - name: humans
+  # Promoters (intervals-v1)
+  - name: humans_promoters
     hf_path: bolinas-dna/genomes-v4-genome_set-humans-intervals-v1_256_128
-  - name: primates
+  - name: primates_promoters
     hf_path: bolinas-dna/genomes-v4-genome_set-primates-intervals-v1_256_128
-  - name: mammals
+  - name: mammals_promoters
     hf_path: bolinas-dna/genomes-v4-genome_set-mammals-intervals-v1_256_128
+  # CDS (intervals-v5)
+  - name: humans_cds
+    hf_path: bolinas-dna/genomes-v4-genome_set-humans-intervals-v5_256_128
+  - name: primates_cds
+    hf_path: bolinas-dna/genomes-v4-genome_set-primates-intervals-v5_256_128
 
 # MMseqs2 parameters (identity × coverage grid)
 mmseqs2:
@@ -227,10 +233,10 @@ analysis:
 
 ```bash
 # Only download data
-uv run snakemake results/data/humans/metadata.parquet --cores all
+uv run snakemake results/data/humans_promoters/metadata.parquet --cores all
 
 # Only run MMseqs2 clustering for one dataset/threshold combo
-uv run snakemake results/clustering/humans/clusters_id0.5_cov0.6.tsv --cores all --use-conda
+uv run snakemake results/clustering/humans_promoters/clusters_id0.5_cov0.6.tsv --cores all --use-conda
 ```
 
 ## Output
@@ -283,11 +289,13 @@ The key metric is **leaked_pct**: the percentage of validation sequences that cl
 
 ### Dataset Summary
 
-| Dataset | Train seqs | Val seqs | Taxonomic scope |
-|---------|-----------|----------|-----------------|
-| humans | 212,066 | 14,030 | Single genome (Homo sapiens), val = held-out chromosome |
-| primates | 1,814,468 | 14,030 | Multiple primate genomes, val = same human held-out chromosome |
-| mammals | 12,908,076 | 14,030 | 81 mammalian genomes, val = same human held-out chromosome |
+| Dataset | Interval type | Train seqs | Val seqs | Taxonomic scope |
+|---------|--------------|-----------|----------|-----------------|
+| humans_promoters | Promoters (v1) | 212,066 | 14,030 | Single genome (Homo sapiens), val = held-out chromosome |
+| primates_promoters | Promoters (v1) | 1,814,468 | 14,030 | Multiple primate genomes, val = same human held-out chromosome |
+| mammals_promoters | Promoters (v1) | 12,908,076 | 14,030 | 81 mammalian genomes, val = same human held-out chromosome |
+| humans_cds | CDS (v5) | 504,572 | 34,680 | Single genome (Homo sapiens), val = held-out chromosome |
+| primates_cds | CDS (v5) | 5,640,416 | 34,680 | Multiple primate genomes, val = same human held-out chromosome |
 
 ### Repeat Masking Test
 
@@ -306,8 +314,9 @@ homology signal.
 ### Sanity Check (Validation Self-Similarity)
 
 Clustering validation sequences against themselves confirms the pipeline works correctly.
-At 90% identity, 100% of validation sequences have at least one match (their reverse
-complement), and cluster sizes decrease as thresholds become more stringent:
+One sanity check is run per interval type (promoters and CDS have different validation sets).
+
+**Promoters** (14,030 val sequences):
 
 | Identity | Coverage | Clusters | Singletons | Avg cluster size |
 |----------|----------|----------|------------|-----------------|
@@ -318,7 +327,18 @@ complement), and cluster sizes decrease as thresholds become more stringent:
 | 0.3 | 0.7 | 6,372 | 0 (0.0%) | 2.2 |
 | 0.5 | 0.7 | 6,372 | 0 (0.0%) | 2.2 |
 
-At coverage = 0.7, cluster size ~2.2 reflects that most sequences cluster with exactly their
+**CDS** (34,680 val sequences):
+
+| Identity | Coverage | Clusters | Singletons | Avg cluster size |
+|----------|----------|----------|------------|-----------------|
+| 0.3 | 0.3 | 10,750 | 20 (0.1%) | 3.2 |
+| 0.5 | 0.3 | 10,750 | 20 (0.1%) | 3.2 |
+| 0.3 | 0.5 | 10,811 | 16 (0.0%) | 3.2 |
+| 0.5 | 0.5 | 10,811 | 16 (0.0%) | 3.2 |
+| 0.3 | 0.7 | 15,136 | 0 (0.0%) | 2.3 |
+| 0.5 | 0.7 | 15,136 | 0 (0.0%) | 2.3 |
+
+At coverage = 0.7, cluster size ~2 reflects that most sequences cluster with exactly their
 reverse complement, as expected. At lower coverage, adjacent sliding windows (50% overlap)
 also cluster together, producing larger clusters.
 
@@ -329,50 +349,69 @@ sequence, we count how many training sequences share its cluster.
 
 #### Median train matches per validation sequence
 
+**Promoters:**
+
 | Identity \ Coverage | 0.3 | 0.5 | 0.7 |
 |---------------------|-----|-----|-----|
-| **Humans** | | | |
+| **humans_promoters** | | | |
 | 0.3 | 0 | 0 | 0 |
 | 0.5 | 0 | 0 | 0 |
-| **Primates** | | | |
+| **primates_promoters** | | | |
 | 0.3 | 9 | 7 | 4 |
 | 0.5 | 9 | 7 | 4 |
-| **Mammals** | | | |
+| **mammals_promoters** | | | |
 | 0.3 | 12 | 9 | 5 |
 | 0.5 | 12 | 9 | 5 |
 
+**CDS:**
+
+| Identity \ Coverage | 0.3 | 0.5 | 0.7 |
+|---------------------|-----|-----|-----|
+| **humans_cds** | | | |
+| 0.3 | 0 | 0 | 0 |
+| 0.5 | 0 | 0 | 0 |
+| **primates_cds** | | | |
+| 0.3 | 20 | 20 | 18 |
+| 0.5 | 20 | 20 | 18 |
+
 #### Key observations
 
-1. **Humans: median is 0 everywhere.** Within a single genome, most validation sequences
-   have no similar training sequence. Leakage is concentrated in a small minority of
-   sequences (mean up to 19, max up to 1,035), likely from segmental duplications or
-   repetitive elements not flagged by RepeatMasker.
+1. **Single-genome (humans): median is 0 for both promoters and CDS.** Within a single
+   genome, most validation sequences have no similar training sequence. For promoters,
+   leakage is concentrated in a small minority (mean up to 19, max up to 1,035), likely
+   from segmental duplications or unmasked repeats. CDS leakage is even lower (mean ~1,
+   max 63–66), consistent with coding sequences being more unique within a genome.
 
-2. **Primates: median is non-zero at all coverage levels.** The typical validation sequence
-   has orthologous matches in multiple primate species — cross-species similarity is the
-   norm, not an outlier phenomenon. With 11 primate genomes in training, most of the
-   held-out human chromosome has homologs in the training set.
+2. **CDS leakage is much higher than promoters at multi-species scales.** At primate scale,
+   CDS median matches are 18–20 vs 4–9 for promoters. This reflects the strong conservation
+   of coding sequences across species — CDS orthologs are more easily detected by sequence
+   similarity than promoter regions, which diverge faster.
 
-3. **Mammals: leakage scales with phylogenetic breadth.** With 81 mammalian genomes in
-   training, the median validation sequence has 12 training matches at cov=0.3, increasing
-   from 9 in primates. The mean is much higher (37–38) due to outlier sequences with up
-   to 1,342–1,494 matches — far exceeding the ~81 expected from 1:1 orthologs, suggesting
-   these are repetitive elements or multi-copy gene families (e.g. rRNA) that evade
-   RepeatMasker's soft-masking.
+3. **CDS leakage is less sensitive to coverage threshold.** Promoter median drops sharply
+   with coverage (primates: 9 → 7 → 4), but CDS barely changes (20 → 20 → 18). This
+   suggests CDS matches tend to be full-length alignments (high coverage), while promoter
+   matches are more often partial alignments.
 
-4. **Coverage is the dominant factor, not identity.** The median drops from 12 → 9 → 5
-   (mammals) and 9 → 7 → 4 (primates) as coverage increases from 0.3 → 0.5 → 0.7. The
-   difference between id=0.3 and id=0.5 is zero or negligible at every coverage level.
+4. **Coverage is the dominant factor for promoters, not identity.** The median drops from
+   12 → 9 → 5 (mammals) and 9 → 7 → 4 (primates) as coverage increases from 0.3 → 0.5
+   → 0.7. The difference between id=0.3 and id=0.5 is zero or negligible at every level.
 
 5. **Identity 0.3 and 0.5 give identical results.** MMseqs2's cascade clustering converges
    to the same clusters at both thresholds — there is no additional signal below 0.5
    identity for 256bp DNA sequences. This confirms that the ESM2 (50%) and Chao et al.
    (30%) thresholds are equivalent for short DNA sequences.
 
+6. **Mammals promoters: leakage scales with phylogenetic breadth.** With 81 mammalian
+   genomes in training, the median validation sequence has 12 training matches at cov=0.3,
+   increasing from 9 in primates. The mean is much higher (37–38) due to outlier sequences
+   with up to 1,342–1,494 matches — far exceeding the ~81 expected from 1:1 orthologs,
+   suggesting these are repetitive elements or multi-copy gene families that evade
+   RepeatMasker's soft-masking.
+
 ## Next Steps
 
-1. **Expand to additional taxonomic scales** (vertebrates, animals) to see how leakage
-   scales with further phylogenetic distance.
+1. **Expand to additional taxonomic scales** (vertebrates, animals) and CDS mammals to see
+   how leakage scales with further phylogenetic distance.
 
 2. **Implement filtering in the dataset creation pipeline**: after creating train/validation
    splits, remove training sequences that exceed similarity thresholds against validation.

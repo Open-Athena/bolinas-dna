@@ -284,7 +284,11 @@ rule aggregate_similarity_stats:
 
 
 rule plot_train_matches_heatmap:
-    """Create heatmap of median and mean train matches per val sequence."""
+    """Create heatmap of median and mean train matches per val sequence.
+
+    Layout: rows = interval_type × metric, columns = genome_set (config order).
+    Dataset names are split on the last '_' to extract genome_set and interval_type.
+    """
     input:
         summary="results/analysis/similarity_summary.parquet",
     output:
@@ -294,42 +298,60 @@ rule plot_train_matches_heatmap:
         dataset_order = [d["name"] for d in config["datasets"]]
         datasets = [d for d in dataset_order if d in df["dataset"].values]
 
+        # Parse dataset names into genome_set and interval_type
+        def parse_dataset(name):
+            parts = name.rsplit("_", 1)
+            return parts[0], parts[1]  # genome_set, interval_type
+
+        # Deduplicate while preserving config order
+        genome_sets = list(dict.fromkeys(parse_dataset(d)[0] for d in datasets))
+        interval_types = list(dict.fromkeys(parse_dataset(d)[1] for d in datasets))
+
         metrics = [
             ("train_matches_median", "Median", ".0f"),
             ("train_matches_mean", "Mean", ".1f"),
         ]
 
-        fig, axes = plt.subplots(
-            len(metrics), len(datasets),
-            figsize=(6 * len(datasets), 5 * len(metrics)),
-        )
-        if len(datasets) == 1:
-            axes = axes.reshape(-1, 1)
+        n_rows = len(interval_types) * len(metrics)
+        n_cols = len(genome_sets)
 
-        for row, (col_name, label, fmt) in enumerate(metrics):
-            vmin = df[col_name].min()
-            vmax = df[col_name].max()
-            for col, dataset in enumerate(datasets):
-                ax = axes[row, col]
-                subset = df[df["dataset"] == dataset]
-                pivot = subset.pivot(
-                    index="identity_threshold",
-                    columns="coverage_threshold",
-                    values=col_name,
-                )
-                sns.heatmap(
-                    pivot,
-                    annot=True,
-                    fmt=fmt,
-                    cmap="YlOrRd",
-                    vmin=vmin,
-                    vmax=vmax,
-                    cbar_kws={"label": f"{label} train matches"},
-                    ax=ax,
-                )
-                ax.set_xlabel("Coverage Threshold")
-                ax.set_ylabel("Identity Threshold")
-                ax.set_title(f"{dataset} ({label.lower()})")
+        fig, axes = plt.subplots(
+            n_rows, n_cols,
+            figsize=(6 * n_cols, 5 * n_rows),
+            squeeze=False,
+        )
+
+        for it_idx, interval_type in enumerate(interval_types):
+            for m_idx, (col_name, label, fmt) in enumerate(metrics):
+                row = it_idx * len(metrics) + m_idx
+                # Compute global vmin/vmax across all datasets for this metric
+                vmin = df[col_name].min()
+                vmax = df[col_name].max()
+                for col, genome_set in enumerate(genome_sets):
+                    ax = axes[row, col]
+                    dataset_name = f"{genome_set}_{interval_type}"
+                    if dataset_name not in df["dataset"].values:
+                        ax.set_visible(False)
+                        continue
+                    subset = df[df["dataset"] == dataset_name]
+                    pivot = subset.pivot(
+                        index="identity_threshold",
+                        columns="coverage_threshold",
+                        values=col_name,
+                    )
+                    sns.heatmap(
+                        pivot,
+                        annot=True,
+                        fmt=fmt,
+                        cmap="YlOrRd",
+                        vmin=vmin,
+                        vmax=vmax,
+                        cbar_kws={"label": f"{label} train matches"},
+                        ax=ax,
+                    )
+                    ax.set_xlabel("Coverage Threshold")
+                    ax.set_ylabel("Identity Threshold")
+                    ax.set_title(f"{genome_set} {interval_type} ({label.lower()})")
 
         fig.suptitle("Train Matches per Validation Sequence", fontsize=14)
         plt.tight_layout()

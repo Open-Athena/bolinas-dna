@@ -2,16 +2,18 @@
 # See README.md for full documentation.
 
 datasets:
-  - name: humans
+  # Promoters (intervals-v1)
+  - name: humans_promoters
     hf_path: bolinas-dna/genomes-v4-genome_set-humans-intervals-v1_256_128
-  - name: primates
+  - name: primates_promoters
     hf_path: bolinas-dna/genomes-v4-genome_set-primates-intervals-v1_256_128
-  - name: mammals
+  - name: mammals_promoters
     hf_path: bolinas-dna/genomes-v4-genome_set-mammals-intervals-v1_256_128
-  # - name: vertebrates
-  #   hf_path: bolinas-dna/genomes-v4-genome_set-vertebrates-intervals-v1_256_128
-  # - name: animals
-  #   hf_path: bolinas-dna/genomes-v4-genome_set-animals-intervals-v1_256_128
+  # CDS (intervals-v5)
+  - name: humans_cds
+    hf_path: bolinas-dna/genomes-v4-genome_set-humans-intervals-v5_256_128
+  - name: primates_cds
+    hf_path: bolinas-dna/genomes-v4-genome_set-primates-intervals-v5_256_128
 
 mmseqs2:
   identity_thresholds: [0.3, 0.5]

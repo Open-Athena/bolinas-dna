@@ -47,8 +47,9 @@ include: "rules/tests.smk"
 rule all:
     """Run MMseqs2 clustering analysis."""
     input:
-        # Sanity check (validation set is identical across datasets)
-        "results/sanity_check/humans/summary.parquet",
+        # Sanity check (one per interval type — validation sets differ)
+        "results/sanity_check/humans_promoters/summary.parquet",
+        "results/sanity_check/humans_cds/summary.parquet",
         # MMseqs2 clustering analysis
         "results/analysis/similarity_summary.parquet",
         "results/plots/train_matches_heatmap.svg",
@@ -68,8 +69,9 @@ rule sanity_check:
     Usage: snakemake sanity_check --cores 8
     """
     input:
-        # Validation set is identical across all datasets, so only run once
-        "results/sanity_check/humans/summary.parquet",
+        # One sanity check per interval type (validation sets differ)
+        "results/sanity_check/humans_promoters/summary.parquet",
+        "results/sanity_check/humans_cds/summary.parquet",
 
 
 rule mmseqs2_analysis:
