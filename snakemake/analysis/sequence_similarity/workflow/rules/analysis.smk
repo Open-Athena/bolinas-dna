@@ -284,7 +284,7 @@ rule aggregate_similarity_stats:
 
 
 rule plot_train_matches_heatmap:
-    """Create heatmap of median train matches per val sequence."""
+    """Create heatmap of median and mean train matches per val sequence."""
     input:
         summary="results/analysis/similarity_summary.parquet",
     output:
@@ -294,35 +294,44 @@ rule plot_train_matches_heatmap:
         dataset_order = [d["name"] for d in config["datasets"]]
         datasets = [d for d in dataset_order if d in df["dataset"].values]
 
-        vmin = df["train_matches_median"].min()
-        vmax = df["train_matches_median"].max()
+        metrics = [
+            ("train_matches_median", "Median", ".0f"),
+            ("train_matches_mean", "Mean", ".1f"),
+        ]
 
-        fig, axes = plt.subplots(1, len(datasets), figsize=(7 * len(datasets), 6))
+        fig, axes = plt.subplots(
+            len(metrics), len(datasets),
+            figsize=(6 * len(datasets), 5 * len(metrics)),
+        )
         if len(datasets) == 1:
-            axes = [axes]
+            axes = axes.reshape(-1, 1)
 
-        for ax, dataset in zip(axes, datasets):
-            subset = df[df["dataset"] == dataset]
-            pivot = subset.pivot(
-                index="identity_threshold",
-                columns="coverage_threshold",
-                values="train_matches_median",
-            )
-            sns.heatmap(
-                pivot,
-                annot=True,
-                fmt=".0f",
-                cmap="YlOrRd",
-                vmin=vmin,
-                vmax=vmax,
-                cbar_kws={"label": "Median train matches per val seq"},
-                ax=ax,
-            )
-            ax.set_xlabel("Coverage Threshold")
-            ax.set_ylabel("Identity Threshold")
-            ax.set_title(f"{dataset}")
+        for row, (col_name, label, fmt) in enumerate(metrics):
+            vmin = df[col_name].min()
+            vmax = df[col_name].max()
+            for col, dataset in enumerate(datasets):
+                ax = axes[row, col]
+                subset = df[df["dataset"] == dataset]
+                pivot = subset.pivot(
+                    index="identity_threshold",
+                    columns="coverage_threshold",
+                    values=col_name,
+                )
+                sns.heatmap(
+                    pivot,
+                    annot=True,
+                    fmt=fmt,
+                    cmap="YlOrRd",
+                    vmin=vmin,
+                    vmax=vmax,
+                    cbar_kws={"label": f"{label} train matches"},
+                    ax=ax,
+                )
+                ax.set_xlabel("Coverage Threshold")
+                ax.set_ylabel("Identity Threshold")
+                ax.set_title(f"{dataset} ({label.lower()})")
 
-        fig.suptitle("Median Train Matches per Validation Sequence", fontsize=14)
+        fig.suptitle("Train Matches per Validation Sequence", fontsize=14)
         plt.tight_layout()
         plt.savefig(output.plot, format="svg")
         plt.close()
