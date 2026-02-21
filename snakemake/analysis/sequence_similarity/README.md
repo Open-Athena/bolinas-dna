@@ -209,6 +209,8 @@ datasets:
     hf_path: bolinas-dna/genomes-v4-genome_set-humans-intervals-v1_256_128
   - name: primates
     hf_path: bolinas-dna/genomes-v4-genome_set-primates-intervals-v1_256_128
+  - name: mammals
+    hf_path: bolinas-dna/genomes-v4-genome_set-mammals-intervals-v1_256_128
 
 # MMseqs2 parameters (identity × coverage grid)
 mmseqs2:
@@ -270,7 +272,7 @@ results/
 │   └── masking_test_summary.txt     # Pass/fail assertions
 │
 └── plots/
-    └── leakage_heatmap.svg              # MMseqs2: identity × coverage per dataset
+    └── train_matches_heatmap.svg         # MMseqs2: identity × coverage per dataset
 ```
 
 ### Interpreting Results
@@ -285,6 +287,7 @@ The key metric is **leaked_pct**: the percentage of validation sequences that cl
 |---------|-----------|----------|-----------------|
 | humans | 212,066 | 14,030 | Single genome (Homo sapiens), val = held-out chromosome |
 | primates | 1,814,468 | 14,030 | Multiple primate genomes, val = same human held-out chromosome |
+| mammals | 12,908,076 | 14,030 | 81 mammalian genomes, val = same human held-out chromosome |
 
 ### Repeat Masking Test
 
@@ -334,6 +337,9 @@ sequence, we count how many training sequences share its cluster.
 | **Primates** | | | |
 | 0.3 | 9 | 7 | 4 |
 | 0.5 | 9 | 7 | 4 |
+| **Mammals** | | | |
+| 0.3 | 12 | 9 | 5 |
+| 0.5 | 12 | 9 | 5 |
 
 #### Key observations
 
@@ -346,19 +352,24 @@ sequence, we count how many training sequences share its cluster.
    norm, not an outlier phenomenon. With 11 primate genomes in training, most of the
    held-out human chromosome has homologs in the training set.
 
-3. **Coverage is the dominant factor, not identity.** The median drops from 9 → 7 → 4 as
-   coverage increases from 0.3 → 0.5 → 0.7 for primates. The difference between id=0.3
-   and id=0.5 is zero at every coverage level.
+3. **Mammals: leakage scales with phylogenetic breadth.** With 81 mammalian genomes in
+   training, the median validation sequence has 12 training matches at cov=0.3, increasing
+   from 9 in primates. The mean is much higher (37–38), indicating a long tail of highly
+   conserved regions with up to 1,342–1,494 matches across mammalian genomes.
 
-4. **Identity 0.3 and 0.5 give identical results.** MMseqs2's cascade clustering converges
+4. **Coverage is the dominant factor, not identity.** The median drops from 12 → 9 → 5
+   (mammals) and 9 → 7 → 4 (primates) as coverage increases from 0.3 → 0.5 → 0.7. The
+   difference between id=0.3 and id=0.5 is zero or negligible at every coverage level.
+
+5. **Identity 0.3 and 0.5 give identical results.** MMseqs2's cascade clustering converges
    to the same clusters at both thresholds — there is no additional signal below 0.5
    identity for 256bp DNA sequences. This confirms that the ESM2 (50%) and Chao et al.
    (30%) thresholds are equivalent for short DNA sequences.
 
 ## Next Steps
 
-1. **Expand to additional taxonomic scales** (mammals, vertebrates, animals) to see how
-   leakage scales with phylogenetic distance.
+1. **Expand to additional taxonomic scales** (vertebrates, animals) to see how leakage
+   scales with further phylogenetic distance.
 
 2. **Implement filtering in the dataset creation pipeline**: after creating train/validation
    splits, remove training sequences that exceed similarity thresholds against validation.

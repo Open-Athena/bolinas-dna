@@ -6,8 +6,8 @@ datasets:
     hf_path: bolinas-dna/genomes-v4-genome_set-humans-intervals-v1_256_128
   - name: primates
     hf_path: bolinas-dna/genomes-v4-genome_set-primates-intervals-v1_256_128
-  # - name: mammals
-  #   hf_path: bolinas-dna/genomes-v4-genome_set-mammals-intervals-v1_256_128
+  - name: mammals
+    hf_path: bolinas-dna/genomes-v4-genome_set-mammals-intervals-v1_256_128
   # - name: vertebrates
   #   hf_path: bolinas-dna/genomes-v4-genome_set-vertebrates-intervals-v1_256_128
   # - name: animals

@@ -291,7 +291,8 @@ rule plot_train_matches_heatmap:
         plot="results/plots/train_matches_heatmap.svg",
     run:
         df = pl.read_parquet(input.summary).to_pandas()
-        datasets = sorted(df["dataset"].unique())
+        dataset_order = [d["name"] for d in config["datasets"]]
+        datasets = [d for d in dataset_order if d in df["dataset"].values]
 
         vmin = df["train_matches_median"].min()
         vmax = df["train_matches_median"].max()
