@@ -1,0 +1,94 @@
+"""Snakemake workflow for analyzing sequence similarity across genomic datasets.
+
+This pipeline measures sequence similarity between validation and training splits
+across different taxonomic scales to understand potential data leakage in
+genomic language model training using MMseqs2 clustering.
+
+References:
+- ESM2: https://www.science.org/doi/10.1126/science.ade2574
+- Chao et al.: https://www.biorxiv.org/content/10.64898/2025.12.22.695963v1
+- hashFrag: https://www.biorxiv.org/content/10.1101/2025.01.22.634321v1
+"""
+
+configfile: "config/config.yaml"
+
+# All sequences are equal length (256bp windows), so cov_mode is irrelevant.
+MMSEQS_COV_MODE = 0  # bidirectional coverage
+MMSEQS_CLUSTER_MODE = 0  # Set-Cover (greedy)
+
+
+def get_all_datasets():
+    """Get list of all dataset names."""
+    return [d["name"] for d in config["datasets"]]
+
+
+def get_identity_thresholds():
+    """Get list of all identity thresholds to test."""
+    return config["mmseqs2"]["identity_thresholds"]
+
+
+def get_coverage_thresholds():
+    """Get list of all coverage thresholds to test."""
+    return config["mmseqs2"]["coverage_thresholds"]
+
+
+# Include rule files
+include: "rules/common.smk"
+include: "rules/download.smk"
+include: "rules/clustering.smk"
+include: "rules/analysis.smk"
+include: "rules/tests.smk"
+
+
+# =============================================================================
+# Main targets
+# =============================================================================
+
+rule all:
+    """Run MMseqs2 clustering analysis."""
+    input:
+        # Sanity check (one per interval type — validation sets differ)
+        "results/sanity_check/humans_promoters/summary.parquet",
+        "results/sanity_check/humans_cds/summary.parquet",
+        # MMseqs2 clustering analysis
+        "results/analysis/similarity_summary.parquet",
+        "results/plots/train_matches_median.svg",
+        "results/plots/train_matches_mean.svg",
+
+
+# =============================================================================
+# Individual analysis targets
+# =============================================================================
+
+rule sanity_check:
+    """Run only the sanity check (validation self-similarity analysis).
+
+    This clusters validation sequences against themselves to verify:
+    - RC handling: sequences should cluster with their reverse complement
+    - Overlap handling: adjacent windows should show similarity
+
+    Usage: snakemake sanity_check --cores 8
+    """
+    input:
+        # One sanity check per interval type (validation sets differ)
+        "results/sanity_check/humans_promoters/summary.parquet",
+        "results/sanity_check/humans_cds/summary.parquet",
+
+
+rule mmseqs2_analysis:
+    """Run only MMseqs2 clustering analysis.
+
+    Clustering at multiple identity × coverage thresholds.
+
+    Usage: snakemake mmseqs2_analysis --cores 16
+    """
+    input:
+        expand(
+            "results/clustering/{dataset}/clusters_id{identity}_cov{coverage}.tsv",
+            dataset=get_all_datasets(),
+            identity=get_identity_thresholds(),
+            coverage=get_coverage_thresholds(),
+        ),
+        "results/analysis/similarity_summary.parquet",
+        "results/plots/train_matches_median.svg",
+        "results/plots/train_matches_mean.svg",

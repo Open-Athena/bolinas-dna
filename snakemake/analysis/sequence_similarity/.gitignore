@@ -1,0 +1,6 @@
+# Snakemake outputs
+results/
+
+# Temporary files
+*.tmp
+.snakemake/
