@@ -217,6 +217,8 @@ datasets:
     hf_path: bolinas-dna/genomes-v4-genome_set-humans-intervals-v5_256_128
   - name: primates_cds
     hf_path: bolinas-dna/genomes-v4-genome_set-primates-intervals-v5_256_128
+  - name: mammals_cds
+    hf_path: bolinas-dna/genomes-v4-genome_set-mammals-intervals-v5_256_128
 
 # MMseqs2 parameters (identity × coverage grid)
 mmseqs2:
@@ -297,6 +299,7 @@ The key metric is **leaked_pct**: the percentage of validation sequences that cl
 | mammals_promoters | Promoters (v1) | 12,908,076 | 14,030 | 81 mammalian genomes, val = same human held-out chromosome |
 | humans_cds | CDS (v5) | 504,572 | 34,680 | Single genome (Homo sapiens), val = held-out chromosome |
 | primates_cds | CDS (v5) | 5,640,416 | 34,680 | Multiple primate genomes, val = same human held-out chromosome |
+| mammals_cds | CDS (v5) | 41,773,672 | 34,680 | 81 mammalian genomes, val = same human held-out chromosome |
 
 ### Repeat Masking Test
 
@@ -374,6 +377,9 @@ sequence, we count how many training sequences share its cluster.
 | **primates_cds** | | | |
 | 0.3 | 20 | 20 | 18 |
 | 0.5 | 20 | 20 | 18 |
+| **mammals_cds** | | | |
+| 0.3 | 98 | 83 | 61 |
+| 0.5 | 99 | 83 | 61 |
 
 #### Key observations
 
@@ -384,14 +390,15 @@ sequence, we count how many training sequences share its cluster.
    max 63–66), consistent with coding sequences being more unique within a genome.
 
 2. **CDS leakage is much higher than promoters at multi-species scales.** At primate scale,
-   CDS median matches are 18–20 vs 4–9 for promoters. This reflects the strong conservation
-   of coding sequences across species — CDS orthologs are more easily detected by sequence
-   similarity than promoter regions, which diverge faster.
+   CDS median matches are 18–20 vs 4–9 for promoters. At mammal scale, the gap widens
+   dramatically: CDS median is 61–99 vs 5–12 for promoters. This reflects the strong
+   conservation of coding sequences across species — CDS orthologs are more easily detected
+   by sequence similarity than promoter regions, which diverge faster.
 
 3. **CDS leakage is less sensitive to coverage threshold.** Promoter median drops sharply
-   with coverage (primates: 9 → 7 → 4), but CDS barely changes (20 → 20 → 18). This
-   suggests CDS matches tend to be full-length alignments (high coverage), while promoter
-   matches are more often partial alignments.
+   with coverage (primates: 9 → 7 → 4), but CDS barely changes (primates: 20 → 20 → 18;
+   mammals: 98 → 83 → 61). This suggests CDS matches tend to be full-length alignments
+   (high coverage), while promoter matches are more often partial alignments.
 
 4. **Coverage is the dominant factor for promoters, not identity.** The median drops from
    12 → 9 → 5 (mammals) and 9 → 7 → 4 (primates) as coverage increases from 0.3 → 0.5
@@ -402,17 +409,22 @@ sequence, we count how many training sequences share its cluster.
    identity for 256bp DNA sequences. This confirms that the ESM2 (50%) and Chao et al.
    (30%) thresholds are equivalent for short DNA sequences.
 
-6. **Mammals promoters: leakage scales with phylogenetic breadth.** With 81 mammalian
-   genomes in training, the median validation sequence has 12 training matches at cov=0.3,
-   increasing from 9 in primates. The mean is much higher (37–38) due to outlier sequences
-   with up to 1,342–1,494 matches — far exceeding the ~81 expected from 1:1 orthologs,
-   suggesting these are repetitive elements or multi-copy gene families that evade
-   RepeatMasker's soft-masking.
+6. **Mammals: leakage scales with phylogenetic breadth.** With 81 mammalian genomes in
+   training, the median validation sequence has 12 training matches (promoters) or 98
+   (CDS) at cov=0.3. Promoter mean is 37–38 with max 1,342–1,494, suggesting outlier
+   sequences from unmasked repeats or multi-copy gene families. CDS mean is 151 with max
+   3,705, reflecting both strong coding sequence conservation and multi-copy gene families
+   across 81 species.
+
+7. **Mammals CDS: highest leakage of all datasets.** The 42M training sequences and
+   strong CDS conservation produce the most extreme leakage: every validation threshold
+   has a non-zero median (61–99). This means the typical CDS validation sequence has
+   dozens to ~100 similar training sequences from orthologous CDS across mammalian genomes.
 
 ## Next Steps
 
-1. **Expand to additional taxonomic scales** (vertebrates, animals) and CDS mammals to see
-   how leakage scales with further phylogenetic distance.
+1. **Expand to additional taxonomic scales** (vertebrates, animals) to see how leakage
+   scales with further phylogenetic distance.
 
 2. **Implement filtering in the dataset creation pipeline**: after creating train/validation
    splits, remove training sequences that exceed similarity thresholds against validation.
