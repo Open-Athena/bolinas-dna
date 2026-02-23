@@ -1,8 +1,17 @@
 """Rules for analyzing clustering results and computing leakage statistics."""
 
 
+GENOME_SET_SPECIES = {
+    "humans": 1,
+    "primates": 11,
+    "mammals": 81,
+}
+
+
 def _plot_train_matches(summary_path, output_path, col_name, label, fmt):
-    """Plot a single heatmap grid: rows = interval types, cols = genome sets."""
+    """Plot a single heatmap: rows = coverage × region, cols = genome sets."""
+    import numpy as np
+
     df = pl.read_parquet(summary_path).to_pandas()
     dataset_order = [d["name"] for d in config["datasets"]]
     datasets = [d for d in dataset_order if d in df["dataset"].values]
@@ -12,50 +21,106 @@ def _plot_train_matches(summary_path, output_path, col_name, label, fmt):
 
     genome_sets = list(dict.fromkeys(parse_dataset(d)[0] for d in datasets))
     interval_types = list(dict.fromkeys(parse_dataset(d)[1] for d in datasets))
+    identity_thresholds = sorted(df["identity_threshold"].unique())
+    coverage_thresholds = sorted(df["coverage_threshold"].unique())
 
-    n_rows = len(interval_types)
-    n_cols = len(genome_sets)
+    # Build matrix: rows = (region, coverage), cols = (genome_set, identity)
+    n_cov = len(coverage_thresholds)
+    n_id = len(identity_thresholds)
+    n_rows = len(interval_types) * n_cov
+    n_cols = len(genome_sets) * n_id
+    matrix = np.full((n_rows, n_cols), np.nan)
 
-    fig, axes = plt.subplots(
-        n_rows,
-        n_cols,
-        figsize=(6 * n_cols, 5 * n_rows),
-        squeeze=False,
+    row_labels = []
+    for interval_type in interval_types:
+        for cov in coverage_thresholds:
+            row_labels.append(str(cov))
+
+    for i, interval_type in enumerate(interval_types):
+        for j, cov in enumerate(coverage_thresholds):
+            row = i * n_cov + j
+            for k, genome_set in enumerate(genome_sets):
+                for m, ident in enumerate(identity_thresholds):
+                    col = k * n_id + m
+                    dataset_name = f"{genome_set}_{interval_type}"
+                    mask = (
+                        (df["dataset"] == dataset_name)
+                        & (df["identity_threshold"] == ident)
+                        & (df["coverage_threshold"] == cov)
+                    )
+                    vals = df.loc[mask, col_name]
+                    if len(vals) > 0:
+                        matrix[row, col] = vals.iloc[0]
+
+    # Sub-column labels: identity thresholds repeated per genome set
+    col_labels = [str(ident) for _ in genome_sets for ident in identity_thresholds]
+
+    fig, ax = plt.subplots(figsize=(1.4 * n_cols + 1.5, 0.6 * n_rows + 2))
+
+    sns.heatmap(
+        matrix,
+        annot=True,
+        fmt=fmt,
+        cmap="YlOrRd",
+        xticklabels=col_labels,
+        yticklabels=row_labels,
+        cbar_kws={
+            "label": f"{label} train matches",
+            "orientation": "horizontal",
+            "shrink": 0.5,
+            "pad": 0.08,
+        },
+        ax=ax,
+        linewidths=0.5,
+        linecolor="white",
     )
 
-    vmin = df[col_name].min()
-    vmax = df[col_name].max()
+    ax.xaxis.tick_top()
+    ax.xaxis.set_label_position("top")
+    ax.set_xlabel("")
+    ax.set_ylabel("Coverage threshold")
 
-    for row, interval_type in enumerate(interval_types):
-        for col, genome_set in enumerate(genome_sets):
-            ax = axes[row, col]
-            dataset_name = f"{genome_set}_{interval_type}"
-            if dataset_name not in df["dataset"].values:
-                ax.set_visible(False)
-                continue
-            subset = df[df["dataset"] == dataset_name]
-            pivot = subset.pivot(
-                index="identity_threshold",
-                columns="coverage_threshold",
-                values=col_name,
-            )
-            sns.heatmap(
-                pivot,
-                annot=True,
-                fmt=fmt,
-                cmap="YlOrRd",
-                vmin=vmin,
-                vmax=vmax,
-                cbar_kws={"label": f"{label} train matches"},
-                ax=ax,
-            )
-            ax.set_xlabel("Coverage Threshold")
-            ax.set_ylabel("Identity Threshold")
-            ax.set_title(f"{genome_set} {interval_type}")
+    # Add genome set group labels above the sub-column labels
+    for k, gs in enumerate(genome_sets):
+        n_sp = GENOME_SET_SPECIES.get(gs, "?")
+        sp_label = "1 species" if n_sp == 1 else f"{n_sp} species"
+        center_x = k * n_id + n_id / 2
+        ax.text(
+            center_x, -0.8, f"{gs}\n({sp_label})",
+            ha="center", va="bottom", fontsize=11, fontweight="bold",
+            transform=ax.transData,
+        )
 
-    fig.suptitle(f"{label} Train Matches per Validation Sequence", fontsize=14)
+    # Label the sub-column axis
+    ax.text(
+        -0.3, -0.3, "Identity:",
+        ha="right", va="bottom", fontsize=9, fontstyle="italic",
+        transform=ax.transData,
+    )
+
+    # Draw vertical separators between genome set groups
+    for k in range(1, len(genome_sets)):
+        x = k * n_id
+        ax.axvline(x, color="black", linewidth=2)
+
+    # Add region labels on the right via a secondary y-axis
+    ax2 = ax.twinx()
+    ax2.set_ylim(ax.get_ylim())
+    ax2.set_yticks([
+        i * n_cov + n_cov / 2
+        for i in range(len(interval_types))
+    ])
+    ax2.set_yticklabels(interval_types, fontsize=12, fontweight="bold")
+    ax2.tick_params(right=False, pad=15)
+
+    # Draw horizontal separator between region groups
+    for i in range(1, len(interval_types)):
+        y = i * n_cov
+        ax.axhline(y, color="black", linewidth=2)
+
+    fig.suptitle(f"{label} Train Matches per Validation Sequence", fontsize=14, y=1.02)
     plt.tight_layout()
-    plt.savefig(output_path, format="svg")
+    plt.savefig(output_path, format="svg", bbox_inches="tight")
     plt.close()
     print(f"Saved heatmap to {output_path}")
 
@@ -345,8 +410,8 @@ rule aggregate_similarity_stats:
 rule plot_train_matches_median:
     """Heatmap of median train matches per val sequence.
 
-    Rows = interval types (promoters, cds), columns = genome sets (humans, primates, …).
-    Dataset names are split on the last '_' to extract genome_set and interval_type.
+    Rows = regions (promoters, cds), columns = genome sets (humans, primates, …).
+    Dataset names are split on the last '_' to extract genome_set and region.
     """
     input:
         summary="results/analysis/similarity_summary.parquet",
@@ -359,7 +424,7 @@ rule plot_train_matches_median:
 rule plot_train_matches_mean:
     """Heatmap of mean train matches per val sequence.
 
-    Rows = interval types (promoters, cds), columns = genome sets (humans, primates, …).
+    Rows = regions (promoters, cds), columns = genome sets (humans, primates, …).
     """
     input:
         summary="results/analysis/similarity_summary.parquet",
