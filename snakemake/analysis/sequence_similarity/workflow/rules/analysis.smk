@@ -68,35 +68,29 @@ def _plot_train_matches(summary_path, output_path, col_name, label, fmt):
             "label": f"{label} train matches",
             "orientation": "horizontal",
             "shrink": 0.5,
-            "pad": 0.08,
+            "pad": 0.15,
         },
         ax=ax,
         linewidths=0.5,
         linecolor="white",
     )
 
-    ax.xaxis.tick_top()
-    ax.xaxis.set_label_position("top")
-    ax.set_xlabel("")
+    # Identity ticks at the bottom, genome set headers at the top
+    ax.xaxis.tick_bottom()
+    ax.xaxis.set_label_position("bottom")
+    ax.set_xlabel("Identity threshold")
     ax.set_ylabel("Coverage threshold")
 
-    # Add genome set group labels above the sub-column labels
+    # Add genome set group labels at the top
     for k, gs in enumerate(genome_sets):
         n_sp = GENOME_SET_SPECIES.get(gs, "?")
         sp_label = "1 species" if n_sp == 1 else f"{n_sp} species"
         center_x = k * n_id + n_id / 2
         ax.text(
-            center_x, -0.8, f"{gs}\n({sp_label})",
+            center_x, -0.4, f"{gs}\n({sp_label})",
             ha="center", va="bottom", fontsize=11, fontweight="bold",
             transform=ax.transData,
         )
-
-    # Label the sub-column axis
-    ax.text(
-        -0.3, -0.3, "Identity:",
-        ha="right", va="bottom", fontsize=9, fontstyle="italic",
-        transform=ax.transData,
-    )
 
     # Draw vertical separators between genome set groups
     for k in range(1, len(genome_sets)):
