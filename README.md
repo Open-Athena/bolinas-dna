@@ -39,6 +39,12 @@ Development is driven by experiments tracked as GitHub issues.
 | [#58](https://github.com/Open-Athena/bolinas-dna/issues/58) CDS from different evolutionary timescales | Closed - longer timescales (animals) perform better for missense variants |
 | [#59](https://github.com/Open-Athena/bolinas-dna/issues/59) Downstream regions from different evolutionary timescales | Closed - mammals trains fastest but all timescales converge with sufficient training |
 
+#### Tokenization
+
+| Experiment | Status |
+|-----------|--------|
+| [#64](https://github.com/Open-Athena/bolinas-dna/issues/64) K-mer tokenization for promoters | Closed - k-mer tokenization degrades VEP performance vs character-level; larger k performs worse |
+
 ### Modeling
 
 #### Training Objectives
@@ -52,6 +58,7 @@ Development is driven by experiments tracked as GitHub issues.
 | Experiment | Status |
 |-----------|--------|
 | [#37](https://github.com/Open-Athena/bolinas-dna/issues/37) Context size | Closed - 256bp and 512bp contexts perform similarly on VEP |
+| [#14](https://github.com/Open-Athena/bolinas-dna/issues/14) Sliding window attention | Closed - alternating global/local attention matches all-global; local-only worse but large local model beats small global model |
 
 #### Scaling
 
