@@ -285,6 +285,14 @@ Python dependencies are managed by the main project (see `../../../README.md` fo
 
 Conda must be available for bioinformatics CLI tools.
 
+### Storage
+
+Pipeline results are stored in S3 (`s3://oa-bolinas/snakemake/training_dataset/dataset_creation/`). A default Snakemake profile at `workflow/profiles/default/config.yaml` configures S3 storage, conda, and cores automatically.
+
+You need AWS credentials with S3 access:
+- **On EC2**: Attach an IAM role with `AmazonS3FullAccess` to the instance
+- **On your laptop**: Run `aws configure` with an IAM user's access key
+
 ## Configuration
 
 Edit `config/config.yaml` to customize the pipeline:
@@ -334,7 +342,7 @@ Edit `config/config.yaml` to customize the pipeline:
 # Edit configuration file: config/config.yaml
 
 # Run pipeline
-uv run snakemake --cores all --use-conda
+uv run snakemake
 ```
 
 ## Output

@@ -66,13 +66,21 @@ DNA sequences and their reverse complements encode the same information. The pip
 ### Dependencies
 
 MMseqs2 is managed automatically by Snakemake:
-- **MMseqs2**: Installed via conda environment (`workflow/envs/mmseqs2.yaml`) when using `--use-conda`
+- **MMseqs2**: Installed via conda environment (`workflow/envs/mmseqs2.yaml`), configured in the default profile
 
 You only need [uv](https://docs.astral.sh/uv/) and the project's Python dependencies:
 
 ```bash
 uv sync
 ```
+
+### Storage
+
+Pipeline results are stored in S3 (`s3://oa-bolinas/snakemake/analysis/sequence_similarity/`). A default Snakemake profile at `workflow/profiles/default/config.yaml` configures S3 storage, conda, and cores automatically.
+
+You need AWS credentials with S3 access:
+- **On EC2**: Attach an IAM role with `AmazonS3FullAccess` to the instance
+- **On your laptop**: Run `aws configure` with an IAM user's access key
 
 ### Verify Installation
 
@@ -89,19 +97,19 @@ uv run snakemake --version
 cd snakemake/analysis/sequence_similarity
 
 # Dry-run (validate workflow without executing)
-uv run snakemake -n --cores all
+uv run snakemake -n
 
 # Run sanity check first (recommended)
-uv run snakemake sanity_check --cores all --use-conda
+uv run snakemake sanity_check
 
 # Run the full pipeline
-uv run snakemake --cores all --use-conda
+uv run snakemake
 
 # Or run just the MMseqs2 analysis:
-uv run snakemake mmseqs2_analysis --cores all --use-conda
+uv run snakemake mmseqs2_analysis
 ```
 
-> **Note**: The `--use-conda` flag is required to automatically install MMseqs2 via conda.
+> **Note**: The default profile configures `--use-conda` automatically to install MMseqs2 via conda.
 > Conda envs are cached after the first run.
 
 ### Sanity Check
@@ -109,7 +117,7 @@ uv run snakemake mmseqs2_analysis --cores all --use-conda
 Before running the full analysis, run the sanity check to verify the pipeline works:
 
 ```bash
-uv run snakemake sanity_check --cores all --use-conda
+uv run snakemake sanity_check
 ```
 
 This clusters validation sequences against themselves and verifies:
@@ -137,7 +145,7 @@ that clustering reflects genuine homology rather than shared repeats.
 Run the synthetic masking test to verify this works correctly:
 
 ```bash
-uv run snakemake test_masking --cores 1 --use-conda --resources mem_mb=512
+uv run snakemake test_masking --resources mem_mb=512
 ```
 
 #### What the test does
@@ -235,11 +243,10 @@ analysis:
 
 ```bash
 # Only download data
-uv run snakemake results/data/humans_promoters/metadata.parquet --cores all
+uv run snakemake results/data/humans_promoters/metadata.parquet
 
 # Only run MMseqs2 clustering for one dataset/threshold combo
-uv run snakemake results/clustering/humans_promoters/clusters_id0.5_cov0.6.tsv --cores all --use-conda
-```
+uv run snakemake results/clustering/humans_promoters/clusters_id0.5_cov0.6.tsv ```
 
 ## Output
 

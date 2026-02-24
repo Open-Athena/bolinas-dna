@@ -26,6 +26,14 @@ Before uploading datasets, authenticate with HuggingFace:
 huggingface-cli login
 ```
 
+### Storage
+
+Pipeline results are stored in S3 (`s3://oa-bolinas/snakemake/evals/`). A default Snakemake profile at `workflow/profiles/default/config.yaml` configures S3 storage and cores automatically.
+
+You need AWS credentials with S3 access:
+- **On EC2**: Attach an IAM role with `AmazonS3FullAccess` to the instance
+- **On your laptop**: Run `aws configure` with an IAM user's access key
+
 ## Configuration
 
 Edit `config/config.yaml` to customize the pipeline:
@@ -45,14 +53,14 @@ Edit `config/config.yaml` to customize the pipeline:
 # Edit configuration file: config/config.yaml
 
 # Run pipeline
-uv run snakemake --cores all
+uv run snakemake
 ```
 
 To generate datasets without uploading:
 
 ```bash
 # Only create local parquet files
-uv run snakemake --cores all results/dataset/traitgym_mendelian/train.parquet results/dataset/traitgym_mendelian/test.parquet
+uv run snakemake results/dataset/traitgym_mendelian/train.parquet results/dataset/traitgym_mendelian/test.parquet
 ```
 
 ## Output

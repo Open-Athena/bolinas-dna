@@ -41,7 +41,7 @@ See [dataset_creation/README.md](dataset_creation/README.md) for detailed config
    ```bash
    cd genome_selection
    # Edit config/config.yaml
-   uv run snakemake --cores all --use-conda
+   uv run snakemake
    ```
 
 2. Use the output (`genome_selection/results/genomes/filtered.parquet`) as input for dataset creation:
@@ -49,5 +49,5 @@ See [dataset_creation/README.md](dataset_creation/README.md) for detailed config
    cd dataset_creation
    # Copy or symlink genome list to config/genomes.parquet
    # Edit config/config.yaml
-   uv run snakemake --cores all --use-conda
+   uv run snakemake
    ```
