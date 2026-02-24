@@ -28,6 +28,7 @@ dependencies = [
     "tokenizers",
     "transformers",
     "zstandard",
+    "snakemake-storage-plugin-s3>=0.3.6",
 ]
 
 [dependency-groups]
