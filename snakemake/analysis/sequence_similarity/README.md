@@ -246,7 +246,8 @@ analysis:
 uv run snakemake results/data/humans_promoters/metadata.parquet
 
 # Only run MMseqs2 clustering for one dataset/threshold combo
-uv run snakemake results/clustering/humans_promoters/clusters_id0.5_cov0.6.tsv ```
+uv run snakemake results/clustering/humans_promoters/clusters_id0.5_cov0.6.tsv
+```
 
 ## Output
 
