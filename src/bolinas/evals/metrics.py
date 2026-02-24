@@ -74,6 +74,41 @@ def compute_metrics(
     return pd.DataFrame(results)
 
 
+def compute_metric_summary(
+    results: pd.DataFrame,
+    metric: str,
+    score_type: str = "minus_llr",
+) -> dict:
+    """Compute summary statistics for a metric across subsets.
+
+    Args:
+        results: DataFrame from compute_metrics() with columns
+            [metric, score_type, subset, value].
+        metric: Name of the metric to summarize (e.g., 'AUROC').
+        score_type: Score type to summarize.
+
+    Returns:
+        dict with keys 'mean', 'std', 'min', 'max', 'n'.
+    """
+    subset_values = results[
+        (results["metric"] == metric)
+        & (results["score_type"] == score_type)
+        & (results["subset"] != "global")
+    ]["value"]
+
+    n = len(subset_values)
+    mean = subset_values.sum() / n
+    std = ((subset_values - mean) ** 2).sum() / n
+
+    return {
+        "mean": mean,
+        "std": std,
+        "min": subset_values.min(),
+        "max": subset_values.max(),
+        "n": n,
+    }
+
+
 def aggregate_metrics(
     metric_files: list[str], dataset_names: list[str], model_steps: list[str]
 ) -> pd.DataFrame:
