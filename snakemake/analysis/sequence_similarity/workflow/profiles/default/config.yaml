@@ -1,0 +1,4 @@
+default-storage-provider: s3
+default-storage-prefix: s3://oa-bolinas/snakemake/analysis/sequence_similarity/
+cores: all
+use-conda: true

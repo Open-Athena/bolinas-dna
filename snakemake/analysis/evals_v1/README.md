@@ -22,6 +22,14 @@ cd /path/to/bolinas-dna
 uv sync
 ```
 
+### Storage
+
+Pipeline results are stored in S3 (`s3://oa-bolinas/snakemake/analysis/evals_v1/`). A default Snakemake profile at `workflow/profiles/default/config.yaml` configures this automatically, so no extra flags are needed.
+
+You need AWS credentials with S3 access:
+- **On EC2**: Attach an IAM role with `AmazonS3FullAccess` to the instance
+- **On your laptop**: Run `aws configure` with an IAM user's access key
+
 ### Configuration
 
 Edit `config/config.yaml` to specify:
@@ -55,35 +63,42 @@ Edit `config/config.yaml` to specify:
 
 ## Usage
 
-Run the complete pipeline:
+Run from the pipeline directory:
 
 ```bash
 cd snakemake/analysis/evals_v1
-uv run snakemake --cores all
+```
+
+Run the complete pipeline:
+
+```bash
+uv run snakemake
 ```
 
 Run specific targets:
 
 ```bash
 # Just compute scores for one dataset/model
-uv run snakemake results/scores/traitgym_mendelian/gpn_promoter/10000.parquet --cores 4
+uv run snakemake results/scores/traitgym_mendelian/gpn_promoter/10000.parquet
 
 # Just compute metrics for one dataset/model/step
-uv run snakemake results/metrics/traitgym_mendelian/gpn_promoter/10000.parquet --cores 1
+uv run snakemake results/metrics/traitgym_mendelian/gpn_promoter/10000.parquet
 
 # Just generate plot for one model
-uv run snakemake results/plots/metrics_vs_step/gpn_promoter.svg --cores 1
+uv run snakemake results/plots/metrics_vs_step/gpn_promoter.svg
 ```
 
 Dry run to see what will be executed:
 
 ```bash
-uv run snakemake --dry-run
+uv run snakemake -n
 ```
 
 ## Output
 
 ### Directory Structure
+
+All results are stored in S3 under `s3://oa-bolinas/snakemake/analysis/evals_v1/results/`. Snakemake stages files locally as needed and uploads outputs back to S3 automatically.
 
 ```
 results/

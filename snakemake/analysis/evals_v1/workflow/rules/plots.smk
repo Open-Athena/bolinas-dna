@@ -14,10 +14,10 @@ rule plot_metrics_vs_step:
         all_metrics = []
         for file_path in input:
             df = pd.read_parquet(file_path)
-            # Path: results/metrics/{dataset}/{model}/{step}.parquet
-            parts = file_path.split("/")
-            df["dataset"] = parts[2]
-            df["step"] = int(parts[4].replace(".parquet", ""))
+            # Extract dataset/model/step from path ending: .../metrics/{dataset}/{model}/{step}.parquet
+            parts = Path(file_path).parts
+            df["dataset"] = parts[-3]
+            df["step"] = int(parts[-1].replace(".parquet", ""))
             all_metrics.append(df)
 
         metrics_df = pd.concat(all_metrics, ignore_index=True)
@@ -37,11 +37,11 @@ rule plot_models_comparison:
         all_metrics = []
         for file_path in input:
             df = pd.read_parquet(file_path)
-            # Path: results/metrics/{dataset}/{model}/{step}.parquet
-            parts = file_path.split("/")
-            df["dataset"] = parts[2]
-            df["model"] = parts[3]
-            df["step"] = int(parts[4].replace(".parquet", ""))
+            # Extract dataset/model/step from path ending: .../metrics/{dataset}/{model}/{step}.parquet
+            parts = Path(file_path).parts
+            df["dataset"] = parts[-3]
+            df["model"] = parts[-2]
+            df["step"] = int(parts[-1].replace(".parquet", ""))
             all_metrics.append(df)
 
         metrics_df = pd.concat(all_metrics, ignore_index=True)
@@ -73,11 +73,11 @@ rule plot_custom_models_comparison:
         all_metrics = []
         for file_path in input.metrics:
             df = pd.read_parquet(file_path)
-            # Path: results/metrics/{dataset}/{model}/{step}.parquet
-            parts = file_path.split("/")
-            df["dataset"] = parts[2]
-            df["model"] = parts[3]
-            df["step"] = int(parts[4].replace(".parquet", ""))
+            # Extract dataset/model/step from path ending: .../metrics/{dataset}/{model}/{step}.parquet
+            parts = Path(file_path).parts
+            df["dataset"] = parts[-3]
+            df["model"] = parts[-2]
+            df["step"] = int(parts[-1].replace(".parquet", ""))
             all_metrics.append(df)
 
         metrics_df = pd.concat(all_metrics, ignore_index=True)

@@ -1,0 +1,4 @@
+default-storage-provider: s3
+default-storage-prefix: s3://oa-bolinas/snakemake/training_dataset/dataset_creation/
+cores: all
+use-conda: true
