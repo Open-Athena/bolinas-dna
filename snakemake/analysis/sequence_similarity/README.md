@@ -478,6 +478,69 @@ sequence, we count how many training sequences share its cluster.
    has a non-zero median (61–99). This means the typical CDS validation sequence has
    dozens to ~100 similar training sequences from orthologous CDS across mammalian genomes.
 
+### MMseqs2 Search-Based Leakage Analysis
+
+Search reports direct pairwise alignments only (val → train), with no transitive closure.
+Search `train_matches` ≤ cluster `train_matches`; the gap reveals transitivity's contribution.
+
+#### Median train matches per validation sequence (search)
+
+**Promoters:**
+
+| Identity \ Coverage | 0.3 | 0.5 | 0.7 |
+|---------------------|-----|-----|-----|
+| **humans_promoters** | | | |
+| 0.3 | 0 | 0 | 0 |
+| 0.5 | 0 | 0 | 0 |
+| **primates_promoters** | | | |
+| 0.3 | 16 | 12 | 6 |
+| 0.5 | 16 | 12 | 6 |
+| **mammals_promoters** | | | |
+| 0.3 | 34 | 20 | 10 |
+| 0.5 | 34 | 20 | 10 |
+
+**CDS:**
+
+| Identity \ Coverage | 0.3 | 0.5 | 0.7 |
+|---------------------|-----|-----|-----|
+| **humans_cds** | | | |
+| 0.3 | 0 | 0 | 0 |
+| 0.5 | 0 | 0 | 0 |
+| **primates_cds** | | | |
+| 0.3 | 36 | 26 | 20 |
+| 0.5 | 36 | 26 | 20 |
+| **mammals_cds** | | | |
+| 0.3 | 206 | 154 | 108 |
+| 0.5 | 206 | 154 | 108 |
+
+#### Key observations (search vs cluster)
+
+1. **Search matches are higher than cluster matches, not lower.** This is the opposite of
+   what one might naively expect from "no transitivity." The reason: `mmseqs search` reports
+   all direct pairwise hits above threshold, while `mmseqs cluster` assigns each sequence to
+   exactly one cluster representative. Cluster `train_matches` counts how many train sequences
+   share the same cluster representative as a val sequence — but train sequences assigned to
+   a *different* representative (even if directly similar to the val sequence) are not counted.
+   Search has no such representative bottleneck.
+
+2. **The search–cluster gap is largest for mammals CDS.** Cluster median is 61–99 while
+   search median is 108–206. The gap (roughly 2×) reflects how many direct homologs are
+   "lost" to different cluster representatives in the Set-Cover algorithm. This is expected:
+   with 42M training sequences and strong CDS conservation across 81 species, many train
+   sequences are similar to a val sequence but get assigned to a different cluster center.
+
+3. **Identity threshold still makes no difference.** As with clustering, 0.3 and 0.5 give
+   identical search results across all datasets — confirming there is no signal between these
+   thresholds for 256bp DNA sequences.
+
+4. **Coverage remains the dominant factor.** Mammals CDS search median drops from 206 → 154
+   → 108 as coverage increases from 0.3 → 0.5 → 0.7. Promoters show a similar pattern
+   (34 → 20 → 10 for mammals). This is consistent with the cluster-based results.
+
+5. **CDS conservation signal is even stronger in search mode.** Mammals CDS search median of
+   206 means the typical CDS validation sequence has ~200 direct training homologs. This
+   underscores the importance of similarity-based filtering for multi-species CDS datasets.
+
 ## Next Steps
 
 1. **Expand to additional taxonomic scales** (vertebrates, animals) to see how leakage
