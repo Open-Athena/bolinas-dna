@@ -151,7 +151,7 @@ uv run snakemake test_masking --resources mem_mb=512
 #### What the test does
 
 The test generates 6 synthetic 256bp sequences (`results/tests/synthetic.fasta`) and
-clusters them with and without lowercase masking:
+tests them with both `mmseqs cluster` and `mmseqs search`, with and without lowercase masking:
 
 | Sequence | Description |
 |----------|-------------|
@@ -167,15 +167,25 @@ element fragment), not a simple dinucleotide repeat (see gotchas below).
 
 #### Expected results
 
+**Cluster test** (all 6 sequences in one database):
+
 | Pair | `--mask-lower-case 0` | `--mask-lower-case 1` |
 |------|----------------------|----------------------|
 | `genuine_A` / `genuine_B` | Same cluster | Same cluster |
 | `repeat_only_A` / `repeat_only_B` | Same cluster | **Different clusters** |
 | `mixed_A` / `mixed_B` | Same cluster | Same cluster |
 
+**Search test** (A sequences as query, B sequences as target):
+
+| Pair | `--mask-lower-case 0` | `--mask-lower-case 1` |
+|------|----------------------|----------------------|
+| `genuine_A` → `genuine_B` | Hit | Hit |
+| `repeat_only_A` → `repeat_only_B` | Hit | **No hit** |
+| `mixed_A` → `mixed_B` | Hit | Hit |
+
 The key assertion: with masking on, sequences that share **only** a repeat (and have
-unrelated flanking regions) should **not** cluster, while sequences with genuine homology
-should still cluster regardless of masking.
+unrelated flanking regions) should **not** match, while sequences with genuine homology
+should still match regardless of masking. This holds for both `cluster` and `search`.
 
 #### Soft-masking and `canonical_sequence()`
 
@@ -187,21 +197,26 @@ called `.upper()`, it would destroy the soft-masking before sequences reach MMse
 
 #### MMseqs2 gotchas discovered during development
 
-1. **`linclust` silently ignores `--mask-lower-case`.** Only `mmseqs cluster` (which uses
-   the cascade prefilter + alignment pipeline) honors the flag. The pipeline uses
-   `mmseqs cluster` (not `linclust`) everywhere to ensure consistent repeat masking.
+1. **`linclust` silently ignores `--mask-lower-case`.** Only `mmseqs cluster` and
+   `mmseqs search` (which use the cascade prefilter + alignment pipeline) honor the flag.
+   The pipeline uses `mmseqs cluster` or `mmseqs search` (not `linclust`) everywhere to
+   ensure consistent repeat masking.
 
-2. **`--mask-lower-case` must be passed to both `createdb` and `cluster`.** The `createdb`
-   step stores masking metadata in the database; the `cluster` step uses it during k-mer
-   seeding. Passing the flag only to `cluster` has no effect.
+2. **`--mask-lower-case` must be passed to both `createdb` and `cluster`/`search`.** The
+   `createdb` step stores masking metadata in the database; the `cluster`/`search` step
+   uses it during k-mer seeding. Passing the flag only to `cluster`/`search` has no effect.
 
-3. **Simple dinucleotide repeats (e.g., `atatat...`) are not suitable test sequences.**
+3. **`mmseqs search` requires `--search-type 3` for small nucleotide databases.** MMseqs2
+   auto-detects nucleotide vs protein from the database, but with very few sequences (e.g.,
+   3) the heuristic can fail. Passing `--search-type 3` (nucleotide) explicitly avoids this.
+
+4. **Simple dinucleotide repeats (e.g., `atatat...`) are not suitable test sequences.**
    They produce only 2 unique k-mers (for any k), which makes them behave unpredictably
    in k-mer-based algorithms. The test uses a random high-complexity lowercase block
    (simulating a realistic transposable element fragment) to isolate `--mask-lower-case`
    behaviour from MMseqs2's built-in compositional bias filtering (`--mask`).
 
-4. **`--mask` (compositional bias / tandem repeat masking) is a separate parameter** from
+5. **`--mask` (compositional bias / tandem repeat masking) is a separate parameter** from
    `--mask-lower-case`. The former uses an algorithm similar to DUST/SEG to detect and mask
    low-complexity regions at runtime; the latter uses pre-existing case information in the
    input FASTA. Both default to 0 in `linclust` but `--mask` defaults to 1 in `cluster`.
@@ -281,11 +296,16 @@ results/
 │   │   └── leakage_stats_id{identity}_cov{coverage}.parquet
 │   └── leakage_summary.parquet
 │
-├── tests/                           # Synthetic masking test
+├── tests/                           # Synthetic masking tests
 │   ├── synthetic.fasta              # 6 synthetic sequences
 │   ├── clusters_masklc0.tsv         # Clusters without masking
 │   ├── clusters_masklc1.tsv         # Clusters with masking
-│   └── masking_test_summary.txt     # Pass/fail assertions
+│   ├── masking_test_summary.txt     # Cluster test pass/fail assertions
+│   ├── search_query.fasta           # Query sequences (A) for search test
+│   ├── search_target.fasta          # Target sequences (B) for search test
+│   ├── search_hits_masklc0.tsv      # Search hits without masking
+│   ├── search_hits_masklc1.tsv      # Search hits with masking
+│   └── search_masking_test_summary.txt  # Search test pass/fail assertions
 │
 └── plots/
     ├── train_matches_median.svg     # Median train matches heatmap
@@ -311,7 +331,10 @@ The key metric is **leaked_pct**: the percentage of validation sequences that cl
 
 ### Repeat Masking Test
 
-The synthetic masking test (`test_masking` target) confirms `--mask-lower-case 1` works correctly:
+The synthetic masking test (`test_masking` target) confirms `--mask-lower-case 1` works correctly
+with both `mmseqs cluster` and `mmseqs search`.
+
+**Cluster test:**
 
 | Pair | Without masking | With masking | Status |
 |------|----------------|-------------|--------|
@@ -319,9 +342,17 @@ The synthetic masking test (`test_masking` target) confirms `--mask-lower-case 1
 | `repeat_only_A` / `repeat_only_B` (share only repeat) | Same cluster | **Different clusters** | PASS |
 | `mixed_A` / `mixed_B` (homologs + repeat) | Same cluster | Same cluster | PASS |
 
-All 6 assertions passed. This validates that `mmseqs cluster --mask-lower-case 1` correctly
-ignores soft-masked repeats when determining sequence similarity, while preserving genuine
-homology signal.
+**Search test** (A sequences as query, B sequences as target):
+
+| Pair | Without masking | With masking | Status |
+|------|----------------|-------------|--------|
+| `genuine_A` → `genuine_B` (true homologs) | Hit | Hit | PASS |
+| `repeat_only_A` → `repeat_only_B` (share only repeat) | Hit | **No hit** | PASS |
+| `mixed_A` → `mixed_B` (homologs + repeat) | Hit | Hit | PASS |
+
+All 12 assertions passed. This validates that `--mask-lower-case 1` correctly ignores
+soft-masked repeats when determining sequence similarity in both clustering and search modes,
+while preserving genuine homology signal.
 
 ### Sanity Check (Validation Self-Similarity)
 
