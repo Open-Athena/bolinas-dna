@@ -40,7 +40,11 @@ This is a well-known problem in both protein and genomic foundation models.
 
 ## Implementation
 
-This pipeline uses [MMseqs2 cluster](https://github.com/soedinglab/MMseqs2) for **sensitive sequence clustering with lowercase repeat masking** (`--mask-lower-case 1`), ensuring that soft-masked repeats (from RepeatMasker) are excluded from k-mer seeding so that clustering reflects genuine homology.
+This pipeline uses [MMseqs2](https://github.com/soedinglab/MMseqs2) with **lowercase repeat masking** (`--mask-lower-case 1`), ensuring that soft-masked repeats (from RepeatMasker) are excluded from k-mer seeding so that similarity reflects genuine homology. Two complementary analysis modes are provided:
+
+1. **Cluster-based** (`mmseqs cluster`): clusters all sequences (train + val merged) and counts how many train sequences share a cluster with each val sequence. Uses transitive closure — if A~B and B~C, then A, B, C are in the same cluster even if A and C aren't directly similar.
+
+2. **Search-based** (`mmseqs search`): reports direct pairwise alignments only (val query → train target), with no transitive closure. Gives a more precise leakage signal — search `train_matches` ≤ cluster `train_matches`. Comparing the two reveals how much of the cluster-based leakage signal comes from transitivity vs direct similarity.
 
 ### Pipeline Flow
 
@@ -49,10 +53,15 @@ This pipeline uses [MMseqs2 cluster](https://github.com/soedinglab/MMseqs2) for 
    └── Convert to FASTA format
    └── Canonicalize sequences (for reverse complement handling)
 
-2. MMseqs2 Analysis:
-   └── Create database (with --mask-lower-case 1)
-   └── Cluster at multiple identity thresholds (mmseqs cluster --mask-lower-case 1)
-   └── Analyze cluster composition (train/val mixing)
+2a. MMseqs2 Cluster Analysis:
+    └── Create merged database (with --mask-lower-case 1)
+    └── Cluster at multiple identity × coverage thresholds
+    └── Analyze cluster composition (train/val mixing)
+
+2b. MMseqs2 Search Analysis:
+    └── Create separate query (val) and target (train) databases
+    └── Search val against train at multiple identity × coverage thresholds
+    └── Count direct train hits per val sequence
 
 3. Generate summary statistics and visualizations
 ```
@@ -102,11 +111,14 @@ uv run snakemake -n
 # Run sanity check first (recommended)
 uv run snakemake sanity_check
 
-# Run the full pipeline
+# Run the full pipeline (cluster + search)
 uv run snakemake
 
-# Or run just the MMseqs2 analysis:
+# Or run just the MMseqs2 cluster analysis:
 uv run snakemake mmseqs2_analysis
+
+# Or run just the MMseqs2 search analysis:
+uv run snakemake mmseqs2_search_analysis
 ```
 
 > **Note**: The default profile configures `--use-conda` automatically to install MMseqs2 via conda.
@@ -291,10 +303,19 @@ results/
 │   └── {dataset}/
 │       └── clusters_id{identity}_cov{coverage}.tsv
 │
-├── analysis/                        # MMseqs2 leakage analysis
+├── analysis/                        # MMseqs2 cluster-based leakage analysis
 │   ├── {dataset}/
-│   │   └── leakage_stats_id{identity}_cov{coverage}.parquet
-│   └── leakage_summary.parquet
+│   │   └── similarity_stats_id{identity}_cov{coverage}.parquet
+│   └── similarity_summary.parquet
+│
+├── search/                          # MMseqs2 search-based leakage analysis
+│   ├── {dataset}/
+│   │   ├── queryDB*                 # Validation sequence database
+│   │   ├── targetDB*                # Training sequence database
+│   │   ├── hits_id{identity}_cov{coverage}/  # Binary result databases
+│   │   ├── hits_id{identity}_cov{coverage}.tsv  # Pairwise hits
+│   │   └── search_stats_id{identity}_cov{coverage}.parquet
+│   └── search_summary.parquet
 │
 ├── tests/                           # Synthetic masking tests
 │   ├── synthetic.fasta              # 6 synthetic sequences
@@ -308,13 +329,18 @@ results/
 │   └── search_masking_test_summary.txt  # Search test pass/fail assertions
 │
 └── plots/
-    ├── train_matches_median.svg     # Median train matches heatmap
-    └── train_matches_mean.svg       # Mean train matches heatmap
+    ├── train_matches_median.svg         # Median train matches heatmap (cluster)
+    ├── train_matches_mean.svg           # Mean train matches heatmap (cluster)
+    ├── search_train_matches_median.svg  # Median train matches heatmap (search)
+    └── search_train_matches_mean.svg    # Mean train matches heatmap (search)
 ```
 
 ### Interpreting Results
 
-The key metric is **leaked_pct**: the percentage of validation sequences that cluster with at least one training sequence at a given identity threshold.
+The key metric is **train_matches**: how many training sequences are similar to each validation sequence at a given identity × coverage threshold.
+
+- **Cluster `train_matches`** counts train sequences in the same cluster (transitive closure). If A~B and B~C, all three are in the same cluster even if A and C aren't directly similar.
+- **Search `train_matches`** counts direct alignment hits only (no transitivity). Search values will be ≤ cluster values. The gap between them reveals how much of the cluster-based signal comes from transitivity.
 
 ## Results
 
