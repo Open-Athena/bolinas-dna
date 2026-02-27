@@ -14,7 +14,8 @@ This pipeline downloads and processes evaluation datasets for genomic language m
 3. **Split by chromosome** - Creates train/test splits using chromosome-based partitioning
    - Train: Odd chromosomes (1, 3, 5, ..., X)
    - Test: Even chromosomes (2, 4, 6, ..., Y)
-4. **Upload** - Uploads processed datasets to HuggingFace Hub
+4. **Materialize eval harness sequences** *(optional)* - For SNV datasets, extracts DNA sequences from the reference genome in eval harness format (`context` / `ref_completion` / `alt_completion`). Triggered automatically for datasets whose name matches `{dataset}_harness_{window_size}` (e.g. `traitgym_mendelian_v2_harness_256`).
+5. **Upload** - Uploads processed datasets to HuggingFace Hub
 
 ## Setup
 
@@ -40,10 +41,16 @@ Edit `config/config.yaml` to customize the pipeline:
 
 ### Required Parameters
 
-- **`datasets`** - List of datasets to process
-  - Currently supported:
+- **`genome_url`** - URL to the reference genome FASTA (gzipped). Used to materialize DNA sequences for eval harness datasets. Defaults to GRCh38 primary assembly from Ensembl.
+
+- **`datasets`** - List of datasets to process. Standard dataset names (e.g. `traitgym_mendelian`) go through the annotation and chromosome-split pipeline. To also materialize sequences into eval harness format, append `_harness_{window_size}` to the base dataset name (e.g. `traitgym_mendelian_v2_harness_256` materializes `traitgym_mendelian_v2` with a 256 bp window centered on each variant).
+  - Currently supported base datasets:
     - `traitgym_mendelian` - Mendelian trait variants
     - `traitgym_complex` - Complex trait variants
+    - `traitgym_mendelian_v2` - Mendelian trait variants (v2)
+    - `clinvar_missense` - ClinVar missense variants
+    - `gnomad_pls_v1` / `gnomad_pls_v2` - gnomAD pharmacogenomics variants
+    - `gwas_coding` - GWAS coding variants
 
 - **`output_hf_prefix`** - HuggingFace repository prefix (e.g., "username/evals")
 
@@ -72,5 +79,19 @@ Dataset naming format: `{output_hf_prefix}-{dataset}`
 Examples:
 - `gonzalobenegas/bolinas_evals-traitgym_mendelian`
 - `gonzalobenegas/bolinas_evals-traitgym_complex`
+- `gonzalobenegas/bolinas_evals-traitgym_mendelian_v2_harness_256` *(eval harness variant with 256 bp windows)*
 
 Local files are stored in `results/dataset/{dataset}/` with train.parquet and test.parquet splits.
+
+### Eval harness dataset columns
+
+Datasets materialized with `_harness_{window_size}` contain additional columns:
+
+| Column | Description |
+|---|---|
+| `context` | Left flank sequence up to (but not including) the variant position |
+| `ref_completion` | Reference allele + right flank sequence |
+| `alt_completion` | Alternate allele + right flank sequence |
+| `target` | Binary label (renamed from `label`) |
+
+The window is centered on the variant: `context` has length `window_size // 2` and `ref_completion` / `alt_completion` each have length `window_size // 2`.

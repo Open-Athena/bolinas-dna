@@ -1,3 +1,6 @@
+# Genome reference (GRCh38)
+genome_url: http://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz
+
 datasets:
   - traitgym_mendelian
   - traitgym_complex
@@ -6,6 +9,7 @@ datasets:
   - gnomad_pls_v1
   - gnomad_pls_v2
   - gwas_coding
+  - traitgym_mendelian_v2_harness_256
 
 # HuggingFace repository prefix for dataset uploads
 output_hf_prefix: bolinas-dna/evals
