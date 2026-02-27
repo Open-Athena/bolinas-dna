@@ -121,13 +121,51 @@ Before running the full analysis, run the sanity check to verify the pipeline wo
 uv run snakemake sanity_check
 ```
 
-This searches validation sequences against themselves (promoters only) and verifies:
+This searches validation sequences against themselves (promoters only), including self-hits.
 
-1. **Sliding window overlap**: With 256bp windows and 128bp step, adjacent windows share 128bp (50% overlap). At lower coverage thresholds, these should produce hits.
+#### Sliding window structure
 
-2. **Reverse complement detection**: With `--strand 2`, RC matches are found automatically.
+The dataset creation pipeline generates 256bp windows with 128bp step around each TSS. For a typical TSS this produces 3 windows:
 
-**Expected output**: most validation sequences should have at least one match (from overlapping windows and/or RC hits). If you see mostly zero matches, something may be wrong with the configuration.
+```
+TSS
+ |
+ (-256, 0)   (-128, 128)   (0, 256)
+    A             B            C
+         128bp overlap   128bp overlap
+```
+
+Adjacent windows share 128/256 = 50% of their bases. For a 3-window group, the expected match counts (including self) are:
+- **A**: matches self + B = **2**
+- **B**: matches self + A + C = **3**
+- **C**: matches self + B = **2**
+
+Some TSSes produce more than 3 windows when multiple TSSes are close together and their windows overlap, forming longer chains.
+
+#### Expected results
+
+- **At cov ≤ 0.5**: the 50% sliding window overlap passes the coverage threshold, so ~96% of sequences should have matches (self + at least one neighbor). The remaining ~4% are sequences whose neighbors are heavily repeat-masked — `--mask-lower-case 1` removes k-mers from lowercase regions, preventing alignment when the overlapping region is mostly repeats.
+
+- **At cov = 0.7**: the 50% overlap does not pass the 70% coverage threshold, so only sequences with genuine similarity to other loci (e.g. segmental duplications, gene families) will match beyond themselves.
+
+- **Self-hits**: every sequence should match itself at 100% identity and coverage. Sequences with val_matches = 0 are those that are 100% lowercase (entirely repeat-masked) — mmseqs2 cannot seed any k-mers from them, so even the self-hit fails. This is expected and correct.
+
+- **Identity 0.3 vs 0.5**: results are identical — there is no additional signal below 50% identity for 256bp DNA.
+
+#### Sanity check results (`humans_promoters`, 7,015 val sequences)
+
+| Identity | Coverage | Seqs with matches | % with matches | Median | Mean | Max |
+|----------|----------|-------------------|----------------|--------|------|-----|
+| 0.3 | 0.3 | 6,827 | 97.3% | 2 | 3.9 | 92 |
+| 0.5 | 0.3 | 6,827 | 97.3% | 2 | 3.9 | 92 |
+| 0.3 | 0.5 | 6,827 | 97.3% | 2 | 3.4 | 67 |
+| 0.5 | 0.5 | 6,827 | 97.3% | 2 | 3.4 | 67 |
+| 0.3 | 0.7 | 6,827 | 97.3% | 1 | 1.7 | 35 |
+| 0.5 | 0.7 | 6,827 | 97.3% | 1 | 1.7 | 35 |
+
+The 188 sequences (2.7%) with zero matches are all 100% lowercase (entirely repeat-masked).
+
+At cov ≤ 0.5, the median of 2 reflects a typical edge window in a 3-window TSS group (self + one neighbor). The mean is higher because center windows match 3 (self + two neighbors), and longer chains from closely-spaced TSSes contribute more. At cov = 0.7, the median drops to 1 (self-hit only) because the 50% sliding window overlap no longer passes the coverage threshold. The remaining matches above 1 at cov = 0.7 come from genuinely similar sequences at different loci (e.g. segmental duplications, gene families).
 
 ### Repeat Masking Test
 

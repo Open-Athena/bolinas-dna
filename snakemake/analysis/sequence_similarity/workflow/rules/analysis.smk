@@ -75,10 +75,11 @@ rule extract_sanity_check_hits:
 
 
 rule analyze_sanity_check:
-    """Compute stats from sanity check search hits.
+    """Compute stats from sanity check search hits (including self-hits).
 
-    For each validation sequence, count how many other validation sequences
-    are direct search hits (excluding self-hits).
+    For each validation sequence, count how many validation sequences
+    are direct search hits. Self-hits are included as a sanity signal:
+    every sequence should match itself, so val_matches >= 1 for all.
     """
     input:
         hits="results/sanity_check/{dataset}/hits_id{identity}_cov{coverage}.tsv",
@@ -93,14 +94,11 @@ rule analyze_sanity_check:
             new_columns=["query", "target", "fident", "qcov", "tcov"],
         )
 
-        # Exclude self-hits
-        hits = hits.filter(pl.col("query") != pl.col("target"))
-
         metadata = pl.read_parquet(input.metadata)
         val_ids = metadata.filter(pl.col("split") == "validation").select("id")
         total_val = val_ids.height
 
-        # Count distinct val hits per val query
+        # Count distinct val hits per val query (including self-hit)
         hits_per_query = (
             hits
             .group_by("query")
