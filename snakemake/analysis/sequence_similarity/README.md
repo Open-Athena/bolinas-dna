@@ -40,35 +40,35 @@ This is a well-known problem in both protein and genomic foundation models.
 
 ## Implementation
 
-This pipeline uses [MMseqs2](https://github.com/soedinglab/MMseqs2) with **lowercase repeat masking** (`--mask-lower-case 1`), ensuring that soft-masked repeats (from RepeatMasker) are excluded from k-mer seeding so that similarity reflects genuine homology. Two complementary analysis modes are provided:
+This pipeline uses [MMseqs2](https://github.com/soedinglab/MMseqs2) `search` to find direct pairwise alignments between validation (query) and training (target) sequences. Key flags:
 
-1. **Cluster-based** (`mmseqs cluster`): clusters all sequences (train + val merged) and counts how many train sequences share a cluster with each val sequence. Uses transitive closure — if A~B and B~C, then A, B, C are in the same cluster even if A and C aren't directly similar.
-
-2. **Search-based** (`mmseqs search`): reports direct pairwise alignments only (val query → train target), with no transitive closure. Search typically yields *more* matches per val sequence than clustering, because clustering assigns each sequence to a single representative — train sequences assigned to a different representative are not counted even if directly similar to the val sequence.
+- **`--mask-lower-case 1`**: excludes soft-masked repeats (from RepeatMasker) from k-mer seeding, so that similarity reflects genuine homology rather than shared transposable elements.
+- **`--strand 2`**: searches both forward and reverse complement strands, so reverse complements are detected without needing to pre-canonicalize sequences.
+- **`--search-type 3`**: forces nucleotide mode to avoid auto-detection issues with small databases.
 
 ### Pipeline Flow
 
 ```
 1. Download datasets from HuggingFace
    └── Convert to FASTA format
-   └── Canonicalize sequences (for reverse complement handling)
+   └── Filter out reverse complement rows (_- suffix)
 
-2a. MMseqs2 Cluster Analysis:
-    └── Create merged database (with --mask-lower-case 1)
-    └── Cluster at multiple identity × coverage thresholds
-    └── Analyze cluster composition (train/val mixing)
-
-2b. MMseqs2 Search Analysis:
-    └── Create separate query (val) and target (train) databases
-    └── Search val against train at multiple identity × coverage thresholds
-    └── Count direct train hits per val sequence
+2. MMseqs2 Search Analysis:
+   └── Create separate query (val) and target (train) databases
+   └── Search val against train at multiple identity × coverage thresholds
+   └── Count direct train hits per val sequence
 
 3. Generate summary statistics and visualizations
 ```
 
 ### Reverse Complement Handling
 
-DNA sequences and their reverse complements encode the same information. The pipeline canonicalizes sequences by converting each to the lexicographically smaller of (sequence, reverse_complement), ensuring that a sequence and its RC are treated as identical.
+DNA sequences and their reverse complements encode the same information. The HuggingFace datasets contain both strands (original with `_+` suffix, reverse complement with `_-` suffix). This pipeline:
+
+1. **Filters out `_-` rows at download time** — keeps only the forward strand sequences.
+2. **Uses `--strand 2`** in mmseqs2 search — searches both strands automatically, so a val sequence will match a train sequence regardless of which strand was stored.
+
+This is simpler and more correct than the previous approach of canonicalizing sequences (picking the lexicographically smaller of seq/RC), which required careful case-preserving comparisons to avoid destroying soft-masking.
 
 ## Installation
 
@@ -103,14 +103,11 @@ uv run snakemake -n
 # Run sanity check first (recommended)
 uv run snakemake sanity_check
 
-# Run the full pipeline (cluster + search)
+# Run the full pipeline
 uv run snakemake
 
-# Or run just the MMseqs2 cluster analysis:
-uv run snakemake mmseqs2_analysis
-
-# Or run just the MMseqs2 search analysis:
-uv run snakemake mmseqs2_search_analysis
+# Or run just the search analysis:
+uv run snakemake analysis
 ```
 
 > **Note**: The default profile configures `--use-conda` automatically to install MMseqs2 via conda.
@@ -124,17 +121,13 @@ Before running the full analysis, run the sanity check to verify the pipeline wo
 uv run snakemake sanity_check
 ```
 
-This clusters validation sequences against themselves and verifies:
+This searches validation sequences against themselves (promoters only) and verifies:
 
-1. **Reverse complement handling**: With RC augmentation in the dataset, each sequence should cluster with its reverse complement (expect ~50% of sequences to have matches at 100% identity, since RC pairs become identical after canonicalization)
+1. **Sliding window overlap**: With 256bp windows and 128bp step, adjacent windows share 128bp (50% overlap). At lower coverage thresholds, these should produce hits.
 
-2. **Sliding window overlap**: With 256bp windows and 128bp step, adjacent windows share 128bp (50% overlap). At 100% identity but lower coverage thresholds, these should cluster together.
+2. **Reverse complement detection**: With `--strand 2`, RC matches are found automatically.
 
-**Expected output** at 90% identity threshold:
-- Most sequences should have at least one match
-- Average cluster size > 1
-
-If you see mostly singletons (no matches), something may be wrong with the configuration.
+**Expected output**: most validation sequences should have at least one match (from overlapping windows and/or RC hits). If you see mostly zero matches, something may be wrong with the configuration.
 
 ### Repeat Masking Test
 
@@ -144,9 +137,9 @@ spurious similarity between unrelated sequences. The input data is expected to b
 uppercase letters indicate non-repetitive ("unique") sequence.
 
 MMseqs2's `--mask-lower-case 1` flag excludes lowercase regions from k-mer matching, so
-that clustering reflects genuine homology rather than shared repeats.
+that search reflects genuine homology rather than shared repeats.
 
-Run the synthetic masking test to verify this works correctly:
+Run the synthetic masking + strand test to verify this works correctly:
 
 ```bash
 uv run snakemake test_masking --resources mem_mb=512
@@ -155,7 +148,7 @@ uv run snakemake test_masking --resources mem_mb=512
 #### What the test does
 
 The test generates 6 synthetic 256bp sequences (`results/tests/synthetic.fasta`) and
-tests them with both `mmseqs cluster` and `mmseqs search`, with and without lowercase masking:
+tests them with `mmseqs search`, with and without lowercase masking:
 
 | Sequence | Description |
 |----------|-------------|
@@ -171,44 +164,37 @@ element fragment), not a simple dinucleotide repeat (see gotchas below).
 
 #### Expected results
 
-**Cluster test** (all 6 sequences in one database):
+**Search masking test** (A sequences as query, B sequences as target):
 
 | Pair | `--mask-lower-case 0` | `--mask-lower-case 1` |
 |------|----------------------|----------------------|
-| `genuine_A` / `genuine_B` | Same cluster | Same cluster |
-| `repeat_only_A` / `repeat_only_B` | Same cluster | **Different clusters** |
-| `mixed_A` / `mixed_B` | Same cluster | Same cluster |
-
-**Search test** (A sequences as query, B sequences as target):
-
-| Pair | `--mask-lower-case 0` | `--mask-lower-case 1` |
-|------|----------------------|----------------------|
-| `genuine_A` → `genuine_B` | Hit | Hit |
-| `repeat_only_A` → `repeat_only_B` | Hit | **No hit** |
-| `mixed_A` → `mixed_B` | Hit | Hit |
+| `genuine_A` → `genuine_B` (true homologs) | Hit | Hit |
+| `repeat_only_A` → `repeat_only_B` (share only repeat) | Hit | **No hit** |
+| `mixed_A` → `mixed_B` (homologs + repeat) | Hit | Hit |
 
 The key assertion: with masking on, sequences that share **only** a repeat (and have
 unrelated flanking regions) should **not** match, while sequences with genuine homology
-should still match regardless of masking. This holds for both `cluster` and `search`.
+should still match regardless of masking.
 
-#### Soft-masking and `canonical_sequence()`
+**Strand test** (validates `--strand 2` finds RC matches):
 
-The `canonical_sequence()` function in `common.smk` converts each sequence to the
-lexicographically smaller of (sequence, reverse complement) so that both strands are treated
-identically. This function **preserves case**: it compares strands case-insensitively but
-returns the original (mixed-case) sequence. This is critical — if `canonical_sequence()`
-called `.upper()`, it would destroy the soft-masking before sequences reach MMseqs2.
+| Search mode | Query | Target | Expected |
+|-------------|-------|--------|----------|
+| `--strand 1` (forward only) | seq_A | RC(A) | **No hit** |
+| `--strand 2` (both strands) | seq_A | RC(A) | **Hit** |
+
+This validates the core assumption that we can drop sequence canonicalization and rely on
+mmseqs2 `--strand 2` to search both strands.
 
 #### MMseqs2 gotchas discovered during development
 
 1. **`linclust` silently ignores `--mask-lower-case`.** Only `mmseqs cluster` and
    `mmseqs search` (which use the cascade prefilter + alignment pipeline) honor the flag.
-   The pipeline uses `mmseqs cluster` or `mmseqs search` (not `linclust`) everywhere to
-   ensure consistent repeat masking.
+   The pipeline uses `mmseqs search` (not `linclust`) to ensure consistent repeat masking.
 
-2. **`--mask-lower-case` must be passed to both `createdb` and `cluster`/`search`.** The
-   `createdb` step stores masking metadata in the database; the `cluster`/`search` step
-   uses it during k-mer seeding. Passing the flag only to `cluster`/`search` has no effect.
+2. **`--mask-lower-case` must be passed to both `createdb` and `search`.** The
+   `createdb` step stores masking metadata in the database; the `search` step
+   uses it during k-mer seeding. Passing the flag only to `search` has no effect.
 
 3. **`mmseqs search` requires `--search-type 3` for small nucleotide databases.** MMseqs2
    auto-detects nucleotide vs protein from the database, but with very few sequences (e.g.,
@@ -254,7 +240,6 @@ mmseqs2:
 
 # Analysis settings
 analysis:
-  consider_reverse_complement: true
   sequence_column: seq
 ```
 
@@ -264,8 +249,8 @@ analysis:
 # Only download data
 uv run snakemake results/data/humans_promoters/metadata.parquet
 
-# Only run MMseqs2 clustering for one dataset/threshold combo
-uv run snakemake results/clustering/humans_promoters/clusters_id0.5_cov0.6.tsv
+# Only run search for one dataset/threshold combo
+uv run snakemake results/search/humans_promoters/hits_id0.5_cov0.5.tsv
 ```
 
 ## Output
@@ -276,64 +261,48 @@ uv run snakemake results/clustering/humans_promoters/clusters_id0.5_cov0.6.tsv
 results/
 ├── data/
 │   └── {dataset}/
-│       ├── train.fasta              # Training sequences
-│       ├── validation.fasta         # Validation sequences
-│       ├── all_sequences.fasta      # Combined for MMseqs2
+│       ├── train.fasta              # Training sequences (forward strand only)
+│       ├── validation.fasta         # Validation sequences (forward strand only)
 │       └── metadata.parquet         # Sequence IDs and split labels
 │
-├── mmseqs/                          # MMseqs2 intermediate files
-│   └── {dataset}/
-│       ├── seqDB*                   # Sequence database
-│       ├── valDB*                   # Validation-only database
-│       └── clusters_id{identity}_cov{coverage}/  # Cluster databases
-│
-├── sanity_check/                    # Validation self-similarity
-│   └── {dataset}/
+├── sanity_check/                    # Validation self-similarity (promoters only)
+│   └── humans_promoters/
+│       ├── hits_id{identity}_cov{coverage}/  # Binary result databases
+│       ├── hits_id{identity}_cov{coverage}.tsv
+│       ├── stats_id{identity}_cov{coverage}.parquet
 │       └── summary.parquet
 │
-├── clustering/                      # MMseqs2 results
-│   └── {dataset}/
-│       └── clusters_id{identity}_cov{coverage}.tsv
-│
-├── analysis/                        # MMseqs2 cluster-based leakage analysis
-│   ├── {dataset}/
-│   │   └── similarity_stats_id{identity}_cov{coverage}.parquet
-│   └── similarity_summary.parquet
-│
-├── search/                          # MMseqs2 search-based leakage analysis
+├── search/                          # Leakage analysis
 │   ├── {dataset}/
 │   │   ├── queryDB*                 # Validation sequence database
 │   │   ├── targetDB*                # Training sequence database
 │   │   ├── hits_id{identity}_cov{coverage}/  # Binary result databases
 │   │   ├── hits_id{identity}_cov{coverage}.tsv  # Pairwise hits
-│   │   └── search_stats_id{identity}_cov{coverage}.parquet
-│   └── search_summary.parquet
+│   │   └── stats_id{identity}_cov{coverage}.parquet
+│   └── summary.parquet
 │
-├── tests/                           # Synthetic masking tests
+├── tests/                           # Synthetic tests
 │   ├── synthetic.fasta              # 6 synthetic sequences
-│   ├── clusters_masklc0.tsv         # Clusters without masking
-│   ├── clusters_masklc1.tsv         # Clusters with masking
-│   ├── masking_test_summary.txt     # Cluster test pass/fail assertions
 │   ├── search_query.fasta           # Query sequences (A) for search test
 │   ├── search_target.fasta          # Target sequences (B) for search test
 │   ├── search_hits_masklc0.tsv      # Search hits without masking
 │   ├── search_hits_masklc1.tsv      # Search hits with masking
-│   └── search_masking_test_summary.txt  # Search test pass/fail assertions
+│   ├── search_masking_test_summary.txt  # Search test pass/fail assertions
+│   ├── strand_query.fasta           # Query for strand test
+│   ├── strand_target.fasta          # Target (RC) for strand test
+│   ├── strand1_hits.tsv             # --strand 1 results (expect empty)
+│   ├── strand2_hits.tsv             # --strand 2 results (expect hit)
+│   └── strand_test_summary.txt      # Strand test pass/fail assertions
 │
 └── plots/
-    ├── train_matches_median.svg         # Median train matches heatmap (cluster)
-    ├── train_matches_mean.svg           # Mean train matches heatmap (cluster)
-    ├── search_train_matches_median.svg  # Median train matches heatmap (search)
-    ├── search_train_matches_mean.svg    # Mean train matches heatmap (search)
-    └── search_pct_filtered_train.svg    # % train seqs filtered heatmap (search)
+    ├── train_matches_median.svg     # Median train matches heatmap
+    ├── train_matches_mean.svg       # Mean train matches heatmap
+    └── pct_filtered_train.svg       # % train seqs filtered heatmap
 ```
 
 ### Interpreting Results
 
-The key metric is **train_matches**: how many training sequences are similar to each validation sequence at a given identity × coverage threshold.
-
-- **Cluster `train_matches`** counts train sequences in the same cluster (transitive closure). If A~B and B~C, all three are in the same cluster even if A and C aren't directly similar.
-- **Search `train_matches`** counts direct alignment hits only (no transitivity). Search typically yields *more* matches than clustering, because clustering assigns each sequence to a single representative — train sequences assigned to a different representative are not counted even if directly similar to the val sequence.
+The key metric is **train_matches**: how many training sequences are direct alignment hits for each validation sequence at a given identity × coverage threshold. This directly answers the question "which train sequences are similar to this val sequence?" — exactly what's needed for filtering.
 
 ## Results
 
@@ -351,17 +320,9 @@ The key metric is **train_matches**: how many training sequences are similar to 
 ### Repeat Masking Test
 
 The synthetic masking test (`test_masking` target) confirms `--mask-lower-case 1` works correctly
-with both `mmseqs cluster` and `mmseqs search`.
+with `mmseqs search`.
 
-**Cluster test:**
-
-| Pair | Without masking | With masking | Status |
-|------|----------------|-------------|--------|
-| `genuine_A` / `genuine_B` (true homologs) | Same cluster | Same cluster | PASS |
-| `repeat_only_A` / `repeat_only_B` (share only repeat) | Same cluster | **Different clusters** | PASS |
-| `mixed_A` / `mixed_B` (homologs + repeat) | Same cluster | Same cluster | PASS |
-
-**Search test** (A sequences as query, B sequences as target):
+**Search masking test** (A sequences as query, B sequences as target):
 
 | Pair | Without masking | With masking | Status |
 |------|----------------|-------------|--------|
@@ -369,122 +330,23 @@ with both `mmseqs cluster` and `mmseqs search`.
 | `repeat_only_A` → `repeat_only_B` (share only repeat) | Hit | **No hit** | PASS |
 | `mixed_A` → `mixed_B` (homologs + repeat) | Hit | Hit | PASS |
 
-All 12 assertions passed. This validates that `--mask-lower-case 1` correctly ignores
-soft-masked repeats when determining sequence similarity in both clustering and search modes,
-while preserving genuine homology signal.
+**Strand test:**
 
-### Sanity Check (Validation Self-Similarity)
+| Search mode | Expected | Status |
+|-------------|----------|--------|
+| `--strand 1` (forward only) for RC pair | No hit | PASS |
+| `--strand 2` (both strands) for RC pair | Hit | PASS |
 
-Clustering validation sequences against themselves confirms the pipeline works correctly.
-One sanity check is run per interval type (promoters and CDS have different validation sets).
+All 8 assertions passed. This validates that `--mask-lower-case 1` correctly ignores
+soft-masked repeats, and `--strand 2` correctly finds reverse complement matches.
 
-**Promoters** (14,030 val sequences):
+### Leakage Analysis Results
 
-| Identity | Coverage | Clusters | Singletons | Avg cluster size |
-|----------|----------|----------|------------|-----------------|
-| 0.3 | 0.3 | 2,728 | 6 (0.0%) | 5.2 |
-| 0.5 | 0.3 | 2,728 | 6 (0.0%) | 5.2 |
-| 0.3 | 0.5 | 2,774 | 2 (0.0%) | 5.1 |
-| 0.5 | 0.5 | 2,774 | 2 (0.0%) | 5.1 |
-| 0.3 | 0.7 | 6,372 | 0 (0.0%) | 2.2 |
-| 0.5 | 0.7 | 6,372 | 0 (0.0%) | 2.2 |
-
-**CDS** (34,680 val sequences):
-
-| Identity | Coverage | Clusters | Singletons | Avg cluster size |
-|----------|----------|----------|------------|-----------------|
-| 0.3 | 0.3 | 10,750 | 20 (0.1%) | 3.2 |
-| 0.5 | 0.3 | 10,750 | 20 (0.1%) | 3.2 |
-| 0.3 | 0.5 | 10,811 | 16 (0.0%) | 3.2 |
-| 0.5 | 0.5 | 10,811 | 16 (0.0%) | 3.2 |
-| 0.3 | 0.7 | 15,136 | 0 (0.0%) | 2.3 |
-| 0.5 | 0.7 | 15,136 | 0 (0.0%) | 2.3 |
-
-At coverage = 0.7, cluster size ~2 reflects that most sequences cluster with exactly their
-reverse complement, as expected. At lower coverage, adjacent sliding windows (50% overlap)
-also cluster together, producing larger clusters.
-
-### MMseqs2 Leakage Analysis
-
-Clustering sweeps a 2D grid of identity × coverage thresholds. For each validation
-sequence, we count how many training sequences share its cluster.
+Search reports direct pairwise alignments (val → train), with no transitive closure. For each
+validation sequence, we count how many training sequences are direct hits at each identity ×
+coverage threshold.
 
 #### Median train matches per validation sequence
-
-**Promoters:**
-
-| Identity \ Coverage | 0.3 | 0.5 | 0.7 |
-|---------------------|-----|-----|-----|
-| **humans_promoters** | | | |
-| 0.3 | 0 | 0 | 0 |
-| 0.5 | 0 | 0 | 0 |
-| **primates_promoters** | | | |
-| 0.3 | 9 | 7 | 4 |
-| 0.5 | 9 | 7 | 4 |
-| **mammals_promoters** | | | |
-| 0.3 | 12 | 9 | 5 |
-| 0.5 | 12 | 9 | 5 |
-
-**CDS:**
-
-| Identity \ Coverage | 0.3 | 0.5 | 0.7 |
-|---------------------|-----|-----|-----|
-| **humans_cds** | | | |
-| 0.3 | 0 | 0 | 0 |
-| 0.5 | 0 | 0 | 0 |
-| **primates_cds** | | | |
-| 0.3 | 20 | 20 | 18 |
-| 0.5 | 20 | 20 | 18 |
-| **mammals_cds** | | | |
-| 0.3 | 98 | 83 | 61 |
-| 0.5 | 99 | 83 | 61 |
-
-#### Key observations
-
-1. **Single-genome (humans): median is 0 for both promoters and CDS.** Within a single
-   genome, most validation sequences have no similar training sequence. For promoters,
-   leakage is concentrated in a small minority (mean up to 19, max up to 1,035), likely
-   from segmental duplications or unmasked repeats. CDS leakage is even lower (mean ~1,
-   max 63–66), consistent with coding sequences being more unique within a genome.
-
-2. **CDS leakage is much higher than promoters at multi-species scales.** At primate scale,
-   CDS median matches are 18–20 vs 4–9 for promoters. At mammal scale, the gap widens
-   dramatically: CDS median is 61–99 vs 5–12 for promoters. This reflects the strong
-   conservation of coding sequences across species — CDS orthologs are more easily detected
-   by sequence similarity than promoter regions, which diverge faster.
-
-3. **CDS leakage is less sensitive to coverage threshold.** Promoter median drops sharply
-   with coverage (primates: 9 → 7 → 4), but CDS barely changes (primates: 20 → 20 → 18;
-   mammals: 98 → 83 → 61). This suggests CDS matches tend to be full-length alignments
-   (high coverage), while promoter matches are more often partial alignments.
-
-4. **Coverage is the dominant factor for promoters, not identity.** The median drops from
-   12 → 9 → 5 (mammals) and 9 → 7 → 4 (primates) as coverage increases from 0.3 → 0.5
-   → 0.7. The difference between id=0.3 and id=0.5 is zero or negligible at every level.
-
-5. **Identity 0.3 and 0.5 give identical results.** MMseqs2's cascade clustering converges
-   to the same clusters at both thresholds — there is no additional signal below 0.5
-   identity for 256bp DNA sequences. This confirms that the ESM2 (50%) and Chao et al.
-   (30%) thresholds are equivalent for short DNA sequences.
-
-6. **Mammals: leakage scales with phylogenetic breadth.** With 81 mammalian genomes in
-   training, the median validation sequence has 12 training matches (promoters) or 98
-   (CDS) at cov=0.3. Promoter mean is 37–38 with max 1,342–1,494, suggesting outlier
-   sequences from unmasked repeats or multi-copy gene families. CDS mean is 151 with max
-   3,705, reflecting both strong coding sequence conservation and multi-copy gene families
-   across 81 species.
-
-7. **Mammals CDS: highest leakage of all datasets.** The 42M training sequences and
-   strong CDS conservation produce the most extreme leakage: every validation threshold
-   has a non-zero median (61–99). This means the typical CDS validation sequence has
-   dozens to ~100 similar training sequences from orthologous CDS across mammalian genomes.
-
-### MMseqs2 Search-Based Leakage Analysis
-
-Search reports direct pairwise alignments only (val → train), with no transitive closure.
-Search typically yields more matches than clustering due to the cluster representative bottleneck (see observations below).
-
-#### Median train matches per validation sequence (search)
 
 **Promoters:**
 
@@ -514,35 +376,37 @@ Search typically yields more matches than clustering due to the cluster represen
 | 0.3 | 206 | 154 | 108 |
 | 0.5 | 206 | 154 | 108 |
 
-#### Key observations (search vs cluster)
+#### Key observations
 
-1. **Search matches are higher than cluster matches, not lower.** This is the opposite of
-   what one might naively expect from "no transitivity." The reason: `mmseqs search` reports
-   all direct pairwise hits above threshold, while `mmseqs cluster` assigns each sequence to
-   exactly one cluster representative. Cluster `train_matches` counts how many train sequences
-   share the same cluster representative as a val sequence — but train sequences assigned to
-   a *different* representative (even if directly similar to the val sequence) are not counted.
-   Search has no such representative bottleneck.
+1. **Single-genome (humans): median is 0 for both promoters and CDS.** Within a single
+   genome, most validation sequences have no similar training sequence. Leakage is
+   concentrated in a small minority, likely from segmental duplications or unmasked repeats.
 
-2. **The search–cluster gap is largest for mammals CDS.** Cluster median is 61–99 while
-   search median is 108–206. The gap (roughly 2×) reflects how many direct homologs are
-   "lost" to different cluster representatives in the Set-Cover algorithm. This is expected:
-   with 42M training sequences and strong CDS conservation across 81 species, many train
-   sequences are similar to a val sequence but get assigned to a different cluster center.
+2. **CDS leakage is much higher than promoters at multi-species scales.** At primate scale,
+   CDS median matches are 20–36 vs 6–16 for promoters. At mammal scale, the gap widens
+   dramatically: CDS median is 108–206 vs 10–34 for promoters. This reflects the strong
+   conservation of coding sequences across species — CDS orthologs are more easily detected
+   by sequence similarity than promoter regions, which diverge faster.
 
-3. **Identity threshold still makes no difference.** As with clustering, 0.3 and 0.5 give
-   identical search results across all datasets — confirming there is no signal between these
-   thresholds for 256bp DNA sequences.
+3. **CDS leakage is less sensitive to coverage threshold.** Promoter median drops sharply
+   with coverage (mammals: 34 → 20 → 10), but CDS changes less dramatically relative to
+   its baseline (mammals: 206 → 154 → 108). This suggests CDS matches tend to be
+   full-length alignments (high coverage), while promoter matches are more often partial.
 
-4. **Coverage remains the dominant factor.** Mammals CDS search median drops from 206 → 154
-   → 108 as coverage increases from 0.3 → 0.5 → 0.7. Promoters show a similar pattern
-   (34 → 20 → 10 for mammals). This is consistent with the cluster-based results.
+4. **Coverage is the dominant factor for promoters, not identity.** The median drops
+   substantially as coverage increases from 0.3 → 0.5 → 0.7. The difference between
+   id=0.3 and id=0.5 is zero at every level.
 
-5. **CDS conservation signal is even stronger in search mode.** Mammals CDS search median of
-   206 means the typical CDS validation sequence has ~200 direct training homologs. This
-   underscores the importance of similarity-based filtering for multi-species CDS datasets.
+5. **Identity 0.3 and 0.5 give identical results.** There is no additional signal below
+   50% identity for 256bp DNA sequences. This confirms that the ESM2 (50%) and Chao et al.
+   (30%) thresholds are equivalent for short DNA sequences.
 
-#### % training sequences filtered (search)
+6. **Mammals CDS: highest leakage of all datasets.** The 42M training sequences and
+   strong CDS conservation produce the most extreme leakage: every threshold has a non-zero
+   median (108–206). The typical CDS validation sequence has ~100–200 direct training
+   homologs from orthologous CDS across 81 mammalian genomes.
+
+#### % training sequences filtered
 
 The complementary metric: what percentage of the training dataset would be removed if we
 filtered all train sequences with at least one val hit at each threshold.
@@ -592,30 +456,10 @@ filtered all train sequences with at least one val hit at each threshold.
    3.21% vs 6.44% for CDS. Mammals promoters: 1.97% vs 5.20% for CDS. This mirrors the
    per-val-sequence pattern — CDS sequences are more conserved across species.
 
-4. **Mammals promoters % filtered (1.97%) is lower than primates promoters (3.21%).** Same
-   dilution effect as CDS: adding more species increases the training set denominator faster
-   than the number of filtered sequences.
-
-5. **Single-genome filtering is negligible.** Humans promoters: 0.17%, humans CDS: 1.48%.
-   Within a single genome, very few training sequences match validation sequences — consistent
-   with the median=0 per-val-sequence results.
+4. **Single-genome filtering is negligible.** Humans promoters: 0.17%, humans CDS: 1.48%.
+   Within a single genome, very few training sequences match validation sequences.
 
 ## Recommendations for Training Dataset Deduplication
-
-Based on the results above, **`mmseqs search` is the recommended method** for filtering
-training sequences that are similar to validation sequences.
-
-### Why search over clustering
-
-- **Search directly answers the right question**: "which train sequences are similar to this
-  val sequence?" — exactly what's needed for filtering.
-- **Clustering underestimates leakage**: a train sequence can be directly similar to a val
-  sequence but get assigned to a different cluster representative, escaping the filter. The
-  data confirms this — search finds ~2× more matches than clustering (e.g. mammals CDS
-  median 206 vs 61–99).
-- **Simpler filtering workflow**: run search (val as query, train as target), collect train
-  IDs with hits, remove them. With clustering you'd need to merge train+val, cluster, then
-  parse cluster membership — more complex and less precise.
 
 ### Threshold recommendations
 
@@ -625,6 +469,12 @@ training sequences that are similar to validation sequences.
 - **Coverage**: this is the main trade-off. Lower coverage catches more partial homologs
   (e.g. shared exons within a larger window) but risks false positives. The choice depends
   on how aggressively you want to filter.
+
+### Filtering workflow
+
+1. Run `mmseqs search` with val as query, train as target
+2. Collect train IDs with hits
+3. Remove them from the training set
 
 ## Next Steps
 

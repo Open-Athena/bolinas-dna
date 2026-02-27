@@ -1,50 +1,29 @@
-"""Rules for analyzing clustering results and computing leakage statistics."""
+"""Sanity check: search validation sequences against themselves.
+
+Verifies the pipeline works correctly by searching val sequences against
+themselves. Expected: adjacent sliding windows (50% overlap) produce hits,
+and the hit count increases at lower coverage thresholds.
+
+Only run for promoters — CDS uses the same search machinery so a single
+interval type is sufficient.
+"""
 
 
-# =============================================================================
-# Sanity Check: Validation self-similarity
-# =============================================================================
-# This verifies the pipeline works correctly by clustering validation sequences
-# against themselves. Expected results:
-# - With RC augmentation: each sequence should cluster with its reverse complement
-# - With 128bp overlap: adjacent windows should have ~50% coverage similarity
-# =============================================================================
-
-
-rule create_validation_only_db:
-    """Create MMseqs2 database from validation sequences only (for sanity check)."""
+rule sanity_check_search:
+    """Search validation sequences against themselves (sanity check)."""
     input:
-        fasta="results/data/{dataset}/validation.fasta",
+        query_db="results/search/{dataset}/queryDB",
+        query_db_type="results/search/{dataset}/queryDB.dbtype",
     output:
-        db="results/mmseqs/{dataset}/valDB",
-        db_type="results/mmseqs/{dataset}/valDB.dbtype",
+        result_index="results/sanity_check/{dataset}/hits_id{identity}_cov{coverage}/resultDB.index",
+        result_db_type="results/sanity_check/{dataset}/hits_id{identity}_cov{coverage}/resultDB.dbtype",
     params:
-        db_prefix="results/mmseqs/{dataset}/valDB",
-    threads: 1
-    conda:
-        "../envs/mmseqs2.yaml"
-    shell:
-        """
-        mmseqs createdb {input.fasta} {params.db_prefix} --mask-lower-case 1
-        """
-
-
-rule cluster_validation_self:
-    """Cluster validation sequences against themselves (sanity check)."""
-    input:
-        db="results/mmseqs/{dataset}/valDB",
-        db_type="results/mmseqs/{dataset}/valDB.dbtype",
-    output:
-        cluster_db="results/mmseqs/{dataset}/val_self_id{identity}_cov{coverage}/clusterDB.index",
-        cluster_db_type="results/mmseqs/{dataset}/val_self_id{identity}_cov{coverage}/clusterDB.dbtype",
-    params:
-        db_prefix="results/mmseqs/{dataset}/valDB",
-        cluster_prefix="results/mmseqs/{dataset}/val_self_id{identity}_cov{coverage}/clusterDB",
-        tmp_dir="results/mmseqs/{dataset}/val_tmp_id{identity}_cov{coverage}",
+        query_prefix="results/search/{dataset}/queryDB",
+        result_prefix="results/sanity_check/{dataset}/hits_id{identity}_cov{coverage}/resultDB",
+        tmp_dir="results/sanity_check/{dataset}/tmp_id{identity}_cov{coverage}",
         identity=lambda wildcards: float(wildcards.identity),
         coverage=lambda wildcards: float(wildcards.coverage),
         cov_mode=MMSEQS_COV_MODE,
-        cluster_mode=MMSEQS_CLUSTER_MODE,
     threads: workflow.cores
     resources:
         mem_mb=32000,
@@ -53,124 +32,116 @@ rule cluster_validation_self:
     shell:
         """
         mkdir -p {params.tmp_dir}
-        mmseqs cluster \
-            {params.db_prefix} \
-            {params.cluster_prefix} \
+        mmseqs search \
+            {params.query_prefix} \
+            {params.query_prefix} \
+            {params.result_prefix} \
             {params.tmp_dir} \
+            --search-type 3 \
+            --strand 2 \
             --mask-lower-case 1 \
             --min-seq-id {params.identity} \
             -c {params.coverage} \
             --cov-mode {params.cov_mode} \
-            --cluster-mode {params.cluster_mode} \
             --threads {threads}
         rm -rf {params.tmp_dir}
         """
 
 
-rule extract_validation_self_clusters:
-    """Extract validation self-clustering results to TSV."""
+rule extract_sanity_check_hits:
+    """Convert binary sanity check result DB to TSV."""
     input:
-        db="results/mmseqs/{dataset}/valDB",
-        db_type="results/mmseqs/{dataset}/valDB.dbtype",
-        cluster_db="results/mmseqs/{dataset}/val_self_id{identity}_cov{coverage}/clusterDB.index",
-        cluster_db_type="results/mmseqs/{dataset}/val_self_id{identity}_cov{coverage}/clusterDB.dbtype",
+        query_db="results/search/{dataset}/queryDB",
+        query_db_type="results/search/{dataset}/queryDB.dbtype",
+        result_index="results/sanity_check/{dataset}/hits_id{identity}_cov{coverage}/resultDB.index",
+        result_db_type="results/sanity_check/{dataset}/hits_id{identity}_cov{coverage}/resultDB.dbtype",
     output:
-        tsv="results/sanity_check/{dataset}/val_self_id{identity}_cov{coverage}.tsv",
+        tsv="results/sanity_check/{dataset}/hits_id{identity}_cov{coverage}.tsv",
     params:
-        db_prefix="results/mmseqs/{dataset}/valDB",
-        cluster_prefix="results/mmseqs/{dataset}/val_self_id{identity}_cov{coverage}/clusterDB",
+        query_prefix="results/search/{dataset}/queryDB",
+        result_prefix="results/sanity_check/{dataset}/hits_id{identity}_cov{coverage}/resultDB",
     threads: 1
     conda:
         "../envs/mmseqs2.yaml"
     shell:
         """
-        mmseqs createtsv \
-            {params.db_prefix} \
-            {params.db_prefix} \
-            {params.cluster_prefix} \
-            {output.tsv}
+        mmseqs convertalis \
+            {params.query_prefix} \
+            {params.query_prefix} \
+            {params.result_prefix} \
+            {output.tsv} \
+            --format-output "query,target,fident,qcov,tcov"
         """
 
 
-rule analyze_validation_self_similarity:
-    """Analyze validation self-clustering results (sanity check).
+rule analyze_sanity_check:
+    """Compute stats from sanity check search hits.
 
-    Expected results:
-    - At 100% identity: sequences should cluster with their reverse complements
-    - At lower identity with coverage: adjacent sliding windows should cluster
+    For each validation sequence, count how many other validation sequences
+    are direct search hits (excluding self-hits).
     """
     input:
-        clusters="results/sanity_check/{dataset}/val_self_id{identity}_cov{coverage}.tsv",
+        hits="results/sanity_check/{dataset}/hits_id{identity}_cov{coverage}.tsv",
         metadata="results/data/{dataset}/metadata.parquet",
     output:
-        stats="results/sanity_check/{dataset}/val_self_stats_id{identity}_cov{coverage}.parquet",
+        stats="results/sanity_check/{dataset}/stats_id{identity}_cov{coverage}.parquet",
     run:
-        # Load cluster assignments
-        clusters = pl.read_csv(
-            input.clusters,
+        hits = pl.read_csv(
+            input.hits,
             separator="\t",
             has_header=False,
-            new_columns=["representative", "member"],
+            new_columns=["query", "target", "fident", "qcov", "tcov"],
         )
 
-        # Load metadata
+        # Exclude self-hits
+        hits = hits.filter(pl.col("query") != pl.col("target"))
+
         metadata = pl.read_parquet(input.metadata)
-        val_metadata = metadata.filter(pl.col("split") == "validation")
-        total_val = val_metadata.height
+        val_ids = metadata.filter(pl.col("split") == "validation").select("id")
+        total_val = val_ids.height
 
-        # Compute cluster statistics
-        cluster_sizes = (
-            clusters
-            .group_by("representative")
-            .agg(pl.count().alias("cluster_size"))
+        # Count distinct val hits per val query
+        hits_per_query = (
+            hits
+            .group_by("query")
+            .agg(pl.col("target").n_unique().alias("val_matches"))
         )
 
-        n_clusters = cluster_sizes.height
-        n_singletons = cluster_sizes.filter(pl.col("cluster_size") == 1).height
-        n_non_singletons = n_clusters - n_singletons
-
-        # Sequences in non-singleton clusters (have at least one similar sequence)
-        seqs_with_matches = total_val - n_singletons
-        pct_with_matches = (seqs_with_matches / total_val * 100) if total_val > 0 else 0
-
-        # Average cluster size (excluding singletons)
-        non_singleton_clusters = cluster_sizes.filter(pl.col("cluster_size") > 1)
-        avg_cluster_size = (
-            non_singleton_clusters["cluster_size"].mean()
-            if non_singleton_clusters.height > 0 else 0
+        val_matches = (
+            val_ids
+            .join(hits_per_query, left_on="id", right_on="query", how="left")
+            .with_columns(pl.col("val_matches").fill_null(0))
         )
-        max_cluster_size = cluster_sizes["cluster_size"].max()
+
+        match_counts = val_matches["val_matches"]
+        seqs_with_matches = val_matches.filter(pl.col("val_matches") > 0).height
+        pct_with_matches = 100.0 * seqs_with_matches / total_val if total_val > 0 else 0.0
 
         stats = pl.DataFrame({
             "dataset": [wildcards.dataset],
             "identity_threshold": [float(wildcards.identity)],
             "coverage_threshold": [float(wildcards.coverage)],
             "total_val_sequences": [total_val],
-            "n_clusters": [n_clusters],
-            "n_singletons": [n_singletons],
-            "n_non_singleton_clusters": [n_non_singletons],
             "seqs_with_matches": [seqs_with_matches],
             "pct_with_matches": [pct_with_matches],
-            "avg_cluster_size": [avg_cluster_size],
-            "max_cluster_size": [max_cluster_size],
+            "val_matches_mean": [float(match_counts.mean())],
+            "val_matches_median": [float(match_counts.median())],
+            "val_matches_max": [int(match_counts.max())],
         })
 
         stats.write_parquet(output.stats)
 
         print(f"\n=== Sanity Check: {wildcards.dataset} @ id={wildcards.identity} cov={wildcards.coverage} ===")
         print(f"  Total validation sequences: {total_val:,}")
-        print(f"  Number of clusters: {n_clusters:,}")
-        print(f"  Singletons (no matches): {n_singletons:,} ({n_singletons/total_val*100:.1f}%)")
         print(f"  Sequences with matches: {seqs_with_matches:,} ({pct_with_matches:.1f}%)")
-        print(f"  Avg cluster size (non-singleton): {avg_cluster_size:.1f}")
-        print(f"  Max cluster size: {max_cluster_size}")
+        print(f"  Val matches per seq: median={stats['val_matches_median'][0]:.0f}, mean={stats['val_matches_mean'][0]:.1f}, max={stats['val_matches_max'][0]}")
 
 
 rule aggregate_sanity_check:
-    """Aggregate sanity check results across identity × coverage thresholds."""
+    """Aggregate sanity check results across identity x coverage thresholds."""
     input:
         stats=expand(
-            "results/sanity_check/{{dataset}}/val_self_stats_id{identity}_cov{coverage}.parquet",
+            "results/sanity_check/{{dataset}}/stats_id{identity}_cov{coverage}.parquet",
             identity=get_identity_thresholds(),
             coverage=get_coverage_thresholds(),
         ),
@@ -185,126 +156,5 @@ rule aggregate_sanity_check:
         print(f"\n=== Sanity Check Summary: {wildcards.dataset} ===")
         print(summary.to_pandas().to_string(index=False))
         print("\nExpected behavior:")
-        print("  - With RC: most sequences should have at least 1 match (their RC)")
-        print("  - At lower thresholds: more matches from overlapping windows")
-
-
-# =============================================================================
-# Main Analysis: Train/Validation Leakage
-# =============================================================================
-
-
-rule compute_similarity_stats:
-    """Compute train/val similarity statistics from cluster assignments.
-
-    For each validation sequence, count how many training sequences share
-    its cluster at the given identity × coverage threshold.
-    """
-    input:
-        clusters="results/clustering/{dataset}/clusters_id{identity}_cov{coverage}.tsv",
-        metadata="results/data/{dataset}/metadata.parquet",
-    output:
-        stats="results/analysis/{dataset}/similarity_stats_id{identity}_cov{coverage}.parquet",
-    run:
-        clusters = pl.read_csv(
-            input.clusters,
-            separator="\t",
-            has_header=False,
-            new_columns=["representative", "member"],
-        )
-
-        metadata = pl.read_parquet(input.metadata)
-
-        clusters_with_split = clusters.join(
-            metadata.select(["id", "split"]),
-            left_on="member",
-            right_on="id",
-            how="left",
-        )
-
-        # For each cluster, count train and val members
-        cluster_composition = (
-            clusters_with_split
-            .group_by("representative")
-            .agg([
-                pl.count().alias("cluster_size"),
-                (pl.col("split") == "train").sum().alias("n_train"),
-                (pl.col("split") == "validation").sum().alias("n_val"),
-            ])
-        )
-
-        # For each val sequence, how many train sequences share its cluster?
-        train_counts = (
-            clusters_with_split
-            .join(cluster_composition, on="representative")
-            .filter(pl.col("split") == "validation")
-            ["n_train"]
-        )
-
-        total_val = metadata.filter(pl.col("split") == "validation").height
-        total_train = metadata.filter(pl.col("split") == "train").height
-
-        stats = pl.DataFrame({
-            "dataset": [wildcards.dataset],
-            "identity_threshold": [float(wildcards.identity)],
-            "coverage_threshold": [float(wildcards.coverage)],
-            "total_train": [total_train],
-            "total_val": [total_val],
-            "n_clusters": [cluster_composition.height],
-            "train_matches_min": [int(train_counts.min()) if train_counts.len() > 0 else 0],
-            "train_matches_max": [int(train_counts.max()) if train_counts.len() > 0 else 0],
-            "train_matches_mean": [float(train_counts.mean()) if train_counts.len() > 0 else 0.0],
-            "train_matches_median": [float(train_counts.median()) if train_counts.len() > 0 else 0.0],
-        })
-
-        stats.write_parquet(output.stats)
-        print(f"\n{wildcards.dataset} @ id={wildcards.identity} cov={wildcards.coverage}:")
-        print(f"  Train matches per val seq: min={stats['train_matches_min'][0]}, median={stats['train_matches_median'][0]:.0f}, mean={stats['train_matches_mean'][0]:.1f}, max={stats['train_matches_max'][0]}")
-
-
-rule aggregate_similarity_stats:
-    """Aggregate similarity statistics across all datasets and thresholds."""
-    input:
-        stats=expand(
-            "results/analysis/{dataset}/similarity_stats_id{identity}_cov{coverage}.parquet",
-            dataset=get_all_datasets(),
-            identity=get_identity_thresholds(),
-            coverage=get_coverage_thresholds(),
-        ),
-    output:
-        summary="results/analysis/similarity_summary.parquet",
-    run:
-        dfs = [pl.read_parquet(f) for f in input.stats]
-        summary = pl.concat(dfs)
-        summary = summary.sort(["dataset", "coverage_threshold", "identity_threshold"])
-
-        summary.write_parquet(output.summary)
-        print("\n=== Similarity Summary ===")
-        print(summary.to_pandas().to_string(index=False))
-
-
-rule plot_train_matches_median:
-    """Heatmap of median train matches per val sequence.
-
-    Rows = regions (promoters, cds), columns = genome sets (humans, primates, …).
-    Dataset names are split on the last '_' to extract genome_set and region.
-    """
-    input:
-        summary="results/analysis/similarity_summary.parquet",
-    output:
-        plot="results/plots/train_matches_median.svg",
-    run:
-        _plot_train_matches(input.summary, output.plot, "train_matches_median", "Median", ".0f")
-
-
-rule plot_train_matches_mean:
-    """Heatmap of mean train matches per val sequence.
-
-    Rows = regions (promoters, cds), columns = genome sets (humans, primates, …).
-    """
-    input:
-        summary="results/analysis/similarity_summary.parquet",
-    output:
-        plot="results/plots/train_matches_mean.svg",
-    run:
-        _plot_train_matches(input.summary, output.plot, "train_matches_mean", "Mean", ".1f")
+        print("  - At lower coverage: more matches from overlapping sliding windows")
+        print("  - With --strand 2: RC matches are found automatically")
