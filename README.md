@@ -66,11 +66,17 @@ Development is driven by experiments tracked as GitHub issues.
 |-----------|--------|
 | [#57](https://github.com/Open-Athena/bolinas-dna/issues/57) Scaling on a mixture dataset | Open |
 
-### Evaluation
+---
 
-| Experiment | Status |
-|-----------|--------|
-| [#8](https://github.com/Open-Athena/bolinas-dna/issues/8) Understand relationship between perplexity and other metrics | Open |
+## Exploratory Data Analysis
+
+| Analysis | Status |
+|----------|--------|
+| [#36](https://github.com/Open-Athena/bolinas-dna/issues/36) Genomic region statistics | Closed — size distributions and conservation statistics across genomes and region types |
+| [#49](https://github.com/Open-Athena/bolinas-dna/issues/49) Causal variant statistics for 3' UTR | Closed — Mendelian causal variant distributions in 3' UTR regions |
+| [#50](https://github.com/Open-Athena/bolinas-dna/issues/50) Causal variant statistics for ncRNA | Closed — Mendelian causal variant distributions in ncRNA regions |
+| [#67](https://github.com/Open-Athena/bolinas-dna/issues/67) Sequence similarity across splits | Closed — CDS leakage >> promoter leakage at multi-species scales; filtering cost <7% of training data |
+| [#8](https://github.com/Open-Athena/bolinas-dna/issues/8) Perplexity vs. downstream metrics | Open |
 
 ---
 
