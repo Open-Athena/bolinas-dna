@@ -58,13 +58,13 @@ rule search_val_against_train:
         target_db="results/search/{dataset}/targetDB",
         target_db_type="results/search/{dataset}/targetDB.dbtype",
     output:
-        result_index="results/search/{dataset}/hits_id{identity}_cov{coverage}/resultDB.index",
-        result_db_type="results/search/{dataset}/hits_id{identity}_cov{coverage}/resultDB.dbtype",
+        result_index="results/search/{dataset}/{identity}/{coverage}/resultDB.index",
+        result_db_type="results/search/{dataset}/{identity}/{coverage}/resultDB.dbtype",
     params:
         query_prefix="results/search/{dataset}/queryDB",
         target_prefix="results/search/{dataset}/targetDB",
-        result_prefix="results/search/{dataset}/hits_id{identity}_cov{coverage}/resultDB",
-        tmp_dir="results/search/{dataset}/tmp_id{identity}_cov{coverage}",
+        result_prefix="results/search/{dataset}/{identity}/{coverage}/resultDB",
+        tmp_dir="results/search/{dataset}/{identity}/{coverage}/tmp",
         identity=lambda wildcards: float(wildcards.identity),
         coverage=lambda wildcards: float(wildcards.coverage),
         cov_mode=MMSEQS_COV_MODE,
@@ -99,14 +99,14 @@ rule extract_search_hits:
         query_db_type="results/search/{dataset}/queryDB.dbtype",
         target_db="results/search/{dataset}/targetDB",
         target_db_type="results/search/{dataset}/targetDB.dbtype",
-        result_index="results/search/{dataset}/hits_id{identity}_cov{coverage}/resultDB.index",
-        result_db_type="results/search/{dataset}/hits_id{identity}_cov{coverage}/resultDB.dbtype",
+        result_index="results/search/{dataset}/{identity}/{coverage}/resultDB.index",
+        result_db_type="results/search/{dataset}/{identity}/{coverage}/resultDB.dbtype",
     output:
-        tsv="results/search/{dataset}/hits_id{identity}_cov{coverage}.tsv",
+        tsv="results/search/{dataset}/{identity}/{coverage}/hits.tsv",
     params:
         query_prefix="results/search/{dataset}/queryDB",
         target_prefix="results/search/{dataset}/targetDB",
-        result_prefix="results/search/{dataset}/hits_id{identity}_cov{coverage}/resultDB",
+        result_prefix="results/search/{dataset}/{identity}/{coverage}/resultDB",
     threads: 1
     conda:
         "../envs/mmseqs2.yaml"
@@ -130,10 +130,10 @@ rule compute_leakage_stats:
     (have at least one val hit).
     """
     input:
-        hits="results/search/{dataset}/hits_id{identity}_cov{coverage}.tsv",
+        hits="results/search/{dataset}/{identity}/{coverage}/hits.tsv",
         metadata="results/data/{dataset}/metadata.parquet",
     output:
-        stats="results/search/{dataset}/stats_id{identity}_cov{coverage}.parquet",
+        stats="results/search/{dataset}/{identity}/{coverage}/stats.parquet",
     run:
         hits = pl.read_csv(
             input.hits,
@@ -191,7 +191,7 @@ rule aggregate_leakage_stats:
     """Aggregate search statistics across all datasets and thresholds."""
     input:
         stats=expand(
-            "results/search/{dataset}/stats_id{identity}_cov{coverage}.parquet",
+            "results/search/{dataset}/{identity}/{coverage}/stats.parquet",
             dataset=get_all_datasets(),
             identity=get_identity_thresholds(),
             coverage=get_coverage_thresholds(),

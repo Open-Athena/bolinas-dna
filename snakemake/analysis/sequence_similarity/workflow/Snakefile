@@ -81,7 +81,7 @@ rule analysis:
     """
     input:
         expand(
-            "results/search/{dataset}/hits_id{identity}_cov{coverage}.tsv",
+            "results/search/{dataset}/{identity}/{coverage}/hits.tsv",
             dataset=get_all_datasets(),
             identity=get_identity_thresholds(),
             coverage=get_coverage_thresholds(),

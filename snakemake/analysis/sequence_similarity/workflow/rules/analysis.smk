@@ -15,12 +15,12 @@ rule sanity_check_search:
         query_db="results/search/{dataset}/queryDB",
         query_db_type="results/search/{dataset}/queryDB.dbtype",
     output:
-        result_index="results/sanity_check/{dataset}/hits_id{identity}_cov{coverage}/resultDB.index",
-        result_db_type="results/sanity_check/{dataset}/hits_id{identity}_cov{coverage}/resultDB.dbtype",
+        result_index="results/sanity_check/{dataset}/{identity}/{coverage}/resultDB.index",
+        result_db_type="results/sanity_check/{dataset}/{identity}/{coverage}/resultDB.dbtype",
     params:
         query_prefix="results/search/{dataset}/queryDB",
-        result_prefix="results/sanity_check/{dataset}/hits_id{identity}_cov{coverage}/resultDB",
-        tmp_dir="results/sanity_check/{dataset}/tmp_id{identity}_cov{coverage}",
+        result_prefix="results/sanity_check/{dataset}/{identity}/{coverage}/resultDB",
+        tmp_dir="results/sanity_check/{dataset}/{identity}/{coverage}/tmp",
         identity=lambda wildcards: float(wildcards.identity),
         coverage=lambda wildcards: float(wildcards.coverage),
         cov_mode=MMSEQS_COV_MODE,
@@ -53,13 +53,13 @@ rule extract_sanity_check_hits:
     input:
         query_db="results/search/{dataset}/queryDB",
         query_db_type="results/search/{dataset}/queryDB.dbtype",
-        result_index="results/sanity_check/{dataset}/hits_id{identity}_cov{coverage}/resultDB.index",
-        result_db_type="results/sanity_check/{dataset}/hits_id{identity}_cov{coverage}/resultDB.dbtype",
+        result_index="results/sanity_check/{dataset}/{identity}/{coverage}/resultDB.index",
+        result_db_type="results/sanity_check/{dataset}/{identity}/{coverage}/resultDB.dbtype",
     output:
-        tsv="results/sanity_check/{dataset}/hits_id{identity}_cov{coverage}.tsv",
+        tsv="results/sanity_check/{dataset}/{identity}/{coverage}/hits.tsv",
     params:
         query_prefix="results/search/{dataset}/queryDB",
-        result_prefix="results/sanity_check/{dataset}/hits_id{identity}_cov{coverage}/resultDB",
+        result_prefix="results/sanity_check/{dataset}/{identity}/{coverage}/resultDB",
     threads: 1
     conda:
         "../envs/mmseqs2.yaml"
@@ -82,10 +82,10 @@ rule analyze_sanity_check:
     every sequence should match itself, so val_matches >= 1 for all.
     """
     input:
-        hits="results/sanity_check/{dataset}/hits_id{identity}_cov{coverage}.tsv",
+        hits="results/sanity_check/{dataset}/{identity}/{coverage}/hits.tsv",
         metadata="results/data/{dataset}/metadata.parquet",
     output:
-        stats="results/sanity_check/{dataset}/stats_id{identity}_cov{coverage}.parquet",
+        stats="results/sanity_check/{dataset}/{identity}/{coverage}/stats.parquet",
     run:
         hits = pl.read_csv(
             input.hits,
@@ -139,7 +139,7 @@ rule aggregate_sanity_check:
     """Aggregate sanity check results across identity x coverage thresholds."""
     input:
         stats=expand(
-            "results/sanity_check/{{dataset}}/stats_id{identity}_cov{coverage}.parquet",
+            "results/sanity_check/{{dataset}}/{identity}/{coverage}/stats.parquet",
             identity=get_identity_thresholds(),
             coverage=get_coverage_thresholds(),
         ),
