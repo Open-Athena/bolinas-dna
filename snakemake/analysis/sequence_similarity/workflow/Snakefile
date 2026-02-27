@@ -37,6 +37,7 @@ include: "rules/common.smk"
 include: "rules/download.smk"
 include: "rules/clustering.smk"
 include: "rules/analysis.smk"
+include: "rules/search.smk"
 include: "rules/tests.smk"
 
 
@@ -45,7 +46,7 @@ include: "rules/tests.smk"
 # =============================================================================
 
 rule all:
-    """Run MMseqs2 clustering analysis."""
+    """Run MMseqs2 clustering and search analyses."""
     input:
         # Sanity check (one per interval type — validation sets differ)
         "results/sanity_check/humans_promoters/summary.parquet",
@@ -54,6 +55,11 @@ rule all:
         "results/analysis/similarity_summary.parquet",
         "results/plots/train_matches_median.svg",
         "results/plots/train_matches_mean.svg",
+        # MMseqs2 search analysis
+        "results/search/search_summary.parquet",
+        "results/plots/search_train_matches_median.svg",
+        "results/plots/search_train_matches_mean.svg",
+        "results/plots/search_pct_filtered_train.svg",
 
 
 # =============================================================================
@@ -92,3 +98,21 @@ rule mmseqs2_analysis:
         "results/analysis/similarity_summary.parquet",
         "results/plots/train_matches_median.svg",
         "results/plots/train_matches_mean.svg",
+
+
+rule mmseqs2_search_analysis:
+    """Run only MMseqs2 search analysis (direct pairwise, no transitive closure).
+
+    Usage: snakemake mmseqs2_search_analysis --cores 16
+    """
+    input:
+        expand(
+            "results/search/{dataset}/hits_id{identity}_cov{coverage}.tsv",
+            dataset=get_all_datasets(),
+            identity=get_identity_thresholds(),
+            coverage=get_coverage_thresholds(),
+        ),
+        "results/search/search_summary.parquet",
+        "results/plots/search_train_matches_median.svg",
+        "results/plots/search_train_matches_mean.svg",
+        "results/plots/search_pct_filtered_train.svg",

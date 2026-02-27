@@ -2,10 +2,10 @@
 
 Generates synthetic 256bp sequences with soft-masked (lowercase) repeats and
 verifies that MMseqs2 --mask-lower-case correctly excludes repeat regions from
-k-mer matching.
+k-mer matching for both ``mmseqs cluster`` and ``mmseqs search``.
 
-Note: ``mmseqs cluster`` (cascade prefilter + alignment) is used here instead
-of ``mmseqs linclust`` because linclust silently ignores ``--mask-lower-case``.
+Note: ``mmseqs linclust`` silently ignores ``--mask-lower-case``, so only
+``mmseqs cluster`` and ``mmseqs search`` are tested here.
 """
 
 import random
@@ -236,7 +236,188 @@ rule verify_masking_results:
             raise ValueError("Masking test failed — see details above")
 
 
+# =============================================================================
+# Search masking test
+# =============================================================================
+# Same expectations as the cluster test, but using ``mmseqs search`` with
+# separate query (A sequences) and target (B sequences) databases.
+# This verifies that --mask-lower-case works in the search pipeline,
+# which we will use for train/val leakage analysis.
+# =============================================================================
+
+_SEARCH_QUERY_SUFFIXES = {"_A"}
+_SEARCH_TARGET_SUFFIXES = {"_B"}
+
+
+def _read_fasta(path: str) -> list[tuple[str, str]]:
+    """Read a FASTA file into a list of (name, sequence) tuples."""
+    records = []
+    name = None
+    seq_parts: list[str] = []
+    with open(path) as f:
+        for line in f:
+            line = line.rstrip()
+            if line.startswith(">"):
+                if name is not None:
+                    records.append((name, "".join(seq_parts)))
+                name = line[1:]
+                seq_parts = []
+            else:
+                seq_parts.append(line)
+    if name is not None:
+        records.append((name, "".join(seq_parts)))
+    return records
+
+
+rule split_synthetic_for_search:
+    """Split synthetic FASTA into query (A) and target (B) for search test."""
+    input:
+        fasta="results/tests/synthetic.fasta",
+    output:
+        query="results/tests/search_query.fasta",
+        target="results/tests/search_target.fasta",
+    run:
+        records = _read_fasta(str(input.fasta))
+        query_records = [
+            (name, seq) for name, seq in records
+            if any(name.endswith(s) for s in _SEARCH_QUERY_SUFFIXES)
+        ]
+        target_records = [
+            (name, seq) for name, seq in records
+            if any(name.endswith(s) for s in _SEARCH_TARGET_SUFFIXES)
+        ]
+        _write_fasta(str(output.query), query_records)
+        _write_fasta(str(output.target), target_records)
+        print(f"  Query sequences: {[r[0] for r in query_records]}")
+        print(f"  Target sequences: {[r[0] for r in target_records]}")
+
+
+rule run_mmseqs_search_mask_test:
+    """Run MMseqs2 search on synthetic data with mask-lower-case={mask_lower_case}.
+
+    Creates separate query/target databases and searches query against target,
+    mirroring how the real leakage pipeline will search val against train.
+    """
+    input:
+        query="results/tests/search_query.fasta",
+        target="results/tests/search_target.fasta",
+    output:
+        tsv="results/tests/search_hits_masklc{mask_lower_case}.tsv",
+    params:
+        query_db="results/tests/search_masklc{mask_lower_case}/queryDB",
+        target_db="results/tests/search_masklc{mask_lower_case}/targetDB",
+        result_db="results/tests/search_masklc{mask_lower_case}/resultDB",
+        tmp="results/tests/search_masklc{mask_lower_case}/tmp",
+    wildcard_constraints:
+        mask_lower_case="[01]",
+    threads: 1
+    resources:
+        mem_mb=512,
+    conda:
+        "../envs/mmseqs2.yaml"
+    shell:
+        """
+        mkdir -p $(dirname {params.query_db})
+        mmseqs createdb {input.query} {params.query_db} \
+            --mask-lower-case {wildcards.mask_lower_case} \
+            --threads {threads}
+        mmseqs createdb {input.target} {params.target_db} \
+            --mask-lower-case {wildcards.mask_lower_case} \
+            --threads {threads}
+        mmseqs search \
+            {params.query_db} \
+            {params.target_db} \
+            {params.result_db} \
+            {params.tmp} \
+            --search-type 3 \
+            --mask-lower-case {wildcards.mask_lower_case} \
+            --min-seq-id 0.5 \
+            -c 0.5 \
+            --cov-mode 0 \
+            --threads {threads}
+        mmseqs convertalis \
+            {params.query_db} \
+            {params.target_db} \
+            {params.result_db} \
+            {output.tsv} \
+            --format-output "query,target,fident,qcov,tcov"
+        rm -rf {params.tmp}
+        """
+
+
+rule verify_search_masking_results:
+    """Compare MMseqs2 search results with and without --mask-lower-case."""
+    input:
+        mask0="results/tests/search_hits_masklc0.tsv",
+        mask1="results/tests/search_hits_masklc1.tsv",
+    output:
+        summary="results/tests/search_masking_test_summary.txt",
+    run:
+        def parse_search_hits(path: str) -> set[tuple[str, str]]:
+            """Return set of (query, target) pairs from search results."""
+            pairs = set()
+            with open(path) as f:
+                for line in f:
+                    parts = line.strip().split("\t")
+                    if len(parts) >= 2:
+                        pairs.add((parts[0], parts[1]))
+            return pairs
+
+        def has_hit(hits: set[tuple[str, str]], query: str, target: str) -> bool:
+            return (query, target) in hits
+
+        hits_mask0 = parse_search_hits(str(input.mask0))
+        hits_mask1 = parse_search_hits(str(input.mask1))
+
+        # Same expectations as the cluster test:
+        # - genuine pair: hit in BOTH modes (real homology)
+        # - repeat_only pair: hit WITHOUT mask, NO hit WITH mask
+        # - mixed pair: hit in BOTH modes (genuine homology survives masking)
+        expectations = [
+            # (description, query, target, expected_mask0, expected_mask1)
+            ("genuine_A → genuine_B (mask=0: hit)",
+             "genuine_A", "genuine_B", True, None),
+            ("genuine_A → genuine_B (mask=1: hit)",
+             "genuine_A", "genuine_B", None, True),
+            ("repeat_only_A → repeat_only_B (mask=0: hit)",
+             "repeat_only_A", "repeat_only_B", True, None),
+            ("repeat_only_A → repeat_only_B (mask=1: no hit)",
+             "repeat_only_A", "repeat_only_B", None, False),
+            ("mixed_A → mixed_B (mask=0: hit)",
+             "mixed_A", "mixed_B", True, None),
+            ("mixed_A → mixed_B (mask=1: hit)",
+             "mixed_A", "mixed_B", None, True),
+        ]
+
+        lines = []
+        all_passed = True
+
+        for desc, query, target, expect_mask0, expect_mask1 in expectations:
+            if expect_mask0 is not None:
+                actual = has_hit(hits_mask0, query, target)
+                passed = actual == expect_mask0
+            else:
+                actual = has_hit(hits_mask1, query, target)
+                passed = actual == expect_mask1
+
+            status = "PASS" if passed else "FAIL"
+            if not passed:
+                all_passed = False
+            line = f"[{status}] {desc}"
+            lines.append(line)
+            print(line)
+
+        with open(str(output.summary), "w") as f:
+            for line in lines:
+                f.write(line + "\n")
+            f.write(f"\nOverall: {'ALL PASSED' if all_passed else 'SOME FAILED'}\n")
+
+        if not all_passed:
+            raise ValueError("Search masking test failed — see details above")
+
+
 rule test_masking:
-    """Target rule: run the full synthetic masking test suite."""
+    """Target rule: run the full synthetic masking test suite (cluster + search)."""
     input:
         "results/tests/masking_test_summary.txt",
+        "results/tests/search_masking_test_summary.txt",
