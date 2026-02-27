@@ -124,6 +124,8 @@ rule compute_search_stats:
 
     For each validation sequence, count how many training sequences are
     direct alignment hits at the given identity × coverage threshold.
+    Also count how many unique training sequences would be filtered
+    (have at least one val hit).
     """
     input:
         hits="results/search/{dataset}/hits_id{identity}_cov{coverage}.tsv",
@@ -159,6 +161,10 @@ rule compute_search_stats:
 
         train_counts = val_matches["train_matches"]
 
+        # Count unique train sequences with at least one val hit
+        filtered_train_count = hits["target"].n_unique() if hits.height > 0 else 0
+        filtered_train_pct = 100.0 * filtered_train_count / total_train
+
         stats = pl.DataFrame({
             "dataset": [wildcards.dataset],
             "identity_threshold": [float(wildcards.identity)],
@@ -169,11 +175,14 @@ rule compute_search_stats:
             "train_matches_max": [int(train_counts.max())],
             "train_matches_mean": [float(train_counts.mean())],
             "train_matches_median": [float(train_counts.median())],
+            "filtered_train_count": [filtered_train_count],
+            "filtered_train_pct": [filtered_train_pct],
         })
 
         stats.write_parquet(output.stats)
         print(f"\n{wildcards.dataset} @ id={wildcards.identity} cov={wildcards.coverage} (search):")
         print(f"  Train hits per val seq: min={stats['train_matches_min'][0]}, median={stats['train_matches_median'][0]:.0f}, mean={stats['train_matches_mean'][0]:.1f}, max={stats['train_matches_max'][0]}")
+        print(f"  Filtered train seqs: {filtered_train_count:,} / {total_train:,} ({filtered_train_pct:.2f}%)")
 
 
 rule aggregate_search_stats:
@@ -215,3 +224,13 @@ rule plot_search_train_matches_mean:
         plot="results/plots/search_train_matches_mean.svg",
     run:
         _plot_train_matches(input.summary, output.plot, "train_matches_mean", "Mean (search)", ".1f")
+
+
+rule plot_search_pct_filtered_train:
+    """Heatmap of % training sequences filtered (have at least one val hit)."""
+    input:
+        summary="results/search/search_summary.parquet",
+    output:
+        plot="results/plots/search_pct_filtered_train.svg",
+    run:
+        _plot_train_matches(input.summary, output.plot, "filtered_train_pct", "% filtered (search)", ".2f")

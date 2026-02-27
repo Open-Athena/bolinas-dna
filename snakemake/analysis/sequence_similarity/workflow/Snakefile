@@ -59,6 +59,7 @@ rule all:
         "results/search/search_summary.parquet",
         "results/plots/search_train_matches_median.svg",
         "results/plots/search_train_matches_mean.svg",
+        "results/plots/search_pct_filtered_train.svg",
 
 
 # =============================================================================
@@ -114,3 +115,4 @@ rule mmseqs2_search_analysis:
         "results/search/search_summary.parquet",
         "results/plots/search_train_matches_median.svg",
         "results/plots/search_train_matches_mean.svg",
+        "results/plots/search_pct_filtered_train.svg",

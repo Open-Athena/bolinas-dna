@@ -324,7 +324,8 @@ results/
     ├── train_matches_median.svg         # Median train matches heatmap (cluster)
     ├── train_matches_mean.svg           # Mean train matches heatmap (cluster)
     ├── search_train_matches_median.svg  # Median train matches heatmap (search)
-    └── search_train_matches_mean.svg    # Mean train matches heatmap (search)
+    ├── search_train_matches_mean.svg    # Mean train matches heatmap (search)
+    └── search_pct_filtered_train.svg    # % train seqs filtered heatmap (search)
 ```
 
 ### Interpreting Results
@@ -540,6 +541,64 @@ Search typically yields more matches than clustering due to the cluster represen
 5. **CDS conservation signal is even stronger in search mode.** Mammals CDS search median of
    206 means the typical CDS validation sequence has ~200 direct training homologs. This
    underscores the importance of similarity-based filtering for multi-species CDS datasets.
+
+#### % training sequences filtered (search)
+
+The complementary metric: what percentage of the training dataset would be removed if we
+filtered all train sequences with at least one val hit at each threshold.
+
+**Promoters:**
+
+| Identity \ Coverage | 0.3 | 0.5 | 0.7 |
+|---------------------|-----|-----|-----|
+| **humans_promoters** | | | |
+| 0.3 | 0.17% | 0.11% | 0.07% |
+| 0.5 | 0.17% | 0.11% | 0.07% |
+| **primates_promoters** | | | |
+| 0.3 | 3.21% | 2.97% | 2.54% |
+| 0.5 | 3.21% | 2.97% | 2.54% |
+| **mammals_promoters** | | | |
+| 0.3 | 1.97% | 1.72% | 1.29% |
+| 0.5 | 1.97% | 1.72% | 1.29% |
+
+**CDS:**
+
+| Identity \ Coverage | 0.3 | 0.5 | 0.7 |
+|---------------------|-----|-----|-----|
+| **humans_cds** | | | |
+| 0.3 | 1.48% | 1.05% | 0.67% |
+| 0.5 | 1.48% | 1.05% | 0.67% |
+| **primates_cds** | | | |
+| 0.3 | 6.44% | 5.90% | 5.03% |
+| 0.5 | 6.44% | 5.90% | 5.03% |
+| **mammals_cds** | | | |
+| 0.3 | 5.20% | 4.47% | 3.37% |
+| 0.5 | 5.20% | 4.47% | 3.37% |
+
+#### Key observations (% filtered)
+
+1. **Filtering cost is modest across all datasets.** Even at the loosest threshold (id=0.3,
+   cov=0.3), the maximum training data loss is 6.44% (primates CDS). For mammals CDS — the
+   dataset with the highest per-val-sequence leakage — only 5.20% of the 42M training
+   sequences would be filtered.
+
+2. **Primates CDS has the highest % filtered (6.44%), not mammals CDS (5.20%).** Despite
+   mammals CDS having far more matches *per val sequence* (median 206 vs 36), the mammals
+   training set is 7.4× larger (42M vs 5.6M), so the fraction filtered is actually lower.
+   The leakage is spread across more species, but each species contributes a smaller fraction
+   of the total training data.
+
+3. **Promoter % filtered is lower than CDS at multi-species scales.** Primates promoters:
+   3.21% vs 6.44% for CDS. Mammals promoters: 1.97% vs 5.20% for CDS. This mirrors the
+   per-val-sequence pattern — CDS sequences are more conserved across species.
+
+4. **Mammals promoters % filtered (1.97%) is lower than primates promoters (3.21%).** Same
+   dilution effect as CDS: adding more species increases the training set denominator faster
+   than the number of filtered sequences.
+
+5. **Single-genome filtering is negligible.** Humans promoters: 0.17%, humans CDS: 1.48%.
+   Within a single genome, very few training sequences match validation sequences — consistent
+   with the median=0 per-val-sequence results.
 
 ## Recommendations for Training Dataset Deduplication
 
