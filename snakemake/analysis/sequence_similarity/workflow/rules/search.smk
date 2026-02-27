@@ -1,8 +1,11 @@
 """Rules for MMseqs2 search-based leakage analysis.
 
 Unlike cluster-based analysis (which uses transitive closure), search reports
-direct pairwise alignments only (val query → train target). This gives a more
-precise leakage signal: search train_matches ≤ cluster train_matches.
+direct pairwise alignments only (val query → train target). Search typically
+yields *more* matches per val sequence than clustering, because clustering
+assigns each sequence to a single representative — train sequences assigned to
+a different representative are not counted even if directly similar to the val
+sequence.
 """
 
 

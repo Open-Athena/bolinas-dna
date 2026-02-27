@@ -44,7 +44,7 @@ This pipeline uses [MMseqs2](https://github.com/soedinglab/MMseqs2) with **lower
 
 1. **Cluster-based** (`mmseqs cluster`): clusters all sequences (train + val merged) and counts how many train sequences share a cluster with each val sequence. Uses transitive closure — if A~B and B~C, then A, B, C are in the same cluster even if A and C aren't directly similar.
 
-2. **Search-based** (`mmseqs search`): reports direct pairwise alignments only (val query → train target), with no transitive closure. Gives a more precise leakage signal — search `train_matches` ≤ cluster `train_matches`. Comparing the two reveals how much of the cluster-based leakage signal comes from transitivity vs direct similarity.
+2. **Search-based** (`mmseqs search`): reports direct pairwise alignments only (val query → train target), with no transitive closure. Search typically yields *more* matches per val sequence than clustering, because clustering assigns each sequence to a single representative — train sequences assigned to a different representative are not counted even if directly similar to the val sequence.
 
 ### Pipeline Flow
 
@@ -332,7 +332,7 @@ results/
 The key metric is **train_matches**: how many training sequences are similar to each validation sequence at a given identity × coverage threshold.
 
 - **Cluster `train_matches`** counts train sequences in the same cluster (transitive closure). If A~B and B~C, all three are in the same cluster even if A and C aren't directly similar.
-- **Search `train_matches`** counts direct alignment hits only (no transitivity). Search values will be ≤ cluster values. The gap between them reveals how much of the cluster-based signal comes from transitivity.
+- **Search `train_matches`** counts direct alignment hits only (no transitivity). Search typically yields *more* matches than clustering, because clustering assigns each sequence to a single representative — train sequences assigned to a different representative are not counted even if directly similar to the val sequence.
 
 ## Results
 
@@ -481,7 +481,7 @@ sequence, we count how many training sequences share its cluster.
 ### MMseqs2 Search-Based Leakage Analysis
 
 Search reports direct pairwise alignments only (val → train), with no transitive closure.
-Search `train_matches` ≤ cluster `train_matches`; the gap reveals transitivity's contribution.
+Search typically yields more matches than clustering due to the cluster representative bottleneck (see observations below).
 
 #### Median train matches per validation sequence (search)
 
@@ -540,6 +540,32 @@ Search `train_matches` ≤ cluster `train_matches`; the gap reveals transitivity
 5. **CDS conservation signal is even stronger in search mode.** Mammals CDS search median of
    206 means the typical CDS validation sequence has ~200 direct training homologs. This
    underscores the importance of similarity-based filtering for multi-species CDS datasets.
+
+## Recommendations for Training Dataset Deduplication
+
+Based on the results above, **`mmseqs search` is the recommended method** for filtering
+training sequences that are similar to validation sequences.
+
+### Why search over clustering
+
+- **Search directly answers the right question**: "which train sequences are similar to this
+  val sequence?" — exactly what's needed for filtering.
+- **Clustering underestimates leakage**: a train sequence can be directly similar to a val
+  sequence but get assigned to a different cluster representative, escaping the filter. The
+  data confirms this — search finds ~2× more matches than clustering (e.g. mammals CDS
+  median 206 vs 61–99).
+- **Simpler filtering workflow**: run search (val as query, train as target), collect train
+  IDs with hits, remove them. With clustering you'd need to merge train+val, cluster, then
+  parse cluster membership — more complex and less precise.
+
+### Threshold recommendations
+
+- **Identity: 0.5** is sufficient. The results show 0.3 and 0.5 produce identical matches
+  across all datasets — there is no additional signal below 50% identity for 256bp DNA
+  sequences. Using 0.5 is simpler to justify and consistent with the ESM2 threshold.
+- **Coverage**: this is the main trade-off. Lower coverage catches more partial homologs
+  (e.g. shared exons within a larger window) but risks false positives. The choice depends
+  on how aggressively you want to filter.
 
 ## Next Steps
 
