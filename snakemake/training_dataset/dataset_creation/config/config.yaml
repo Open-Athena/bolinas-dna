@@ -47,9 +47,9 @@ genome_sets:
     #     - name: vertebrates
     #       rank_key: phylum
     #       rank_value: Chordata
-    #     - name: mammals
-    #       rank_key: class
-    #       rank_value: Mammalia
+    - name: mammals
+      rank_key: class
+      rank_value: Mammalia
     - name: primates
       rank_key: order
       rank_value: Primates
