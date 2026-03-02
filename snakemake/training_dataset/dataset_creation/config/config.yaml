@@ -50,9 +50,9 @@ genome_sets:
     #     - name: mammals
     #       rank_key: class
     #       rank_value: Mammalia
-    #     - name: primates
-    #       rank_key: order
-    #       rank_value: Primates
+    - name: primates
+      rank_key: order
+      rank_value: Primates
     - name: humans
       rank_key: species
       rank_value: "Homo sapiens"
