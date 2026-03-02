@@ -6,8 +6,8 @@ rule split_bed_by_chrom:
     input:
         bed="results/intervals/windows/recipe/{recipe}/{w}/{s}/{g}.bed.gz",
     output:
-        train=temp("results/intervals_split/{recipe}/{w}/{s}/{g}/train.bed"),
-        val=temp("results/intervals_split/{recipe}/{w}/{s}/{g}/validation.bed"),
+        train=temp(local("results/intervals_split/{recipe}/{w}/{s}/{g}/train.bed")),
+        val=temp(local("results/intervals_split/{recipe}/{w}/{s}/{g}/validation.bed")),
     run:
         df = pl.read_csv(
             input.bed,
@@ -33,9 +33,9 @@ rule window_seq_split:
     """Extract sequences from 2bit genome using split BED intervals."""
     input:
         genome="results/genome/{g}.2bit",
-        bed="results/intervals_split/{intervals}/{g}/{split}.bed",
+        bed=local("results/intervals_split/{intervals}/{g}/{split}.bed"),
     output:
-        fasta=temp("results/dataset_genome/{intervals}/{g}/{split}.fasta"),
+        fasta=temp(local("results/dataset_genome/{intervals}/{g}/{split}.fasta")),
     conda:
         "../envs/bioinformatics.yaml"
     shell:
@@ -45,7 +45,7 @@ rule window_seq_split:
 rule make_val_parquet:
     """Convert validation FASTA to parquet, optionally adding reverse complements."""
     input:
-        fasta="results/dataset_genome/{intervals}/{g}/validation.fasta",
+        fasta=local("results/dataset_genome/{intervals}/{g}/validation.fasta"),
     output:
         parquet="results/dataset_genome/{intervals}/{g}/validation.parquet",
     run:
@@ -64,23 +64,29 @@ rule make_val_parquet:
 rule write_val_fasta:
     """Concatenate per-genome validation FASTAs into one per genome_set."""
     input:
-        fastas=expand(
+        fastas=local(expand(
             "results/dataset_genome/{{intervals}}/{g}/validation.fasta",
             g=lambda wildcards: genome_sets[wildcards.genome_set],
-        ),
+        )),
     output:
-        fasta=temp("results/leakage_filter/{genome_set}/{intervals}/validation.fasta"),
+        fasta=temp(local("results/leakage_filter/{genome_set}/{intervals}/validation.fasta")),
     shell:
-        "cat {input.fastas} > {output.fasta}"
+        "cat {input.fastas} > {output.fasta} && touch {output.fasta}"
 
 
 rule create_train_db:
     """Create MMseqs2 database from a genome's train FASTA."""
     input:
-        fasta="results/dataset_genome/{intervals}/{g}/train.fasta",
+        fasta=local("results/dataset_genome/{intervals}/{g}/train.fasta"),
     output:
-        db=temp("results/leakage_filter/{intervals}/{g}/trainDB"),
-        db_type=temp("results/leakage_filter/{intervals}/{g}/trainDB.dbtype"),
+        db=temp(local("results/leakage_filter/{intervals}/{g}/trainDB")),
+        db_type=temp(local("results/leakage_filter/{intervals}/{g}/trainDB.dbtype")),
+        db_index=temp(local("results/leakage_filter/{intervals}/{g}/trainDB.index")),
+        db_lookup=temp(local("results/leakage_filter/{intervals}/{g}/trainDB.lookup")),
+        db_source=temp(local("results/leakage_filter/{intervals}/{g}/trainDB.source")),
+        db_h=temp(local("results/leakage_filter/{intervals}/{g}/trainDB_h")),
+        db_h_type=temp(local("results/leakage_filter/{intervals}/{g}/trainDB_h.dbtype")),
+        db_h_index=temp(local("results/leakage_filter/{intervals}/{g}/trainDB_h.index")),
     params:
         db_prefix="results/leakage_filter/{intervals}/{g}/trainDB",
     conda:
@@ -92,10 +98,16 @@ rule create_train_db:
 rule create_val_db:
     """Create MMseqs2 database from a genome_set's validation FASTA."""
     input:
-        fasta="results/leakage_filter/{genome_set}/{intervals}/validation.fasta",
+        fasta=local("results/leakage_filter/{genome_set}/{intervals}/validation.fasta"),
     output:
-        db=temp("results/leakage_filter/{genome_set}/{intervals}/valDB"),
-        db_type=temp("results/leakage_filter/{genome_set}/{intervals}/valDB.dbtype"),
+        db=temp(local("results/leakage_filter/{genome_set}/{intervals}/valDB")),
+        db_type=temp(local("results/leakage_filter/{genome_set}/{intervals}/valDB.dbtype")),
+        db_index=temp(local("results/leakage_filter/{genome_set}/{intervals}/valDB.index")),
+        db_lookup=temp(local("results/leakage_filter/{genome_set}/{intervals}/valDB.lookup")),
+        db_source=temp(local("results/leakage_filter/{genome_set}/{intervals}/valDB.source")),
+        db_h=temp(local("results/leakage_filter/{genome_set}/{intervals}/valDB_h")),
+        db_h_type=temp(local("results/leakage_filter/{genome_set}/{intervals}/valDB_h.dbtype")),
+        db_h_index=temp(local("results/leakage_filter/{genome_set}/{intervals}/valDB_h.index")),
     params:
         db_prefix="results/leakage_filter/{genome_set}/{intervals}/valDB",
     conda:
@@ -112,17 +124,28 @@ rule search_leakage:
     --cov-mode 0 = bidirectional coverage.
     """
     input:
-        query_db="results/leakage_filter/{genome_set}/{intervals}/valDB",
-        query_db_type="results/leakage_filter/{genome_set}/{intervals}/valDB.dbtype",
-        target_db="results/leakage_filter/{intervals}/{g}/trainDB",
-        target_db_type="results/leakage_filter/{intervals}/{g}/trainDB.dbtype",
+        query_db=local("results/leakage_filter/{genome_set}/{intervals}/valDB"),
+        query_db_type=local("results/leakage_filter/{genome_set}/{intervals}/valDB.dbtype"),
+        query_db_index=local("results/leakage_filter/{genome_set}/{intervals}/valDB.index"),
+        query_db_h=local("results/leakage_filter/{genome_set}/{intervals}/valDB_h"),
+        query_db_h_type=local("results/leakage_filter/{genome_set}/{intervals}/valDB_h.dbtype"),
+        query_db_h_index=local("results/leakage_filter/{genome_set}/{intervals}/valDB_h.index"),
+        target_db=local("results/leakage_filter/{intervals}/{g}/trainDB"),
+        target_db_type=local("results/leakage_filter/{intervals}/{g}/trainDB.dbtype"),
+        target_db_index=local("results/leakage_filter/{intervals}/{g}/trainDB.index"),
+        target_db_h=local("results/leakage_filter/{intervals}/{g}/trainDB_h"),
+        target_db_h_type=local("results/leakage_filter/{intervals}/{g}/trainDB_h.dbtype"),
+        target_db_h_index=local("results/leakage_filter/{intervals}/{g}/trainDB_h.index"),
     output:
-        result_index=temp(
+        result_db=temp(local(
+            "results/leakage_filter/{genome_set}/{intervals}/{g}/{identity}/{coverage}/resultDB"
+        )),
+        result_index=temp(local(
             "results/leakage_filter/{genome_set}/{intervals}/{g}/{identity}/{coverage}/resultDB.index"
-        ),
-        result_db_type=temp(
+        )),
+        result_db_type=temp(local(
             "results/leakage_filter/{genome_set}/{intervals}/{g}/{identity}/{coverage}/resultDB.dbtype"
-        ),
+        )),
     params:
         query_prefix="results/leakage_filter/{genome_set}/{intervals}/valDB",
         target_prefix="results/leakage_filter/{intervals}/{g}/trainDB",
@@ -157,12 +180,21 @@ rule search_leakage:
 rule extract_leakage_hits:
     """Convert binary search results to TSV for a single genome."""
     input:
-        query_db="results/leakage_filter/{genome_set}/{intervals}/valDB",
-        query_db_type="results/leakage_filter/{genome_set}/{intervals}/valDB.dbtype",
-        target_db="results/leakage_filter/{intervals}/{g}/trainDB",
-        target_db_type="results/leakage_filter/{intervals}/{g}/trainDB.dbtype",
-        result_index="results/leakage_filter/{genome_set}/{intervals}/{g}/{identity}/{coverage}/resultDB.index",
-        result_db_type="results/leakage_filter/{genome_set}/{intervals}/{g}/{identity}/{coverage}/resultDB.dbtype",
+        query_db=local("results/leakage_filter/{genome_set}/{intervals}/valDB"),
+        query_db_type=local("results/leakage_filter/{genome_set}/{intervals}/valDB.dbtype"),
+        query_db_index=local("results/leakage_filter/{genome_set}/{intervals}/valDB.index"),
+        query_db_h=local("results/leakage_filter/{genome_set}/{intervals}/valDB_h"),
+        query_db_h_type=local("results/leakage_filter/{genome_set}/{intervals}/valDB_h.dbtype"),
+        query_db_h_index=local("results/leakage_filter/{genome_set}/{intervals}/valDB_h.index"),
+        target_db=local("results/leakage_filter/{intervals}/{g}/trainDB"),
+        target_db_type=local("results/leakage_filter/{intervals}/{g}/trainDB.dbtype"),
+        target_db_index=local("results/leakage_filter/{intervals}/{g}/trainDB.index"),
+        target_db_h=local("results/leakage_filter/{intervals}/{g}/trainDB_h"),
+        target_db_h_type=local("results/leakage_filter/{intervals}/{g}/trainDB_h.dbtype"),
+        target_db_h_index=local("results/leakage_filter/{intervals}/{g}/trainDB_h.index"),
+        result_db=local("results/leakage_filter/{genome_set}/{intervals}/{g}/{identity}/{coverage}/resultDB"),
+        result_index=local("results/leakage_filter/{genome_set}/{intervals}/{g}/{identity}/{coverage}/resultDB.index"),
+        result_db_type=local("results/leakage_filter/{genome_set}/{intervals}/{g}/{identity}/{coverage}/resultDB.dbtype"),
     output:
         tsv="results/leakage_filter/{genome_set}/{intervals}/{g}/{identity}/{coverage}/hits.tsv",
     params:
@@ -190,7 +222,7 @@ rule make_filtered_train_parquet:
     final parquet.
     """
     input:
-        fasta="results/dataset_genome/{intervals}/{g}/train.fasta",
+        fasta=local("results/dataset_genome/{intervals}/{g}/train.fasta"),
         hits="results/leakage_filter/{genome_set}/{intervals}/{g}/{identity}/{coverage}/hits.tsv",
     output:
         parquet="results/dataset_genome_filtered/{genome_set}/{intervals}/{g}/{identity}/{coverage}/train.parquet",
@@ -248,12 +280,12 @@ rule merge_datasets:
             )
         ),
     output:
-        temp(
+        temp(local(
             expand(
                 "results/dataset/{{genome_set}}/{{intervals}}/{{identity}}/{{coverage}}/data/{{split}}/{shard}.jsonl",
                 shard=SHARDS,
             )
-        ),
+        )),
     threads: workflow.cores
     run:
         df = pl.concat(
@@ -266,9 +298,9 @@ rule merge_datasets:
 
 rule compress_shard:
     input:
-        "{anything}.jsonl",
+        local("{anything}.jsonl"),
     output:
-        "{anything}.jsonl.zst",
+        local("{anything}.jsonl.zst"),
     threads: 8
     shell:
         "zstd -T{threads} {input} -o {output}"
@@ -276,11 +308,11 @@ rule compress_shard:
 
 rule hf_upload:
     input:
-        expand(
+        local(expand(
             "results/dataset/{{genome_set}}/{{intervals}}/{{identity}}/{{coverage}}/data/{split}/{shard}.jsonl.zst",
             split=SPLITS,
             shard=SHARDS,
-        ),
+        )),
     output:
         touch("results/upload.done/{genome_set}/{intervals}/{identity}/{coverage}"),
     params:
