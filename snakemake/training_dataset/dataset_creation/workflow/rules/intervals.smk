@@ -55,9 +55,9 @@ rule extract_defined:
 
 rule make_windows:
     input:
-        "results/intervals/{intervals}/{g}.bed.gz",
+        "results/intervals/{interval_src}/{g}.bed.gz",
     output:
-        "results/intervals/windows/{intervals}/{w}/{s}/{g}.bed.gz",
+        "results/intervals/windows/{interval_src}/{w}/{s}/{g}.bed.gz",
     conda:
         "../envs/bioinformatics.yaml"
     shell:
@@ -474,4 +474,18 @@ rule intervals_recipe_v15:
         ann = load_annotation(input[0])
         defined = GenomicSet.read_bed(input[1])
         intervals = get_downstream_of_CDS(ann, dist=256, within_bounds=defined)
+        intervals.write_bed(output[0])
+
+
+# mRNA promoters (254bp upstream + 254bp downstream)
+rule intervals_recipe_v16:
+    input:
+        "results/intervals/promoters_mRNA/254/254/{g}.parquet",
+        "results/intervals/defined/{g}.bed.gz",
+    output:
+        "results/intervals/recipe/v16/{g}.bed.gz",
+    run:
+        intervals = GenomicSet.read_parquet(input[0])
+        defined = GenomicSet.read_bed(input[1])
+        intervals = intervals & defined
         intervals.write_bed(output[0])
