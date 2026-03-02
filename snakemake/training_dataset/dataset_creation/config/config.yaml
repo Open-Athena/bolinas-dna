@@ -136,6 +136,10 @@ promoter_comparison_regions:
   - promoters/2048/2048
 
 # Priority genomes for BED export (for visualization in genome browsers)
+leakage_filter:
+  identity: [0.3]
+  coverage: [0.3]
+
 genome_subset_bed:
   - GCF_000001405.40  # Human
   - GCF_000001635.27  # Mouse
