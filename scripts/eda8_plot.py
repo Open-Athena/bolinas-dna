@@ -8,13 +8,19 @@ Usage:
     uv run python scripts/eda8_plot.py
 """
 
+import argparse
+import logging
 from pathlib import Path
 
+import matplotlib.collections
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import seaborn as sns
 import wandb
 from scipy import stats
+
+logger = logging.getLogger(__name__)
 
 WANDB_PROJECT = "marin"
 WANDB_GROUP = "eda-ppl-vs-downstream"
@@ -33,10 +39,11 @@ DATASET_MARKERS = {
 
 MODEL_SIZE_ORDER = ["6M", "60M", "600M"]
 MODEL_SIZE_POINTS: dict[str, int] = {"6M": 40, "60M": 100, "600M": 220}
-SUBPLOT_SIZE = 5
 
+SUBPLOT_SIZE = 5
 XLABEL = "Validation loss"
 YLABEL = "Promoter VEP AUPRC"
+SIGNIFICANCE_THRESHOLD = 0.05
 
 
 def fetch_runs() -> pd.DataFrame:
@@ -64,7 +71,7 @@ def fetch_runs() -> pd.DataFrame:
         model_size = model_size_raw.upper()
 
         history = run.scan_history(keys=[LOSS_KEY, AUPRC_KEY, "_step"])
-        seen_steps: set[int] = set()
+        seen_steps: dict[int, tuple[float, float]] = {}
         for row in history:
             loss = row.get(LOSS_KEY)
             auprc = row.get(AUPRC_KEY)
@@ -72,8 +79,15 @@ def fetch_runs() -> pd.DataFrame:
             if loss is None or auprc is None or step is None:
                 continue
             if step in seen_steps:
+                prev_loss, prev_auprc = seen_steps[step]
+                if (prev_loss, prev_auprc) != (float(loss), float(auprc)):
+                    logger.warning(
+                        "Duplicate step %d in %s with different values: "
+                        "(%f, %f) vs (%f, %f)",
+                        step, name, prev_loss, prev_auprc, float(loss), float(auprc),
+                    )
                 continue
-            seen_steps.add(step)
+            seen_steps[step] = (float(loss), float(auprc))
 
             records.append(
                 {
@@ -94,7 +108,6 @@ def _correlation_subtitle(df: pd.DataFrame) -> str:
         return ""
     pearson_r, pearson_p = stats.pearsonr(df["loss"], df["auprc"])
     spearman_r, spearman_p = stats.spearmanr(df["loss"], df["auprc"])
-    SIGNIFICANCE_THRESHOLD = 0.05
     r_star = " (*)" if pearson_p < SIGNIFICANCE_THRESHOLD else ""
     rho_star = " (*)" if spearman_p < SIGNIFICANCE_THRESHOLD else ""
     return f"$r$ = {pearson_r:.2f}{r_star}, $\\rho$ = {spearman_r:.2f}{rho_star}"
@@ -110,12 +123,9 @@ CORNERS = [
 
 def _emptiest_corner(ax: plt.Axes) -> tuple[float, float, str, str]:
     """Find the axes corner farthest from any plotted point."""
-    import numpy as np
-
-    # Collect all point positions from scatter PathCollections
     all_offsets = []
     for child in ax.get_children():
-        if hasattr(child, "get_offsets"):
+        if isinstance(child, matplotlib.collections.PathCollection):
             offsets = child.get_offsets()
             if len(offsets) > 0:
                 all_offsets.append(offsets)
@@ -194,8 +204,6 @@ def _finalize_facetgrid(g: sns.FacetGrid, output_path: Path) -> None:
 
 def plot_loss_vs_auprc(df: pd.DataFrame, output_path: Path) -> None:
     """Create scatter plot of validation loss vs AUPRC (single plot, no facets)."""
-    sns.set_theme(style="ticks", context="paper", font_scale=1.2)
-
     fig, ax = plt.subplots(figsize=(SUBPLOT_SIZE, SUBPLOT_SIZE))
 
     sns.scatterplot(
@@ -228,8 +236,6 @@ def plot_loss_vs_auprc(df: pd.DataFrame, output_path: Path) -> None:
 
 def plot_by_dataset(df: pd.DataFrame, output_path: Path) -> None:
     """One subplot per dataset; hue=step, size=model_size."""
-    sns.set_theme(style="ticks", context="paper", font_scale=1.2)
-
     g = sns.relplot(
         data=df,
         x="loss",
@@ -254,8 +260,6 @@ def plot_by_dataset(df: pd.DataFrame, output_path: Path) -> None:
 
 def plot_by_model_size(df: pd.DataFrame, output_path: Path) -> None:
     """One subplot per model size; hue=step, style=dataset."""
-    sns.set_theme(style="ticks", context="paper", font_scale=1.2)
-
     g = sns.relplot(
         data=df,
         x="loss",
@@ -279,8 +283,6 @@ def plot_by_model_size(df: pd.DataFrame, output_path: Path) -> None:
 
 def plot_by_run(df: pd.DataFrame, output_path: Path) -> None:
     """One subplot per run (dataset x model_size); hue=step, with margin titles."""
-    sns.set_theme(style="ticks", context="paper", font_scale=1.2)
-
     g = sns.relplot(
         data=df,
         x="loss",
@@ -322,7 +324,8 @@ def load_data(*, refresh: bool = False) -> pd.DataFrame:
 
 
 def main() -> None:
-    import argparse
+    logging.basicConfig(level=logging.WARNING)
+    sns.set_theme(style="ticks", context="paper", font_scale=1.2)
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
