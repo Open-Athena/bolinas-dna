@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import wandb
-from scipy import stats
+from scipy import optimize, stats
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ DATASET_MARKERS = {
 MODEL_SIZE_ORDER = ["6M", "60M", "600M"]
 MODEL_SIZE_POINTS: dict[str, int] = {"6M": 40, "60M": 100, "600M": 220}
 
-SUBPLOT_SIZE = 5
+SUBPLOT_SIZE = 4
 XLABEL = "Validation loss"
 YLABEL = "Promoter VEP AUPRC"
 SIGNIFICANCE_THRESHOLD = 0.05
@@ -204,45 +204,36 @@ def _finalize_facetgrid(g: sns.FacetGrid, output_path: Path) -> None:
 
 def plot_loss_vs_auprc(df: pd.DataFrame, output_path: Path) -> None:
     """Create scatter plot of validation loss vs AUPRC (single plot, no facets)."""
-    fig, ax = plt.subplots(figsize=(SUBPLOT_SIZE, SUBPLOT_SIZE))
-
-    sns.scatterplot(
-        data=df,
-        x="loss",
-        y="auprc",
-        hue="step",
-        palette="viridis",
-        legend="full",
-        style="dataset",
-        markers=DATASET_MARKERS,
-        size="model size",
-        size_order=MODEL_SIZE_ORDER,
-        sizes=MODEL_SIZE_POINTS,
-        edgecolor="none",
-        ax=ax,
-    )
-    sns.move_legend(ax, loc="upper left", bbox_to_anchor=(1.02, 1), frameon=False)
-
-    _annotate_correlation(ax, df)
-    ax.set_xlabel(XLABEL)
-    ax.set_ylabel(YLABEL)
-    sns.despine(ax=ax)
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, format="svg", bbox_inches="tight")
-    plt.close(fig)
-    print(f"Saved plot to {output_path}")
-
-
-def plot_by_dataset(df: pd.DataFrame, output_path: Path) -> None:
-    """One subplot per dataset; hue=step, size=model_size."""
     g = sns.relplot(
         data=df,
         x="loss",
         y="auprc",
         hue="step",
         palette="viridis",
-        legend="full",
+        style="dataset",
+        markers=DATASET_MARKERS,
+        size="model size",
+        size_order=MODEL_SIZE_ORDER,
+        sizes=MODEL_SIZE_POINTS,
+        kind="scatter",
+        height=SUBPLOT_SIZE,
+        aspect=1,
+        edgecolor="none",
+    )
+    _annotate_correlation(g.ax, df)
+    _finalize_facetgrid(g, output_path)
+
+
+def plot_by_dataset(df: pd.DataFrame, output_path: Path) -> None:
+    """One subplot per dataset; hue=step, style=dataset, size=model_size."""
+    g = sns.relplot(
+        data=df,
+        x="loss",
+        y="auprc",
+        hue="step",
+        palette="viridis",
+        style="dataset",
+        markers=DATASET_MARKERS,
         size="model size",
         size_order=MODEL_SIZE_ORDER,
         sizes=MODEL_SIZE_POINTS,
@@ -259,16 +250,18 @@ def plot_by_dataset(df: pd.DataFrame, output_path: Path) -> None:
 
 
 def plot_by_model_size(df: pd.DataFrame, output_path: Path) -> None:
-    """One subplot per model size; hue=step, style=dataset."""
+    """One subplot per model size; hue=step, style=dataset, size=model_size."""
     g = sns.relplot(
         data=df,
         x="loss",
         y="auprc",
         hue="step",
         palette="viridis",
-        legend="full",
         style="dataset",
         markers=DATASET_MARKERS,
+        size="model size",
+        size_order=MODEL_SIZE_ORDER,
+        sizes=MODEL_SIZE_POINTS,
         col="model size",
         col_order=MODEL_SIZE_ORDER,
         kind="scatter",
@@ -282,14 +275,18 @@ def plot_by_model_size(df: pd.DataFrame, output_path: Path) -> None:
 
 
 def plot_by_run(df: pd.DataFrame, output_path: Path) -> None:
-    """One subplot per run (dataset x model_size); hue=step, with margin titles."""
+    """One subplot per run (dataset x model_size); hue=step, style=dataset, size=model_size."""
     g = sns.relplot(
         data=df,
         x="loss",
         y="auprc",
         hue="step",
         palette="viridis",
-        legend="full",
+        style="dataset",
+        markers=DATASET_MARKERS,
+        size="model size",
+        size_order=MODEL_SIZE_ORDER,
+        sizes=MODEL_SIZE_POINTS,
         col="model size",
         col_order=MODEL_SIZE_ORDER,
         row="dataset",
@@ -305,6 +302,57 @@ def plot_by_run(df: pd.DataFrame, output_path: Path) -> None:
         row="dataset", row_order=DATASET_ORDER,
         col="model size", col_order=MODEL_SIZE_ORDER,
     )
+    _finalize_facetgrid(g, output_path)
+
+
+def _sigmoid(loss: np.ndarray, lower: float, upper: float, k: float, x0: float) -> np.ndarray:
+    """Decreasing sigmoid: upper at low loss, lower at high loss."""
+    return lower + (upper - lower) / (1 + np.exp(k * (loss - x0)))
+
+
+def _fit_sigmoid(loss: np.ndarray, auprc: np.ndarray) -> np.ndarray:
+    """Fit a sigmoid to loss vs AUPRC using robust regression, returning parameters."""
+    p0 = np.array([auprc.min(), auprc.max(), 5.0, float(np.median(loss))])
+    bounds = ([0, 0, 0, -np.inf], [1, 1, np.inf, np.inf])
+
+    def residuals(params: np.ndarray) -> np.ndarray:
+        return _sigmoid(loss, *params) - auprc
+
+    result = optimize.least_squares(
+        residuals, p0, bounds=bounds, loss="soft_l1", max_nfev=10000,
+    )
+    return result.x
+
+
+def plot_sigmoid_fit(df: pd.DataFrame, output_path: Path) -> None:
+    """Scatter plot with sigmoid fit overlay."""
+    g = sns.relplot(
+        data=df,
+        x="loss",
+        y="auprc",
+        style="dataset",
+        markers=DATASET_MARKERS,
+        size="model size",
+        size_order=MODEL_SIZE_ORDER,
+        sizes=MODEL_SIZE_POINTS,
+        kind="scatter",
+        height=SUBPLOT_SIZE,
+        aspect=1,
+        edgecolor="none",
+        color="0.4",
+    )
+    ax = g.ax
+
+    loss = df["loss"].values
+    auprc = df["auprc"].values
+    popt = _fit_sigmoid(loss, auprc)
+    lower, upper, k, x0 = popt
+    print(f"Sigmoid fit: lower={lower:.4f}, upper={upper:.4f}, k={k:.2f}, x0={x0:.3f}")
+
+    x_fit = np.linspace(loss.min(), loss.max(), 200)
+    ax.plot(x_fit, _sigmoid(x_fit, *popt), color="C3", linewidth=2)
+
+    _annotate_correlation(ax, df)
     _finalize_facetgrid(g, output_path)
 
 
@@ -343,6 +391,9 @@ def main() -> None:
     plot_by_dataset(df, output_dir / "loss_vs_auprc_by_dataset.svg")
     plot_by_model_size(df, output_dir / "loss_vs_auprc_by_model_size.svg")
     plot_by_run(df, output_dir / "loss_vs_auprc_by_run.svg")
+    plot_sigmoid_fit(
+        df[df["dataset"] == "Mammals"], output_dir / "loss_vs_auprc_sigmoid.svg"
+    )
 
 
 if __name__ == "__main__":
