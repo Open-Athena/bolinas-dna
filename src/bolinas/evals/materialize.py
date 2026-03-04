@@ -32,7 +32,7 @@ def _add_eval_harness_fields(
 
     center = pos - 1  # 0-based
     start = center - window_size // 2
-    end = center + window_size // 2
+    end = start + window_size
 
     context = genome(chrom, start, center).upper()
     right_flank = genome(chrom, center + 1, end).upper()
@@ -57,7 +57,7 @@ def materialize_sequences(
     Args:
         dataset: HF Dataset with columns [chrom, pos, ref, alt, label].
         genome: Loaded Genome instance.
-        window_size: Total window size centered on the variant (must be even).
+        window_size: Total window size centered on the variant.
 
     Returns:
         Dataset with added columns [context, ref_completion, alt_completion, target].
