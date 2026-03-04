@@ -50,6 +50,21 @@ def test_window_centering(mini_genome):
     assert len(result["alt_completion"]) == 10
 
 
+def test_odd_window_size(mini_genome):
+    """Odd window sizes should work, with the extra base going to the completion."""
+    example = {"chrom": "1", "pos": 25, "ref": "A", "alt": "T", "label": 0}
+    result = _add_eval_harness_fields(example, genome=mini_genome, window_size=11)
+
+    assert len(result["context"]) == 5  # 11 // 2
+    assert len(result["ref_completion"]) == 6  # 11 - 11 // 2
+    assert len(result["context"]) + len(result["ref_completion"]) == 11
+
+    full_ref_window = result["context"] + result["ref_completion"]
+    # pos=25 (1-based) => center=24, start=24-5=19, end=24+6=30
+    expected = mini_genome("1", 19, 30).upper()
+    assert full_ref_window == expected
+
+
 def test_context_plus_ref_completion_matches_genome(mini_genome):
     """context + ref_completion should reconstruct the reference window."""
     example = {"chrom": "1", "pos": 25, "ref": "A", "alt": "T", "label": 0}

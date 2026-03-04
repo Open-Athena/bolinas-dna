@@ -94,4 +94,4 @@ Datasets materialized with `_harness_{window_size}` contain additional columns:
 | `alt_completion` | Alternate allele + right flank sequence |
 | `target` | Binary label (renamed from `label`) |
 
-The window is centered on the variant: `context` has length `window_size // 2` and `ref_completion` / `alt_completion` each have length `window_size // 2`.
+The window is centered on the variant: `context` has length `window_size // 2` and `ref_completion` / `alt_completion` each have length `window_size - window_size // 2`. For odd window sizes, the extra base goes to the completion (right side).
