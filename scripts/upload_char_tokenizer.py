@@ -15,12 +15,24 @@ def parse_args() -> argparse.Namespace:
         required=True,
         help="HuggingFace repo id to upload to (e.g. bolinas-dna/tokenizer-char).",
     )
+    parser.add_argument(
+        "--bos",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Include [BOS] token (default: True). Use --no-bos to disable.",
+    )
+    parser.add_argument(
+        "--eos",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Include [EOS] token (default: True). Use --no-eos to disable.",
+    )
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
-    tok = create_char_tokenizer()
+    tok = create_char_tokenizer(bos=args.bos, eos=args.eos)
     tok.push_to_hub(args.repo)
 
 

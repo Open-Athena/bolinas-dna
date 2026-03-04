@@ -1,11 +1,15 @@
-"""Tests for the DNA character-level tokenizer with BOS/EOS (HuggingFace API)."""
+"""Tests for the DNA character-level tokenizer (HuggingFace API)."""
 
 import tempfile
 
 import pytest
 from transformers import AutoTokenizer
 
-from bolinas.tokenizer.char import SPECIAL_TOKENS, create_char_tokenizer
+from bolinas.tokenizer.char import create_char_tokenizer
+
+# ===========================================================================
+# Default: bos=True, eos=True
+# ===========================================================================
 
 # ---------------------------------------------------------------------------
 # Vocab sizes
@@ -164,13 +168,6 @@ def test_convert_ids_to_tokens():
     assert tok.convert_ids_to_tokens(4) == "a"
 
 
-def test_convert_special_tokens():
-    tok = create_char_tokenizer()
-    for i, name in enumerate(SPECIAL_TOKENS):
-        assert tok.convert_tokens_to_ids(name) == i
-        assert tok.convert_ids_to_tokens(i) == name
-
-
 # ---------------------------------------------------------------------------
 # Roundtrip / uniqueness
 # ---------------------------------------------------------------------------
@@ -208,3 +205,139 @@ def test_save_and_load_roundtrip():
         assert loaded.eos_token == "[EOS]"
         assert loaded.bos_token_id == tok.bos_token_id
         assert loaded.eos_token_id == tok.eos_token_id
+
+
+# ===========================================================================
+# BOS-only: bos=True, eos=False
+# ===========================================================================
+
+
+class TestBosOnly:
+    @pytest.fixture()
+    def tok(self):
+        return create_char_tokenizer(bos=True, eos=False)
+
+    def test_vocab_size(self, tok):
+        assert tok.vocab_size == 7
+
+    def test_eos_disabled(self, tok):
+        assert tok.eos_token is None
+        assert tok.eos_token_id is None
+
+    def test_bos_enabled(self, tok):
+        assert tok.bos_token == "[BOS]"
+        assert tok.bos_token_id == 2
+
+    def test_base_ids(self, tok):
+        assert tok.convert_tokens_to_ids("a") == 3
+        assert tok.convert_tokens_to_ids("c") == 4
+        assert tok.convert_tokens_to_ids("g") == 5
+        assert tok.convert_tokens_to_ids("t") == 6
+
+    def test_encode_sequence(self, tok):
+        assert tok.encode("acgt") == [2, 3, 4, 5, 6]
+
+    def test_encode_empty(self, tok):
+        assert tok.encode("") == [2]
+
+    def test_decode_roundtrip(self, tok):
+        seq = "acgtttggg"
+        assert tok.decode(tok.encode(seq), skip_special_tokens=True) == seq
+
+    def test_save_and_load(self, tok):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tok.save_pretrained(tmpdir)
+            loaded = AutoTokenizer.from_pretrained(tmpdir)
+            assert loaded.encode("acgt") == tok.encode("acgt")
+            assert loaded.bos_token == "[BOS]"
+            assert loaded.eos_token is None
+
+
+# ===========================================================================
+# EOS-only: bos=False, eos=True
+# ===========================================================================
+
+
+class TestEosOnly:
+    @pytest.fixture()
+    def tok(self):
+        return create_char_tokenizer(bos=False, eos=True)
+
+    def test_vocab_size(self, tok):
+        assert tok.vocab_size == 7
+
+    def test_bos_disabled(self, tok):
+        assert tok.bos_token is None
+        assert tok.bos_token_id is None
+
+    def test_eos_enabled(self, tok):
+        assert tok.eos_token == "[EOS]"
+        assert tok.eos_token_id == 2
+
+    def test_base_ids(self, tok):
+        # [PAD]=0, [UNK]=1, [EOS]=2, a=3, c=4, g=5, t=6
+        assert tok.convert_tokens_to_ids("a") == 3
+        assert tok.convert_tokens_to_ids("c") == 4
+        assert tok.convert_tokens_to_ids("g") == 5
+        assert tok.convert_tokens_to_ids("t") == 6
+
+    def test_encode_sequence(self, tok):
+        assert tok.encode("acgt") == [3, 4, 5, 6, 2]
+
+    def test_encode_empty(self, tok):
+        assert tok.encode("") == [2]
+
+    def test_decode_roundtrip(self, tok):
+        seq = "acgtttggg"
+        assert tok.decode(tok.encode(seq), skip_special_tokens=True) == seq
+
+    def test_save_and_load(self, tok):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tok.save_pretrained(tmpdir)
+            loaded = AutoTokenizer.from_pretrained(tmpdir)
+            assert loaded.encode("acgt") == tok.encode("acgt")
+            assert loaded.bos_token is None
+            assert loaded.eos_token == "[EOS]"
+
+
+# ===========================================================================
+# Neither: bos=False, eos=False
+# ===========================================================================
+
+
+class TestNoBosNoEos:
+    @pytest.fixture()
+    def tok(self):
+        return create_char_tokenizer(bos=False, eos=False)
+
+    def test_vocab_size(self, tok):
+        assert tok.vocab_size == 6
+
+    def test_bos_eos_disabled(self, tok):
+        assert tok.bos_token is None
+        assert tok.eos_token is None
+
+    def test_base_ids(self, tok):
+        # [PAD]=0, [UNK]=1, a=2, c=3, g=4, t=5
+        assert tok.convert_tokens_to_ids("a") == 2
+        assert tok.convert_tokens_to_ids("c") == 3
+        assert tok.convert_tokens_to_ids("g") == 4
+        assert tok.convert_tokens_to_ids("t") == 5
+
+    def test_encode_sequence(self, tok):
+        assert tok.encode("acgt") == [2, 3, 4, 5]
+
+    def test_encode_empty(self, tok):
+        assert tok.encode("") == []
+
+    def test_decode_roundtrip(self, tok):
+        seq = "acgtttggg"
+        assert tok.decode(tok.encode(seq), skip_special_tokens=True) == seq
+
+    def test_save_and_load(self, tok):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tok.save_pretrained(tmpdir)
+            loaded = AutoTokenizer.from_pretrained(tmpdir)
+            assert loaded.encode("acgt") == tok.encode("acgt")
+            assert loaded.bos_token is None
+            assert loaded.eos_token is None
