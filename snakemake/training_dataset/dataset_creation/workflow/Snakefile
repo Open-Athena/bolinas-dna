@@ -6,8 +6,7 @@ N_SHARDS = config["n_shards"]
 assert N_SHARDS < 1e4
 SHARDS = [f"shard_{i:04}" for i in range(N_SHARDS)]
 
-LEAKAGE_IDENTITIES = config["leakage_filter"]["identity"]
-LEAKAGE_COVERAGES = config["leakage_filter"]["coverage"]
+LEAKAGE_FILTER_PAIRS = config["leakage_filter"]
 
 
 include: "rules/common.smk"
@@ -33,13 +32,16 @@ include: "rules/eda.smk"
 
 rule all:
     input:
-        expand(
-            "results/upload.done/{genome_set}/{intervals}/{identity}/{coverage}",
-            genome_set=genome_sets_list,
-            intervals=config["intervals"],
-            identity=LEAKAGE_IDENTITIES,
-            coverage=LEAKAGE_COVERAGES,
-        ),
+        [
+            expand(
+                "results/upload.done/{genome_set}/{intervals}/{identity}/{coverage}",
+                genome_set=genome_sets_list,
+                intervals=config["intervals"],
+                identity=p["identity"],
+                coverage=p["coverage"],
+            )
+            for p in LEAKAGE_FILTER_PAIRS
+        ],
 
 
 # network-constrained
