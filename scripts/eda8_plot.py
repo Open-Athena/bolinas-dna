@@ -1,6 +1,6 @@
-"""EDA8: Scatter plot of validation loss vs downstream task performance (AUPRC).
+"""EDA8: Scatter plot of validation log-likelihood vs downstream task performance (AUPRC).
 
-Fetches training runs from W&B and plots the relationship between validation loss
+Fetches training runs from W&B and plots the relationship between validation log-likelihood
 and TraitGym AUPRC across checkpoints, with marker size for model size,
 viridis color for training step, and markers for dataset.
 
@@ -48,7 +48,8 @@ MODEL_SIZE_ORDER = ["60M", "600M"]
 MODEL_SIZE_POINTS: dict[str, int] = {"60M": 60, "600M": 160}
 
 SUBPLOT_SIZE = 4
-XLABEL = "Validation loss"
+XCOL = "log-likelihood"
+XLABEL = "Validation log-likelihood"
 SIGNIFICANCE_THRESHOLD = 0.05
 
 
@@ -120,7 +121,7 @@ def fetch_runs() -> pd.DataFrame:
                         "dataset": dataset,
                         "model size": model_size,
                         "step": int(step),
-                        "loss": float(loss),
+                        XCOL: -float(loss),
                         "auprc": float(auprc),
                         "task": task,
                     }
@@ -133,8 +134,8 @@ def _correlation_subtitle(df: pd.DataFrame, *, r2: float | None = None) -> str:
     """Return a compact correlation string for use as a subtitle."""
     if len(df) < 3:
         return ""
-    pearson_r, pearson_p = stats.pearsonr(df["loss"], df["auprc"])
-    spearman_r, spearman_p = stats.spearmanr(df["loss"], df["auprc"])
+    pearson_r, pearson_p = stats.pearsonr(df[XCOL], df["auprc"])
+    spearman_r, spearman_p = stats.spearmanr(df[XCOL], df["auprc"])
     r_star = " (*)" if pearson_p < SIGNIFICANCE_THRESHOLD else ""
     rho_star = " (*)" if spearman_p < SIGNIFICANCE_THRESHOLD else ""
     lines = [f"$r$ = {pearson_r:.2f}{r_star}", f"$\\rho$ = {spearman_r:.2f}{rho_star}"]
@@ -257,12 +258,12 @@ def _add_facet_sigmoid_fits(
             subset = df[mask]
             if len(subset) < 4:
                 continue
-            loss = subset["loss"].values
+            x = subset[XCOL].values
             auprc = subset["auprc"].values
             try:
-                popt = _fit_sigmoid(loss, auprc)
-                r2_map[(i, j)] = _r_squared(auprc, _sigmoid(loss, *popt))
-                x_fit = np.linspace(loss.min(), loss.max(), 200)
+                popt = _fit_sigmoid(x, auprc)
+                r2_map[(i, j)] = _r_squared(auprc, _sigmoid(x, *popt))
+                x_fit = np.linspace(x.min(), x.max(), 200)
                 ax.plot(x_fit, _sigmoid(x_fit, *popt), color="C3", linewidth=1.5)
             except Exception:
                 logger.warning("Sigmoid fit failed for facet row=%s col=%s", row_val, col_val)
@@ -282,33 +283,11 @@ def _finalize_facetgrid(g: sns.FacetGrid, output_path: Path, *, ylabel: str) -> 
     print(f"Saved plot to {output_path}")
 
 
-def plot_loss_vs_auprc(df: pd.DataFrame, output_path: Path, *, ylabel: str) -> None:
-    """Create scatter plot of validation loss vs AUPRC (single plot, no facets)."""
-    g = sns.relplot(
-        data=df,
-        x="loss",
-        y="auprc",
-        hue="step",
-        palette="viridis",
-        style="dataset",
-        markers=DATASET_MARKERS,
-        size="model size",
-        size_order=MODEL_SIZE_ORDER,
-        sizes=MODEL_SIZE_POINTS,
-        kind="scatter",
-        height=SUBPLOT_SIZE,
-        aspect=1,
-        edgecolor="none",
-    )
-    _annotate_correlation(g.ax, df)
-    _finalize_facetgrid(g, output_path, ylabel=ylabel)
-
-
 def plot_by_dataset(df: pd.DataFrame, output_path: Path, *, ylabel: str) -> None:
     """One subplot per dataset; hue=step, style=dataset, size=model_size."""
     g = sns.relplot(
         data=df,
-        x="loss",
+        x=XCOL,
         y="auprc",
         hue="step",
         palette="viridis",
@@ -334,7 +313,7 @@ def plot_by_run(df: pd.DataFrame, output_path: Path, *, ylabel: str) -> None:
     """One subplot per run (dataset x model_size); hue=step, style=dataset, size=model_size."""
     g = sns.relplot(
         data=df,
-        x="loss",
+        x=XCOL,
         y="auprc",
         hue="step",
         palette="viridis",
@@ -374,24 +353,23 @@ def _r_squared(observed: np.ndarray, predicted: np.ndarray) -> float:
     return 1 - ss_res / ss_tot
 
 
-def _sigmoid(loss: np.ndarray, lower: float, upper: float, k: float, x0: float) -> np.ndarray:
-    """Decreasing sigmoid: upper at low loss, lower at high loss."""
-    return lower + (upper - lower) / (1 + np.exp(k * (loss - x0)))
+def _sigmoid(x: np.ndarray, lower: float, upper: float, k: float, x0: float) -> np.ndarray:
+    """Increasing sigmoid: lower at low x, upper at high x."""
+    return lower + (upper - lower) / (1 + np.exp(-k * (x - x0)))
 
 
-def _fit_sigmoid(loss: np.ndarray, auprc: np.ndarray) -> np.ndarray:
-    """Fit a sigmoid to loss vs AUPRC using robust regression, returning parameters."""
-    p0 = np.array([auprc.min(), auprc.max(), 5.0, float(np.median(loss))])
+def _fit_sigmoid(x: np.ndarray, auprc: np.ndarray) -> np.ndarray:
+    """Fit a sigmoid to x vs AUPRC using robust regression, returning parameters."""
+    p0 = np.array([auprc.min(), auprc.max(), 5.0, float(np.median(x))])
     bounds = ([0, 0, 0, -np.inf], [1, 1, np.inf, np.inf])
 
     def residuals(params: np.ndarray) -> np.ndarray:
-        return _sigmoid(loss, *params) - auprc
+        return _sigmoid(x, *params) - auprc
 
     result = optimize.least_squares(
         residuals, p0, bounds=bounds, loss="soft_l1", max_nfev=10000,
     )
     return result.x
-
 
 
 def load_data(*, refresh: bool = False) -> pd.DataFrame:
