@@ -25,20 +25,22 @@ logger = logging.getLogger(__name__)
 WANDB_PROJECT = "marin"
 WANDB_GROUP = "eda-ppl-vs-downstream"
 LOSS_KEY = "eval/loss"
-AUPRC_KEY = "lm_eval/traitgym_mendelian_v2/tss_proximal/auprc"
+AUPRC_KEY = "lm_eval/traitgym_mendelian_v2_255/tss_proximal/auprc"
 RUN_NAME_PREFIX = "eda-ppl-vs-downstream-"
 OUTPUT_PATH = Path("results/eda8/loss_vs_auprc.svg")
 CACHE_PATH = Path("results/eda8/wandb_cache.csv")
 
-DATASET_ORDER = ["Humans", "Primates", "Mammals"]
+DATASET_ORDER = [
+    "no-leakage-filter",
+    "leakage-filter",
+]
 DATASET_MARKERS = {
-    "Humans": "o",
-    "Primates": "^",
-    "Mammals": "s",
+    "no-leakage-filter": "o",
+    "leakage-filter": "s",
 }
 
-MODEL_SIZE_ORDER = ["6M", "60M", "600M"]
-MODEL_SIZE_POINTS: dict[str, int] = {"6M": 40, "60M": 100, "600M": 220}
+MODEL_SIZE_ORDER = ["60M", "600M"]
+MODEL_SIZE_POINTS: dict[str, int] = {"60M": 60, "600M": 160}
 
 SUBPLOT_SIZE = 4
 XLABEL = "Validation loss"
@@ -60,14 +62,37 @@ def fetch_runs() -> pd.DataFrame:
         if not name.startswith(RUN_NAME_PREFIX):
             continue
 
-        # Parse: eda-ppl-vs-downstream-{dataset}-{model_size}-{hash}
+        # Parse run name suffix after prefix
+        # Old format: {dataset}-{model_size}-{hash}
+        # New format: {dataset}-{version}-{model_size}-{hash}
         suffix = name[len(RUN_NAME_PREFIX) :]
         parts = suffix.split("-")
-        if len(parts) != 3:
-            continue
-        dataset_raw, model_size_raw, _ = parts
 
-        dataset = dataset_raw.capitalize()
+        # Only process runs launched after March 4th 2025
+        if run.created_at < "2026-03-04":
+            continue
+
+        dataset_version_map = {
+            "id1-cov1": "no-leakage-filter",
+            "id0.3-cov0.3": "leakage-filter",
+        }
+
+        if len(parts) == 5:
+            dataset_raw = parts[0]
+            version_key = f"{parts[1]}-{parts[2]}"
+            model_size_raw = parts[3]
+            dataset_version = dataset_version_map.get(version_key, version_key)
+        elif len(parts) == 3:
+            dataset_raw = parts[0]
+            model_size_raw = parts[1]
+            dataset_version = None
+        else:
+            continue
+
+        if dataset_version:
+            dataset = dataset_version
+        else:
+            dataset = dataset_raw.capitalize()
         model_size = model_size_raw.upper()
 
         history = run.scan_history(keys=[LOSS_KEY, AUPRC_KEY, "_step"])
@@ -164,6 +189,22 @@ def _annotate_correlation(ax: plt.Axes, df: pd.DataFrame) -> None:
     )
 
 
+def _facet_mask(
+    df: pd.DataFrame,
+    row: str | None,
+    row_val: str | None,
+    col: str | None,
+    col_val: str | None,
+) -> pd.Series:
+    """Build a boolean mask for a single facet cell."""
+    mask = pd.Series(True, index=df.index)
+    if row is not None:
+        mask &= df[row] == row_val
+    if col is not None:
+        mask &= df[col] == col_val
+    return mask
+
+
 def _add_facet_correlations(
     g: sns.FacetGrid,
     df: pd.DataFrame,
@@ -182,12 +223,40 @@ def _add_facet_correlations(
             ax = g.axes[i, j]
             if not ax.get_visible():
                 continue
-            mask = pd.Series(True, index=df.index)
-            if row is not None:
-                mask &= df[row] == row_val
-            if col is not None:
-                mask &= df[col] == col_val
+            mask = _facet_mask(df, row, row_val, col, col_val)
             _annotate_correlation(ax, df[mask])
+
+
+def _add_facet_sigmoid_fits(
+    g: sns.FacetGrid,
+    df: pd.DataFrame,
+    *,
+    row: str | None = None,
+    row_order: list[str] | None = None,
+    col: str | None = None,
+    col_order: list[str] | None = None,
+) -> None:
+    """Overlay a sigmoid fit on each facet."""
+    row_vals = row_order if row is not None else [None]
+    col_vals = col_order if col is not None else [None]
+
+    for i, row_val in enumerate(row_vals):
+        for j, col_val in enumerate(col_vals):
+            ax = g.axes[i, j]
+            if not ax.get_visible():
+                continue
+            mask = _facet_mask(df, row, row_val, col, col_val)
+            subset = df[mask]
+            if len(subset) < 4:
+                continue
+            loss = subset["loss"].values
+            auprc = subset["auprc"].values
+            try:
+                popt = _fit_sigmoid(loss, auprc)
+                x_fit = np.linspace(loss.min(), loss.max(), 200)
+                ax.plot(x_fit, _sigmoid(x_fit, *popt), color="C3", linewidth=1.5)
+            except Exception:
+                logger.warning("Sigmoid fit failed for facet row=%s col=%s", row_val, col_val)
 
 
 def _finalize_facetgrid(g: sns.FacetGrid, output_path: Path) -> None:
@@ -245,33 +314,10 @@ def plot_by_dataset(df: pd.DataFrame, output_path: Path) -> None:
         aspect=1,
         edgecolor="none",
     )
+    _add_facet_sigmoid_fits(g, df, col="dataset", col_order=DATASET_ORDER)
     _add_facet_correlations(g, df, col="dataset", col_order=DATASET_ORDER)
     _finalize_facetgrid(g, output_path)
 
-
-def plot_by_model_size(df: pd.DataFrame, output_path: Path) -> None:
-    """One subplot per model size; hue=step, style=dataset, size=model_size."""
-    g = sns.relplot(
-        data=df,
-        x="loss",
-        y="auprc",
-        hue="step",
-        palette="viridis",
-        style="dataset",
-        markers=DATASET_MARKERS,
-        size="model size",
-        size_order=MODEL_SIZE_ORDER,
-        sizes=MODEL_SIZE_POINTS,
-        col="model size",
-        col_order=MODEL_SIZE_ORDER,
-        kind="scatter",
-        facet_kws={"sharex": False, "sharey": False},
-        height=SUBPLOT_SIZE,
-        aspect=1,
-        edgecolor="none",
-    )
-    _add_facet_correlations(g, df, col="model size", col_order=MODEL_SIZE_ORDER)
-    _finalize_facetgrid(g, output_path)
 
 
 def plot_by_run(df: pd.DataFrame, output_path: Path) -> None:
@@ -296,6 +342,11 @@ def plot_by_run(df: pd.DataFrame, output_path: Path) -> None:
         height=SUBPLOT_SIZE,
         aspect=1,
         edgecolor="none",
+    )
+    _add_facet_sigmoid_fits(
+        g, df,
+        row="dataset", row_order=DATASET_ORDER,
+        col="model size", col_order=MODEL_SIZE_ORDER,
     )
     _add_facet_correlations(
         g, df,
@@ -323,37 +374,6 @@ def _fit_sigmoid(loss: np.ndarray, auprc: np.ndarray) -> np.ndarray:
     )
     return result.x
 
-
-def plot_sigmoid_fit(df: pd.DataFrame, output_path: Path) -> None:
-    """Scatter plot with sigmoid fit overlay."""
-    g = sns.relplot(
-        data=df,
-        x="loss",
-        y="auprc",
-        style="dataset",
-        markers=DATASET_MARKERS,
-        size="model size",
-        size_order=MODEL_SIZE_ORDER,
-        sizes=MODEL_SIZE_POINTS,
-        kind="scatter",
-        height=SUBPLOT_SIZE,
-        aspect=1,
-        edgecolor="none",
-        color="0.4",
-    )
-    ax = g.ax
-
-    loss = df["loss"].values
-    auprc = df["auprc"].values
-    popt = _fit_sigmoid(loss, auprc)
-    lower, upper, k, x0 = popt
-    print(f"Sigmoid fit: lower={lower:.4f}, upper={upper:.4f}, k={k:.2f}, x0={x0:.3f}")
-
-    x_fit = np.linspace(loss.min(), loss.max(), 200)
-    ax.plot(x_fit, _sigmoid(x_fit, *popt), color="C3", linewidth=2)
-
-    _annotate_correlation(ax, df)
-    _finalize_facetgrid(g, output_path)
 
 
 def load_data(*, refresh: bool = False) -> pd.DataFrame:
@@ -387,13 +407,10 @@ def main() -> None:
         return
     print(df.to_string(index=False))
     output_dir = OUTPUT_PATH.parent
-    plot_loss_vs_auprc(df, OUTPUT_PATH)
+
     plot_by_dataset(df, output_dir / "loss_vs_auprc_by_dataset.svg")
-    plot_by_model_size(df, output_dir / "loss_vs_auprc_by_model_size.svg")
+
     plot_by_run(df, output_dir / "loss_vs_auprc_by_run.svg")
-    plot_sigmoid_fit(
-        df[df["dataset"] == "Mammals"], output_dir / "loss_vs_auprc_sigmoid.svg"
-    )
 
 
 if __name__ == "__main__":
