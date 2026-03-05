@@ -25,10 +25,15 @@ logger = logging.getLogger(__name__)
 WANDB_PROJECT = "marin"
 WANDB_GROUP = "eda-ppl-vs-downstream"
 LOSS_KEY = "eval/loss"
-AUPRC_KEY = "lm_eval/traitgym_mendelian_v2_255/tss_proximal/auprc"
 RUN_NAME_PREFIX = "eda-ppl-vs-downstream-"
-OUTPUT_PATH = Path("results/eda8/loss_vs_auprc.svg")
+OUTPUT_DIR = Path("results/eda8")
 CACHE_PATH = Path("results/eda8/wandb_cache.csv")
+
+TASK_PREFIX = "lm_eval/traitgym_mendelian_v2_255"
+TASKS: dict[str, str] = {
+    "tss_proximal": "Promoter VEP AUPRC",
+    "5_prime_UTR_variant": "5' UTR VEP AUPRC",
+}
 
 DATASET_ORDER = [
     "no-leakage-filter",
@@ -44,7 +49,6 @@ MODEL_SIZE_POINTS: dict[str, int] = {"60M": 60, "600M": 160}
 
 SUBPLOT_SIZE = 4
 XLABEL = "Validation loss"
-YLABEL = "Promoter VEP AUPRC"
 SIGNIFICANCE_THRESHOLD = 0.05
 
 
@@ -95,34 +99,32 @@ def fetch_runs() -> pd.DataFrame:
             dataset = dataset_raw.capitalize()
         model_size = model_size_raw.upper()
 
-        history = run.scan_history(keys=[LOSS_KEY, AUPRC_KEY, "_step"])
-        seen_steps: dict[int, tuple[float, float]] = {}
+        auprc_keys = [f"{TASK_PREFIX}/{task}/auprc" for task in TASKS]
+        history = run.scan_history(keys=[LOSS_KEY, *auprc_keys, "_step"])
+        seen_steps: set[int] = set()
         for row in history:
             loss = row.get(LOSS_KEY)
-            auprc = row.get(AUPRC_KEY)
             step = row.get("_step")
-            if loss is None or auprc is None or step is None:
+            if loss is None or step is None:
                 continue
             if step in seen_steps:
-                prev_loss, prev_auprc = seen_steps[step]
-                if (prev_loss, prev_auprc) != (float(loss), float(auprc)):
-                    logger.warning(
-                        "Duplicate step %d in %s with different values: "
-                        "(%f, %f) vs (%f, %f)",
-                        step, name, prev_loss, prev_auprc, float(loss), float(auprc),
-                    )
                 continue
-            seen_steps[step] = (float(loss), float(auprc))
+            seen_steps.add(step)
 
-            records.append(
-                {
-                    "dataset": dataset,
-                    "model size": model_size,
-                    "step": int(step),
-                    "loss": float(loss),
-                    "auprc": float(auprc),
-                }
-            )
+            for task, auprc_key in zip(TASKS, auprc_keys):
+                auprc = row.get(auprc_key)
+                if auprc is None:
+                    continue
+                records.append(
+                    {
+                        "dataset": dataset,
+                        "model size": model_size,
+                        "step": int(step),
+                        "loss": float(loss),
+                        "auprc": float(auprc),
+                        "task": task,
+                    }
+                )
 
     return pd.DataFrame(records)
 
@@ -268,10 +270,10 @@ def _add_facet_sigmoid_fits(
     return r2_map
 
 
-def _finalize_facetgrid(g: sns.FacetGrid, output_path: Path) -> None:
+def _finalize_facetgrid(g: sns.FacetGrid, output_path: Path, *, ylabel: str) -> None:
     """Apply shared styling and save a FacetGrid."""
     g.set_xlabels(XLABEL)
-    g.set_ylabels(YLABEL)
+    g.set_ylabels(ylabel)
     g.despine()
     g.tight_layout()
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -280,7 +282,7 @@ def _finalize_facetgrid(g: sns.FacetGrid, output_path: Path) -> None:
     print(f"Saved plot to {output_path}")
 
 
-def plot_loss_vs_auprc(df: pd.DataFrame, output_path: Path) -> None:
+def plot_loss_vs_auprc(df: pd.DataFrame, output_path: Path, *, ylabel: str) -> None:
     """Create scatter plot of validation loss vs AUPRC (single plot, no facets)."""
     g = sns.relplot(
         data=df,
@@ -299,10 +301,10 @@ def plot_loss_vs_auprc(df: pd.DataFrame, output_path: Path) -> None:
         edgecolor="none",
     )
     _annotate_correlation(g.ax, df)
-    _finalize_facetgrid(g, output_path)
+    _finalize_facetgrid(g, output_path, ylabel=ylabel)
 
 
-def plot_by_dataset(df: pd.DataFrame, output_path: Path) -> None:
+def plot_by_dataset(df: pd.DataFrame, output_path: Path, *, ylabel: str) -> None:
     """One subplot per dataset; hue=step, style=dataset, size=model_size."""
     g = sns.relplot(
         data=df,
@@ -325,11 +327,10 @@ def plot_by_dataset(df: pd.DataFrame, output_path: Path) -> None:
     )
     r2_map = _add_facet_sigmoid_fits(g, df, col="dataset", col_order=DATASET_ORDER)
     _add_facet_correlations(g, df, col="dataset", col_order=DATASET_ORDER, r2_map=r2_map)
-    _finalize_facetgrid(g, output_path)
+    _finalize_facetgrid(g, output_path, ylabel=ylabel)
 
 
-
-def plot_by_run(df: pd.DataFrame, output_path: Path) -> None:
+def plot_by_run(df: pd.DataFrame, output_path: Path, *, ylabel: str) -> None:
     """One subplot per run (dataset x model_size); hue=step, style=dataset, size=model_size."""
     g = sns.relplot(
         data=df,
@@ -363,7 +364,7 @@ def plot_by_run(df: pd.DataFrame, output_path: Path) -> None:
         col="model size", col_order=MODEL_SIZE_ORDER,
         r2_map=r2_map,
     )
-    _finalize_facetgrid(g, output_path)
+    _finalize_facetgrid(g, output_path, ylabel=ylabel)
 
 
 def _r_squared(observed: np.ndarray, predicted: np.ndarray) -> float:
@@ -423,11 +424,15 @@ def main() -> None:
         print("No runs found — check W&B project/group settings")
         return
     print(df.to_string(index=False))
-    output_dir = OUTPUT_PATH.parent
 
-    plot_by_dataset(df, output_dir / "loss_vs_auprc_by_dataset.svg")
-
-    plot_by_run(df, output_dir / "loss_vs_auprc_by_run.svg")
+    for task, ylabel in TASKS.items():
+        task_df = df[df["task"] == task]
+        if task_df.empty:
+            print(f"No data for task {task}")
+            continue
+        task_dir = OUTPUT_DIR / task
+        plot_by_dataset(task_df, task_dir / "loss_vs_auprc_by_dataset.svg", ylabel=ylabel)
+        plot_by_run(task_df, task_dir / "loss_vs_auprc_by_run.svg", ylabel=ylabel)
 
 
 if __name__ == "__main__":
