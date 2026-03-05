@@ -127,7 +127,7 @@ def fetch_runs() -> pd.DataFrame:
     return pd.DataFrame(records)
 
 
-def _correlation_subtitle(df: pd.DataFrame) -> str:
+def _correlation_subtitle(df: pd.DataFrame, *, r2: float | None = None) -> str:
     """Return a compact correlation string for use as a subtitle."""
     if len(df) < 3:
         return ""
@@ -135,7 +135,10 @@ def _correlation_subtitle(df: pd.DataFrame) -> str:
     spearman_r, spearman_p = stats.spearmanr(df["loss"], df["auprc"])
     r_star = " (*)" if pearson_p < SIGNIFICANCE_THRESHOLD else ""
     rho_star = " (*)" if spearman_p < SIGNIFICANCE_THRESHOLD else ""
-    return f"$r$ = {pearson_r:.2f}{r_star}, $\\rho$ = {spearman_r:.2f}{rho_star}"
+    lines = [f"$r$ = {pearson_r:.2f}{r_star}", f"$\\rho$ = {spearman_r:.2f}{rho_star}"]
+    if r2 is not None:
+        lines.append(f"sigmoid $R^2$ = {r2:.2f}")
+    return "\n".join(lines)
 
 
 CORNERS = [
@@ -173,9 +176,9 @@ def _emptiest_corner(ax: plt.Axes) -> tuple[float, float, str, str]:
     return best_corner
 
 
-def _annotate_correlation(ax: plt.Axes, df: pd.DataFrame) -> None:
+def _annotate_correlation(ax: plt.Axes, df: pd.DataFrame, *, r2: float | None = None) -> None:
     """Add correlation annotation in the emptiest corner of the axes."""
-    text = _correlation_subtitle(df)
+    text = _correlation_subtitle(df, r2=r2)
     if not text:
         return
     x, y, ha, va = _emptiest_corner(ax)
@@ -213,6 +216,7 @@ def _add_facet_correlations(
     row_order: list[str] | None = None,
     col: str | None = None,
     col_order: list[str] | None = None,
+    r2_map: dict[tuple[int, int], float] | None = None,
 ) -> None:
     """Add per-facet correlation annotations to each axes in a FacetGrid."""
     row_vals = row_order if row is not None else [None]
@@ -224,7 +228,8 @@ def _add_facet_correlations(
             if not ax.get_visible():
                 continue
             mask = _facet_mask(df, row, row_val, col, col_val)
-            _annotate_correlation(ax, df[mask])
+            r2 = r2_map.get((i, j)) if r2_map is not None else None
+            _annotate_correlation(ax, df[mask], r2=r2)
 
 
 def _add_facet_sigmoid_fits(
@@ -235,10 +240,11 @@ def _add_facet_sigmoid_fits(
     row_order: list[str] | None = None,
     col: str | None = None,
     col_order: list[str] | None = None,
-) -> None:
-    """Overlay a sigmoid fit on each facet."""
+) -> dict[tuple[int, int], float]:
+    """Overlay a sigmoid fit on each facet. Returns R² per (i, j) facet index."""
     row_vals = row_order if row is not None else [None]
     col_vals = col_order if col is not None else [None]
+    r2_map: dict[tuple[int, int], float] = {}
 
     for i, row_val in enumerate(row_vals):
         for j, col_val in enumerate(col_vals):
@@ -253,10 +259,13 @@ def _add_facet_sigmoid_fits(
             auprc = subset["auprc"].values
             try:
                 popt = _fit_sigmoid(loss, auprc)
+                r2_map[(i, j)] = _r_squared(auprc, _sigmoid(loss, *popt))
                 x_fit = np.linspace(loss.min(), loss.max(), 200)
                 ax.plot(x_fit, _sigmoid(x_fit, *popt), color="C3", linewidth=1.5)
             except Exception:
                 logger.warning("Sigmoid fit failed for facet row=%s col=%s", row_val, col_val)
+
+    return r2_map
 
 
 def _finalize_facetgrid(g: sns.FacetGrid, output_path: Path) -> None:
@@ -314,8 +323,8 @@ def plot_by_dataset(df: pd.DataFrame, output_path: Path) -> None:
         aspect=1,
         edgecolor="none",
     )
-    _add_facet_sigmoid_fits(g, df, col="dataset", col_order=DATASET_ORDER)
-    _add_facet_correlations(g, df, col="dataset", col_order=DATASET_ORDER)
+    r2_map = _add_facet_sigmoid_fits(g, df, col="dataset", col_order=DATASET_ORDER)
+    _add_facet_correlations(g, df, col="dataset", col_order=DATASET_ORDER, r2_map=r2_map)
     _finalize_facetgrid(g, output_path)
 
 
@@ -343,7 +352,7 @@ def plot_by_run(df: pd.DataFrame, output_path: Path) -> None:
         aspect=1,
         edgecolor="none",
     )
-    _add_facet_sigmoid_fits(
+    r2_map = _add_facet_sigmoid_fits(
         g, df,
         row="dataset", row_order=DATASET_ORDER,
         col="model size", col_order=MODEL_SIZE_ORDER,
@@ -352,8 +361,16 @@ def plot_by_run(df: pd.DataFrame, output_path: Path) -> None:
         g, df,
         row="dataset", row_order=DATASET_ORDER,
         col="model size", col_order=MODEL_SIZE_ORDER,
+        r2_map=r2_map,
     )
     _finalize_facetgrid(g, output_path)
+
+
+def _r_squared(observed: np.ndarray, predicted: np.ndarray) -> float:
+    """Compute coefficient of determination (R²)."""
+    ss_res = np.sum((observed - predicted) ** 2)
+    ss_tot = np.sum((observed - observed.mean()) ** 2)
+    return 1 - ss_res / ss_tot
 
 
 def _sigmoid(loss: np.ndarray, lower: float, upper: float, k: float, x0: float) -> np.ndarray:
