@@ -155,7 +155,7 @@ rule search_leakage:
         coverage=lambda wildcards: float(wildcards.coverage),
     threads: 1
     resources:
-        mem_mb=4000,
+        mem_mb=16000,
     conda:
         "../envs/mmseqs2.yaml"
     shell:
