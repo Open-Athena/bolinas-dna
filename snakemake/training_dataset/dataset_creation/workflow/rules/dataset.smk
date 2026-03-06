@@ -53,14 +53,12 @@ rule create_functional_validation:
     input:
         fasta="results/intervals_seq/{recipe}/{w}/{s}/" + VALIDATION_GENOME + ".fa",
         chrom_mapping=local("config/human_chrom_mapping.tsv"),
+        bigwig=config["validation"]["conservation_bigwig"],
     output:
         "results/validation/{recipe}/{w}/{s}/validation.parquet",
     run:
-        from Bio.Seq import Seq
-
         val_config = config["validation"]
         threshold = val_config["phylop_threshold"]
-        bigwig_path = val_config["conservation_bigwig"]
 
         # Load chrom name mapping (RefSeq -> UCSC)
         chrom_map = dict(
@@ -79,50 +77,31 @@ rule create_functional_validation:
 
         df.id = df.id.astype(str)
         max_samples = val_config["max_samples"]
+
+        # Filter to sequences on mapped chromosomes before subsampling
+        df["chrom"] = df["id"].apply(lambda x: x.rsplit(":", 1)[0])
+        df = df[df["chrom"].isin(chrom_map)]
+        df = df.drop(columns=["chrom"])
+
         if len(df) > max_samples:
             df = df.sample(n=max_samples, random_state=val_config["seed"])
 
-        bw = pyBigWig.open(bigwig_path)
+        bw = pyBigWig.open(input.bigwig)
 
-        case_encoded_seqs = []
-        valid_mask = []
-        for _, row in df.iterrows():
-            # Parse coords from bedPos ID format: chrom:start-end
-            seq_id = row["id"]
-            seq = row["seq"]
-            chrom_refseq, coords = seq_id.rsplit(":", 1)
-            start, end = coords.split("-")
-            start, end = int(start), int(end)
-
-            chrom_ucsc = chrom_map.get(chrom_refseq)
-            if chrom_ucsc is None:
-                valid_mask.append(False)
-                case_encoded_seqs.append(seq)
-                continue
-
+        def encode_case(row):
+            """Encode conservation as case: uppercase iff phyloP >= threshold."""
+            chrom_refseq, coords = row["id"].rsplit(":", 1)
+            start, end = (int(x) for x in coords.split("-"))
+            chrom_ucsc = chrom_map[chrom_refseq]
             scores = bw.values(chrom_ucsc, start, end)
-            encoded = []
-            for base, score in zip(seq, scores):
-                # NaN (missing data) compares False, so NaN -> lowercase
-                if score >= threshold:
-                    encoded.append(base.upper())
-                else:
-                    encoded.append(base.lower())
-            case_encoded_seqs.append("".join(encoded))
-            valid_mask.append(True)
+            # NaN (missing data) compares False, so NaN -> lowercase
+            return "".join(
+                b.upper() if s >= threshold else b.lower()
+                for b, s in zip(row["seq"], scores)
+            )
 
+        df["seq"] = df.apply(encode_case, axis=1)
         bw.close()
-
-        df["seq"] = case_encoded_seqs
-        df = df[valid_mask]
-
-        if config["add_rc"]:
-            rc_rows = []
-            for _, row in df.iterrows():
-                rc_seq = str(Seq(row["seq"]).reverse_complement())
-                rc_rows.append({"id": row["id"] + "_rc", "seq": rc_seq})
-            rc_df = pd.DataFrame(rc_rows)
-            df = pd.concat([df, rc_df], ignore_index=True)
 
         pl.from_pandas(df[["id", "seq"]]).write_parquet(output[0])
 

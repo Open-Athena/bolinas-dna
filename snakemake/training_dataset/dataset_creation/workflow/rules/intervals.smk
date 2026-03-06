@@ -33,12 +33,10 @@ rule extract_undefined:
         "results/genome/{g}.2bit",
     output:
         "results/intervals/undefined/{g}.bed.gz",
-    params:
-        "results/intervals/undefined/{g}.bed",
     conda:
         "../envs/bioinformatics.yaml"
     shell:
-        "twoBitInfo {input} {params} -nBed && gzip {params}"
+        "twoBitInfo {input} /dev/stdout -nBed | gzip > {output}"
 
 
 rule extract_defined:
