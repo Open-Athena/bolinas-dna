@@ -35,17 +35,17 @@ TASKS: dict[str, str] = {
     "5_prime_UTR_variant": "5' UTR VEP AUPRC",
 }
 
-DATASET_ORDER = [
-    "no-leakage-filter",
-    "leakage-filter",
-]
-DATASET_MARKERS = {
-    "no-leakage-filter": "o",
-    "leakage-filter": "s",
+LEAKAGE_FILTER_MAP = {
+    "id1-cov1": "no filter",
+    "id0.3-cov0.3": "leakage filter",
 }
+LEAKAGE_FILTER_ORDER = ["no filter", "leakage filter"]
 
-MODEL_SIZE_ORDER = ["60M", "600M"]
-MODEL_SIZE_POINTS: dict[str, int] = {"60M": 60, "600M": 160}
+DATASET_ORDER = ["primates", "mammals", "vertebrates"]
+DATASET_MARKERS = {"primates": "o", "mammals": "^", "vertebrates": "s"}
+
+MODEL_SIZE_ORDER = ["6M", "60M", "600M"]
+MODEL_SIZE_POINTS: dict[str, int] = {"6M": 30, "60M": 80, "600M": 180}
 
 SUBPLOT_SIZE = 4
 XCOL = "log-likelihood"
@@ -54,7 +54,7 @@ SIGNIFICANCE_THRESHOLD = 0.05
 
 
 def fetch_runs() -> pd.DataFrame:
-    """Fetch all checkpoints from W&B runs, returning one row per (run, step)."""
+    """Fetch all checkpoints from W&B runs, returning one row per (run, step, task)."""
     api = wandb.Api()
     runs = api.runs(
         WANDB_PROJECT,
@@ -67,38 +67,23 @@ def fetch_runs() -> pd.DataFrame:
         if not name.startswith(RUN_NAME_PREFIX):
             continue
 
-        # Parse run name suffix after prefix
-        # Old format: {dataset}-{model_size}-{hash}
-        # New format: {dataset}-{version}-{model_size}-{hash}
-        suffix = name[len(RUN_NAME_PREFIX) :]
-        parts = suffix.split("-")
-
-        # Only process runs launched after March 4th 2025
+        # Only process runs launched after March 4th 2026
         if run.created_at < "2026-03-04":
             continue
 
-        dataset_version_map = {
-            "id1-cov1": "no-leakage-filter",
-            "id0.3-cov0.3": "leakage-filter",
-        }
-
-        if len(parts) == 5:
-            dataset_raw = parts[0]
-            version_key = f"{parts[1]}-{parts[2]}"
-            model_size_raw = parts[3]
-            dataset_version = dataset_version_map.get(version_key, version_key)
-        elif len(parts) == 3:
-            dataset_raw = parts[0]
-            model_size_raw = parts[1]
-            dataset_version = None
-        else:
+        # Format: {dataset}-{id_thresh}-{cov_thresh}-{model_size}-{hash}
+        suffix = name[len(RUN_NAME_PREFIX) :]
+        parts = suffix.split("-")
+        if len(parts) != 5:
             continue
 
-        if dataset_version:
-            dataset = dataset_version
-        else:
-            dataset = dataset_raw.capitalize()
-        model_size = model_size_raw.upper()
+        dataset = parts[0]
+        version_key = f"{parts[1]}-{parts[2]}"
+        model_size = parts[3].upper()
+        leakage_filter = LEAKAGE_FILTER_MAP.get(version_key)
+        if leakage_filter is None:
+            logger.warning("Unknown version key %s in run %s", version_key, name)
+            continue
 
         auprc_keys = [f"{TASK_PREFIX}/{task}/auprc" for task in TASKS]
         history = run.scan_history(keys=[LOSS_KEY, *auprc_keys, "_step"])
@@ -119,6 +104,7 @@ def fetch_runs() -> pd.DataFrame:
                 records.append(
                     {
                         "dataset": dataset,
+                        "leakage filter": leakage_filter,
                         "model size": model_size,
                         "step": int(step),
                         XCOL: -float(loss),
@@ -130,12 +116,19 @@ def fetch_runs() -> pd.DataFrame:
     return pd.DataFrame(records)
 
 
+# ---------------------------------------------------------------------------
+# Annotation helpers
+# ---------------------------------------------------------------------------
+
 def _correlation_subtitle(df: pd.DataFrame, *, r2: float | None = None) -> str:
-    """Return a compact correlation string for use as a subtitle."""
+    """Return a compact correlation string with one-sided p-values (positive direction)."""
     if len(df) < 3:
         return ""
-    pearson_r, pearson_p = stats.pearsonr(df[XCOL], df["auprc"])
-    spearman_r, spearman_p = stats.spearmanr(df[XCOL], df["auprc"])
+    pearson_r, pearson_p_two = stats.pearsonr(df[XCOL], df["auprc"])
+    spearman_r, spearman_p_two = stats.spearmanr(df[XCOL], df["auprc"])
+    # One-sided test for positive correlation: halve p-value if r > 0, else 1 - p/2
+    pearson_p = pearson_p_two / 2 if pearson_r > 0 else 1 - pearson_p_two / 2
+    spearman_p = spearman_p_two / 2 if spearman_r > 0 else 1 - spearman_p_two / 2
     r_star = " (*)" if pearson_p < SIGNIFICANCE_THRESHOLD else ""
     rho_star = " (*)" if spearman_p < SIGNIFICANCE_THRESHOLD else ""
     lines = [f"$r$ = {pearson_r:.2f}{r_star}", f"$\\rho$ = {spearman_r:.2f}{rho_star}"]
@@ -165,7 +158,6 @@ def _emptiest_corner(ax: plt.Axes) -> tuple[float, float, str, str]:
         return CORNERS[0]
 
     data_points = np.concatenate(all_offsets)
-    # Transform data coordinates to axes fraction
     axes_points = ax.transAxes.inverted().transform(ax.transData.transform(data_points))
 
     best_corner = CORNERS[0]
@@ -194,6 +186,10 @@ def _annotate_correlation(ax: plt.Axes, df: pd.DataFrame, *, r2: float | None = 
         va=va,
     )
 
+
+# ---------------------------------------------------------------------------
+# Facet helpers
+# ---------------------------------------------------------------------------
 
 def _facet_mask(
     df: pd.DataFrame,
@@ -283,8 +279,12 @@ def _finalize_facetgrid(g: sns.FacetGrid, output_path: Path, *, ylabel: str) -> 
     print(f"Saved plot to {output_path}")
 
 
-def plot_by_dataset(df: pd.DataFrame, output_path: Path, *, ylabel: str) -> None:
-    """One subplot per dataset; hue=step, style=dataset, size=model_size."""
+# ---------------------------------------------------------------------------
+# Plot functions
+# ---------------------------------------------------------------------------
+
+def plot_by_leakage_filter(df: pd.DataFrame, output_path: Path, *, ylabel: str) -> None:
+    """Two panels: left = no filter, right = leakage filter."""
     g = sns.relplot(
         data=df,
         x=XCOL,
@@ -296,29 +296,31 @@ def plot_by_dataset(df: pd.DataFrame, output_path: Path, *, ylabel: str) -> None
         size="model size",
         size_order=MODEL_SIZE_ORDER,
         sizes=MODEL_SIZE_POINTS,
-        col="dataset",
-        col_order=DATASET_ORDER,
+        col="leakage filter",
+        col_order=LEAKAGE_FILTER_ORDER,
         kind="scatter",
         facet_kws={"sharex": False, "sharey": False},
         height=SUBPLOT_SIZE,
         aspect=1,
         edgecolor="none",
     )
-    r2_map = _add_facet_sigmoid_fits(g, df, col="dataset", col_order=DATASET_ORDER)
-    _add_facet_correlations(g, df, col="dataset", col_order=DATASET_ORDER, r2_map=r2_map)
+    r2_map = _add_facet_sigmoid_fits(
+        g, df, col="leakage filter", col_order=LEAKAGE_FILTER_ORDER,
+    )
+    _add_facet_correlations(
+        g, df, col="leakage filter", col_order=LEAKAGE_FILTER_ORDER, r2_map=r2_map,
+    )
     _finalize_facetgrid(g, output_path, ylabel=ylabel)
 
 
 def plot_by_run(df: pd.DataFrame, output_path: Path, *, ylabel: str) -> None:
-    """One subplot per run (dataset x model_size); hue=step, style=dataset, size=model_size."""
+    """Row=dataset, col=model size. One subplot per individual run."""
     g = sns.relplot(
         data=df,
         x=XCOL,
         y="auprc",
         hue="step",
         palette="viridis",
-        style="dataset",
-        markers=DATASET_MARKERS,
         size="model size",
         size_order=MODEL_SIZE_ORDER,
         sizes=MODEL_SIZE_POINTS,
@@ -346,6 +348,47 @@ def plot_by_run(df: pd.DataFrame, output_path: Path, *, ylabel: str) -> None:
     _finalize_facetgrid(g, output_path, ylabel=ylabel)
 
 
+def plot_by_dataset_and_leakage_filter(
+    df: pd.DataFrame, output_path: Path, *, ylabel: str,
+) -> None:
+    """Row=dataset, col=leakage filter. Marker size for model size, viridis for step."""
+    g = sns.relplot(
+        data=df,
+        x=XCOL,
+        y="auprc",
+        hue="step",
+        palette="viridis",
+        size="model size",
+        size_order=MODEL_SIZE_ORDER,
+        sizes=MODEL_SIZE_POINTS,
+        col="leakage filter",
+        col_order=LEAKAGE_FILTER_ORDER,
+        row="dataset",
+        row_order=DATASET_ORDER,
+        kind="scatter",
+        facet_kws={"sharex": False, "sharey": False, "margin_titles": True},
+        height=SUBPLOT_SIZE,
+        aspect=1,
+        edgecolor="none",
+    )
+    r2_map = _add_facet_sigmoid_fits(
+        g, df,
+        row="dataset", row_order=DATASET_ORDER,
+        col="leakage filter", col_order=LEAKAGE_FILTER_ORDER,
+    )
+    _add_facet_correlations(
+        g, df,
+        row="dataset", row_order=DATASET_ORDER,
+        col="leakage filter", col_order=LEAKAGE_FILTER_ORDER,
+        r2_map=r2_map,
+    )
+    _finalize_facetgrid(g, output_path, ylabel=ylabel)
+
+
+# ---------------------------------------------------------------------------
+# Sigmoid fitting
+# ---------------------------------------------------------------------------
+
 def _r_squared(observed: np.ndarray, predicted: np.ndarray) -> float:
     """Compute coefficient of determination (R²)."""
     ss_res = np.sum((observed - predicted) ** 2)
@@ -355,13 +398,15 @@ def _r_squared(observed: np.ndarray, predicted: np.ndarray) -> float:
 
 def _sigmoid(x: np.ndarray, lower: float, upper: float, k: float, x0: float) -> np.ndarray:
     """Increasing sigmoid: lower at low x, upper at high x."""
-    return lower + (upper - lower) / (1 + np.exp(-k * (x - x0)))
+    return lower + (upper - lower) / (1 + np.exp(np.clip(-k * (x - x0), -500, 500)))
 
 
 def _fit_sigmoid(x: np.ndarray, auprc: np.ndarray) -> np.ndarray:
-    """Fit a sigmoid to x vs AUPRC using robust regression, returning parameters."""
-    p0 = np.array([auprc.min(), auprc.max(), 5.0, float(np.median(x))])
-    bounds = ([0, 0, 0, -np.inf], [1, 1, np.inf, np.inf])
+    """Fit a sigmoid to x vs AUPRC using robust regression."""
+    # Choose initial k sign based on data trend
+    k0 = 5.0 if np.corrcoef(x, auprc)[0, 1] >= 0 else -5.0
+    p0 = np.array([auprc.min(), auprc.max(), k0, float(np.median(x))])
+    bounds = ([0, 0, -np.inf, -np.inf], [1, 1, np.inf, np.inf])
 
     def residuals(params: np.ndarray) -> np.ndarray:
         return _sigmoid(x, *params) - auprc
@@ -371,6 +416,10 @@ def _fit_sigmoid(x: np.ndarray, auprc: np.ndarray) -> np.ndarray:
     )
     return result.x
 
+
+# ---------------------------------------------------------------------------
+# Data loading
+# ---------------------------------------------------------------------------
 
 def load_data(*, refresh: bool = False) -> pd.DataFrame:
     """Load data from cache if available, otherwise fetch from W&B."""
@@ -409,8 +458,16 @@ def main() -> None:
             print(f"No data for task {task}")
             continue
         task_dir = OUTPUT_DIR / task
-        plot_by_dataset(task_df, task_dir / "loss_vs_auprc_by_dataset.svg", ylabel=ylabel)
-        plot_by_run(task_df, task_dir / "loss_vs_auprc_by_run.svg", ylabel=ylabel)
+        plot_by_leakage_filter(task_df, task_dir / "by_leakage_filter.svg", ylabel=ylabel)
+        plot_by_dataset_and_leakage_filter(
+            task_df, task_dir / "by_dataset_and_leakage_filter.svg", ylabel=ylabel,
+        )
+        for lf in LEAKAGE_FILTER_ORDER:
+            lf_df = task_df[task_df["leakage filter"] == lf]
+            if lf_df.empty:
+                continue
+            slug = lf.replace(" ", "_")
+            plot_by_run(lf_df, task_dir / f"by_run_{slug}.svg", ylabel=ylabel)
 
 
 if __name__ == "__main__":
