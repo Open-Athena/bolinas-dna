@@ -341,9 +341,11 @@ Edit `config/config.yaml` to customize the pipeline:
 
 # Edit configuration file: config/config.yaml
 
-# Run pipeline
-uv run snakemake
+# Run pipeline (cap memory to avoid OOM from concurrent MMseqs2 searches)
+uv run snakemake --resources mem_mb=<TOTAL_RAM_MB>
 ```
+
+For example, on a 512 GB machine: `--resources mem_mb=500000`. The `search_leakage` rule requests 16 GB per job, so this limits concurrent searches to ~31.
 
 ## Output
 

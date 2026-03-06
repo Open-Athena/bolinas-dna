@@ -155,7 +155,7 @@ rule search_leakage:
         coverage=lambda wildcards: float(wildcards.coverage),
     threads: 1
     resources:
-        mem_mb=4000,
+        mem_mb=16000,
     conda:
         "../envs/mmseqs2.yaml"
     shell:
@@ -237,12 +237,15 @@ rule make_filtered_train_parquet:
             df.id = df.id.astype(str)
 
             # Read hit IDs to filter (base IDs, no strand suffix)
-            hits = pl.read_csv(
-                input.hits,
-                separator="\t",
-                has_header=False,
-                new_columns=["query", "target", "fident", "qcov", "tcov"],
-            )
+            try:
+                hits = pl.read_csv(
+                    input.hits,
+                    separator="\t",
+                    has_header=False,
+                    new_columns=["query", "target", "fident", "qcov", "tcov"],
+                )
+            except pl.exceptions.NoDataError:
+                hits = pl.DataFrame()
             if hits.height > 0:
                 hit_ids = set(hits["target"].unique().to_list())
                 n_before = len(df)
