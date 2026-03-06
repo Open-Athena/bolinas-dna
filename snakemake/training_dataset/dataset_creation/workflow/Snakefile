@@ -5,8 +5,7 @@ SPLITS = ["train", "validation"]
 N_SHARDS = config["n_shards"]
 assert N_SHARDS < 1e4
 SHARDS = [f"shard_{i:04}" for i in range(N_SHARDS)]
-
-LEAKAGE_FILTER_PAIRS = config["leakage_filter"]
+VALIDATION_GENOME = config["validation"]["genome"]
 
 
 include: "rules/common.smk"
@@ -19,7 +18,6 @@ intervals_list = config["intervals"]
 
 
 wildcard_constraints:
-    intervals="|".join(intervals_list),
     genome_set="|".join(genome_sets_list),
 
 
@@ -32,16 +30,11 @@ include: "rules/eda.smk"
 
 rule all:
     input:
-        [
-            expand(
-                "results/upload.done/{genome_set}/{intervals}/{identity}/{coverage}",
-                genome_set=genome_sets_list,
-                intervals=config["intervals"],
-                identity=p["identity"],
-                coverage=p["coverage"],
-            )
-            for p in LEAKAGE_FILTER_PAIRS
-        ],
+        expand(
+            "results/upload.done/{genome_set}/{intervals}",
+            genome_set=genome_sets_list,
+            intervals=config["intervals"],
+        ),
 
 
 # network-constrained

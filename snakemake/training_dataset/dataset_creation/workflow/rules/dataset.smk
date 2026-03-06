@@ -1,302 +1,172 @@
-rule split_bed_by_chrom:
-    """Split windowed BED intervals into train/validation by chromosome.
-
-    Also adds a placeholder name column (".") required by twoBitToFa -bedPos.
-    """
+rule prepare_intervals_for_window_seq:
+    """Add placeholder name column ('.') required by twoBitToFa -bedPos."""
     input:
-        bed="results/intervals/windows/recipe/{recipe}/{w}/{s}/{g}.bed.gz",
+        "results/intervals/{intervals}/{g}.bed.gz",
     output:
-        train=temp(local("results/intervals_split/{recipe}/{w}/{s}/{g}/train.bed")),
-        val=temp(local("results/intervals_split/{recipe}/{w}/{s}/{g}/validation.bed")),
-    run:
-        df = pl.read_csv(
-            input.bed,
-            separator="\t",
-            has_header=False,
-            new_columns=["chrom", "start", "end"],
-        )
-        val_chroms = config["validation_chroms"]
-        for split_name, path, is_val in [
-            ("train", output.train, False),
-            ("validation", output.val, True),
-        ]:
-            split_df = df.filter(
-                pl.col("chrom").is_in(val_chroms) if is_val
-                else ~pl.col("chrom").is_in(val_chroms)
-            )
-            # Add "." name column for twoBitToFa -bedPos
-            split_df = split_df.with_columns(pl.lit(".").alias("name"))
-            split_df.write_csv(path, separator="\t", include_header=False)
+        temp("results/intervals_for_window_seq/{intervals}/{g}.bed.gz"),
+    shell:
+        """
+        zcat {input} |
+        awk 'BEGIN {{OFS="\t"}} {{print $1, $2, $3, "."}}' |
+        gzip > {output}
+        """
 
 
-rule window_seq_split:
-    """Extract sequences from 2bit genome using split BED intervals."""
+rule window_seq:
+    """Extract sequences from 2bit genome using windowed BED intervals."""
     input:
-        genome="results/genome/{g}.2bit",
-        bed=local("results/intervals_split/{intervals}/{g}/{split}.bed"),
+        "results/genome/{g}.2bit",
+        "results/intervals_for_window_seq/windows/recipe/{recipe}/{w}/{s}/{g}.bed.gz",
     output:
-        fasta=temp(local("results/dataset_genome/{intervals}/{g}/{split}.fasta")),
+        temp("results/intervals_seq/{recipe}/{w}/{s}/{g}.fa"),
     conda:
         "../envs/bioinformatics.yaml"
     shell:
-        "twoBitToFa {input.genome} {output.fasta} -bed={input.bed} -bedPos"
+        "twoBitToFa {input[0]} {output} -bed={input[1]} -bedPos"
 
 
-rule make_val_parquet:
-    """Convert validation FASTA to parquet, optionally adding reverse complements."""
+rule make_parquet:
+    """Convert FASTA to parquet, optionally adding reverse complements."""
     input:
-        fasta=local("results/dataset_genome/{intervals}/{g}/validation.fasta"),
+        "results/intervals_seq/{intervals}/{g}.fa",
     output:
-        parquet="results/dataset_genome/{intervals}/{g}/validation.parquet",
+        "results/dataset_genome/{intervals}/{g}.parquet",
     run:
-        df = load_fasta(input.fasta).to_frame().reset_index(names="id")
+        df = load_fasta(input[0]).to_frame().reset_index(names="id")
         if len(df) == 0:
             pl.DataFrame(
                 {"id": [], "seq": []}, schema={"id": pl.String, "seq": pl.String}
-            ).write_parquet(output.parquet)
+            ).write_parquet(output[0])
         else:
             df.id = df.id.astype(str)
             if config["add_rc"]:
                 df = add_rc(df)
-            pl.from_pandas(df[["id", "seq"]]).write_parquet(output.parquet)
+            pl.from_pandas(df[["id", "seq"]]).write_parquet(output[0])
 
 
-rule write_val_fasta:
-    """Concatenate per-genome validation FASTAs into one per genome_set."""
-    input:
-        fastas=local(expand(
-            "results/dataset_genome/{{intervals}}/{g}/validation.fasta",
-            g=lambda wildcards: genome_sets[wildcards.genome_set],
-        )),
-    output:
-        fasta=temp(local("results/leakage_filter/{genome_set}/{intervals}/validation.fasta")),
-    shell:
-        "cat {input.fastas} > {output.fasta} && touch {output.fasta}"
+rule create_functional_validation:
+    """Create validation parquet with phyloP conservation case encoding.
 
-
-rule create_train_db:
-    """Create MMseqs2 database from a genome's train FASTA."""
-    input:
-        fasta=local("results/dataset_genome/{intervals}/{g}/train.fasta"),
-    output:
-        db=temp(local("results/leakage_filter/{intervals}/{g}/trainDB")),
-        db_type=temp(local("results/leakage_filter/{intervals}/{g}/trainDB.dbtype")),
-        db_index=temp(local("results/leakage_filter/{intervals}/{g}/trainDB.index")),
-        db_lookup=temp(local("results/leakage_filter/{intervals}/{g}/trainDB.lookup")),
-        db_source=temp(local("results/leakage_filter/{intervals}/{g}/trainDB.source")),
-        db_h=temp(local("results/leakage_filter/{intervals}/{g}/trainDB_h")),
-        db_h_type=temp(local("results/leakage_filter/{intervals}/{g}/trainDB_h.dbtype")),
-        db_h_index=temp(local("results/leakage_filter/{intervals}/{g}/trainDB_h.index")),
-    params:
-        db_prefix="results/leakage_filter/{intervals}/{g}/trainDB",
-    conda:
-        "../envs/mmseqs2.yaml"
-    shell:
-        "mmseqs createdb {input.fasta} {params.db_prefix} --mask-lower-case 1"
-
-
-rule create_val_db:
-    """Create MMseqs2 database from a genome_set's validation FASTA."""
-    input:
-        fasta=local("results/leakage_filter/{genome_set}/{intervals}/validation.fasta"),
-    output:
-        db=temp(local("results/leakage_filter/{genome_set}/{intervals}/valDB")),
-        db_type=temp(local("results/leakage_filter/{genome_set}/{intervals}/valDB.dbtype")),
-        db_index=temp(local("results/leakage_filter/{genome_set}/{intervals}/valDB.index")),
-        db_lookup=temp(local("results/leakage_filter/{genome_set}/{intervals}/valDB.lookup")),
-        db_source=temp(local("results/leakage_filter/{genome_set}/{intervals}/valDB.source")),
-        db_h=temp(local("results/leakage_filter/{genome_set}/{intervals}/valDB_h")),
-        db_h_type=temp(local("results/leakage_filter/{genome_set}/{intervals}/valDB_h.dbtype")),
-        db_h_index=temp(local("results/leakage_filter/{genome_set}/{intervals}/valDB_h.index")),
-    params:
-        db_prefix="results/leakage_filter/{genome_set}/{intervals}/valDB",
-    conda:
-        "../envs/mmseqs2.yaml"
-    shell:
-        "mmseqs createdb {input.fasta} {params.db_prefix} --mask-lower-case 1"
-
-
-rule search_leakage:
-    """Search validation sequences against a genome's training sequences.
-
-    Val = query (smaller, ~14K seqs), train = target (larger, indexed once).
-    --strand 2 searches both strands (default is forward only!).
-    --cov-mode 0 = bidirectional coverage.
+    Sequences are subsampled from the human genome. For each base,
+    uppercase iff phyloP >= threshold, lowercase otherwise (NaN -> lowercase).
     """
     input:
-        query_db=local("results/leakage_filter/{genome_set}/{intervals}/valDB"),
-        query_db_type=local("results/leakage_filter/{genome_set}/{intervals}/valDB.dbtype"),
-        query_db_index=local("results/leakage_filter/{genome_set}/{intervals}/valDB.index"),
-        query_db_h=local("results/leakage_filter/{genome_set}/{intervals}/valDB_h"),
-        query_db_h_type=local("results/leakage_filter/{genome_set}/{intervals}/valDB_h.dbtype"),
-        query_db_h_index=local("results/leakage_filter/{genome_set}/{intervals}/valDB_h.index"),
-        target_db=local("results/leakage_filter/{intervals}/{g}/trainDB"),
-        target_db_type=local("results/leakage_filter/{intervals}/{g}/trainDB.dbtype"),
-        target_db_index=local("results/leakage_filter/{intervals}/{g}/trainDB.index"),
-        target_db_h=local("results/leakage_filter/{intervals}/{g}/trainDB_h"),
-        target_db_h_type=local("results/leakage_filter/{intervals}/{g}/trainDB_h.dbtype"),
-        target_db_h_index=local("results/leakage_filter/{intervals}/{g}/trainDB_h.index"),
+        fasta="results/intervals_seq/{recipe}/{w}/{s}/" + VALIDATION_GENOME + ".fa",
+        chrom_mapping=local("config/human_chrom_mapping.tsv"),
     output:
-        result_db=temp(local(
-            "results/leakage_filter/{genome_set}/{intervals}/{g}/{identity}/{coverage}/resultDB"
-        )),
-        result_index=temp(local(
-            "results/leakage_filter/{genome_set}/{intervals}/{g}/{identity}/{coverage}/resultDB.index"
-        )),
-        result_db_type=temp(local(
-            "results/leakage_filter/{genome_set}/{intervals}/{g}/{identity}/{coverage}/resultDB.dbtype"
-        )),
-    params:
-        query_prefix="results/leakage_filter/{genome_set}/{intervals}/valDB",
-        target_prefix="results/leakage_filter/{intervals}/{g}/trainDB",
-        result_prefix="results/leakage_filter/{genome_set}/{intervals}/{g}/{identity}/{coverage}/resultDB",
-        tmp_dir="results/leakage_filter/{genome_set}/{intervals}/{g}/{identity}/{coverage}/tmp",
-        identity=lambda wildcards: float(wildcards.identity),
-        coverage=lambda wildcards: float(wildcards.coverage),
-    threads: 1
-    resources:
-        mem_mb=16000,
-    conda:
-        "../envs/mmseqs2.yaml"
-    shell:
-        """
-        mkdir -p {params.tmp_dir}
-        mmseqs search \
-            {params.query_prefix} \
-            {params.target_prefix} \
-            {params.result_prefix} \
-            {params.tmp_dir} \
-            --search-type 3 \
-            --mask-lower-case 1 \
-            --strand 2 \
-            --min-seq-id {params.identity} \
-            -c {params.coverage} \
-            --cov-mode 0 \
-            --threads {threads}
-        rm -rf {params.tmp_dir}
-        """
-
-
-rule extract_leakage_hits:
-    """Convert binary search results to TSV for a single genome."""
-    input:
-        query_db=local("results/leakage_filter/{genome_set}/{intervals}/valDB"),
-        query_db_type=local("results/leakage_filter/{genome_set}/{intervals}/valDB.dbtype"),
-        query_db_index=local("results/leakage_filter/{genome_set}/{intervals}/valDB.index"),
-        query_db_h=local("results/leakage_filter/{genome_set}/{intervals}/valDB_h"),
-        query_db_h_type=local("results/leakage_filter/{genome_set}/{intervals}/valDB_h.dbtype"),
-        query_db_h_index=local("results/leakage_filter/{genome_set}/{intervals}/valDB_h.index"),
-        target_db=local("results/leakage_filter/{intervals}/{g}/trainDB"),
-        target_db_type=local("results/leakage_filter/{intervals}/{g}/trainDB.dbtype"),
-        target_db_index=local("results/leakage_filter/{intervals}/{g}/trainDB.index"),
-        target_db_h=local("results/leakage_filter/{intervals}/{g}/trainDB_h"),
-        target_db_h_type=local("results/leakage_filter/{intervals}/{g}/trainDB_h.dbtype"),
-        target_db_h_index=local("results/leakage_filter/{intervals}/{g}/trainDB_h.index"),
-        result_db=local("results/leakage_filter/{genome_set}/{intervals}/{g}/{identity}/{coverage}/resultDB"),
-        result_index=local("results/leakage_filter/{genome_set}/{intervals}/{g}/{identity}/{coverage}/resultDB.index"),
-        result_db_type=local("results/leakage_filter/{genome_set}/{intervals}/{g}/{identity}/{coverage}/resultDB.dbtype"),
-    output:
-        tsv="results/leakage_filter/{genome_set}/{intervals}/{g}/{identity}/{coverage}/hits.tsv",
-    params:
-        query_prefix="results/leakage_filter/{genome_set}/{intervals}/valDB",
-        target_prefix="results/leakage_filter/{intervals}/{g}/trainDB",
-        result_prefix="results/leakage_filter/{genome_set}/{intervals}/{g}/{identity}/{coverage}/resultDB",
-    conda:
-        "../envs/mmseqs2.yaml"
-    shell:
-        """
-        mmseqs convertalis \
-            {params.query_prefix} \
-            {params.target_prefix} \
-            {params.result_prefix} \
-            {output.tsv} \
-            --format-output "query,target,fident,qcov,tcov"
-        """
-
-
-rule make_filtered_train_parquet:
-    """Load train FASTA, remove sequences with leakage hits, add RC, write parquet.
-
-    Hit IDs are base IDs (no strand suffix) from the FASTA. When add_rc is
-    enabled, both _+ and _- versions of each hit ID are filtered from the
-    final parquet.
-    """
-    input:
-        fasta=local("results/dataset_genome/{intervals}/{g}/train.fasta"),
-        hits="results/leakage_filter/{genome_set}/{intervals}/{g}/{identity}/{coverage}/hits.tsv",
-    output:
-        parquet="results/dataset_genome_filtered/{genome_set}/{intervals}/{g}/{identity}/{coverage}/train.parquet",
+        "results/validation/{recipe}/{w}/{s}/validation.parquet",
     run:
-        df = load_fasta(input.fasta).to_frame().reset_index(names="id")
+        from Bio.Seq import Seq
 
+        val_config = config["validation"]
+        threshold = val_config["phylop_threshold"]
+        bigwig_path = val_config["conservation_bigwig"]
+
+        # Load chrom name mapping (RefSeq -> UCSC)
+        chrom_map = dict(
+            pl.read_csv(input.chrom_mapping, separator="\t")
+            .iter_rows()
+        )
+
+        # Load and subsample sequences
+        series = load_fasta(input.fasta)
+        df = series.to_frame().reset_index(names="id")
         if len(df) == 0:
             pl.DataFrame(
                 {"id": [], "seq": []}, schema={"id": pl.String, "seq": pl.String}
-            ).write_parquet(output.parquet)
-        else:
-            df.id = df.id.astype(str)
+            ).write_parquet(output[0])
+            return
 
-            # Read hit IDs to filter (base IDs, no strand suffix)
-            try:
-                hits = pl.read_csv(
-                    input.hits,
-                    separator="\t",
-                    has_header=False,
-                    new_columns=["query", "target", "fident", "qcov", "tcov"],
-                )
-            except pl.exceptions.NoDataError:
-                hits = pl.DataFrame()
-            if hits.height > 0:
-                hit_ids = set(hits["target"].unique().to_list())
-                n_before = len(df)
-                df = df[~df.id.isin(hit_ids)]
-                n_removed = n_before - len(df)
-                print(
-                    f"Leakage filter ({wildcards.g}, id={wildcards.identity} "
-                    f"cov={wildcards.coverage}): removed {n_removed:,} / {n_before:,} "
-                    f"({100 * n_removed / n_before:.2f}%)"
-                )
+        df.id = df.id.astype(str)
+        max_samples = val_config["max_samples"]
+        if len(df) > max_samples:
+            df = df.sample(n=max_samples, random_state=val_config["seed"])
 
-            # Add reverse complements after filtering
-            if config["add_rc"]:
-                df = add_rc(df)
+        bw = pyBigWig.open(bigwig_path)
 
-            pl.from_pandas(df[["id", "seq"]]).write_parquet(output.parquet)
+        case_encoded_seqs = []
+        valid_mask = []
+        for _, row in df.iterrows():
+            # Parse coords from bedPos ID format: chrom:start-end
+            seq_id = row["id"]
+            seq = row["seq"]
+            chrom_refseq, coords = seq_id.rsplit(":", 1)
+            start, end = coords.split("-")
+            start, end = int(start), int(end)
+
+            chrom_ucsc = chrom_map.get(chrom_refseq)
+            if chrom_ucsc is None:
+                valid_mask.append(False)
+                case_encoded_seqs.append(seq)
+                continue
+
+            scores = bw.values(chrom_ucsc, start, end)
+            encoded = []
+            for base, score in zip(seq, scores):
+                # NaN (missing data) compares False, so NaN -> lowercase
+                if score >= threshold:
+                    encoded.append(base.upper())
+                else:
+                    encoded.append(base.lower())
+            case_encoded_seqs.append("".join(encoded))
+            valid_mask.append(True)
+
+        bw.close()
+
+        df["seq"] = case_encoded_seqs
+        df = df[valid_mask]
+
+        if config["add_rc"]:
+            rc_rows = []
+            for _, row in df.iterrows():
+                rc_seq = str(Seq(row["seq"]).reverse_complement())
+                rc_rows.append({"id": row["id"] + "_rc", "seq": rc_seq})
+            rc_df = pd.DataFrame(rc_rows)
+            df = pd.concat([df, rc_df], ignore_index=True)
+
+        pl.from_pandas(df[["id", "seq"]]).write_parquet(output[0])
 
 
 rule merge_datasets:
     input:
-        parquets=lambda wildcards: (
-            expand(
-                "results/dataset_genome_filtered/{genome_set}/{intervals}/{g}/{identity}/{coverage}/train.parquet",
-                genome_set=wildcards.genome_set,
-                intervals=wildcards.intervals,
-                g=genome_sets[wildcards.genome_set],
-                identity=wildcards.identity,
-                coverage=wildcards.coverage,
-            )
-            if wildcards.split == "train"
-            else expand(
-                "results/dataset_genome/{intervals}/{g}/validation.parquet",
-                intervals=wildcards.intervals,
-                g=genome_sets[wildcards.genome_set],
-            )
+        train=lambda wildcards: expand(
+            "results/dataset_genome/{intervals}/{g}.parquet",
+            intervals=wildcards.intervals,
+            g=genome_sets[wildcards.genome_set],
         ),
+        validation="results/validation/{intervals}/validation.parquet",
     output:
         temp(local(
             expand(
-                "results/dataset/{{genome_set}}/{{intervals}}/{{identity}}/{{coverage}}/data/{{split}}/{shard}.jsonl",
+                "results/dataset/{{genome_set}}/{{intervals}}/data/{split}/{shard}.jsonl",
+                split=SPLITS,
                 shard=SHARDS,
             )
         )),
     threads: workflow.cores
     run:
-        df = pl.concat(
-            tqdm((pl.read_parquet(path) for path in input.parquets), total=len(input.parquets)),
-        ).sample(fraction=1, shuffle=True, seed=config["shuffle_seed"])
-        split_pairs = get_array_split_pairs(len(df), len(output))
-        for path, (start, end) in tqdm(zip(output, split_pairs), total=len(output)):
-            df.slice(start, end - start).write_ndjson(path)
+        output_by_split = {}
+        for path in output:
+            split = "validation" if "/validation/" in path else "train"
+            output_by_split.setdefault(split, []).append(path)
+
+        for split in SPLITS:
+            if split == "train":
+                parquets = input.train
+            else:
+                parquets = [input.validation]
+            df = pl.concat(
+                tqdm(
+                    (pl.read_parquet(path) for path in parquets),
+                    total=len(parquets),
+                ),
+            ).sample(fraction=1, shuffle=True, seed=config["shuffle_seed"])
+            split_outputs = output_by_split[split]
+            split_pairs = get_array_split_pairs(len(df), len(split_outputs))
+            for path, (start, end) in tqdm(
+                zip(split_outputs, split_pairs), total=len(split_outputs)
+            ):
+                df.slice(start, end - start).write_ndjson(path)
 
 
 rule compress_shard:
@@ -312,23 +182,20 @@ rule compress_shard:
 rule hf_upload:
     input:
         local(expand(
-            "results/dataset/{{genome_set}}/{{intervals}}/{{identity}}/{{coverage}}/data/{split}/{shard}.jsonl.zst",
+            "results/dataset/{{genome_set}}/{{intervals}}/data/{split}/{shard}.jsonl.zst",
             split=SPLITS,
             shard=SHARDS,
         )),
     output:
-        touch("results/upload.done/{genome_set}/{intervals}/{identity}/{coverage}"),
+        touch("results/upload.done/{genome_set}/{intervals}"),
     params:
         name=lambda wildcards: (
             config["output_hf_prefix"]
             + "-genome_set-" + wildcards.genome_set
             + "-intervals-" + wildcards.intervals.replace("/", "_")
-            + "-id" + wildcards.identity
-            + "_cov" + wildcards.coverage
         ),
         data_dir=lambda wildcards: (
             f"results/dataset/{wildcards.genome_set}/{wildcards.intervals}"
-            f"/{wildcards.identity}/{wildcards.coverage}"
         ),
     threads: workflow.cores
     shell:

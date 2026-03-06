@@ -1,14 +1,13 @@
 genomes_path: config/genomes.parquet
 
-validation_chroms:
-    - NC_000019.10 # human chr19
-#   - NC_000085.7  # mouse chr19
-#   - NC_052550.1  # chicken chr19
-#   - NC_007130.7  # zebrafish chr19
-#   - NT_033778.4  # drosophila chr2R
-#   - NC_003281.10  # c elegans chrIII
-
 shuffle_seed: 42
+
+validation:
+    max_samples: 16384
+    genome: GCF_000001405.40
+    conservation_bigwig: results/conservation/cactus241way.phyloP.bw
+    phylop_threshold: 2.27
+    seed: 42
 
 n_shards: 64
 
@@ -48,9 +47,9 @@ genome_sets:
     - name: vertebrates
       rank_key: phylum
       rank_value: Chordata
-        #     - name: mammals
-        #       rank_key: class
-        #       rank_value: Mammalia
+    - name: mammals
+      rank_key: class
+      rank_value: Mammalia
     - name: primates
       rank_key: order
       rank_value: Primates
@@ -58,7 +57,7 @@ genome_sets:
 #       rank_key: species
 #       rank_value: "Homo sapiens"
 
-output_hf_prefix: bolinas-dna/genomes-v4
+output_hf_prefix: bolinas-dna/genomes-v5
 
 # Subset of genomes for one-off analysis (6 priority + 30 random, seed=42)
 genome_subset_analysis:
@@ -136,13 +135,6 @@ promoter_comparison_regions:
     - promoters_mRNA/2048/2048
     - promoters/256/256
     - promoters/2048/2048
-
-# Priority genomes for BED export (for visualization in genome browsers)
-leakage_filter:
-    - identity: 0.3
-      coverage: 0.3
-    - identity: 1
-      coverage: 1
 
 genome_subset_bed:
     - GCF_000001405.40 # Human
