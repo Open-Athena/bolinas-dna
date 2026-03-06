@@ -1,7 +1,6 @@
 configfile: "config/config.yaml"
 
 
-SPLITS = ["train", "validation"]
 N_SHARDS = config["n_shards"]
 assert N_SHARDS < 1e4
 SHARDS = [f"shard_{i:04}" for i in range(N_SHARDS)]
@@ -14,7 +13,8 @@ include: "rules/common.smk"
 genomes = load_genome_info(config["genomes_path"])
 genome_sets = load_genome_sets(genomes, config["genome_sets"])
 genome_sets_list = list(genome_sets.keys())
-intervals_list = config["intervals"]
+training_intervals = config["intervals"]["training"]
+validation_intervals = config["intervals"]["validation"]
 
 
 wildcard_constraints:
@@ -31,9 +31,13 @@ include: "rules/eda.smk"
 rule all:
     input:
         expand(
-            "results/upload.done/{genome_set}/{intervals}",
+            "results/upload.done/training/{genome_set}/{intervals}",
             genome_set=genome_sets_list,
-            intervals=config["intervals"],
+            intervals=training_intervals,
+        ),
+        expand(
+            "results/upload.done/validation/{intervals}",
+            intervals=validation_intervals,
         ),
 
 

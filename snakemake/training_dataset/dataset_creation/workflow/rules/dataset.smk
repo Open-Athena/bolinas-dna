@@ -7,7 +7,7 @@ rule prepare_intervals_for_window_seq:
     shell:
         """
         zcat {input} |
-        awk 'BEGIN {{OFS="\t"}} {{print $1, $2, $3, "."}}' |
+        awk 'BEGIN {{OFS="\\t"}} {{print $1, $2, $3, "."}}' |
         gzip > {output}
         """
 
@@ -55,7 +55,7 @@ rule create_functional_validation:
         chrom_mapping=local("config/human_chrom_mapping.tsv"),
         bigwig=config["validation"]["conservation_bigwig"],
     output:
-        "results/validation/{recipe}/{w}/{s}/validation.parquet",
+        "results/validation/{recipe}/{w}/{s}/train.parquet",
     run:
         val_config = config["validation"]
         threshold = val_config["phylop_threshold"]
@@ -107,45 +107,33 @@ rule create_functional_validation:
 
 
 rule merge_datasets:
+    """Merge per-genome training parquets, shuffle, and shard into JSONL."""
     input:
-        train=lambda wildcards: expand(
+        lambda wildcards: expand(
             "results/dataset_genome/{intervals}/{g}.parquet",
             intervals=wildcards.intervals,
             g=genome_sets[wildcards.genome_set],
         ),
-        validation="results/validation/{intervals}/validation.parquet",
     output:
         temp(local(
             expand(
-                "results/dataset/{{genome_set}}/{{intervals}}/data/{split}/{shard}.jsonl",
-                split=SPLITS,
+                "results/dataset/{{genome_set}}/{{intervals}}/data/train/{shard}.jsonl",
                 shard=SHARDS,
             )
         )),
     threads: workflow.cores
     run:
-        output_by_split = {}
-        for path in output:
-            split = "validation" if "/validation/" in path else "train"
-            output_by_split.setdefault(split, []).append(path)
-
-        for split in SPLITS:
-            if split == "train":
-                parquets = input.train
-            else:
-                parquets = [input.validation]
-            df = pl.concat(
-                tqdm(
-                    (pl.read_parquet(path) for path in parquets),
-                    total=len(parquets),
-                ),
-            ).sample(fraction=1, shuffle=True, seed=config["shuffle_seed"])
-            split_outputs = output_by_split[split]
-            split_pairs = get_array_split_pairs(len(df), len(split_outputs))
-            for path, (start, end) in tqdm(
-                zip(split_outputs, split_pairs), total=len(split_outputs)
-            ):
-                df.slice(start, end - start).write_ndjson(path)
+        df = pl.concat(
+            tqdm(
+                (pl.read_parquet(path) for path in input),
+                total=len(input),
+            ),
+        ).sample(fraction=1, shuffle=True, seed=config["shuffle_seed"])
+        split_pairs = get_array_split_pairs(len(df), len(output))
+        for path, (start, end) in tqdm(
+            zip(output, split_pairs), total=len(output)
+        ):
+            df.slice(start, end - start).write_ndjson(path)
 
 
 rule compress_shard:
@@ -158,15 +146,15 @@ rule compress_shard:
         "zstd -T{threads} {input} -o {output}"
 
 
-rule hf_upload:
+rule hf_upload_training:
+    """Upload training dataset shards to HuggingFace."""
     input:
         local(expand(
-            "results/dataset/{{genome_set}}/{{intervals}}/data/{split}/{shard}.jsonl.zst",
-            split=SPLITS,
+            "results/dataset/{{genome_set}}/{{intervals}}/data/train/{shard}.jsonl.zst",
             shard=SHARDS,
         )),
     output:
-        touch("results/upload.done/{genome_set}/{intervals}"),
+        touch("results/upload.done/training/{genome_set}/{intervals}"),
     params:
         name=lambda wildcards: (
             config["output_hf_prefix"]
@@ -175,6 +163,26 @@ rule hf_upload:
         ),
         data_dir=lambda wildcards: (
             f"results/dataset/{wildcards.genome_set}/{wildcards.intervals}"
+        ),
+    threads: workflow.cores
+    shell:
+        "hf upload-large-folder {params.name} --repo-type dataset {params.data_dir}"
+
+
+rule hf_upload_validation:
+    """Upload validation dataset to HuggingFace."""
+    input:
+        "results/validation/{intervals}/train.parquet",
+    output:
+        touch("results/upload.done/validation/{intervals}"),
+    params:
+        name=lambda wildcards: (
+            config["output_hf_prefix"]
+            + "-validation"
+            + "-intervals-" + wildcards.intervals.replace("/", "_")
+        ),
+        data_dir=lambda wildcards: (
+            f"results/validation/{wildcards.intervals}"
         ),
     threads: workflow.cores
     shell:
