@@ -181,9 +181,5 @@ rule hf_upload_validation:
             + "-validation"
             + "-intervals-" + wildcards.intervals.replace("/", "_")
         ),
-        data_dir=lambda wildcards: (
-            f"results/validation/{wildcards.intervals}"
-        ),
-    threads: workflow.cores
     shell:
-        "hf upload-large-folder {params.name} --repo-type dataset {params.data_dir}"
+        "hf upload {params.name} {input} train.parquet --repo-type dataset"
