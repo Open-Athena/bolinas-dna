@@ -55,7 +55,7 @@ rule create_functional_validation:
         chrom_mapping=local("config/human_chrom_mapping.tsv"),
         bigwig=config["validation"]["conservation_bigwig"],
     output:
-        "results/validation/{recipe}/{w}/{s}/train.parquet",
+        "results/validation/{recipe}/{w}/{s}/validation.parquet",
     run:
         val_config = config["validation"]
         threshold = val_config["phylop_threshold"]
@@ -172,7 +172,7 @@ rule hf_upload_training:
 rule hf_upload_validation:
     """Upload validation dataset to HuggingFace."""
     input:
-        "results/validation/{intervals}/train.parquet",
+        "results/validation/{intervals}/validation.parquet",
     output:
         touch("results/upload.done/validation/{intervals}"),
     params:
@@ -182,4 +182,4 @@ rule hf_upload_validation:
             + "-intervals-" + wildcards.intervals.replace("/", "_")
         ),
     shell:
-        "hf upload {params.name} {input} train.parquet --repo-type dataset"
+        "hf upload {params.name} {input} validation.parquet --repo-type dataset"
