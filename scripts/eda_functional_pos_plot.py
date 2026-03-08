@@ -144,23 +144,12 @@ def _sigmoid(x: np.ndarray, lower: float, upper: float, k: float, x0: float) -> 
 
 
 def _fit_sigmoid(x: np.ndarray, y: np.ndarray) -> np.ndarray:
-    """Fit a sigmoid to x vs y using robust regression."""
+    """Fit a sigmoid to x vs y using least squares."""
     k0 = 5.0 if np.corrcoef(x, y)[0, 1] >= 0 else -5.0
-    p0 = np.array([y.min(), y.max(), k0, float(np.median(x))])
+    p0 = [y.min(), y.max(), k0, float(np.median(x))]
     bounds = ([0, 0, -np.inf, -np.inf], [1, 1, np.inf, np.inf])
-
-    def residuals(params: np.ndarray) -> np.ndarray:
-        return _sigmoid(x, *params) - y
-
-    result = optimize.least_squares(residuals, p0, bounds=bounds, loss="soft_l1", max_nfev=10000)
-    return result.x
-
-
-def _r_squared(observed: np.ndarray, predicted: np.ndarray) -> float:
-    """Compute coefficient of determination (R²)."""
-    ss_res = np.sum((observed - predicted) ** 2)
-    ss_tot = np.sum((observed - observed.mean()) ** 2)
-    return 1 - ss_res / ss_tot
+    popt, _ = optimize.curve_fit(_sigmoid, x, y, p0=p0, bounds=bounds, maxfev=10000)
+    return popt
 
 
 # ---------------------------------------------------------------------------
@@ -168,7 +157,7 @@ def _r_squared(observed: np.ndarray, predicted: np.ndarray) -> float:
 # ---------------------------------------------------------------------------
 
 
-def _correlation_subtitle(df: pd.DataFrame, xcol: str, *, r2: float | None = None) -> str:
+def _correlation_subtitle(df: pd.DataFrame, xcol: str) -> str:
     """Return a compact correlation string with one-sided p-values (positive direction)."""
     if len(df) < 3:
         return ""
@@ -178,10 +167,7 @@ def _correlation_subtitle(df: pd.DataFrame, xcol: str, *, r2: float | None = Non
     spearman_p = spearman_p_two / 2 if spearman_r > 0 else 1 - spearman_p_two / 2
     r_star = " (*)" if pearson_p < SIGNIFICANCE_THRESHOLD else ""
     rho_star = " (*)" if spearman_p < SIGNIFICANCE_THRESHOLD else ""
-    lines = [f"$r$ = {pearson_r:.2f}{r_star}", f"$\\rho$ = {spearman_r:.2f}{rho_star}"]
-    if r2 is not None:
-        lines.append(f"sigmoid $R^2$ = {r2:.2f}")
-    return "\n".join(lines)
+    return "\n".join([f"$r$ = {pearson_r:.2f}{r_star}", f"$\\rho$ = {spearman_r:.2f}{rho_star}"])
 
 
 CORNERS = [
@@ -219,10 +205,10 @@ def _emptiest_corner(ax: plt.Axes) -> tuple[float, float, str, str]:
 
 
 def _annotate_correlation(
-    ax: plt.Axes, df: pd.DataFrame, xcol: str, *, r2: float | None = None
+    ax: plt.Axes, df: pd.DataFrame, xcol: str
 ) -> None:
     """Add correlation annotation in the emptiest corner of the axes."""
-    text = _correlation_subtitle(df, xcol, r2=r2)
+    text = _correlation_subtitle(df, xcol)
     if not text:
         return
     x, y, ha, va = _emptiest_corner(ax)
@@ -257,19 +243,17 @@ def plot_scatter(df: pd.DataFrame, output_path: Path) -> None:
             )
 
         # Sigmoid fit
-        r2 = None
         if len(panel_df) >= 4:
             x = panel_df[xcol].values
             y = panel_df["auprc"].values
             try:
                 popt = _fit_sigmoid(x, y)
-                r2 = _r_squared(y, _sigmoid(x, *popt))
                 x_fit = np.linspace(x.min(), x.max(), 200)
                 ax.plot(x_fit, _sigmoid(x_fit, *popt), color="C3", linewidth=1.5)
             except Exception:
                 logger.warning("Sigmoid fit failed for %s", xcol)
 
-        _annotate_correlation(ax, panel_df, xcol, r2=r2)
+        _annotate_correlation(ax, panel_df, xcol)
         ax.set_xlabel(xcol)
 
     axes[0].set_ylabel("Promoter VEP AUPRC")
