@@ -31,7 +31,12 @@ RUN_NAME_PREFIX = "eda-functional-pos-"
 LOSS_KEY = "eval/loss"
 FUNCTIONAL_LOSS_KEY = "eval/val_functional/loss"
 NONFUNCTIONAL_LOSS_KEY = "eval/val_nonfunctional/loss"
-AUPRC_KEY = "lm_eval/traitgym_mendelian_v2_255/tss_proximal/auprc"
+
+TASK_PREFIX = "lm_eval/traitgym_mendelian_v2_255"
+TASKS: dict[str, str] = {
+    "tss_proximal": "Promoter VEP AUPRC",
+    "5_prime_UTR_variant": "5' UTR VEP AUPRC",
+}
 
 OUTPUT_DIR = Path("results/eda_functional_pos")
 CACHE_PATH = OUTPUT_DIR / "wandb_cache.csv"
@@ -58,9 +63,11 @@ SIGNIFICANCE_THRESHOLD = 0.05
 
 
 def fetch_runs() -> pd.DataFrame:
-    """Fetch all checkpoints from W&B runs, returning one row per (run, step)."""
+    """Fetch all checkpoints from W&B runs, returning one row per (run, step, task)."""
     api = wandb.Api()
     runs = api.runs(WANDB_PROJECT, filters={"group": WANDB_GROUP})
+
+    auprc_keys = [f"{TASK_PREFIX}/{task}/auprc" for task in TASKS]
 
     records: list[dict[str, str | float | int]] = []
     for run in runs:
@@ -77,15 +84,12 @@ def fetch_runs() -> pd.DataFrame:
         model_size = parts[1].upper()
 
         history = run.scan_history(
-            keys=[LOSS_KEY, FUNCTIONAL_LOSS_KEY, NONFUNCTIONAL_LOSS_KEY, AUPRC_KEY, "_step"]
+            keys=[LOSS_KEY, FUNCTIONAL_LOSS_KEY, NONFUNCTIONAL_LOSS_KEY, *auprc_keys, "_step"]
         )
         seen_steps: set[int] = set()
         for row in history:
             step = row.get("_step")
-            auprc = row.get(AUPRC_KEY)
-            if step is None or auprc is None:
-                continue
-            if step in seen_steps:
+            if step is None or step in seen_steps:
                 continue
             seen_steps.add(step)
 
@@ -93,22 +97,28 @@ def fetch_runs() -> pd.DataFrame:
             func_loss = row.get(FUNCTIONAL_LOSS_KEY)
             nonfunc_loss = row.get(NONFUNCTIONAL_LOSS_KEY)
 
-            record: dict[str, str | float | int] = {
-                "dataset": dataset,
-                "model size": model_size,
-                "step": int(step),
-                "auprc": float(auprc),
-            }
-            if loss is not None:
-                record[LL_ALL] = -float(loss)
-            if func_loss is not None:
-                record[LL_FUNC] = -float(func_loss)
-            if nonfunc_loss is not None:
-                record[LL_NONFUNC] = -float(nonfunc_loss)
-            if func_loss is not None and nonfunc_loss is not None:
-                record[LL_DIFF] = float(nonfunc_loss) - float(func_loss)
+            for task, auprc_key in zip(TASKS, auprc_keys):
+                auprc = row.get(auprc_key)
+                if auprc is None:
+                    continue
 
-            records.append(record)
+                record: dict[str, str | float | int] = {
+                    "dataset": dataset,
+                    "model size": model_size,
+                    "step": int(step),
+                    "task": task,
+                    "auprc": float(auprc),
+                }
+                if loss is not None:
+                    record[LL_ALL] = -float(loss)
+                if func_loss is not None:
+                    record[LL_FUNC] = -float(func_loss)
+                if nonfunc_loss is not None:
+                    record[LL_NONFUNC] = -float(nonfunc_loss)
+                if func_loss is not None and nonfunc_loss is not None:
+                    record[LL_DIFF] = float(nonfunc_loss) - float(func_loss)
+
+                records.append(record)
 
     return pd.DataFrame(records)
 
@@ -219,13 +229,12 @@ def _annotate_correlation(ax: plt.Axes, df: pd.DataFrame, xcol: str) -> None:
 
 XCOL_LONG = "metric"
 XVAL_LONG = "value"
-YLABEL = "Promoter VEP AUPRC"
 
 
 def _melt_ll_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Melt the wide LL columns into long format for faceting."""
     return df.melt(
-        id_vars=["dataset", "model size", "step", "auprc"],
+        id_vars=["dataset", "model size", "step", "task", "auprc"],
         value_vars=XCOLS,
         var_name=XCOL_LONG,
         value_name=XVAL_LONG,
@@ -257,12 +266,12 @@ def _add_facet_correlations(g: sns.FacetGrid, long_df: pd.DataFrame) -> None:
         _annotate_correlation(ax, panel_df, xcol)
 
 
-def _finalize_facetgrid(g: sns.FacetGrid, output_path: Path) -> None:
+def _finalize_facetgrid(g: sns.FacetGrid, output_path: Path, *, ylabel: str) -> None:
     """Apply shared styling and save a FacetGrid."""
     for ax, xcol in zip(g.axes.flat, XCOLS):
         ax.set_xlabel(xcol)
         ax.set_title("")
-    g.set_ylabels(YLABEL)
+    g.set_ylabels(ylabel)
     g.despine()
     g.tight_layout()
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -276,7 +285,7 @@ def _finalize_facetgrid(g: sns.FacetGrid, output_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def plot_scatter(df: pd.DataFrame, output_path: Path) -> None:
+def plot_scatter(df: pd.DataFrame, output_path: Path, *, ylabel: str) -> None:
     """1×4 scatter: one panel per LL metric."""
     long_df = _melt_ll_columns(df)
 
@@ -301,7 +310,7 @@ def plot_scatter(df: pd.DataFrame, output_path: Path) -> None:
     )
     _add_facet_sigmoid_fits(g, long_df)
     _add_facet_correlations(g, long_df)
-    _finalize_facetgrid(g, output_path)
+    _finalize_facetgrid(g, output_path, ylabel=ylabel)
 
 
 # ---------------------------------------------------------------------------
@@ -323,7 +332,12 @@ def main() -> None:
         return
     print(df.to_string(index=False))
 
-    plot_scatter(df, OUTPUT_DIR / "functional_pos_scatter.svg")
+    for task, ylabel in TASKS.items():
+        task_df = df[df["task"] == task]
+        if task_df.empty:
+            print(f"No data for task {task}")
+            continue
+        plot_scatter(task_df, OUTPUT_DIR / task / "scatter.svg", ylabel=ylabel)
 
 
 if __name__ == "__main__":
