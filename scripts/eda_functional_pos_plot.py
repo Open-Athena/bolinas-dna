@@ -204,9 +204,7 @@ def _emptiest_corner(ax: plt.Axes) -> tuple[float, float, str, str]:
     return best_corner
 
 
-def _annotate_correlation(
-    ax: plt.Axes, df: pd.DataFrame, xcol: str
-) -> None:
+def _annotate_correlation(ax: plt.Axes, df: pd.DataFrame, xcol: str) -> None:
     """Add correlation annotation in the emptiest corner of the axes."""
     text = _correlation_subtitle(df, xcol)
     if not text:
@@ -216,92 +214,94 @@ def _annotate_correlation(
 
 
 # ---------------------------------------------------------------------------
+# Facet helpers
+# ---------------------------------------------------------------------------
+
+XCOL_LONG = "metric"
+XVAL_LONG = "value"
+YLABEL = "Promoter VEP AUPRC"
+
+
+def _melt_ll_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Melt the wide LL columns into long format for faceting."""
+    return df.melt(
+        id_vars=["dataset", "model size", "step", "auprc"],
+        value_vars=XCOLS,
+        var_name=XCOL_LONG,
+        value_name=XVAL_LONG,
+    ).dropna(subset=[XVAL_LONG])
+
+
+def _add_facet_sigmoid_fits(g: sns.FacetGrid, long_df: pd.DataFrame) -> None:
+    """Overlay a sigmoid fit on each facet panel."""
+    for ax, xcol in zip(g.axes.flat, XCOLS):
+        subset = long_df[long_df[XCOL_LONG] == xcol]
+        if len(subset) < 4:
+            continue
+        x = subset[XVAL_LONG].values
+        y = subset["auprc"].values
+        try:
+            popt = _fit_sigmoid(x, y)
+            x_fit = np.linspace(x.min(), x.max(), 200)
+            ax.plot(x_fit, _sigmoid(x_fit, *popt), color="C3", linewidth=1.5)
+        except Exception:
+            logger.warning("Sigmoid fit failed for %s", xcol)
+
+
+def _add_facet_correlations(g: sns.FacetGrid, long_df: pd.DataFrame) -> None:
+    """Add per-facet correlation annotations."""
+    for ax, xcol in zip(g.axes.flat, XCOLS):
+        subset = long_df[long_df[XCOL_LONG] == xcol]
+        # Temporarily rename for the correlation helper
+        panel_df = subset.rename(columns={XVAL_LONG: xcol})
+        _annotate_correlation(ax, panel_df, xcol)
+
+
+def _finalize_facetgrid(g: sns.FacetGrid, output_path: Path) -> None:
+    """Apply shared styling and save a FacetGrid."""
+    for ax, xcol in zip(g.axes.flat, XCOLS):
+        ax.set_xlabel(xcol)
+        ax.set_title("")
+    g.set_ylabels(YLABEL)
+    g.despine()
+    g.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    g.savefig(output_path, format="svg", bbox_inches="tight")
+    plt.close(g.figure)
+    print(f"Saved plot to {output_path}")
+
+
+# ---------------------------------------------------------------------------
 # Plot
 # ---------------------------------------------------------------------------
 
 
 def plot_scatter(df: pd.DataFrame, output_path: Path) -> None:
-    """1×4 scatter: one panel per LL metric, shared y-axis (AUPRC)."""
-    fig, axes = plt.subplots(1, len(XCOLS), sharey=True, figsize=(SUBPLOT_SIZE * len(XCOLS), SUBPLOT_SIZE))
+    """1×4 scatter: one panel per LL metric."""
+    long_df = _melt_ll_columns(df)
 
-    vmin = df["step"].min()
-    vmax = df["step"].max()
-    norm = plt.Normalize(vmin=vmin, vmax=vmax)
-    cmap = plt.get_cmap("viridis")
-
-    for ax, xcol in zip(axes, XCOLS):
-        panel_df = df.dropna(subset=[xcol])
-
-        for _, row in panel_df.iterrows():
-            ax.scatter(
-                row[xcol],
-                row["auprc"],
-                c=[cmap(norm(row["step"]))],
-                marker=DATASET_MARKERS[row["dataset"]],
-                s=MODEL_SIZE_POINTS[row["model size"]],
-                edgecolors="none",
-            )
-
-        # Sigmoid fit
-        if len(panel_df) >= 4:
-            x = panel_df[xcol].values
-            y = panel_df["auprc"].values
-            try:
-                popt = _fit_sigmoid(x, y)
-                x_fit = np.linspace(x.min(), x.max(), 200)
-                ax.plot(x_fit, _sigmoid(x_fit, *popt), color="C3", linewidth=1.5)
-            except Exception:
-                logger.warning("Sigmoid fit failed for %s", xcol)
-
-        _annotate_correlation(ax, panel_df, xcol)
-        ax.set_xlabel(xcol)
-
-    axes[0].set_ylabel("Promoter VEP AUPRC")
-    sns.despine(fig=fig)
-
-    # Shared colorbar for step
-    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
-    sm.set_array([])
-    fig.colorbar(sm, ax=axes.tolist(), label="Step", shrink=0.8, pad=0.02)
-
-    # Proxy-artist legends
-    dataset_handles = [
-        plt.Line2D(
-            [], [],
-            marker=DATASET_MARKERS[d],
-            color="none",
-            markerfacecolor="gray",
-            markeredgecolor="none",
-            markersize=7,
-            label=d,
-        )
-        for d in DATASET_ORDER
-    ]
-    size_handles = [
-        plt.Line2D(
-            [], [],
-            marker="o",
-            color="none",
-            markerfacecolor="gray",
-            markeredgecolor="none",
-            markersize=np.sqrt(MODEL_SIZE_POINTS[s]),
-            label=s,
-        )
-        for s in MODEL_SIZE_ORDER
-    ]
-    fig.legend(
-        handles=dataset_handles + size_handles,
-        loc="center right",
-        fontsize=8,
-        frameon=False,
-        ncol=1,
-        bbox_to_anchor=(1.14, 0.5),
+    g = sns.relplot(
+        data=long_df,
+        x=XVAL_LONG,
+        y="auprc",
+        hue="step",
+        palette="viridis",
+        style="dataset",
+        markers=DATASET_MARKERS,
+        size="model size",
+        size_order=MODEL_SIZE_ORDER,
+        sizes=MODEL_SIZE_POINTS,
+        col=XCOL_LONG,
+        col_order=XCOLS,
+        kind="scatter",
+        facet_kws={"sharex": False, "sharey": True},
+        height=SUBPLOT_SIZE,
+        aspect=1,
+        edgecolor="none",
     )
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, format="svg", bbox_inches="tight")
-    plt.close(fig)
-    print(f"Saved plot to {output_path}")
+    _add_facet_sigmoid_fits(g, long_df)
+    _add_facet_correlations(g, long_df)
+    _finalize_facetgrid(g, output_path)
 
 
 # ---------------------------------------------------------------------------
