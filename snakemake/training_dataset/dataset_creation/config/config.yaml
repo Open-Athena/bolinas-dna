@@ -1,45 +1,23 @@
 genomes_path: config/genomes.parquet
 
-validation_chroms:
-    - NC_000019.10 # human chr19
-#   - NC_000085.7  # mouse chr19
-#   - NC_052550.1  # chicken chr19
-#   - NC_007130.7  # zebrafish chr19
-#   - NT_033778.4  # drosophila chr2R
-#   - NC_003281.10  # c elegans chrIII
-
 shuffle_seed: 42
+
+validation:
+    max_samples: 16384
+    genome: GCF_000001405.40
+    conservation_bigwig: results/conservation/cactus241way.phyloP.bw
+    phylop_threshold: 2.27
+    seed: 42
 
 n_shards: 64
 
 add_rc: true
 
 intervals:
-    # promoters from protein-coding transcripts, similar to gpn-animal-promoter-dataset
-    # 256 bp upstream and 256 bp downstream of the TSS
-    # the 512/256 here refers to from those regions how to create windows
-    # take windows of 512 bp with 256 bp overlap
-    # which in this case would typically result in 1 window per promoter
-    # - v1/512/256
-    # - v4/512/256  # promoters from all "functional" transcripts
-    # mRNA exons + promoters
-    #   - v2/512/256
-    #   # CDS regions only
-    #   - v3/512/256
-    # - v6/256/128  # 5' UTR
-    # - v7/256/128  # 3' UTR
-    # - v8/256/128  # ncRNA
-    # - v9/256/128  # promoters (+- 256)
-    # - v10/256/128  # promoters (+- 2048)
-    # - v11/256/128
-    # - v12/256/128
-    # - v13/256/128
-    # - v14/256/128
-    # - v1/256/128 # mRNA promoters
-    # - v5/256/128 # CDS, new version
-    # - v15/256/128 # dowstream, new version
-    # - v16/254/127 # mRNA promoters (254bp up + 254bp down)
-    - v1/255/128 # mRNA promoters
+    training:
+        - v1/255/128 # mRNA promoters
+    validation:
+        - v1/255/255 # mRNA promoters (step = window for max diversity)
 
 genome_sets:
     #     - name: animals
@@ -48,9 +26,9 @@ genome_sets:
     - name: vertebrates
       rank_key: phylum
       rank_value: Chordata
-        #     - name: mammals
-        #       rank_key: class
-        #       rank_value: Mammalia
+    - name: mammals
+      rank_key: class
+      rank_value: Mammalia
     - name: primates
       rank_key: order
       rank_value: Primates
@@ -58,7 +36,7 @@ genome_sets:
 #       rank_key: species
 #       rank_value: "Homo sapiens"
 
-output_hf_prefix: bolinas-dna/genomes-v4
+output_hf_prefix: bolinas-dna/genomes-v5
 
 # Subset of genomes for one-off analysis (6 priority + 30 random, seed=42)
 genome_subset_analysis:
@@ -136,13 +114,6 @@ promoter_comparison_regions:
     - promoters_mRNA/2048/2048
     - promoters/256/256
     - promoters/2048/2048
-
-# Priority genomes for BED export (for visualization in genome browsers)
-leakage_filter:
-    - identity: 0.3
-      coverage: 0.3
-    - identity: 1
-      coverage: 1
 
 genome_subset_bed:
     - GCF_000001405.40 # Human

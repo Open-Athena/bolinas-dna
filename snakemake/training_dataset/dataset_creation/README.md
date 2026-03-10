@@ -11,9 +11,10 @@ This pipeline takes a list of genomes and creates training datasets by extractin
    - v3: CDS regions only
 3. **Create windows** - Generates sliding windows over extracted regions
 4. **Extract sequences** - Retrieves DNA sequences for each window
-5. **Split data** - Creates train/validation splits by chromosome
-6. **Merge and shard** - Combines data from multiple genomes and splits into shards
-7. **Upload** - Uploads to HuggingFace Hub
+5. **Create training parquets** - All sequences from all genomes go to training (no chromosome-based split)
+6. **Create validation parquet** - Conservation-aware subsample of human sequences where base case encodes phyloP scores (uppercase iff phyloP >= threshold, lowercase otherwise)
+7. **Merge and shard** - Combines data from multiple genomes and splits into shards
+8. **Upload** - Uploads to HuggingFace Hub
 
 ## Genomic Region Extraction
 
@@ -321,9 +322,12 @@ Edit `config/config.yaml` to customize the pipeline:
 
 ### Optional Parameters
 
-- **`validation_chroms`** - List of chromosome accessions for validation split
-  - Default: Uses specific chromosomes for train/val split
-  - Example: `["NC_000019.10"]` (human chr19)
+- **`validation`** - Configuration for the conservation-aware validation set
+  - `max_samples`: Maximum number of sequences to subsample (default: 16384)
+  - `genome`: Genome accession to draw validation sequences from (default: GCF_000001405.40, human)
+  - `conservation_bigwig`: Path to phyloP BigWig file for conservation scores
+  - `phylop_threshold`: phyloP score threshold for uppercase encoding (default: 2.27)
+  - `seed`: Random seed for subsampling (default: 42)
 
 - **`shuffle_seed`** - Random seed for reproducibility (default: 42)
 
@@ -341,18 +345,16 @@ Edit `config/config.yaml` to customize the pipeline:
 
 # Edit configuration file: config/config.yaml
 
-# Run pipeline (cap memory to avoid OOM from concurrent MMseqs2 searches)
-uv run snakemake --resources mem_mb=<TOTAL_RAM_MB>
+# Run pipeline
+uv run snakemake
 ```
-
-For example, on a 512 GB machine: `--resources mem_mb=500000`. The `search_leakage` rule requests 16 GB per job, so this limits concurrent searches to ~31.
 
 ## Output
 
 Datasets are uploaded to HuggingFace Hub at the specified `output_hf_prefix`.
 
-Dataset naming format: `{output_hf_prefix}-{genome_set}-{recipe}-{window_size}-{overlap}`
+Dataset naming format: `{output_hf_prefix}-genome_set-{genome_set}-intervals-{recipe}_{window_size}_{overlap}`
 
-Example: `username/genomes-v3-mammals-v2-512-256`
+Example: `bolinas-dna/genomes-v5-genome_set-mammals-intervals-v1_255_128`
 
 Local intermediate files are stored in `results/` (not committed to git).
