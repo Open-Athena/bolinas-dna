@@ -120,7 +120,7 @@ def fetch_runs() -> pd.DataFrame:
 # Annotation helpers
 # ---------------------------------------------------------------------------
 
-def _correlation_subtitle(df: pd.DataFrame, *, r2: float | None = None) -> str:
+def _correlation_subtitle(df: pd.DataFrame) -> str:
     """Return a compact correlation string with one-sided p-values (positive direction)."""
     if len(df) < 3:
         return ""
@@ -131,10 +131,7 @@ def _correlation_subtitle(df: pd.DataFrame, *, r2: float | None = None) -> str:
     spearman_p = spearman_p_two / 2 if spearman_r > 0 else 1 - spearman_p_two / 2
     r_star = " (*)" if pearson_p < SIGNIFICANCE_THRESHOLD else ""
     rho_star = " (*)" if spearman_p < SIGNIFICANCE_THRESHOLD else ""
-    lines = [f"$r$ = {pearson_r:.2f}{r_star}", f"$\\rho$ = {spearman_r:.2f}{rho_star}"]
-    if r2 is not None:
-        lines.append(f"sigmoid $R^2$ = {r2:.2f}")
-    return "\n".join(lines)
+    return "\n".join([f"$r$ = {pearson_r:.2f}{r_star}", f"$\\rho$ = {spearman_r:.2f}{rho_star}"])
 
 
 CORNERS = [
@@ -171,9 +168,9 @@ def _emptiest_corner(ax: plt.Axes) -> tuple[float, float, str, str]:
     return best_corner
 
 
-def _annotate_correlation(ax: plt.Axes, df: pd.DataFrame, *, r2: float | None = None) -> None:
+def _annotate_correlation(ax: plt.Axes, df: pd.DataFrame) -> None:
     """Add correlation annotation in the emptiest corner of the axes."""
-    text = _correlation_subtitle(df, r2=r2)
+    text = _correlation_subtitle(df)
     if not text:
         return
     x, y, ha, va = _emptiest_corner(ax)
@@ -215,7 +212,6 @@ def _add_facet_correlations(
     row_order: list[str] | None = None,
     col: str | None = None,
     col_order: list[str] | None = None,
-    r2_map: dict[tuple[int, int], float] | None = None,
 ) -> None:
     """Add per-facet correlation annotations to each axes in a FacetGrid."""
     row_vals = row_order if row is not None else [None]
@@ -227,8 +223,7 @@ def _add_facet_correlations(
             if not ax.get_visible():
                 continue
             mask = _facet_mask(df, row, row_val, col, col_val)
-            r2 = r2_map.get((i, j)) if r2_map is not None else None
-            _annotate_correlation(ax, df[mask], r2=r2)
+            _annotate_correlation(ax, df[mask])
 
 
 def _add_facet_sigmoid_fits(
@@ -239,11 +234,10 @@ def _add_facet_sigmoid_fits(
     row_order: list[str] | None = None,
     col: str | None = None,
     col_order: list[str] | None = None,
-) -> dict[tuple[int, int], float]:
-    """Overlay a sigmoid fit on each facet. Returns R² per (i, j) facet index."""
+) -> None:
+    """Overlay a sigmoid fit on each facet."""
     row_vals = row_order if row is not None else [None]
     col_vals = col_order if col is not None else [None]
-    r2_map: dict[tuple[int, int], float] = {}
 
     for i, row_val in enumerate(row_vals):
         for j, col_val in enumerate(col_vals):
@@ -258,13 +252,10 @@ def _add_facet_sigmoid_fits(
             auprc = subset["auprc"].values
             try:
                 popt = _fit_sigmoid(x, auprc)
-                r2_map[(i, j)] = _r_squared(auprc, _sigmoid(x, *popt))
                 x_fit = np.linspace(x.min(), x.max(), 200)
                 ax.plot(x_fit, _sigmoid(x_fit, *popt), color="C3", linewidth=1.5)
             except Exception:
                 logger.warning("Sigmoid fit failed for facet row=%s col=%s", row_val, col_val)
-
-    return r2_map
 
 
 def _finalize_facetgrid(g: sns.FacetGrid, output_path: Path, *, ylabel: str) -> None:
@@ -304,11 +295,11 @@ def plot_by_leakage_filter(df: pd.DataFrame, output_path: Path, *, ylabel: str) 
         aspect=1,
         edgecolor="none",
     )
-    r2_map = _add_facet_sigmoid_fits(
+    _add_facet_sigmoid_fits(
         g, df, col="leakage filter", col_order=LEAKAGE_FILTER_ORDER,
     )
     _add_facet_correlations(
-        g, df, col="leakage filter", col_order=LEAKAGE_FILTER_ORDER, r2_map=r2_map,
+        g, df, col="leakage filter", col_order=LEAKAGE_FILTER_ORDER,
     )
     _finalize_facetgrid(g, output_path, ylabel=ylabel)
 
@@ -334,7 +325,7 @@ def plot_by_run(df: pd.DataFrame, output_path: Path, *, ylabel: str) -> None:
         aspect=1,
         edgecolor="none",
     )
-    r2_map = _add_facet_sigmoid_fits(
+    _add_facet_sigmoid_fits(
         g, df,
         row="dataset", row_order=DATASET_ORDER,
         col="model size", col_order=MODEL_SIZE_ORDER,
@@ -343,7 +334,6 @@ def plot_by_run(df: pd.DataFrame, output_path: Path, *, ylabel: str) -> None:
         g, df,
         row="dataset", row_order=DATASET_ORDER,
         col="model size", col_order=MODEL_SIZE_ORDER,
-        r2_map=r2_map,
     )
     _finalize_facetgrid(g, output_path, ylabel=ylabel)
 
@@ -371,7 +361,7 @@ def plot_by_dataset_and_leakage_filter(
         aspect=1,
         edgecolor="none",
     )
-    r2_map = _add_facet_sigmoid_fits(
+    _add_facet_sigmoid_fits(
         g, df,
         row="dataset", row_order=DATASET_ORDER,
         col="leakage filter", col_order=LEAKAGE_FILTER_ORDER,
@@ -380,7 +370,6 @@ def plot_by_dataset_and_leakage_filter(
         g, df,
         row="dataset", row_order=DATASET_ORDER,
         col="leakage filter", col_order=LEAKAGE_FILTER_ORDER,
-        r2_map=r2_map,
     )
     _finalize_facetgrid(g, output_path, ylabel=ylabel)
 
@@ -389,32 +378,18 @@ def plot_by_dataset_and_leakage_filter(
 # Sigmoid fitting
 # ---------------------------------------------------------------------------
 
-def _r_squared(observed: np.ndarray, predicted: np.ndarray) -> float:
-    """Compute coefficient of determination (R²)."""
-    ss_res = np.sum((observed - predicted) ** 2)
-    ss_tot = np.sum((observed - observed.mean()) ** 2)
-    return 1 - ss_res / ss_tot
-
-
 def _sigmoid(x: np.ndarray, lower: float, upper: float, k: float, x0: float) -> np.ndarray:
     """Increasing sigmoid: lower at low x, upper at high x."""
     return lower + (upper - lower) / (1 + np.exp(np.clip(-k * (x - x0), -500, 500)))
 
 
-def _fit_sigmoid(x: np.ndarray, auprc: np.ndarray) -> np.ndarray:
-    """Fit a sigmoid to x vs AUPRC using robust regression."""
-    # Choose initial k sign based on data trend
-    k0 = 5.0 if np.corrcoef(x, auprc)[0, 1] >= 0 else -5.0
-    p0 = np.array([auprc.min(), auprc.max(), k0, float(np.median(x))])
+def _fit_sigmoid(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """Fit a sigmoid to x vs y using least squares."""
+    k0 = 5.0 if np.corrcoef(x, y)[0, 1] >= 0 else -5.0
+    p0 = [y.min(), y.max(), k0, float(np.median(x))]
     bounds = ([0, 0, -np.inf, -np.inf], [1, 1, np.inf, np.inf])
-
-    def residuals(params: np.ndarray) -> np.ndarray:
-        return _sigmoid(x, *params) - auprc
-
-    result = optimize.least_squares(
-        residuals, p0, bounds=bounds, loss="soft_l1", max_nfev=10000,
-    )
-    return result.x
+    popt, _ = optimize.curve_fit(_sigmoid, x, y, p0=p0, bounds=bounds, maxfev=10000)
+    return popt
 
 
 # ---------------------------------------------------------------------------
