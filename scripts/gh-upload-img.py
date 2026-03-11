@@ -71,6 +71,22 @@ def _get_or_create_gist(
     return gist_id
 
 
+def _unique_name(path: str, all_paths: list[str]) -> str:
+    """Derive a gist-safe filename, prefixing parent dirs to disambiguate duplicates."""
+    p = Path(path)
+    basenames = [Path(f).name for f in all_paths]
+    if basenames.count(p.name) <= 1:
+        return p.name
+    # Walk up parent directories until the name is unique among all paths
+    parts = list(p.parts)
+    for depth in range(2, len(parts) + 1):
+        candidate = "_".join(parts[-depth:])
+        candidates = ["_".join(list(Path(f).parts)[-depth:]) for f in all_paths]
+        if candidates.count(candidate) <= 1:
+            return candidate
+    return p.name
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Upload files to a GitHub Gist and get permanent URLs"
@@ -96,7 +112,7 @@ def main() -> None:
     if not gist_id:
         sys.exit(1)
 
-    files = [(path, Path(path).name) for path in args.files]
+    files = [(path, _unique_name(path, args.files)) for path in args.files]
 
     results = gist_upload.upload_files_to_gist(
         files,
