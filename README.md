@@ -64,7 +64,7 @@ Development is driven by experiments tracked as GitHub issues.
 
 | Experiment | Status |
 |-----------|--------|
-| [#57](https://github.com/Open-Athena/bolinas-dna/issues/57) Scaling on a mixture dataset | Open |
+| [#57](https://github.com/Open-Athena/bolinas-dna/issues/57) Scaling on a mixture dataset | Closed - scaling improves performance on mammals but shows training instabilities on animals; hyperparameter tuning needed for larger models |
 
 ---
 
@@ -76,7 +76,7 @@ Development is driven by experiments tracked as GitHub issues.
 | [#49](https://github.com/Open-Athena/bolinas-dna/issues/49) Causal variant statistics for 3' UTR | Closed — Mendelian causal variant distributions in 3' UTR regions |
 | [#50](https://github.com/Open-Athena/bolinas-dna/issues/50) Causal variant statistics for ncRNA | Closed — Mendelian causal variant distributions in ncRNA regions |
 | [#67](https://github.com/Open-Athena/bolinas-dna/issues/67) Sequence similarity across splits | Closed — CDS leakage >> promoter leakage at multi-species scales; filtering cost <7% of training data |
-| [#8](https://github.com/Open-Athena/bolinas-dna/issues/8) Perplexity vs. downstream metrics | Open |
+| [#8](https://github.com/Open-Athena/bolinas-dna/issues/8) Perplexity vs. downstream metrics | Closed — functional-nonfunctional LL gap is the best predictor of downstream VEP performance |
 
 ---
 
