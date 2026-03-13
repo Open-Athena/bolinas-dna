@@ -37,3 +37,47 @@ rule cre_filter_enhancers:
             .select(["chrom", "start", "end"])
             .write_parquet(output[0])
         )
+
+
+rule cre_conservation:
+    input:
+        cre="results/cre/ELS.parquet",
+        conservation="results/conservation/cactus241way.phyloP.bw",
+    output:
+        "results/cre/ELS_cactus241way.phyloP.parquet",
+    run:
+        phylop_cutoff = config["conservation"]["phylop_cutoff"]
+        df = pl.read_parquet(input.cre)
+
+        bw = pyBigWig.open(input.conservation)
+        pct_conserved = df.select(
+            pl.struct(["chrom", "start", "end"])
+            .map_elements(
+                lambda x: np.mean(
+                    bw.values("chr" + x["chrom"], x["start"], x["end"], numpy=True)
+                    >= phylop_cutoff
+                ),
+                return_dtype=pl.Float64,
+            )
+            .cast(pl.Float32)
+            .alias("pct_conserved")
+        )
+        bw.close()
+
+        df.hstack(pct_conserved).write_parquet(output[0])
+
+
+rule cre_filter_conserved_enhancers:
+    input:
+        "results/cre/ELS_cactus241way.phyloP.parquet",
+    output:
+        "results/cre/ELS_conserved_{n}.parquet",
+    run:
+        min_conserved = int(wildcards.n)
+        df = pl.read_parquet(input[0])
+        size = df["end"] - df["start"]
+        (
+            df.filter((df["pct_conserved"] * size) >= min_conserved)
+            .select(["chrom", "start", "end"])
+            .write_parquet(output[0])
+        )

@@ -508,6 +508,7 @@ rule intervals_recipe_v17:
             .with_columns(pl.col("chrom").replace_strict(simple_to_refseq))
         )
         intervals = GenomicSet(df)
+        intervals = intervals.expand_min_size(256)
         defined = GenomicSet.read_bed(input.defined)
         intervals = intervals & defined
         intervals.write_bed(output[0])
