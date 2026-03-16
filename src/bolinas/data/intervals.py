@@ -193,6 +193,31 @@ class GenomicSet:
         res["end"] = res["end"] + res["pad"]
         return GenomicSet(res.drop(columns=["size", "pad"]))
 
+    def resize(self, target_size: int) -> "GenomicSet":
+        """Resize all intervals to exactly `target_size` bp, centered on the midpoint.
+
+        Intervals smaller than `target_size` are expanded; intervals larger are
+        shrunk. When the size difference is odd, the center shifts 0.5 bp to
+        the right.
+
+        Args:
+            target_size: Desired size (in base pairs) for every interval.
+
+        Returns:
+            A new GenomicSet with resized intervals. Overlapping intervals
+            resulting from expansion will be automatically merged.
+        """
+        if target_size <= 0:
+            raise ValueError(f"target_size must be positive, got {target_size}")
+        res = self._data.copy()
+        size = res["end"] - res["start"]
+        diff = target_size - size
+        left_adj = diff // 2
+        right_adj = diff - left_adj
+        res["start"] = res["start"] - left_adj
+        res["end"] = res["end"] + right_adj
+        return GenomicSet(res)
+
     def add_flank(self, flank: int) -> "GenomicSet":
         """Expand intervals by adding flanking regions on both sides.
 
