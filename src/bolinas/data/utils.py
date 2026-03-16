@@ -6,6 +6,10 @@ from Bio.Seq import Seq
 
 from bolinas.data.intervals import GenomicSet
 
+HUMAN_GENOME = "GCF_000001405.40"
+STANDARD_CHROMS = [str(i) for i in range(1, 23)] + ["X", "Y"]
+ENHANCER_CRE_CLASSES = ["dELS", "pELS"]
+
 DEFAULT_NCRNA_BIOTYPES = [
     "lnc_RNA",
     "miRNA",

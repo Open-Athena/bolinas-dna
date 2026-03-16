@@ -487,3 +487,53 @@ rule intervals_recipe_v16:
         defined = GenomicSet.read_bed(input[1])
         intervals = intervals & defined
         intervals.write_bed(output[0])
+
+
+# ENCODE cCRE enhancers (dELS + pELS)
+rule intervals_recipe_v17:
+    input:
+        cre="results/cre/ELS.parquet",
+        defined=f"results/intervals/defined/{HUMAN_GENOME}.bed.gz",
+        chrom_mapping=local("config/human_chrom_mapping.tsv"),
+    output:
+        f"results/intervals/recipe/v17/{HUMAN_GENOME}.bed.gz",
+    run:
+        chrom_map = pl.read_csv(input.chrom_mapping, separator="\t")
+        simple_to_refseq = dict(
+            zip(chrom_map["ucsc"].str.replace("chr", ""), chrom_map["refseq"])
+        )
+
+        df = (
+            pl.read_parquet(input.cre)
+            .with_columns(pl.col("chrom").replace_strict(simple_to_refseq))
+        )
+        intervals = GenomicSet(df)
+        intervals = intervals.resize(255)
+        defined = GenomicSet.read_bed(input.defined)
+        intervals = intervals & defined
+        intervals.write_bed(output[0])
+
+
+# ENCODE cCRE conserved enhancers (dELS + pELS, ≥20 conserved bp)
+rule intervals_recipe_v18:
+    input:
+        cre="results/cre/ELS_conserved_20.parquet",
+        defined=f"results/intervals/defined/{HUMAN_GENOME}.bed.gz",
+        chrom_mapping=local("config/human_chrom_mapping.tsv"),
+    output:
+        f"results/intervals/recipe/v18/{HUMAN_GENOME}.bed.gz",
+    run:
+        chrom_map = pl.read_csv(input.chrom_mapping, separator="\t")
+        simple_to_refseq = dict(
+            zip(chrom_map["ucsc"].str.replace("chr", ""), chrom_map["refseq"])
+        )
+
+        df = (
+            pl.read_parquet(input.cre)
+            .with_columns(pl.col("chrom").replace_strict(simple_to_refseq))
+        )
+        intervals = GenomicSet(df)
+        intervals = intervals.resize(255)
+        defined = GenomicSet.read_bed(input.defined)
+        intervals = intervals & defined
+        intervals.write_bed(output[0])

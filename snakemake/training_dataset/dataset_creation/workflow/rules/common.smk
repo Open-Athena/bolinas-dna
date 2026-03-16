@@ -9,6 +9,9 @@ from tqdm import tqdm
 # Bolinas module imports
 from bolinas.data.intervals import GenomicSet
 from bolinas.data.utils import (
+    ENHANCER_CRE_CLASSES,
+    HUMAN_GENOME,
+    STANDARD_CHROMS,
     add_rc,
     get_3_prime_utr,
     get_5_prime_utr,

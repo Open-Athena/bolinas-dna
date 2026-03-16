@@ -932,6 +932,197 @@ def test_genomic_set_expand_min_size_causes_overlaps():
     assert result == expected
 
 
+# resize tests
+
+
+def test_genomic_set_resize_expand_small_interval():
+    """Test resize expanding a small interval.
+
+    Input: chr1:100-200 (size=100), target_size=255
+    diff=155, left_adj=77, right_adj=78
+    Output: chr1:23-278 (size=255)
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1"],
+            "start": [100],
+            "end": [200],
+        }
+    )
+    gs = GenomicSet(data)
+    result = gs.resize(target_size=255)
+
+    expected = GenomicSet(
+        pd.DataFrame(
+            {
+                "chrom": ["chr1"],
+                "start": [23],
+                "end": [278],
+            }
+        )
+    )
+    assert result == expected
+
+
+def test_genomic_set_resize_shrink_large_interval():
+    """Test resize shrinking a large interval.
+
+    Input: chr1:100-450 (size=350), target_size=255
+    diff=-95, left_adj=-48, right_adj=-47
+    start = 100 - (-48) = 148, end = 450 + (-47) = 403
+    Output: chr1:148-403 (size=255)
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1"],
+            "start": [100],
+            "end": [450],
+        }
+    )
+    gs = GenomicSet(data)
+    result = gs.resize(target_size=255)
+
+    expected = GenomicSet(
+        pd.DataFrame(
+            {
+                "chrom": ["chr1"],
+                "start": [148],
+                "end": [403],
+            }
+        )
+    )
+    assert result == expected
+
+
+def test_genomic_set_resize_already_exact_size():
+    """Test resize with an interval already at target size.
+
+    Input: chr1:100-355 (size=255), target_size=255
+    Output: chr1:100-355 (unchanged)
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1"],
+            "start": [100],
+            "end": [355],
+        }
+    )
+    gs = GenomicSet(data)
+    result = gs.resize(target_size=255)
+
+    expected = GenomicSet(
+        pd.DataFrame(
+            {
+                "chrom": ["chr1"],
+                "start": [100],
+                "end": [355],
+            }
+        )
+    )
+    assert result == expected
+
+
+def test_genomic_set_resize_mixed_intervals():
+    """Test resize with a mix of small and large intervals.
+
+    Input: chr1:100-200 (size=100), chr2:500-850 (size=350), target_size=255
+    chr1: diff=155, left=77, right=78 → 23-278
+    chr2: diff=-95, left=-48, right=-47 → 548-803
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1", "chr2"],
+            "start": [100, 500],
+            "end": [200, 850],
+        }
+    )
+    gs = GenomicSet(data)
+    result = gs.resize(target_size=255)
+
+    expected = GenomicSet(
+        pd.DataFrame(
+            {
+                "chrom": ["chr1", "chr2"],
+                "start": [23, 548],
+                "end": [278, 803],
+            }
+        )
+    )
+    assert result == expected
+
+
+def test_genomic_set_resize_expansion_causes_overlaps():
+    """Test resize causing overlaps that get merged.
+
+    Input: chr1:10-20 (size=10), chr1:25-35 (size=10), target_size=50
+    chr1 first: diff=40, left=20, right=20 → -10 to 40
+    chr1 second: diff=40, left=20, right=20 → 5 to 55
+    Overlap → merged to chr1:-10-55
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [10, 25],
+            "end": [20, 35],
+        }
+    )
+    gs = GenomicSet(data)
+    result = gs.resize(target_size=50)
+
+    expected = GenomicSet(
+        pd.DataFrame(
+            {
+                "chrom": ["chr1"],
+                "start": [-10],
+                "end": [55],
+            }
+        )
+    )
+    assert result == expected
+
+
+def test_genomic_set_resize_empty_set():
+    """Test resize on an empty GenomicSet."""
+    gs = GenomicSet(pd.DataFrame({"chrom": [], "start": [], "end": []}))
+    result = gs.resize(target_size=255)
+    expected = GenomicSet(pd.DataFrame({"chrom": [], "start": [], "end": []}))
+    assert result == expected
+
+
+def test_genomic_set_resize_invalid_target_size():
+    """Test resize with non-positive target_size raises ValueError."""
+    gs = GenomicSet(
+        pd.DataFrame({"chrom": ["chr1"], "start": [100], "end": [200]})
+    )
+    with pytest.raises(ValueError, match="target_size must be positive"):
+        gs.resize(target_size=0)
+    with pytest.raises(ValueError, match="target_size must be positive"):
+        gs.resize(target_size=-10)
+
+
+def test_genomic_set_resize_returns_new_instance():
+    """Test that resize returns a new GenomicSet instance.
+
+    Input: chr1:10-40, resize(50)
+    Output: New GenomicSet, original unchanged
+    """
+    data = pd.DataFrame(
+        {
+            "chrom": ["chr1"],
+            "start": [10],
+            "end": [40],
+        }
+    )
+    gs = GenomicSet(data)
+    original_df = gs.to_pandas()
+
+    result = gs.resize(target_size=50)
+
+    assert gs.to_pandas().equals(original_df)
+    assert result != gs
+    assert isinstance(result, GenomicSet)
+
+
 def test_genomic_set_add_flank_basic():
     """Test add_flank with basic interval expansion.
 
