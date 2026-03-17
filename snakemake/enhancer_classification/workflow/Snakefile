@@ -1,0 +1,18 @@
+configfile: "config/config.yaml"
+
+
+include: "rules/common.smk"
+include: "rules/data.smk"
+
+
+wildcard_constraints:
+    species="|".join(SPECIES),
+    dataset="|".join(DATASET_NAMES),
+    intervals="|".join(ALL_INTERVALS),
+    split_name="|".join(ALL_SPLIT_NAMES),
+    label_type="positives|negatives",
+
+
+rule all:
+    input:
+        get_all_dataset_outputs(),
