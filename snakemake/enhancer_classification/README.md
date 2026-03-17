@@ -31,9 +31,14 @@ human chr19 held out for validation; remaining human and all mouse for training.
 **Augmentation**: Training splits include reverse complement sequences
 (strand="-"). Non-training splits are subsampled to `max_samples`.
 
+## Output
+
+Datasets are uploaded to HuggingFace: `bolinas-dna/enhancer-classification-{version}`
+(e.g., `bolinas-dna/enhancer-classification-v1`).
+
 ## Prerequisites
 
-- AWS credentials configured (EC2 IAM role or `aws configure`)
+- HuggingFace CLI authenticated (`hf login`)
 
 ## Usage
 

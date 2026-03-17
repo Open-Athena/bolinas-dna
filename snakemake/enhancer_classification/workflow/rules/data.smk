@@ -198,7 +198,7 @@ rule make_species_parquet:
         pos=local("results/sequences/{intervals}/{species}/positives.fa"),
         neg=local("results/sequences/{intervals}/{species}/negatives.fa"),
     output:
-        "results/parquet/{intervals}/{species}.parquet",
+        temp(local("results/parquet/{intervals}/{species}.parquet")),
     run:
         window_size = config["window_size"]
 
@@ -214,15 +214,17 @@ rule make_species_parquet:
 rule build_dataset:
     input:
         lambda wc: [
-            f"results/parquet/"
-            f"{config['datasets'][wc.dataset]['intervals']}/{species}.parquet"
+            local(
+                f"results/parquet/"
+                f"{config['datasets'][wc.dataset]['intervals']}/{species}.parquet"
+            )
             for species, splits in (
                 config["splits"][config["datasets"][wc.dataset]["split"]].items()
             )
             if wc.split_name in splits
         ],
     output:
-        "results/dataset/{dataset}/{split_name}.parquet",
+        temp(local("results/dataset/{dataset}/{split_name}.parquet")),
     run:
         seed = config["seed"]
         dataset_config = config["datasets"][wildcards.dataset]
@@ -254,3 +256,18 @@ rule build_dataset:
             combined.sample(frac=1, random_state=seed).reset_index(drop=True)
         )
         pl.from_pandas(combined).write_parquet(output[0])
+
+
+rule hf_upload:
+    input:
+        lambda wc: [
+            local(f"results/dataset/{wc.dataset}/{split_name}.parquet")
+            for split_name in get_split_names(wc.dataset)
+        ],
+    output:
+        touch(local("results/upload.done/{dataset}")),
+    params:
+        repo=lambda wc: f"{config['hf_org']}/enhancer-classification-{wc.dataset}",
+        data_dir=lambda wc: f"results/dataset/{wc.dataset}",
+    shell:
+        "hf upload-large-folder {params.repo} --repo-type dataset {params.data_dir}"

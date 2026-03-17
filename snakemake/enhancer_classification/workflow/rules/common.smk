@@ -20,16 +20,16 @@ for _dataset_config in config["datasets"].values():
 TRAIN_SPLIT = "train"
 
 
+def get_split_names(dataset_name: str) -> list[str]:
+    split_config = config["splits"][config["datasets"][dataset_name]["split"]]
+    split_names: set[str] = set()
+    for species_splits in split_config.values():
+        split_names.update(species_splits.keys())
+    return sorted(split_names)
+
+
 def get_all_dataset_outputs() -> list[str]:
-    outputs = []
-    for dataset_name, dataset_config in config["datasets"].items():
-        split_config = config["splits"][dataset_config["split"]]
-        split_names: set[str] = set()
-        for species_splits in split_config.values():
-            split_names.update(species_splits.keys())
-        for split_name in split_names:
-            outputs.append(f"results/dataset/{dataset_name}/{split_name}.parquet")
-    return outputs
+    return [local(f"results/upload.done/{name}") for name in config["datasets"]]
 
 
 def fasta_to_df(path: str, label: int, genome: str) -> pd.DataFrame:
