@@ -29,7 +29,7 @@ def get_split_names(dataset_name: str) -> list[str]:
 
 
 def get_all_dataset_outputs() -> list[str]:
-    return [local(f"results/upload.done/{name}") for name in config["datasets"]]
+    return [f"results/upload.done/{name}" for name in config["datasets"]]
 
 
 def fasta_to_df(path: str, label: int, genome: str) -> pd.DataFrame:

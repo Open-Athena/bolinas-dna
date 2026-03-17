@@ -269,7 +269,11 @@ class GenomicSet:
         Returns:
             A new GenomicSet with intervals from the file.
         """
-        return cls(pd.read_csv(path, sep="\t", header=None, names=INTERVAL_COORDS))
+        return cls(
+            pd.read_csv(
+                path, sep="\t", header=None, names=INTERVAL_COORDS, dtype={"chrom": str}
+            )
+        )
 
     @classmethod
     def read_parquet(cls, path: str) -> "GenomicSet":

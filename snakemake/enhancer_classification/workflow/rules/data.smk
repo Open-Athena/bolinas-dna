@@ -265,7 +265,7 @@ rule hf_upload:
             for split_name in get_split_names(wc.dataset)
         ],
     output:
-        touch(local("results/upload.done/{dataset}")),
+        touch("results/upload.done/{dataset}"),
     params:
         repo=lambda wc: f"{config['hf_org']}/enhancer-classification-{wc.dataset}",
         data_dir=lambda wc: f"results/dataset/{wc.dataset}",
