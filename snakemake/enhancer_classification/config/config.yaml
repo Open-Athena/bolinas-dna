@@ -1,0 +1,31 @@
+window_size: 255
+seed: 42
+
+cre_urls:
+  homo_sapiens: "https://downloads.wenglab.org/Registry-V4/GRCh38-cCREs.bed"
+  mus_musculus: "https://downloads.wenglab.org/Registry-V4/mm10-cCREs.bed"
+
+genome_urls:
+  homo_sapiens: "https://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa.gz"
+  mus_musculus: "https://ftp.ensembl.org/pub/release-102/fasta/mus_musculus/dna/Mus_musculus.GRCm38.dna_sm.primary_assembly.fa.gz"
+
+standard_chroms:
+  homo_sapiens: ["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","X","Y"]
+  mus_musculus: ["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","X","Y"]
+
+splits:
+  split_v1:
+    homo_sapiens:
+      train: ["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","20","21","22","X","Y"]
+      validation: ["19"]
+    mus_musculus:
+      train: ["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","X","Y"]
+
+datasets:
+  v1:
+    split: split_v1
+    intervals: ELS
+
+max_samples:
+  validation: 16384
+  test: 16384
