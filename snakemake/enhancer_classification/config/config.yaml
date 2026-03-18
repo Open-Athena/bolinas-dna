@@ -57,8 +57,7 @@ models:
     gradient_clip_val: 1.0
     batch_size: 256
     max_epochs: 100
-    warmup_epochs: 1
-    reduce_lr_patience: 5
+    warmup_steps: 1000
     early_stopping_patience: 10
   debug:
     batch_size: 16
@@ -70,4 +69,4 @@ models:
     max_epochs: 20
 
 experiments:
-  - {model: debug, dataset: v3}
+  - {model: default, dataset: v3}

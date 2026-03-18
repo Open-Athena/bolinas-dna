@@ -37,8 +37,7 @@ rule train_model:
         batch_size=lambda wc: get_model_config(wc.model)["batch_size"],
         max_epochs=lambda wc: get_model_config(wc.model)["max_epochs"],
         overfit_batches=lambda wc: get_model_config(wc.model).get("overfit_batches", 0),
-        warmup_epochs=lambda wc: get_model_config(wc.model)["warmup_epochs"],
-        reduce_lr_patience=lambda wc: get_model_config(wc.model)["reduce_lr_patience"],
+        warmup_steps=lambda wc: get_model_config(wc.model)["warmup_steps"],
         early_stopping_patience=lambda wc: get_model_config(wc.model)["early_stopping_patience"],
     shell:
         """
@@ -54,8 +53,7 @@ rule train_model:
             --max-epochs {params.max_epochs} \
             --overfit-batches {params.overfit_batches} \
             --gradient-clip-val {params.gradient_clip_val} \
-            --warmup-epochs {params.warmup_epochs} \
-            --reduce-lr-patience {params.reduce_lr_patience} \
+            --warmup-steps {params.warmup_steps} \
             --early-stopping-patience {params.early_stopping_patience} \
             {params.freeze_flag} \
             --seed {config[seed]} \

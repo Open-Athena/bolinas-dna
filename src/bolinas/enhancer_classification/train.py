@@ -47,8 +47,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--overfit-batches", type=int, default=0)
-    parser.add_argument("--warmup-epochs", type=int, default=1)
-    parser.add_argument("--reduce-lr-patience", type=int, default=5)
+    parser.add_argument("--warmup-steps", type=int, default=1000)
     parser.add_argument("--early-stopping-patience", type=int, default=10)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--wandb-run", type=str, default=None)
@@ -89,8 +88,7 @@ def main() -> None:
         learning_rate=args.learning_rate,
         weight_decay=args.weight_decay,
         freeze_backbone=args.freeze_backbone,
-        warmup_epochs=args.warmup_epochs,
-        reduce_lr_patience=args.reduce_lr_patience,
+        warmup_steps=args.warmup_steps,
     )
 
     model = torch.compile(model)

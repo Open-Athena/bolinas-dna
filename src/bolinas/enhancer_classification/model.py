@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 import torchmetrics
 from alphagenome_pytorch.model import AlphaGenome, SequenceEncoder
+from transformers import get_constant_schedule_with_warmup
 
 ENCODER_OUTPUT_DIM = 1536
 
@@ -46,7 +47,7 @@ class EnhancerClassifier(L.LightningModule):
         learning_rate: float = 1e-3,
         weight_decay: float = 0.1,
         freeze_backbone: bool = True,
-        warmup_epochs: int = 1,
+        warmup_steps: int = 1000,
         reduce_lr_patience: int = 5,
     ) -> None:
         super().__init__()
@@ -109,25 +110,14 @@ class EnhancerClassifier(L.LightningModule):
             lr=self.hparams.learning_rate,
             weight_decay=self.hparams.weight_decay,
         )
-        warmup = torch.optim.lr_scheduler.LinearLR(
+        scheduler = get_constant_schedule_with_warmup(
             optimizer,
-            start_factor=1e-2,
-            total_iters=self.hparams.warmup_epochs,
-        )
-        plateau = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer,
-            mode="min",
-            factor=0.5,
-            patience=self.hparams.reduce_lr_patience,
+            num_warmup_steps=self.hparams.warmup_steps,
         )
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
-                "scheduler": torch.optim.lr_scheduler.SequentialLR(
-                    optimizer,
-                    schedulers=[warmup, plateau],
-                    milestones=[self.hparams.warmup_epochs],
-                ),
-                "monitor": "val_loss",
+                "scheduler": scheduler,
+                "interval": "step",
             },
         }
