@@ -11,6 +11,7 @@ wildcard_constraints:
     intervals="|".join(ALL_INTERVALS),
     split_name="|".join(ALL_SPLIT_NAMES),
     label_type="positives|negatives",
+    n=r"\d+",
 
 
 rule all:

@@ -1,5 +1,7 @@
+import numpy as np
 import pandas as pd
 import polars as pl
+import pyBigWig
 
 from bolinas.data.intervals import GenomicSet
 from bolinas.data.utils import ENHANCER_CRE_CLASSES, add_rc, load_fasta
