@@ -72,6 +72,8 @@ Training logs to [W&B project `bolinas-enhancer-classification`](https://wandb.a
   head converges within a single epoch and overfits with continued training.
 - With cosine LR decay (10% warmup), 1 epoch training achieves val_auroc=0.944,
   val_auprc=0.933 on dataset v3 — better than constant LR (0.939).
+- Gradient norm is very noisy (4–44) with gradient_clip_val=1.0, meaning
+  clipping fires on most steps. Consider raising or removing the clip value.
 
 ### Code layout
 
