@@ -35,10 +35,7 @@ rule train_model:
         weight_decay=lambda wc: get_model_config(wc.model)["weight_decay"],
         gradient_clip_val=lambda wc: get_model_config(wc.model)["gradient_clip_val"],
         batch_size=lambda wc: get_model_config(wc.model)["batch_size"],
-        max_epochs=lambda wc: get_model_config(wc.model)["max_epochs"],
-        overfit_batches=lambda wc: get_model_config(wc.model).get("overfit_batches", 0),
-        warmup_steps=lambda wc: get_model_config(wc.model)["warmup_steps"],
-        early_stopping_patience=lambda wc: get_model_config(wc.model)["early_stopping_patience"],
+        warmup_fraction=lambda wc: get_model_config(wc.model)["warmup_fraction"],
     shell:
         """
         uv run python -m bolinas.enhancer_classification.train \
@@ -50,11 +47,8 @@ rule train_model:
             --learning-rate {params.learning_rate} \
             --weight-decay {params.weight_decay} \
             --batch-size {params.batch_size} \
-            --max-epochs {params.max_epochs} \
-            --overfit-batches {params.overfit_batches} \
             --gradient-clip-val {params.gradient_clip_val} \
-            --warmup-steps {params.warmup_steps} \
-            --early-stopping-patience {params.early_stopping_patience} \
+            --warmup-fraction {params.warmup_fraction} \
             {params.freeze_flag} \
             --seed {config[seed]} \
             --num-workers {threads} \

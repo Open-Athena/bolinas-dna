@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import torchmetrics
 from alphagenome_pytorch.model import AlphaGenome, SequenceEncoder
-from transformers import get_constant_schedule_with_warmup
+from transformers import get_cosine_schedule_with_warmup
 
 ENCODER_OUTPUT_DIM = 1536
 
@@ -31,14 +31,6 @@ class EnhancerClassifier(L.LightningModule):
     """Binary enhancer classifier using AlphaGenome's CNN encoder trunk.
 
     Architecture: SequenceEncoder → AdaptiveAvgPool1d(1) → Linear(1536, 1)
-
-    Args:
-        weights_path: Path to AlphaGenome pretrained weights. If None, the
-            encoder is randomly initialized (useful for tests and checkpoint
-            restore).
-        learning_rate: AdamW learning rate.
-        weight_decay: AdamW weight decay.
-        freeze_backbone: If True, freeze all encoder parameters.
     """
 
     def __init__(
@@ -47,8 +39,8 @@ class EnhancerClassifier(L.LightningModule):
         learning_rate: float = 1e-3,
         weight_decay: float = 0.1,
         freeze_backbone: bool = True,
-        warmup_steps: int = 1000,
-        reduce_lr_patience: int = 5,
+        warmup_fraction: float = 0.1,
+        num_training_steps: int | None = None,
     ) -> None:
         super().__init__()
         self.save_hyperparameters(ignore=["weights_path"])
@@ -87,6 +79,10 @@ class EnhancerClassifier(L.LightningModule):
         self.log("lr", self.optimizers().param_groups[0]["lr"], prog_bar=True)
         return loss
 
+    def on_before_optimizer_step(self, optimizer: torch.optim.Optimizer) -> None:
+        grad_norm = torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=float("inf"))
+        self.log("grad_norm", grad_norm, on_step=True, prog_bar=False)
+
     def validation_step(
         self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> None:
@@ -110,9 +106,12 @@ class EnhancerClassifier(L.LightningModule):
             lr=self.hparams.learning_rate,
             weight_decay=self.hparams.weight_decay,
         )
-        scheduler = get_constant_schedule_with_warmup(
+        num_steps = self.hparams.num_training_steps
+        num_warmup = int(self.hparams.warmup_fraction * num_steps)
+        scheduler = get_cosine_schedule_with_warmup(
             optimizer,
-            num_warmup_steps=self.hparams.warmup_steps,
+            num_warmup_steps=num_warmup,
+            num_training_steps=num_steps,
         )
         return {
             "optimizer": optimizer,
