@@ -53,7 +53,8 @@ Uses `bf16-mixed` precision and `torch.compile`.
 ### Model configs
 
 The `default` model config defines shared hyperparameters (frozen backbone,
-lr=1e-3, weight_decay=0.1, gradient_clip_val=1.0, batch_size=256, 50 epochs).
+lr=1e-3, weight_decay=0.1, gradient_clip_val=1.0, batch_size=256, 100 epochs,
+1000 warmup steps, early_stopping_patience=10).
 Other configs inherit from `default` and override specific fields:
 
 | Config | Overrides |
@@ -70,6 +71,17 @@ to train. Each experiment produces outputs under
 - `metrics.json` — best validation AUROC and epoch number
 
 Training logs to [W&B project `bolinas-enhancer-classification`](https://wandb.ai/gonzalobenegas/bolinas-enhancer-classification).
+
+### Results and findings
+
+**default / v3** (frozen backbone, lr=1e-3, batch_size=256, 1000 warmup steps):
+- Epoch 0 (5415 steps): val_auroc=0.939, val_auprc=0.927, train_loss=0.380
+- Val loss increased in epoch 1 — the linear head converges within a single
+  epoch and continuing training overfits.
+- The frozen AlphaGenome encoder already produces highly discriminative features;
+  the linear head needs minimal training.
+- Next steps: consider cosine decay over a single epoch, or fewer total steps,
+  to avoid overshooting.
 
 ### Code layout
 
