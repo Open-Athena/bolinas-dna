@@ -43,9 +43,11 @@ class EnhancerClassifier(L.LightningModule):
     def __init__(
         self,
         weights_path: str | Path | None = None,
-        learning_rate: float = 1e-4,
-        weight_decay: float = 0.01,
+        learning_rate: float = 1e-3,
+        weight_decay: float = 0.1,
         freeze_backbone: bool = True,
+        warmup_epochs: int = 1,
+        reduce_lr_patience: int = 5,
     ) -> None:
         super().__init__()
         self.save_hyperparameters(ignore=["weights_path"])
@@ -81,6 +83,7 @@ class EnhancerClassifier(L.LightningModule):
         logits = self(x)
         loss = self.loss_fn(logits, y)
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log("lr", self.optimizers().param_groups[0]["lr"], prog_bar=True)
         return loss
 
     def validation_step(
@@ -100,9 +103,31 @@ class EnhancerClassifier(L.LightningModule):
         self.val_auroc.reset()
         self.val_auprc.reset()
 
-    def configure_optimizers(self) -> torch.optim.Optimizer:
-        return torch.optim.AdamW(
+    def configure_optimizers(self) -> dict:
+        optimizer = torch.optim.AdamW(
             self.parameters(),
             lr=self.hparams.learning_rate,
             weight_decay=self.hparams.weight_decay,
         )
+        warmup = torch.optim.lr_scheduler.LinearLR(
+            optimizer,
+            start_factor=1e-2,
+            total_iters=self.hparams.warmup_epochs,
+        )
+        plateau = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            mode="min",
+            factor=0.5,
+            patience=self.hparams.reduce_lr_patience,
+        )
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": torch.optim.lr_scheduler.SequentialLR(
+                    optimizer,
+                    schedulers=[warmup, plateau],
+                    milestones=[self.hparams.warmup_epochs],
+                ),
+                "monitor": "val_loss",
+            },
+        }

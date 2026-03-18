@@ -47,6 +47,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--overfit-batches", type=int, default=0)
+    parser.add_argument("--warmup-epochs", type=int, default=1)
+    parser.add_argument("--reduce-lr-patience", type=int, default=5)
+    parser.add_argument("--early-stopping-patience", type=int, default=10)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--wandb-run", type=str, default=None)
     return parser.parse_args()
@@ -86,6 +89,8 @@ def main() -> None:
         learning_rate=args.learning_rate,
         weight_decay=args.weight_decay,
         freeze_backbone=args.freeze_backbone,
+        warmup_epochs=args.warmup_epochs,
+        reduce_lr_patience=args.reduce_lr_patience,
     )
 
     model = torch.compile(model)
@@ -100,7 +105,11 @@ def main() -> None:
     callbacks = [checkpoint_cb]
     if args.overfit_batches == 0:
         callbacks.append(
-            EarlyStopping(monitor="val_loss", patience=5, mode="min")
+            EarlyStopping(
+                monitor="val_loss",
+                patience=args.early_stopping_patience,
+                mode="min",
+            )
         )
 
     loggers = [CSVLogger(output_dir, name="logs")]
@@ -117,6 +126,8 @@ def main() -> None:
     trainer = L.Trainer(
         max_epochs=args.max_epochs,
         precision="bf16-mixed",
+        accelerator="gpu",
+        devices=1,  # single-GPU only; multi-GPU not supported
         overfit_batches=args.overfit_batches,
         gradient_clip_val=args.gradient_clip_val,
         callbacks=callbacks,

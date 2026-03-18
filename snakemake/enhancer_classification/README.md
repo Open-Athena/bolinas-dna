@@ -83,8 +83,10 @@ Training logs to [W&B project `bolinas-enhancer-classification`](https://wandb.a
 ## Prerequisites
 
 - AWS credentials configured (EC2 IAM role or `aws configure`)
-- **GPU required** for training (model uses bf16-mixed precision)
-- AlphaGenome pretrained weights (set `alphagenome_weights_path` in config)
+- **Single GPU required** for training — hardcoded to `devices=1`, multi-GPU
+  not supported. Uses bf16-mixed precision and `torch.compile`.
+- All available CPU cores are used for data loading (`threads: workflow.cores`)
+- AlphaGenome pretrained weights are downloaded automatically from HuggingFace
 
 ## Usage
 
