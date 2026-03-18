@@ -6,7 +6,8 @@ include: "rules/data.smk"
 include: "rules/model.smk"
 
 
-MODEL_NAMES = list(config.get("models", {}).keys())
+MODEL_NAMES = [k for k in config.get("models", {}) if k != "default"]
+EXPERIMENTS = config.get("experiments", [])
 
 
 wildcard_constraints:
@@ -22,3 +23,7 @@ wildcard_constraints:
 rule all:
     input:
         get_all_dataset_outputs(),
+        [
+            f"results/model/{exp['model']}/{exp['dataset']}/metrics.json"
+            for exp in EXPERIMENTS
+        ],

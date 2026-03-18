@@ -80,7 +80,7 @@ class EnhancerClassifier(L.LightningModule):
         x, y = batch
         logits = self(x)
         loss = self.loss_fn(logits, y)
-        self.log("train_loss", loss, prog_bar=True)
+        self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
         return loss
 
     def validation_step(

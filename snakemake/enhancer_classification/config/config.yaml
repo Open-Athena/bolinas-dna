@@ -45,24 +45,27 @@ max_samples:
   validation: 16384
   test: 16384
 
-alphagenome_weights_path: "path/to/alphagenome.pth"
+alphagenome_weights:
+  repo: "gtca/alphagenome_pytorch"
+  filename: "model_all_folds.safetensors"
 
 models:
-  debug:
-    dataset: v1
+  default:
     freeze_backbone: true
     learning_rate: 1e-3
-    batch_size: 16
-    max_epochs: 2
-  linear_probe:
-    dataset: v1
-    freeze_backbone: true
-    learning_rate: 1e-3
+    weight_decay: 0.1
+    gradient_clip_val: 1.0
     batch_size: 256
     max_epochs: 50
+  debug:
+    batch_size: 16
+    max_epochs: 100
+    overfit_batches: 1
   finetune:
-    dataset: v1
     freeze_backbone: false
     learning_rate: 1e-5
     batch_size: 64
     max_epochs: 20
+
+experiments:
+  - {model: debug, dataset: v3}

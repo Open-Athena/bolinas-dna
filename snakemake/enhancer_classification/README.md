@@ -48,21 +48,28 @@ Input: (B, 255, 4) one-hot DNA
   → binary logit
 ```
 
-Uses `bf16-mixed` precision and supports `torch.compile`.
+Uses `bf16-mixed` precision and `torch.compile`.
 
 ### Model configs
 
-| Config | Backbone | LR | Batch size | Epochs |
-|--------|----------|-----|-----------|--------|
-| `debug` | frozen | 1e-3 | 16 | 2 |
-| `linear_probe` | frozen | 1e-3 | 256 | 50 |
-| `finetune` | trainable | 1e-5 | 64 | 20 |
+The `default` model config defines shared hyperparameters (frozen backbone,
+lr=1e-3, weight_decay=0.1, gradient_clip_val=1.0, batch_size=256, 50 epochs).
+Other configs inherit from `default` and override specific fields:
 
-### Outputs
+| Config | Overrides |
+|--------|-----------|
+| `debug` | batch_size=16, max_epochs=100, overfit_batches=1 |
+| `finetune` | unfreezes backbone, lr=1e-5, batch_size=64, max_epochs=20 |
 
-Each model produces under `results/model/{model}/`:
+### Experiments
+
+The `experiments` section in `config.yaml` defines which (model, dataset) pairs
+to train. Each experiment produces outputs under
+`results/model/{model}/{dataset}/`:
 - `best.ckpt` — best checkpoint (by val AUROC)
 - `metrics.json` — best validation AUROC and epoch number
+
+Training logs to [W&B project `bolinas-enhancer-classification`](https://wandb.ai/gonzalobenegas/bolinas-enhancer-classification).
 
 ### Code layout
 
@@ -91,83 +98,24 @@ uv run snakemake -n
 # Build datasets only
 uv run snakemake
 
-# Train a specific model
-uv run snakemake results/model/debug/metrics.json
+# Train a specific experiment
+uv run snakemake results/model/debug/v3/metrics.json
 
 # Train directly without Snakemake (e.g. for debugging)
 uv run python -m bolinas.enhancer_classification.train \
-    --train-parquet results/dataset/v1/train.parquet \
-    --val-parquet results/dataset/v1/validation.parquet \
-    --weights-path /path/to/alphagenome.pth \
-    --output-dir results/model/debug \
+    --train-parquet results/dataset/v3/train.parquet \
+    --val-parquet results/dataset/v3/validation.parquet \
+    --weights-path weights/model_all_folds.safetensors \
+    --output-dir results/model/debug/v3 \
     --learning-rate 1e-3 \
     --batch-size 16 \
     --max-epochs 2 \
-    --freeze-backbone
+    --freeze-backbone \
+    --wandb-run debug-v3
 
 # Run tests (no GPU needed)
 uv run pytest tests/enhancer_classification/ -v
 ```
-
-## Verification on GPU
-
-The following steps require a GPU and were NOT run during initial implementation.
-An agent picking this up on a GPU machine should:
-
-1. **Unit tests** (already verified on CPU):
-   ```bash
-   uv run pytest tests/enhancer_classification/ -v
-   ```
-
-2. **Debug training run with random weights** (no pretrained weights needed):
-   ```bash
-   # Generate a small synthetic parquet for testing
-   uv run python -c "
-   import random, polars as pl
-   random.seed(0)
-   seqs = [''.join(random.choices('ACGT', k=255)) for _ in range(64)]
-   labels = [i % 2 for i in range(64)]
-   pl.DataFrame({'seq': seqs, 'label': labels}).write_parquet('/tmp/test_train.parquet')
-   pl.DataFrame({'seq': seqs[:16], 'label': labels[:16]}).write_parquet('/tmp/test_val.parquet')
-   "
-
-   uv run python -m bolinas.enhancer_classification.train \
-       --train-parquet /tmp/test_train.parquet \
-       --val-parquet /tmp/test_val.parquet \
-       --output-dir /tmp/test_model \
-       --max-epochs 2 \
-       --batch-size 8 \
-       --num-workers 0 \
-       --no-compile \
-       --no-freeze-backbone
-
-   # Verify outputs exist
-   ls -la /tmp/test_model/best.ckpt /tmp/test_model/metrics.json
-   cat /tmp/test_model/metrics.json
-   ```
-
-3. **Checkpoint reload smoke test**:
-   ```bash
-   uv run python -c "
-   import torch
-   from bolinas.enhancer_classification.model import EnhancerClassifier
-   model = EnhancerClassifier.load_from_checkpoint('/tmp/test_model/best.ckpt')
-   model.eval()
-   x = torch.nn.functional.one_hot(torch.randint(0, 4, (1, 255)), 4).float()
-   with torch.no_grad():
-       logit = model(x)
-   print(f'Logit shape: {logit.shape}, value: {logit.item():.4f}')
-   "
-   ```
-
-4. **Full smoke test with pretrained weights** (if available):
-   ```bash
-   # Set the weights path in config, then:
-   cd snakemake/enhancer_classification
-   uv run snakemake results/model/debug/metrics.json
-   ```
-
-5. **Verify torch.compile works** (add `--compile` to step 2 above).
 
 ## Configuration
 
@@ -177,6 +125,8 @@ See `config/config.yaml` for all parameters:
   interval type (e.g., ELS, ELS_conserved_20)
 - `splits`: named chromosome split configs
 - `max_samples`: per-split subsampling caps
-- `models`: named model training configs (dataset, freeze_backbone, lr, etc.)
+- `models`: named model training configs (freeze_backbone, lr, etc.)
+- `experiments`: list of `{model, dataset}` pairs to train
 - `alphagenome_weights_path`: path to pretrained AlphaGenome weights
+  (download from [HuggingFace](https://huggingface.co/gtca/alphagenome_pytorch))
 - `window_size`, `seed`: core parameters
