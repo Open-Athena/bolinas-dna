@@ -40,6 +40,11 @@ dev = [
     "pytest-cov>=4.0.0",
     "snakefmt",
 ]
+enhancer-classification = [
+    "alphagenome-pytorch>=0.3.0",
+    "lightning>=2.0",
+    "torchmetrics>=1.0",
+]
 
 [tool.hatch.metadata]
 allow-direct-references = true
