@@ -1,6 +1,5 @@
 window_size: 255
 seed: 42
-negative_ratio: 1
 
 cre_urls:
   homo_sapiens: "https://downloads.wenglab.org/Registry-V4/GRCh38-cCREs.bed"

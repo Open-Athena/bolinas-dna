@@ -56,4 +56,4 @@ See `config/config.yaml` for all parameters:
   interval type (e.g., ELS, ELS_conserved_20)
 - `splits`: named chromosome split configs
 - `max_samples`: per-split subsampling caps
-- `window_size`, `seed`, `negative_ratio`: core parameters
+- `window_size`, `seed`: core parameters
