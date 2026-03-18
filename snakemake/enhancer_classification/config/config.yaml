@@ -2,65 +2,190 @@ window_size: 255
 seed: 42
 
 cre_urls:
-  homo_sapiens: "https://downloads.wenglab.org/Registry-V4/GRCh38-cCREs.bed"
-  mus_musculus: "https://downloads.wenglab.org/Registry-V4/mm10-cCREs.bed"
+    homo_sapiens: "https://downloads.wenglab.org/Registry-V4/GRCh38-cCREs.bed"
+    mus_musculus: "https://downloads.wenglab.org/Registry-V4/mm10-cCREs.bed"
 
 genome_urls:
-  homo_sapiens: "https://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa.gz"
-  mus_musculus: "https://ftp.ensembl.org/pub/release-102/fasta/mus_musculus/dna/Mus_musculus.GRCm38.dna_sm.primary_assembly.fa.gz"
+    homo_sapiens: "https://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa.gz"
+    mus_musculus: "https://ftp.ensembl.org/pub/release-102/fasta/mus_musculus/dna/Mus_musculus.GRCm38.dna_sm.primary_assembly.fa.gz"
 
 standard_chroms:
-  homo_sapiens: ["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","X","Y"]
-  mus_musculus: ["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","X","Y"]
+    homo_sapiens:
+        [
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "X",
+            "Y",
+        ]
+    mus_musculus:
+        [
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "X",
+            "Y",
+        ]
 
 splits:
-  v1:
-    homo_sapiens:
-      train: ["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","20","21","22","X","Y"]
-      validation: ["19"]
-    mus_musculus:
-      train: ["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","X","Y"]
-  v2:
-    homo_sapiens:
-      train: ["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","20","21","22","X","Y"]
-      validation: ["19"]
+    v1:
+        homo_sapiens:
+            train:
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5",
+                    "6",
+                    "7",
+                    "8",
+                    "9",
+                    "10",
+                    "11",
+                    "12",
+                    "13",
+                    "14",
+                    "15",
+                    "16",
+                    "17",
+                    "18",
+                    "20",
+                    "21",
+                    "22",
+                    "X",
+                    "Y",
+                ]
+            validation: ["19"]
+        mus_musculus:
+            train:
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5",
+                    "6",
+                    "7",
+                    "8",
+                    "9",
+                    "10",
+                    "11",
+                    "12",
+                    "13",
+                    "14",
+                    "15",
+                    "16",
+                    "17",
+                    "18",
+                    "19",
+                    "X",
+                    "Y",
+                ]
+    v2:
+        homo_sapiens:
+            train:
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5",
+                    "6",
+                    "7",
+                    "8",
+                    "9",
+                    "10",
+                    "11",
+                    "12",
+                    "13",
+                    "14",
+                    "15",
+                    "16",
+                    "17",
+                    "18",
+                    "20",
+                    "21",
+                    "22",
+                    "X",
+                    "Y",
+                ]
+            validation: ["19"]
 
 datasets:
-  v1:
-    split: v1
-    intervals: ELS
-  v2:
-    split: v2
-    intervals: ELS
-  v3:
-    split: v2
-    intervals: ELS_conserved_20
+    v1:
+        split: v1
+        intervals: ELS
+    v2:
+        split: v2
+        intervals: ELS
+    v3:
+        split: v2
+        intervals: ELS_conserved_20
 
 conservation:
-  homo_sapiens:
-    url: "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/cactus241way/cactus241way.phyloP.bw"
-    threshold: 2.27
+    homo_sapiens:
+        url: "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/cactus241way/cactus241way.phyloP.bw"
+        threshold: 2.27
 
 max_samples:
-  validation: 16384
-  test: 16384
+    validation: 16384
+    test: 16384
 
 alphagenome_weights:
-  repo: "gtca/alphagenome_pytorch"
-  filename: "model_all_folds.safetensors"
+    repo: "gtca/alphagenome_pytorch"
+    filename: "model_all_folds.safetensors"
 
 models:
-  default:
-    freeze_backbone: true
-    learning_rate: 1e-4
-    weight_decay: 0.1
-    gradient_clip_val: 1.0
-    batch_size: 256
-    warmup_fraction: 0.1
-  finetune:
-    freeze_backbone: false
-    learning_rate: 1e-5
-    batch_size: 64
+    default:
+        freeze_backbone: true
+        learning_rate: 1e-4
+        weight_decay: 0.1
+        gradient_clip_val: 1.0
+        batch_size: 256
+        warmup_fraction: 0.1
+    finetune:
+        freeze_backbone: false
+    random_init:
+        freeze_backbone: false
+        random_init: true
 
 experiments:
-  - {model: default, dataset: v3}
+    - { model: default, dataset: v3 }
+    - { model: finetune, dataset: v3 }
+    - { model: random_init, dataset: v3 }
