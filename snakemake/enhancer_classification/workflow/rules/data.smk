@@ -112,6 +112,69 @@ rule filter_enhancers:
         )
 
 
+rule download_phylop:
+    output:
+        "results/conservation/{species}.phyloP.bw",
+    params:
+        url=lambda wildcards: config["conservation"][wildcards.species]["url"],
+    shell:
+        "wget -O {output} {params.url}"
+
+
+rule cre_conservation:
+    input:
+        cre="results/cre/{species}/ELS.parquet",
+        conservation="results/conservation/{species}.phyloP.bw",
+    output:
+        "results/cre/{species}/ELS_phyloP.parquet",
+    run:
+        threshold = config["conservation"][wildcards.species]["threshold"]
+        df = pl.read_parquet(input.cre)
+
+        bw = pyBigWig.open(input.conservation)
+        stats = df.select(
+            pl.struct(["chrom", "start", "end"]).map_elements(
+                lambda x: {
+                    "total_bases": x["end"] - x["start"],
+                    "conserved_bases": int(
+                        np.sum(
+                            bw.values(
+                                "chr" + x["chrom"], x["start"], x["end"], numpy=True
+                            )
+                            >= threshold
+                        )
+                    ),
+                },
+                return_dtype=pl.Struct(
+                    {"total_bases": pl.Int64, "conserved_bases": pl.Int64}
+                ),
+            )
+        ).unnest("chrom")
+        bw.close()
+
+        result = df.hstack(stats).with_columns(
+            (pl.col("conserved_bases") / pl.col("total_bases"))
+            .cast(pl.Float32)
+            .alias("pct_conserved")
+        )
+        result.write_parquet(output[0])
+
+
+rule cre_filter_conserved:
+    input:
+        "results/cre/{species}/ELS_phyloP.parquet",
+    output:
+        "results/cre/{species}/ELS_conserved_{n}.parquet",
+    run:
+        min_conserved = int(wildcards.n)
+        (
+            pl.read_parquet(input[0])
+            .filter(pl.col("conserved_bases") >= min_conserved)
+            .select(["chrom", "start", "end"])
+            .write_parquet(output[0])
+        )
+
+
 rule make_positives:
     input:
         intervals="results/cre/{species}/{intervals}.parquet",
