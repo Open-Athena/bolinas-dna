@@ -68,12 +68,19 @@ Training logs to [W&B project `bolinas-enhancer-classification`](https://wandb.a
 
 ### Results and findings
 
-- Frozen AlphaGenome encoder produces highly discriminative features; the linear
-  head converges within a single epoch and overfits with continued training.
-- With cosine LR decay (10% warmup), 1 epoch training achieves val_auroc=0.944,
-  val_auprc=0.933 on dataset v3 — better than constant LR (0.939).
-- Gradient norm is very noisy (4–44) with gradient_clip_val=1.0, meaning
-  clipping fires on most steps. Consider raising or removing the clip value.
+Dataset v3, 1 epoch, cosine LR (10% warmup), lr=1e-4:
+
+| Model | val_auroc | val_auprc |
+|-------|-----------|-----------|
+| default (frozen pretrained) | 0.939 | 0.926 |
+| finetune (unfrozen pretrained) | **0.954** | **0.945** |
+| random_init (unfrozen random) | 0.930 | 0.916 |
+
+- Frozen encoder converges within a single epoch; continued training overfits.
+- Finetuning the pretrained backbone gives the best results.
+- Pretrained encoder outperforms random init even when both are unfrozen.
+- Gradient norm is noisy (4–44) with gradient_clip_val=1.0, meaning clipping
+  fires on most steps. Consider raising or removing the clip value.
 
 ### Code layout
 
