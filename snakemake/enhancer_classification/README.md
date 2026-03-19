@@ -48,7 +48,6 @@ Input: (B, 255, 4) one-hot DNA
   → binary logit
 ```
 
-Uses `bf16-mixed` precision and `torch.compile`.
 
 ### Model configs
 
@@ -97,8 +96,7 @@ Dataset v3, 1 epoch, cosine LR (10% warmup), lr=1e-4:
 ## Prerequisites
 
 - AWS credentials configured (EC2 IAM role or `aws configure`)
-- **Single GPU required** for training — hardcoded to `devices=1`, multi-GPU
-  not supported. Uses bf16-mixed precision and `torch.compile`.
+- **Single GPU required** for training (multi-GPU not supported)
 - All available CPU cores are used for data loading (`threads: workflow.cores`)
 - AlphaGenome pretrained weights are downloaded automatically from HuggingFace
 
