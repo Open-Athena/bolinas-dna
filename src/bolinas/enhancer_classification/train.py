@@ -46,7 +46,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--warmup-fraction", type=float, default=0.1)
     parser.add_argument("--mlp-hidden-dim", type=int, default=0)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--wandb-run", type=str, default=None)
+    parser.add_argument("--wandb-run", type=str, required=True)
     return parser.parse_args()
 
 
@@ -93,16 +93,15 @@ def main() -> None:
 
     model = torch.compile(model)
 
-    loggers = [CSVLogger(output_dir, name="logs")]
-    if args.wandb_run:
-        loggers.append(
-            WandbLogger(
-                project=WANDB_PROJECT,
-                entity=WANDB_ENTITY,
-                name=args.wandb_run,
-                save_dir=output_dir,
-            )
-        )
+    loggers = [
+        CSVLogger(output_dir, name="logs"),
+        WandbLogger(
+            project=WANDB_PROJECT,
+            entity=WANDB_ENTITY,
+            name=args.wandb_run,
+            save_dir=output_dir,
+        ),
+    ]
 
     trainer = L.Trainer(
         max_epochs=1,

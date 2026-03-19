@@ -122,12 +122,10 @@ uv run python -m bolinas.enhancer_classification.train \
     --train-parquet results/dataset/v3/train.parquet \
     --val-parquet results/dataset/v3/validation.parquet \
     --weights-path weights/model_all_folds.safetensors \
-    --output-dir results/model/debug/v3 \
-    --learning-rate 1e-3 \
-    --batch-size 16 \
-    --max-epochs 2 \
+    --output-ckpt results/model/default/v3/best.ckpt \
+    --output-metrics results/model/default/v3/metrics.json \
     --freeze-backbone \
-    --wandb-run debug-v3
+    --wandb-run default-v3
 
 # Run tests (no GPU needed)
 uv run pytest tests/enhancer_classification/ -v

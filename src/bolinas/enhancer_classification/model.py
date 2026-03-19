@@ -119,6 +119,8 @@ class EnhancerClassifier(L.LightningModule):
             weight_decay=self.hparams.weight_decay,
         )
         num_steps = self.hparams.num_training_steps
+        if num_steps is None:
+            raise ValueError("num_training_steps must be set for LR scheduling")
         num_warmup = int(self.hparams.warmup_fraction * num_steps)
         scheduler = get_cosine_schedule_with_warmup(
             optimizer,
