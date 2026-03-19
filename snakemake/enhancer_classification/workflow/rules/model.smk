@@ -36,6 +36,7 @@ rule train_model:
         gradient_clip_val=lambda wc: get_model_config(wc.model)["gradient_clip_val"],
         batch_size=lambda wc: get_model_config(wc.model)["batch_size"],
         warmup_fraction=lambda wc: get_model_config(wc.model)["warmup_fraction"],
+        mlp_hidden_dim=lambda wc: get_model_config(wc.model).get("mlp_hidden_dim", 0),
     shell:
         """
         uv run python -m bolinas.enhancer_classification.train \
@@ -49,6 +50,7 @@ rule train_model:
             --batch-size {params.batch_size} \
             --gradient-clip-val {params.gradient_clip_val} \
             --warmup-fraction {params.warmup_fraction} \
+            --mlp-hidden-dim {params.mlp_hidden_dim} \
             {params.freeze_flag} \
             --seed {config[seed]} \
             --num-workers {threads} \

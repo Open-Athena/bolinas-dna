@@ -44,6 +44,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--warmup-fraction", type=float, default=0.1)
+    parser.add_argument("--mlp-hidden-dim", type=int, default=0)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--wandb-run", type=str, default=None)
     return parser.parse_args()
@@ -87,6 +88,7 @@ def main() -> None:
         freeze_backbone=args.freeze_backbone,
         warmup_fraction=args.warmup_fraction,
         num_training_steps=num_training_steps,
+        mlp_hidden_dim=args.mlp_hidden_dim,
     )
 
     model = torch.compile(model)

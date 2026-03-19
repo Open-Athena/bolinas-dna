@@ -41,6 +41,7 @@ class EnhancerClassifier(L.LightningModule):
         freeze_backbone: bool = True,
         warmup_fraction: float = 0.1,
         num_training_steps: int | None = None,
+        mlp_hidden_dim: int = 0,
     ) -> None:
         super().__init__()
         self.save_hyperparameters(ignore=["weights_path"])
@@ -54,11 +55,22 @@ class EnhancerClassifier(L.LightningModule):
             for param in self.encoder.parameters():
                 param.requires_grad = False
 
-        self.head = nn.Sequential(
-            nn.AdaptiveAvgPool1d(1),
-            nn.Flatten(),
-            nn.Linear(ENCODER_OUTPUT_DIM, 1),
-        )
+        if mlp_hidden_dim > 0:
+            self.head = nn.Sequential(
+                nn.AdaptiveAvgPool1d(1),
+                nn.Flatten(),
+                nn.LayerNorm(ENCODER_OUTPUT_DIM),
+                nn.Linear(ENCODER_OUTPUT_DIM, mlp_hidden_dim),
+                nn.GELU(),
+                nn.Dropout(0.1),
+                nn.Linear(mlp_hidden_dim, 1),
+            )
+        else:
+            self.head = nn.Sequential(
+                nn.AdaptiveAvgPool1d(1),
+                nn.Flatten(),
+                nn.Linear(ENCODER_OUTPUT_DIM, 1),
+            )
 
         self.loss_fn = nn.BCEWithLogitsLoss()
         self.val_auroc = torchmetrics.AUROC(task="binary")

@@ -75,10 +75,13 @@ Dataset v3, 1 epoch, cosine LR (10% warmup), lr=1e-4:
 | default (frozen pretrained) | 0.939 | 0.926 |
 | finetune (unfrozen pretrained) | **0.954** | **0.945** |
 | random_init (unfrozen random) | 0.930 | 0.916 |
+| finetune_mlp (unfrozen, MLP-256) | 0.955 | 0.946 |
 
 - Frozen encoder converges within a single epoch; continued training overfits.
 - Finetuning the pretrained backbone gives the best results.
 - Pretrained encoder outperforms random init even when both are unfrozen.
+- MLP head (LayerNorm → Linear → GELU → Dropout → Linear) adds negligible
+  improvement over linear head (+0.001); not worth the extra complexity.
 - Gradient norm is noisy (4–44) with gradient_clip_val=1.0, meaning clipping
   fires on most steps. Consider raising or removing the clip value.
 

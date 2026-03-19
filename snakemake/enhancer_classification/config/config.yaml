@@ -184,8 +184,9 @@ models:
     random_init:
         freeze_backbone: false
         random_init: true
+    finetune_mlp:
+        freeze_backbone: false
+        mlp_hidden_dim: 256
 
 experiments:
-    - { model: default, dataset: v3 }
-    - { model: finetune, dataset: v3 }
-    - { model: random_init, dataset: v3 }
+    - { model: finetune_mlp, dataset: v3 }
