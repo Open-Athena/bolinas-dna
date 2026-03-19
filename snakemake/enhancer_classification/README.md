@@ -61,8 +61,8 @@ Other configs inherit from `default` and override specific fields. See
 The `experiments` section in `config.yaml` defines which (model, dataset) pairs
 to train. Each experiment produces outputs under
 `results/model/{model}/{dataset}/`:
-- `best.ckpt` — best checkpoint (by val AUROC)
-- `metrics.json` — best validation AUROC and epoch number
+- `best.ckpt` — Lightning checkpoint
+- `metrics.json` — validation AUROC and AUPRC
 
 Training logs to [W&B project `bolinas-enhancer-classification`](https://wandb.ai/gonzalobenegas/bolinas-enhancer-classification).
 
@@ -105,42 +105,10 @@ Dataset v3, 1 epoch, cosine LR (10% warmup), lr=1e-4:
 ## Usage
 
 ```bash
-# Install dependencies (from repo root)
 uv sync --group enhancer-classification
-
-# Dry run
-uv run snakemake -n
-
-# Build datasets only
 uv run snakemake
-
-# Train a specific experiment
-uv run snakemake results/model/debug/v3/metrics.json
-
-# Train directly without Snakemake (e.g. for debugging)
-uv run python -m bolinas.enhancer_classification.train \
-    --train-parquet results/dataset/v3/train.parquet \
-    --val-parquet results/dataset/v3/validation.parquet \
-    --weights-path weights/model_all_folds.safetensors \
-    --output-ckpt results/model/default/v3/best.ckpt \
-    --output-metrics results/model/default/v3/metrics.json \
-    --freeze-backbone \
-    --wandb-run default-v3
-
-# Run tests (no GPU needed)
-uv run pytest tests/enhancer_classification/ -v
 ```
 
 ## Configuration
 
-See `config/config.yaml` for all parameters:
-
-- `datasets`: versioned dataset configs, each referencing a split config and
-  interval type (e.g., ELS, ELS_conserved_20)
-- `splits`: named chromosome split configs
-- `max_samples`: per-split subsampling caps
-- `models`: named model training configs (freeze_backbone, lr, etc.)
-- `experiments`: list of `{model, dataset}` pairs to train
-- `alphagenome_weights_path`: path to pretrained AlphaGenome weights
-  (download from [HuggingFace](https://huggingface.co/gtca/alphagenome_pytorch))
-- `window_size`, `seed`: core parameters
+See `config/config.yaml`.
