@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import polars as pl
 import pyBigWig
+from huggingface_hub import hf_hub_download
 
 from bolinas.data.intervals import GenomicSet
 from bolinas.data.utils import ENHANCER_CRE_CLASSES, add_rc, load_fasta
@@ -20,6 +21,12 @@ for _dataset_config in config["datasets"].values():
         ALL_SPLIT_NAMES.update(_species_splits.keys())
 
 TRAIN_SPLIT = "train"
+
+MODEL_DEFAULTS = config["models"]["default"]
+
+
+def get_model_config(model_name: str) -> dict:
+    return {**MODEL_DEFAULTS, **config["models"].get(model_name, {})}
 
 
 def get_all_dataset_outputs() -> list[str]:

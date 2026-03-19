@@ -3,6 +3,11 @@ configfile: "config/config.yaml"
 
 include: "rules/common.smk"
 include: "rules/data.smk"
+include: "rules/model.smk"
+
+
+MODEL_NAMES = [k for k in config.get("models", {}) if k != "default"]
+EXPERIMENTS = config.get("experiments", [])
 
 
 wildcard_constraints:
@@ -12,8 +17,13 @@ wildcard_constraints:
     split_name="|".join(ALL_SPLIT_NAMES),
     label_type="positives|negatives",
     n=r"\d+",
+    model="|".join(MODEL_NAMES) if MODEL_NAMES else "NONE",
 
 
 rule all:
     input:
         get_all_dataset_outputs(),
+        [
+            f"results/model/{exp['model']}/{exp['dataset']}/metrics.json"
+            for exp in EXPERIMENTS
+        ],
