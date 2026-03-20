@@ -86,7 +86,7 @@ rule misclassified_regions:
 
         result = pl.concat([false_positives, false_negatives])
         result = result.with_columns(
-            probability=1.0 / (1.0 + (-pl.col("logit")).exp())
+            probability=pl.Series(expit(result["logit"].to_numpy()))
         )
         result = result.select(
             "error_type", "genome", "chrom", "start", "end", "strand",
