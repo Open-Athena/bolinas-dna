@@ -129,17 +129,28 @@ rule cre_conservation:
         "results/cre/{species}/ELS_conservation/{conservation}.parquet",
     run:
         threshold = config["conservation"][wildcards.species][wildcards.conservation]["threshold"]
+        conservation_window = config["conservation_window"]
         df = pl.read_parquet(input.cre)
 
+        # Resize to center conservation_window bp for scoring
+        size = df["end"] - df["start"]
+        diff = conservation_window - size
+        left_adj = diff // 2
+        right_adj = diff - left_adj
+        scored = df.with_columns(
+            (pl.col("start") - left_adj).alias("score_start"),
+            (pl.col("end") + right_adj).alias("score_end"),
+        )
+
         bw = pyBigWig.open(input.conservation)
-        stats = df.select(
-            pl.struct(["chrom", "start", "end"]).map_elements(
+        stats = scored.select(
+            pl.struct(["chrom", "score_start", "score_end"]).map_elements(
                 lambda x: {
-                    "total_bases": x["end"] - x["start"],
+                    "total_bases": x["score_end"] - x["score_start"],
                     "conserved_bases": int(
                         np.sum(
                             bw.values(
-                                "chr" + x["chrom"], x["start"], x["end"], numpy=True
+                                "chr" + x["chrom"], x["score_start"], x["score_end"], numpy=True
                             )
                             >= threshold
                         )

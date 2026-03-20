@@ -1,6 +1,12 @@
 window_size: 255
 seed: 42
 
+# Width (bp) of the center region used to score conservation.
+# Set to the minimum ENCODE cCRE length (150 bp) so the window always
+# falls within the annotated element, measuring core enhancer conservation
+# rather than flanking sequence.
+conservation_window: 150
+
 cre_urls:
     homo_sapiens: "https://downloads.wenglab.org/Registry-V4/GRCh38-cCREs.bed"
     mus_musculus: "https://downloads.wenglab.org/Registry-V4/mm10-cCREs.bed"
