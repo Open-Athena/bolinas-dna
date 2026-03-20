@@ -29,6 +29,14 @@ rule all:
             for exp in EXPERIMENTS
         ],
         [
+            f"results/model/{exp['model']}/{exp['dataset']}/misclassified.tsv"
+            for exp in EXPERIMENTS
+        ],
+        [
+            f"results/model/{exp['model']}/{exp['dataset']}/precision_recall.tsv"
+            for exp in EXPERIMENTS
+        ],
+        [
             f"results/visualization/{ckpt['model']}/{ckpt['dataset']}/{region['name']}.bedgraph"
             for ckpt in config.get("visualization", {}).get("checkpoints", [])
             for region in config.get("visualization", {}).get("regions", [])

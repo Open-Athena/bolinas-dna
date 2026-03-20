@@ -22,6 +22,7 @@ rule train_model:
     output:
         ckpt="results/model/{model}/{dataset}/best.ckpt",
         metrics="results/model/{model}/{dataset}/metrics.json",
+        val_predictions="results/model/{model}/{dataset}/val_predictions.parquet",
     params:
         freeze_flag=lambda wc: (
             "--freeze-backbone"
@@ -45,6 +46,7 @@ rule train_model:
             {params.weights_flag} \
             --output-ckpt {output.ckpt} \
             --output-metrics {output.metrics} \
+            --output-val-predictions {output.val_predictions} \
             --learning-rate {params.learning_rate} \
             --weight-decay {params.weight_decay} \
             --batch-size {params.batch_size} \
@@ -56,3 +58,68 @@ rule train_model:
             --num-workers {threads} \
             --wandb-run {wildcards.model}-{wildcards.dataset}
         """
+
+
+TOP_N_MISCLASSIFIED = 10
+
+
+rule misclassified_regions:
+    input:
+        val_predictions="results/model/{model}/{dataset}/val_predictions.parquet",
+    output:
+        tsv="results/model/{model}/{dataset}/misclassified.tsv",
+    run:
+        df = pl.read_parquet(input.val_predictions)
+
+        false_positives = (
+            df.filter(pl.col("label") == 0)
+            .sort("logit", descending=True)
+            .head(TOP_N_MISCLASSIFIED)
+            .with_columns(error_type=pl.lit("false_positive"))
+        )
+        false_negatives = (
+            df.filter(pl.col("label") == 1)
+            .sort("logit")
+            .head(TOP_N_MISCLASSIFIED)
+            .with_columns(error_type=pl.lit("false_negative"))
+        )
+
+        result = pl.concat([false_positives, false_negatives])
+        result = result.with_columns(
+            probability=pl.col("logit").map_elements(
+                lambda x: 1.0 / (1.0 + math.exp(-x)), return_dtype=pl.Float64
+            )
+        )
+        result = result.select(
+            "error_type", "genome", "chrom", "start", "end", "strand",
+            "label", "logit", "probability",
+        )
+        result.write_csv(output.tsv, separator="\t")
+
+
+rule precision_recall:
+    input:
+        val_predictions="results/model/{model}/{dataset}/val_predictions.parquet",
+    output:
+        tsv="results/model/{model}/{dataset}/precision_recall.tsv",
+    run:
+        df = pl.read_parquet(input.val_predictions)
+        labels = df["label"].to_numpy()
+        probabilities = 1.0 / (1.0 + np.exp(-df["logit"].to_numpy()))
+
+        precision, recall, thresholds = precision_recall_curve(labels, probabilities)
+        # precision_recall_curve returns n+1 precision/recall values; last has recall=0
+        pr = pl.DataFrame({
+            "threshold": np.append(thresholds, np.nan),
+            "precision": precision,
+            "recall": recall,
+        })
+
+        # Add a header comment as caveat about the 1:1 ratio
+        with open(output.tsv, "w") as f:
+            f.write(
+                "# Caveat: validation set uses a 1:1 positive-to-negative ratio. "
+                "In the real genome, negatives vastly outnumber enhancers, "
+                "so precision at a given recall will be lower than reported here.\n"
+            )
+            f.write(pr.write_csv(separator="\t"))

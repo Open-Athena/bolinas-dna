@@ -15,6 +15,7 @@ import json
 from pathlib import Path
 
 import lightning as L
+import polars as pl
 import torch
 from lightning.pytorch.loggers import CSVLogger, WandbLogger
 from torch.utils.data import DataLoader
@@ -35,6 +36,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--weights-path", type=str, default=None)
     parser.add_argument("--output-ckpt", type=str, required=True)
     parser.add_argument("--output-metrics", type=str, required=True)
+    parser.add_argument("--output-val-predictions", type=str, default=None)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
     parser.add_argument("--weight-decay", type=float, default=0.1)
     parser.add_argument("--gradient-clip-val", type=float, default=1.0)
@@ -124,6 +126,26 @@ def main() -> None:
         "val_auprc": float(trainer.callback_metrics.get("val_auprc", 0.0)),
     }
     output_metrics.write_text(json.dumps(metrics, indent=2))
+
+    # Save per-sample validation predictions
+    if args.output_val_predictions:
+        output_val_predictions = Path(args.output_val_predictions)
+        all_logits: list[torch.Tensor] = []
+        model.eval()
+        with torch.no_grad():
+            for batch in val_loader:
+                x, _y = batch
+                x = x.to(model.device)
+                logits = model(x)
+                all_logits.append(logits.cpu())
+        logits_array = torch.cat(all_logits).numpy()
+
+        val_meta = pl.read_parquet(
+            args.val_parquet,
+            columns=["genome", "chrom", "start", "end", "strand", "label"],
+        )
+        val_meta = val_meta.with_columns(pl.Series("logit", logits_array))
+        val_meta.write_parquet(output_val_predictions)
 
 
 if __name__ == "__main__":
