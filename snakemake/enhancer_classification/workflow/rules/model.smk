@@ -22,6 +22,7 @@ rule train_model:
     output:
         ckpt="results/model/{model}/{dataset}/best.ckpt",
         metrics="results/model/{model}/{dataset}/metrics.json",
+        val_predictions="results/model/{model}/{dataset}/val_predictions.parquet",
     params:
         freeze_flag=lambda wc: (
             "--freeze-backbone"
@@ -45,6 +46,7 @@ rule train_model:
             {params.weights_flag} \
             --output-ckpt {output.ckpt} \
             --output-metrics {output.metrics} \
+            --output-val-predictions {output.val_predictions} \
             --learning-rate {params.learning_rate} \
             --weight-decay {params.weight_decay} \
             --batch-size {params.batch_size} \
@@ -56,3 +58,61 @@ rule train_model:
             --num-workers {threads} \
             --wandb-run {wildcards.model}-{wildcards.dataset}
         """
+
+
+TOP_N_MISCLASSIFIED = 10
+
+
+rule misclassified_regions:
+    input:
+        val_predictions="results/model/{model}/{dataset}/val_predictions.parquet",
+    output:
+        parquet="results/model/{model}/{dataset}/misclassified.parquet",
+    run:
+        df = pl.read_parquet(input.val_predictions)
+
+        false_positives = (
+            df.filter(pl.col("label") == 0)
+            .sort("logit", descending=True)
+            .head(TOP_N_MISCLASSIFIED)
+            .with_columns(error_type=pl.lit("false_positive"))
+        )
+        false_negatives = (
+            df.filter(pl.col("label") == 1)
+            .sort("logit")
+            .head(TOP_N_MISCLASSIFIED)
+            .with_columns(error_type=pl.lit("false_negative"))
+        )
+
+        result = pl.concat([false_positives, false_negatives])
+        result = result.with_columns(
+            probability=pl.Series(expit(result["logit"].to_numpy()))
+        )
+        result = result.select(
+            "error_type", "genome", "chrom", "start", "end", "strand",
+            "label", "logit", "probability",
+        )
+        result.write_parquet(output.parquet)
+
+
+# Caveat: precision-recall is computed on a balanced 1:1 validation set.
+# In the real genome, negatives vastly outnumber enhancers, so precision
+# at a given recall will be lower than reported here.
+rule precision_recall:
+    input:
+        val_predictions="results/model/{model}/{dataset}/val_predictions.parquet",
+    output:
+        parquet="results/model/{model}/{dataset}/precision_recall.parquet",
+    run:
+        df = pl.read_parquet(input.val_predictions)
+        labels = df["label"].to_numpy()
+        probabilities = expit(df["logit"].to_numpy())
+
+        precision, recall, thresholds = precision_recall_curve(labels, probabilities)
+        # precision_recall_curve returns n+1 precision/recall values; last has recall=0
+        pr = pl.DataFrame({
+            "threshold": np.append(thresholds, np.nan),
+            "precision": precision,
+            "recall": recall,
+        })
+        pr.write_parquet(output.parquet)
