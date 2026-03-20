@@ -158,12 +158,19 @@ datasets:
         intervals: ELS
     v3:
         split: v2
-        intervals: ELS_conserved_20
+        intervals: ELS_conserved/phyloP_241m/20
 
+# Thresholds from: Sullivan, Patrick F., et al. "Leveraging base-pair mammalian
+# constraint to understand genetic variation and human disease."
+# Science 380.6643 (2023): eabn2937.
 conservation:
     homo_sapiens:
-        url: "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/cactus241way/cactus241way.phyloP.bw"
-        threshold: 2.27
+        phyloP_241m:
+            url: "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/cactus241way/cactus241way.phyloP.bw"
+            threshold: 2.27
+        phastCons_43p:
+            url: "https://cgl.gi.ucsc.edu/data/cactus/zoonomia-2021-track-hub/hg38/phyloPPrimates.bigWig"
+            threshold: 0.961
 
 max_samples:
     validation: 16384

@@ -1,3 +1,6 @@
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import numpy as np
 from scipy.special import expit
 from sklearn.metrics import precision_recall_curve
@@ -21,6 +24,10 @@ for _dataset_config in config["datasets"].values():
     _split_config = config["splits"][_dataset_config["split"]]
     for _species_splits in _split_config.values():
         ALL_SPLIT_NAMES.update(_species_splits.keys())
+
+ALL_CONSERVATIONS: set[str] = set()
+for _species_cons in config.get("conservation", {}).values():
+    ALL_CONSERVATIONS.update(_species_cons.keys())
 
 TRAIN_SPLIT = "train"
 

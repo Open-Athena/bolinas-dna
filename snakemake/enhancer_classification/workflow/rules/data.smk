@@ -112,11 +112,11 @@ rule filter_enhancers:
         )
 
 
-rule download_phylop:
+rule download_conservation:
     output:
-        "results/conservation/{species}.phyloP.bw",
+        "results/conservation/{species}/{conservation}.bw",
     params:
-        url=lambda wildcards: config["conservation"][wildcards.species]["url"],
+        url=lambda wildcards: config["conservation"][wildcards.species][wildcards.conservation]["url"],
     shell:
         "wget -O {output} {params.url}"
 
@@ -124,11 +124,11 @@ rule download_phylop:
 rule cre_conservation:
     input:
         cre="results/cre/{species}/ELS.parquet",
-        conservation="results/conservation/{species}.phyloP.bw",
+        conservation="results/conservation/{species}/{conservation}.bw",
     output:
-        "results/cre/{species}/ELS_phyloP.parquet",
+        "results/cre/{species}/ELS_conservation/{conservation}.parquet",
     run:
-        threshold = config["conservation"][wildcards.species]["threshold"]
+        threshold = config["conservation"][wildcards.species][wildcards.conservation]["threshold"]
         df = pl.read_parquet(input.cre)
 
         bw = pyBigWig.open(input.conservation)
@@ -160,11 +160,38 @@ rule cre_conservation:
         result.write_parquet(output[0])
 
 
+rule plot_conservation:
+    input:
+        "results/cre/{species}/ELS_conservation/{conservation}.parquet",
+    output:
+        "results/plots/conservation/{species}/{conservation}.svg",
+    run:
+        df = pl.read_parquet(input[0])
+        threshold = config["conservation"][wildcards.species][wildcards.conservation]["threshold"]
+
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+
+        ax1.hist(df["conserved_bases"].to_numpy(), bins=50, edgecolor="black", linewidth=0.5)
+        ax1.set_xlabel("Conserved bases")
+        ax1.set_ylabel("Count")
+        ax1.set_title(f"Conserved bases (threshold={threshold})")
+
+        ax2.hist(df["pct_conserved"].to_numpy(), bins=50, edgecolor="black", linewidth=0.5)
+        ax2.set_xlabel("Proportion conserved")
+        ax2.set_ylabel("Count")
+        ax2.set_title(f"Proportion conserved (threshold={threshold})")
+
+        fig.suptitle(f"{wildcards.conservation} — {wildcards.species}")
+        fig.tight_layout()
+        fig.savefig(output[0])
+        plt.close(fig)
+
+
 rule cre_filter_conserved:
     input:
-        "results/cre/{species}/ELS_phyloP.parquet",
+        "results/cre/{species}/ELS_conservation/{conservation}.parquet",
     output:
-        "results/cre/{species}/ELS_conserved_{n}.parquet",
+        "results/cre/{species}/ELS_conserved/{conservation}/{n}.parquet",
     run:
         min_conserved = int(wildcards.n)
         (
