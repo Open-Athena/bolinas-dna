@@ -4,6 +4,7 @@ configfile: "config/config.yaml"
 include: "rules/common.smk"
 include: "rules/data.smk"
 include: "rules/model.smk"
+include: "rules/visualization.smk"
 
 
 MODEL_NAMES = [k for k in config.get("models", {}) if k != "default"]
@@ -26,4 +27,9 @@ rule all:
         [
             f"results/model/{exp['model']}/{exp['dataset']}/metrics.json"
             for exp in EXPERIMENTS
+        ],
+        [
+            f"results/visualization/{ckpt['model']}/{ckpt['dataset']}/{region['name']}.bedgraph"
+            for ckpt in config.get("visualization", {}).get("checkpoints", [])
+            for region in config.get("visualization", {}).get("regions", [])
         ],

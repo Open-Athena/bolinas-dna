@@ -8,6 +8,8 @@ cre_urls:
 genome_urls:
     homo_sapiens: "https://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa.gz"
     mus_musculus: "https://ftp.ensembl.org/pub/release-102/fasta/mus_musculus/dna/Mus_musculus.GRCm38.dna_sm.primary_assembly.fa.gz"
+    gallus_gallus: "https://ftp.ensembl.org/pub/release-104/fasta/gallus_gallus/dna/Gallus_gallus.GRCg6a.dna_sm.toplevel.fa.gz"
+    drosophila_melanogaster: "https://ftp.ensembl.org/pub/release-104/fasta/drosophila_melanogaster/dna/Drosophila_melanogaster.BDGP6.32.dna_sm.toplevel.fa.gz"
 
 standard_chroms:
     homo_sapiens:
@@ -190,3 +192,30 @@ models:
 
 experiments:
     - { model: finetune_mlp, dataset: v3 }
+
+visualization:
+    window_size: 255
+    step_size: 32
+    checkpoints:
+        - { model: finetune_mlp, dataset: v3 }
+    regions:
+        - genome: homo_sapiens
+          chrom: "7"
+          start: 156790115
+          end: 156793672
+          name: ZRS_human
+        - genome: gallus_gallus
+          chrom: "2"
+          start: 8549842
+          end: 8556506
+          name: ZRS_chicken
+        - genome: mus_musculus
+          chrom: "5"
+          start: 29312497
+          end: 29318634
+          name: ZRS_mouse
+        - genome: drosophila_melanogaster
+          chrom: "2R"
+          start: 9974394
+          end: 9981777
+          name: MSE_drosophila
