@@ -21,7 +21,7 @@ rule predict_region:
         start=lambda wc: get_region(wc.name)["start"],
         end=lambda wc: get_region(wc.name)["end"],
         window_size=VIS_CONFIG.get("window_size", 255),
-        step_size=VIS_CONFIG.get("step_size", 128),
+        step_size=VIS_CONFIG.get("step_size", 32),
     shell:
         """
         uv run python -m bolinas.enhancer_classification.predict \
