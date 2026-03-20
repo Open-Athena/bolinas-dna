@@ -165,6 +165,9 @@ datasets:
     v3:
         split: v2
         intervals: ELS_conserved/phyloP_241m/20
+    v4:
+        split: v2
+        intervals: ELS_conserved/phastCons_43p/20
 
 # Thresholds from: Sullivan, Patrick F., et al. "Leveraging base-pair mammalian
 # constraint to understand genetic variation and human disease."
@@ -204,13 +207,13 @@ models:
         mlp_hidden_dim: 256
 
 experiments:
-    - { model: finetune_mlp, dataset: v3 }
+    - { model: finetune, dataset: v4 }
 
 visualization:
     window_size: 255
     step_size: 32
     checkpoints:
-        - { model: finetune_mlp, dataset: v3 }
+        - { model: finetune, dataset: v4 }
     regions:
         - genome: homo_sapiens
           chrom: "7"

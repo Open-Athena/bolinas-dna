@@ -127,18 +127,10 @@ def main() -> None:
     }
     output_metrics.write_text(json.dumps(metrics, indent=2))
 
-    # Save per-sample validation predictions
+    # Save per-sample validation predictions (collected during validation_step)
     if args.output_val_predictions:
         output_val_predictions = Path(args.output_val_predictions)
-        all_logits: list[torch.Tensor] = []
-        model.eval()
-        with torch.no_grad():
-            for batch in val_loader:
-                x, _y = batch
-                x = x.to(model.device)
-                logits = model(x)
-                all_logits.append(logits.cpu())
-        logits_array = torch.cat(all_logits).numpy()
+        logits_array = model.val_logits.compute().numpy()
 
         val_meta = pl.read_parquet(
             args.val_parquet,

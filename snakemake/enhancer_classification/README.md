@@ -91,9 +91,7 @@ Dataset v3, 1 epoch, cosine LR (10% warmup), lr=1e-4:
 - Pretrained encoder outperforms random init even when both are unfrozen.
 - MLP head (LayerNorm → Linear → GELU → Dropout → Linear) adds negligible
   improvement over linear head (+0.001); not worth the extra complexity.
-- Gradient norm is noisy (4–44) with gradient_clip_val=1.0, meaning clipping
-  fires on most steps. Consider raising or removing the clip value.
-- At 90% precision, finetune_mlp/v3 achieves ~86% recall (threshold ≈ 0.72).
+- At 90% precision, finetune/v4 achieves ~86% recall (threshold ≈ 0.69).
   Caveat: computed on the balanced 1:1 validation set — genome-wide precision
   would be lower at the same threshold since non-enhancers vastly outnumber
   enhancers.
@@ -121,37 +119,37 @@ uv sync --group enhancer-classification
 uv run snakemake
 ```
 
-### Top misclassified regions (finetune_mlp / v3)
+### Top misclassified regions (finetune / v4)
 
 **Top 10 false positives** (negatives predicted as enhancers):
 
 | Coordinates | Probability | Notes |
 |-------------|-------------|-------|
-| 19:48297353-48297608 | 0.995 | CA-CTCF, medium conservation |
-| 19:46654614-46654869 | 0.993 | Promoter, high conservation |
-| 19:50257238-50257493 | 0.992 | CA-TF, CDS, high conservation |
-| 19:40143759-40144014 | 0.991 | |
-| 19:15424910-15425165 | 0.991 | |
-| 19:16293161-16293416 | 0.990 | |
-| 19:48568408-48568663 | 0.990 | |
-| 19:2543654-2543909 | 0.989 | |
-| 19:43592829-43593084 | 0.989 | |
-| 19:2591078-2591333 | 0.988 | |
+| 19:617254-617509 | 0.995 | Overlaps half of a dELS that also overlaps CDS, pretty weird |
+| 19:28577254-28577509 | 0.994 | Should investigate, overlaps dELS with borderline conservation |
+| 19:57162184-57162439 | 0.993 | Non-conserved dELS |
+| 19:2185844-2186099 | 0.993 | Some CDS + some conserved non-coding on flank of dELS; might be functional |
+| 19:11426852-11427107 | 0.989 | |
+| 19:6931821-6932076 | 0.989 | |
+| 19:55146866-55147121 | 0.989 | |
+| 19:6309612-6309867 | 0.988 | |
+| 19:17974001-17974256 | 0.987 | |
+| 19:55227392-55227647 | 0.986 | |
 
 **Top 10 false negatives** (enhancers predicted as non-enhancers):
 
 | Coordinates | Probability | Notes |
 |-------------|-------------|-------|
-| 19:42515737-42515992 | 0.001 | Repeat, alignment artifacts, low conservation |
-| 19:20260798-20261053 | 0.001 | Repeat, low conservation. Doesn't even seem to have 20 conserved positions |
-| 19:53999769-54000024 | 0.005 | Low conservation |
-| 19:16712687-16712942 | 0.006 | |
-| 19:893572-893827 | 0.006 | |
-| 19:35943393-35943648 | 0.007 | |
-| 19:10265453-10265708 | 0.009 | |
+| 19:56313324-56313579 | 0.001 | pELS, moderate conservation, repeat |
+| 19:17496740-17496995 | 0.005 | dELS, moderate conservation, repeat |
+| 19:40365411-40365666 | 0.006 | dELS, moderate conservation, repeat |
+| 19:49678736-49678991 | 0.008 | pELS, moderate conservation, repeat |
+| 19:53552424-53552679 | 0.008 | |
+| 19:42339179-42339434 | 0.009 | |
 | 19:41260989-41261244 | 0.010 | |
-| 19:4408648-4408903 | 0.017 | |
-| 19:10285728-10285983 | 0.017 | |
+| 19:45742723-45742978 | 0.011 | |
+| 19:39936861-39937116 | 0.013 | |
+| 19:13100078-13100333 | 0.014 | |
 
 ## Configuration
 
