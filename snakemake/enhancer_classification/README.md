@@ -27,6 +27,16 @@ midpoint. Soft-masked genomes from Ensembl.
 `bedtools shuffle -chrom`, excluding positives and undefined (N-rich) regions.
 1:1 positive-to-negative ratio.
 
+**Conservation filtering**: Dataset v3 filters enhancers by conservation score.
+Conservation is computed over the center 150bp of each CRE (the minimum ENCODE
+cCRE length), ensuring the score reflects the element's core rather than flanking
+sequence. Enhancer counts by `conserved_bases` threshold:
+
+| Source | n >= 0 | n >= 10 | n >= 20 |
+|--------|--------|---------|---------|
+| phyloP_241m | 1,718,669 | 404,522 (23.5%) | 283,393 (16.5%) |
+| phastCons_43p | 1,718,669 | 403,966 (23.5%) | 310,674 (18.1%) |
+
 **Splits**: Configured via composable named split configs. Default (split_v1):
 human chr19 held out for validation; remaining human and all mouse for training.
 
