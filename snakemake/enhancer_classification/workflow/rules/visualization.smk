@@ -13,9 +13,9 @@ def get_region(name: str) -> dict:
 rule predict_region:
     input:
         genome=lambda wc: f"results/genome/{get_region(wc.name)['genome']}.fa.gz",
-        checkpoint=f"results/model/{VIS_CONFIG.get('model', '')}/{VIS_CONFIG.get('dataset', '')}/best.ckpt",
+        checkpoint="results/model/{model}/{dataset}/best.ckpt",
     output:
-        "results/visualization/{name}.bedgraph",
+        "results/visualization/{model}/{dataset}/{name}.bedgraph",
     params:
         chrom=lambda wc: get_region(wc.name)["chrom"],
         start=lambda wc: get_region(wc.name)["start"],

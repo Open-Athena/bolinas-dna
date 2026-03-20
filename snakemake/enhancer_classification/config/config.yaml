@@ -194,10 +194,10 @@ experiments:
     - { model: finetune_mlp, dataset: v3 }
 
 visualization:
-    model: finetune_mlp
-    dataset: v3
     window_size: 255
     step_size: 32
+    checkpoints:
+        - { model: finetune_mlp, dataset: v3 }
     regions:
         - genome: homo_sapiens
           chrom: "7"
