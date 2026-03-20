@@ -16,6 +16,7 @@ rule predict_region:
         checkpoint="results/model/{model}/{dataset}/best.ckpt",
     output:
         "results/visualization/{model}/{dataset}/{name}.bedgraph",
+    threads: workflow.cores
     params:
         chrom=lambda wc: get_region(wc.name)["chrom"],
         start=lambda wc: get_region(wc.name)["start"],
