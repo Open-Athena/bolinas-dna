@@ -29,11 +29,11 @@ rule all:
             for exp in EXPERIMENTS
         ],
         [
-            f"results/model/{exp['model']}/{exp['dataset']}/misclassified.tsv"
+            f"results/model/{exp['model']}/{exp['dataset']}/misclassified.parquet"
             for exp in EXPERIMENTS
         ],
         [
-            f"results/model/{exp['model']}/{exp['dataset']}/precision_recall.tsv"
+            f"results/model/{exp['model']}/{exp['dataset']}/precision_recall.parquet"
             for exp in EXPERIMENTS
         ],
         [
