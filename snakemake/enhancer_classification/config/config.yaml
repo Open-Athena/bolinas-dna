@@ -1,6 +1,12 @@
 window_size: 255
 seed: 42
 
+# Width (bp) of the center region used to score conservation.
+# Set to the minimum ENCODE cCRE length (150 bp) so the window always
+# falls within the annotated element, measuring core enhancer conservation
+# rather than flanking sequence.
+conservation_window: 150
+
 cre_urls:
     homo_sapiens: "https://downloads.wenglab.org/Registry-V4/GRCh38-cCREs.bed"
     mus_musculus: "https://downloads.wenglab.org/Registry-V4/mm10-cCREs.bed"
@@ -158,12 +164,24 @@ datasets:
         intervals: ELS
     v3:
         split: v2
-        intervals: ELS_conserved_20
+        intervals: ELS_conserved/phyloP_241m/20
+    v4:
+        split: v2
+        intervals: ELS_conserved/phastCons_43p/20
 
+# Thresholds from: Sullivan, Patrick F., et al. "Leveraging base-pair mammalian
+# constraint to understand genetic variation and human disease."
+# Science 380.6643 (2023): eabn2937.
 conservation:
     homo_sapiens:
-        url: "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/cactus241way/cactus241way.phyloP.bw"
-        threshold: 2.27
+        phyloP_241m:
+            url: "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/cactus241way/cactus241way.phyloP.bw"
+            threshold: 2.27
+        # Filename says phyloP but this is the 43-primate phastCons track
+        # from the Zoonomia/Cactus hub (threshold 0.961 is in phastCons 0–1 range)
+        phastCons_43p:
+            url: "https://cgl.gi.ucsc.edu/data/cactus/zoonomia-2021-track-hub/hg38/phyloPPrimates.bigWig"
+            threshold: 0.961
 
 max_samples:
     validation: 16384
@@ -191,13 +209,13 @@ models:
         mlp_hidden_dim: 256
 
 experiments:
-    - { model: finetune_mlp, dataset: v3 }
+    - { model: finetune, dataset: v4 }
 
 visualization:
     window_size: 255
     step_size: 32
     checkpoints:
-        - { model: finetune_mlp, dataset: v3 }
+        - { model: finetune, dataset: v4 }
     regions:
         - genome: homo_sapiens
           chrom: "7"

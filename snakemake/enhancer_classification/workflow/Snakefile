@@ -16,6 +16,7 @@ wildcard_constraints:
     dataset="|".join(DATASET_NAMES),
     intervals="|".join(ALL_INTERVALS),
     split_name="|".join(ALL_SPLIT_NAMES),
+    conservation="|".join(ALL_CONSERVATIONS),
     label_type="positives|negatives",
     n=r"\d+",
     model="|".join(MODEL_NAMES) if MODEL_NAMES else "NONE",

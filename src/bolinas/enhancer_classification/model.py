@@ -30,7 +30,7 @@ def load_pretrained_encoder(weights_path: str | Path) -> SequenceEncoder:
 class EnhancerClassifier(L.LightningModule):
     """Binary enhancer classifier using AlphaGenome's CNN encoder trunk.
 
-    Architecture: SequenceEncoder → AdaptiveAvgPool1d(1) → Linear(1536, 1)
+    Architecture: SequenceEncoder → AdaptiveAvgPool1d(1) → LayerNorm → Linear(1536, 1)
     """
 
     def __init__(
@@ -69,12 +69,14 @@ class EnhancerClassifier(L.LightningModule):
             self.head = nn.Sequential(
                 nn.AdaptiveAvgPool1d(1),
                 nn.Flatten(),
+                nn.LayerNorm(ENCODER_OUTPUT_DIM),
                 nn.Linear(ENCODER_OUTPUT_DIM, 1),
             )
 
         self.loss_fn = nn.BCEWithLogitsLoss()
         self.val_auroc = torchmetrics.AUROC(task="binary")
         self.val_auprc = torchmetrics.AveragePrecision(task="binary")
+        self.val_logits = torchmetrics.CatMetric()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         trunk, _intermediates = self.encoder(x)
@@ -95,6 +97,9 @@ class EnhancerClassifier(L.LightningModule):
         grad_norm = torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=float("inf"))
         self.log("grad_norm", grad_norm, on_step=True, prog_bar=False)
 
+    def on_validation_epoch_start(self) -> None:
+        self.val_logits.reset()
+
     def validation_step(
         self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> None:
@@ -104,6 +109,7 @@ class EnhancerClassifier(L.LightningModule):
         preds = torch.sigmoid(logits)
         self.val_auroc.update(preds, y.int())
         self.val_auprc.update(preds, y.int())
+        self.val_logits.update(logits)
         self.log("val_loss", loss, prog_bar=True, sync_dist=True)
 
     def on_validation_epoch_end(self) -> None:
