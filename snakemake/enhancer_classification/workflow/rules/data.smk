@@ -134,6 +134,7 @@ rule cre_conservation:
 
         # Resize to center conservation_window bp for scoring
         size = df["end"] - df["start"]
+        assert (size >= conservation_window).all(), "CREs smaller than conservation_window"
         diff = conservation_window - size
         left_adj = diff // 2
         right_adj = diff - left_adj

@@ -30,7 +30,7 @@ def load_pretrained_encoder(weights_path: str | Path) -> SequenceEncoder:
 class EnhancerClassifier(L.LightningModule):
     """Binary enhancer classifier using AlphaGenome's CNN encoder trunk.
 
-    Architecture: SequenceEncoder → AdaptiveAvgPool1d(1) → Linear(1536, 1)
+    Architecture: SequenceEncoder → AdaptiveAvgPool1d(1) → LayerNorm → Linear(1536, 1)
     """
 
     def __init__(

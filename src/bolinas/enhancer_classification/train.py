@@ -130,7 +130,7 @@ def main() -> None:
     # Save per-sample validation predictions (collected during validation_step)
     if args.output_val_predictions:
         output_val_predictions = Path(args.output_val_predictions)
-        logits_array = model.val_logits.compute().numpy()
+        logits_array = model.val_logits.compute().cpu().numpy()
 
         val_meta = pl.read_parquet(
             args.val_parquet,

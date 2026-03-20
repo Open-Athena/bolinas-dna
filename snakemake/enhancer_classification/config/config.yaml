@@ -177,6 +177,8 @@ conservation:
         phyloP_241m:
             url: "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/cactus241way/cactus241way.phyloP.bw"
             threshold: 2.27
+        # Filename says phyloP but this is the 43-primate phastCons track
+        # from the Zoonomia/Cactus hub (threshold 0.961 is in phastCons 0–1 range)
         phastCons_43p:
             url: "https://cgl.gi.ucsc.edu/data/cactus/zoonomia-2021-track-hub/hg38/phyloPPrimates.bigWig"
             threshold: 0.961
