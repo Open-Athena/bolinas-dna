@@ -15,27 +15,27 @@ add_rc: true
 
 intervals:
     training:
-        # - v1/255/128 # mRNA promoters
-        - v17/255/128
-        - v18/255/128
-    validation:
-        # - v1/255/255 # mRNA promoters (step = window for max diversity)
-        - v17/255/255
-        - v18/255/255
+        - v5/255/128 # CDS
+        - v1/255/128 # upstream
+        - v15/255/128 # downstream
+    validation: # step = window for max diversity
+        - v5/255/255
+        - v1/255/255
+        - v15/255/255
 
 genome_sets:
-    #     - name: animals
-    #       rank_key: kingdom
-    #       rank_value: Metazoa
-    #     - name: vertebrates
-    #       rank_key: phylum
-    #       rank_value: Chordata
-    #     - name: mammals
-    #       rank_key: class
-    #       rank_value: Mammalia
-    #     - name: primates
-    #       rank_key: order
-    #       rank_value: Primates
+    - name: animals
+      rank_key: kingdom
+      rank_value: Metazoa
+    - name: vertebrates
+      rank_key: phylum
+      rank_value: Chordata
+    - name: mammals
+      rank_key: class
+      rank_value: Mammalia
+    - name: primates
+      rank_key: order
+      rank_value: Primates
     - name: humans
       rank_key: species
       rank_value: "Homo sapiens"
