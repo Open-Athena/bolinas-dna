@@ -237,3 +237,8 @@ visualization:
           start: 9974394
           end: 9981777
           name: MSE_drosophila
+        - genome: homo_sapiens
+          chrom: "19"
+          start: 11065606
+          end: 11144368
+          name: LDLR_human
