@@ -241,10 +241,26 @@ rule filter_no_exon_overlap:
     output:
         "results/cre/{species}/noexon/{base}.parquet",
     run:
-        intervals = GenomicSet.read_parquet(input.intervals)
+        conservation_window = config["conservation_window"]
+        df = pl.read_parquet(input.intervals)
         exons = GenomicSet.read_parquet(input.exons)
-        filtered = intervals.filter_not_overlapping(exons)
-        filtered.write_parquet(output[0])
+
+        # Check exon overlap on center conservation_window only,
+        # consistent with how conservation is scored
+        size = df["end"] - df["start"]
+        center_adj = (size - conservation_window) // 2
+        center = pl.DataFrame(
+            {
+                "chrom": df["chrom"],
+                "start": df["start"] + center_adj,
+                "end": df["start"] + center_adj + conservation_window,
+            }
+        ).to_pandas()
+
+        overlaps = bf.count_overlaps(center, exons._data)
+        mask = (overlaps["count"] == 0).to_numpy()
+
+        df.filter(pl.Series(mask)).write_parquet(output[0])
 
 
 rule make_positives:

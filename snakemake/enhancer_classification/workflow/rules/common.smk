@@ -9,6 +9,8 @@ import polars as pl
 import pyBigWig
 from huggingface_hub import hf_hub_download
 
+import bioframe as bf
+
 from bolinas.data.intervals import GenomicSet
 from bolinas.data.negative_sampling import compute_gc_content, compute_repeat_fraction, match_by_gc_repeat
 from bolinas.data.utils import ENHANCER_CRE_CLASSES, add_rc, get_exons, load_annotation, load_fasta
