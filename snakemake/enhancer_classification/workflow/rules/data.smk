@@ -244,7 +244,7 @@ rule filter_no_exon_overlap:
         intervals = GenomicSet.read_parquet(input.intervals)
         exons = GenomicSet.read_parquet(input.exons)
         filtered = intervals.filter_not_overlapping(exons)
-        filtered.to_polars().write_parquet(output[0])
+        filtered.write_parquet(output[0])
 
 
 rule make_positives:
