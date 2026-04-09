@@ -11,6 +11,12 @@ MODEL_NAMES = [k for k in config.get("models", {}) if k != "default"]
 EXPERIMENTS = config.get("experiments", [])
 
 
+ruleorder: filter_no_exon_overlap > process_cre
+ruleorder: cre_filter_conserved > filter_enhancers
+ruleorder: filter_no_exon_overlap > filter_enhancers
+ruleorder: filter_no_exon_overlap > cre_filter_conserved
+
+
 wildcard_constraints:
     species="|".join(SPECIES),
     dataset="|".join(DATASET_NAMES),

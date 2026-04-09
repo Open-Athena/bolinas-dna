@@ -17,6 +17,10 @@ genome_urls:
     gallus_gallus: "https://ftp.ensembl.org/pub/release-104/fasta/gallus_gallus/dna/Gallus_gallus.GRCg6a.dna_sm.toplevel.fa.gz"
     drosophila_melanogaster: "https://ftp.ensembl.org/pub/release-104/fasta/drosophila_melanogaster/dna/Drosophila_melanogaster.BDGP6.32.dna_sm.toplevel.fa.gz"
 
+annotation_urls:
+    homo_sapiens: "https://ftp.ensembl.org/pub/release-113/gtf/homo_sapiens/Homo_sapiens.GRCh38.113.gtf.gz"
+    mus_musculus: "https://ftp.ensembl.org/pub/release-102/gtf/mus_musculus/Mus_musculus.GRCm38.102.gtf.gz"
+
 standard_chroms:
     homo_sapiens:
         [
@@ -164,10 +168,13 @@ datasets:
         intervals: ELS
     v3:
         split: v2
-        intervals: ELS_conserved/phyloP_241m/20
+        intervals: conserved/phyloP_241m/20/ELS
     v4:
         split: v2
-        intervals: ELS_conserved/phastCons_43p/20
+        intervals: conserved/phastCons_43p/20/ELS
+    v5:
+        split: v2
+        intervals: noexon/conserved/phastCons_43p/20/ELS
 
 # Thresholds from: Sullivan, Patrick F., et al. "Leveraging base-pair mammalian
 # constraint to understand genetic variation and human disease."

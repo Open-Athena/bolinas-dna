@@ -203,7 +203,7 @@ rule cre_filter_conserved:
     input:
         "results/cre/{species}/ELS_conservation/{conservation}.parquet",
     output:
-        "results/cre/{species}/ELS_conserved/{conservation}/{n}.parquet",
+        "results/cre/{species}/conserved/{conservation}/{n}/ELS.parquet",
     run:
         min_conserved = int(wildcards.n)
         (
@@ -212,6 +212,39 @@ rule cre_filter_conserved:
             .select(["chrom", "start", "end"])
             .write_parquet(output[0])
         )
+
+
+rule download_annotation:
+    output:
+        "results/annotation/{species}.gtf.gz",
+    params:
+        url=lambda wildcards: config["annotation_urls"][wildcards.species],
+    shell:
+        "wget -O {output} {params.url}"
+
+
+rule extract_exons:
+    input:
+        "results/annotation/{species}.gtf.gz",
+    output:
+        "results/annotation/{species}/exons.parquet",
+    run:
+        ann = load_annotation(input[0])
+        exons = get_exons(ann)
+        exons.write_parquet(output[0])
+
+
+rule filter_no_exon_overlap:
+    input:
+        intervals="results/cre/{species}/{base}.parquet",
+        exons="results/annotation/{species}/exons.parquet",
+    output:
+        "results/cre/{species}/noexon/{base}.parquet",
+    run:
+        intervals = GenomicSet.read_parquet(input.intervals)
+        exons = GenomicSet.read_parquet(input.exons)
+        filtered = intervals.filter_not_overlapping(exons)
+        filtered.to_polars().write_parquet(output[0])
 
 
 rule make_positives:
