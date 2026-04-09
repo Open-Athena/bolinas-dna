@@ -10,7 +10,7 @@ import pyBigWig
 from huggingface_hub import hf_hub_download
 
 from bolinas.data.intervals import GenomicSet
-from bolinas.data.utils import ENHANCER_CRE_CLASSES, add_rc, load_fasta
+from bolinas.data.utils import ENHANCER_CRE_CLASSES, add_rc, get_exons, load_annotation, load_fasta
 
 
 SPECIES = list(config["genome_urls"].keys())

@@ -11,6 +11,7 @@ from bolinas.data.utils import (
     get_array_split_pairs,
     get_cds,
     get_downstream_of_CDS,
+    get_exons,
     get_mrna_exons,
     get_ncrna_exons,
     get_promoters,
@@ -1967,3 +1968,35 @@ def test_get_downstream_of_CDS_chrY(chrY_annotation):
 
     df = result.to_polars()
     assert df["chrom"].unique().to_list() == ["NC_000024.10"]
+
+
+def test_get_exons():
+    """Test get_exons extracts all exon features regardless of transcript type.
+
+    Input: Annotation with exon, CDS, and gene features
+    Output: GenomicSet with only exon features (merged)
+    """
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr1", "chr1", "chr1"],
+            "start": [100, 200, 300, 500],
+            "end": [150, 250, 350, 600],
+            "strand": ["+", "+", "+", "-"],
+            "feature": ["exon", "CDS", "exon", "exon"],
+            "attribute": [
+                'transcript_id "t1"; transcript_biotype "mRNA"',
+                'transcript_id "t1"; transcript_biotype "mRNA"',
+                'transcript_id "t2"; transcript_biotype "lnc_RNA"',
+                'transcript_id "t3"; transcript_biotype "miRNA"',
+            ],
+            "source": ["test"] * 4,
+            "score": ["."] * 4,
+            "frame": ["."] * 4,
+        }
+    )
+
+    result = get_exons(ann)
+
+    assert isinstance(result, GenomicSet)
+    assert result.n_intervals() == 3
+    assert result.total_size() == 50 + 50 + 100

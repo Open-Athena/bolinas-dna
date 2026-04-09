@@ -87,6 +87,7 @@ def load_annotation(path: str) -> pl.DataFrame:
                 "frame",
                 "attribute",
             ],
+            schema_overrides={"chrom": pl.Utf8},
         )
         .with_columns(pl.col("start") - 1)  # gtf to bed conversion
         .filter(pl.col("strand").is_in(["+", "-"]))
@@ -221,6 +222,18 @@ def _get_functional_transcript_exons(ann: pl.DataFrame) -> pl.DataFrame:
         ["chrom", "start", "end", "strand", "transcript_id"]
     )
     return pl.concat([mrna_exons, ncrna_exons])
+
+
+def get_exons(ann: pl.DataFrame) -> GenomicSet:
+    """Extract all exon regions from an annotation DataFrame.
+
+    Args:
+        ann: Annotation DataFrame from load_annotation().
+
+    Returns:
+        GenomicSet containing merged exon regions.
+    """
+    return GenomicSet(ann.filter(pl.col("feature") == "exon"))
 
 
 def get_cds(ann: pl.DataFrame) -> GenomicSet:

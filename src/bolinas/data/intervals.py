@@ -96,6 +96,24 @@ class GenomicSet:
             return GenomicSet(self._data.copy())
         return GenomicSet(bf.subtract(self._data, other._data))
 
+    def filter_not_overlapping(self, other: "GenomicSet") -> "GenomicSet":
+        """Remove intervals that overlap any interval in the other set.
+
+        Unlike subtraction (which splits intervals at overlap boundaries),
+        this removes entire intervals from self that have any overlap with other.
+
+        Args:
+            other: A GenomicSet whose intervals define regions to exclude.
+
+        Returns:
+            A new GenomicSet containing only intervals from self that do not
+            overlap any interval in other.
+        """
+        if len(self._data) == 0 or len(other._data) == 0:
+            return GenomicSet(self._data.copy())
+        result = bf.count_overlaps(self._data, other._data)
+        return GenomicSet(result.loc[result["count"] == 0, INTERVAL_COORDS])
+
     def __eq__(self, other: object) -> bool:
         """Equality comparison based on underlying DataFrame equality.
 

@@ -2413,3 +2413,106 @@ def test_genomic_set_subtract_empty_from_empty():
         )
     )
     assert result == expected
+
+
+def test_filter_not_overlapping_removes_overlapping():
+    """Test that filter_not_overlapping removes intervals with any overlap.
+
+    Input set 1: chr1:0-100, chr1:200-300, chr1:400-500
+    Input set 2: chr1:50-60, chr1:450-600
+    Output: chr1:200-300 (only interval with no overlap kept)
+    """
+    data1 = pd.DataFrame(
+        {
+            "chrom": ["chr1", "chr1", "chr1"],
+            "start": [0, 200, 400],
+            "end": [100, 300, 500],
+        }
+    )
+    data2 = pd.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [50, 450],
+            "end": [60, 600],
+        }
+    )
+
+    gs1 = GenomicSet(data1)
+    gs2 = GenomicSet(data2)
+    result = gs1.filter_not_overlapping(gs2)
+
+    expected = GenomicSet(
+        pd.DataFrame(
+            {
+                "chrom": ["chr1"],
+                "start": [200],
+                "end": [300],
+            }
+        )
+    )
+    assert result == expected
+
+
+def test_filter_not_overlapping_no_overlap():
+    """Test filter_not_overlapping when no intervals overlap.
+
+    Input set 1: chr1:0-100, chr1:200-300
+    Input set 2: chr2:0-100
+    Output: chr1:0-100, chr1:200-300 (all kept, different chroms)
+    """
+    data1 = pd.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [0, 200],
+            "end": [100, 300],
+        }
+    )
+    data2 = pd.DataFrame(
+        {
+            "chrom": ["chr2"],
+            "start": [0],
+            "end": [100],
+        }
+    )
+
+    gs1 = GenomicSet(data1)
+    gs2 = GenomicSet(data2)
+    result = gs1.filter_not_overlapping(gs2)
+
+    assert result == gs1
+
+
+def test_filter_not_overlapping_empty_other():
+    """Test filter_not_overlapping with empty other set returns self unchanged."""
+    data1 = pd.DataFrame(
+        {
+            "chrom": ["chr1"],
+            "start": [0],
+            "end": [100],
+        }
+    )
+    empty = pd.DataFrame({"chrom": [], "start": [], "end": []})
+
+    gs1 = GenomicSet(data1)
+    gs2 = GenomicSet(empty)
+    result = gs1.filter_not_overlapping(gs2)
+
+    assert result == gs1
+
+
+def test_filter_not_overlapping_empty_self():
+    """Test filter_not_overlapping with empty self returns empty."""
+    empty = pd.DataFrame({"chrom": [], "start": [], "end": []})
+    data2 = pd.DataFrame(
+        {
+            "chrom": ["chr1"],
+            "start": [0],
+            "end": [100],
+        }
+    )
+
+    gs1 = GenomicSet(empty)
+    gs2 = GenomicSet(data2)
+    result = gs1.filter_not_overlapping(gs2)
+
+    assert result == gs1
