@@ -216,13 +216,13 @@ models:
         mlp_hidden_dim: 256
 
 experiments:
-    - { model: finetune, dataset: v4 }
+    - { model: finetune, dataset: v5 }
 
 visualization:
     window_size: 255
     step_size: 32
     checkpoints:
-        - { model: finetune, dataset: v4 }
+        - { model: finetune, dataset: v5 }
     regions:
         - genome: homo_sapiens
           chrom: "7"
