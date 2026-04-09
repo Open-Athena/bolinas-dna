@@ -22,6 +22,11 @@ def compute_repeat_fraction(sequences: pd.Series) -> pd.Series:
     return lowercase_count / sequences.str.len()
 
 
+def _parse_chrom(index: pd.Index) -> pd.Series:
+    """Extract chromosome from FASTA-style index (chrom:start-end)."""
+    return index.to_series().str.split(":").str[0].to_numpy()
+
+
 def match_by_gc_repeat(
     positive_seqs: pd.Series,
     candidate_seqs: pd.Series,
@@ -31,18 +36,22 @@ def match_by_gc_repeat(
 ) -> np.ndarray:
     """Match each positive to a candidate with similar GC and repeat content.
 
-    Uses bin-based matching: positives and candidates are assigned to 2D bins
-    defined by (GC%, repeat%). For each positive, a candidate from the same bin
-    is selected without replacement. Falls back to nearest-neighbor for
-    positives whose bin has no remaining candidates.
+    Matching is performed independently per chromosome (parsed from the Series
+    index, expected format ``chrom:start-end``) so that the chromosome
+    distribution of negatives mirrors that of positives.
+
+    Within each chromosome, uses bin-based matching on (GC%, repeat%) bins.
+    Falls back to nearest-neighbor for bins with no remaining candidates.
 
     Parameters
     ----------
     positive_seqs : pd.Series
         DNA sequences for positive (enhancer) regions, soft-masked.
+        Index must be ``chrom:start-end``.
     candidate_seqs : pd.Series
         DNA sequences for candidate negative regions, soft-masked.
         Should be oversampled (e.g. 20x) relative to positives.
+        Index must be ``chrom:start-end``.
     gc_bin_size : float
         Width of GC content bins (fraction, 0-1).
     repeat_bin_size : float
@@ -55,6 +64,37 @@ def match_by_gc_repeat(
     np.ndarray
         Indices into candidate_seqs, one per positive.
     """
+    pos_chroms = _parse_chrom(positive_seqs.index)
+    cand_chroms = _parse_chrom(candidate_seqs.index)
+
+    matched_indices = np.full(len(positive_seqs), -1, dtype=int)
+
+    for chrom in np.unique(pos_chroms):
+        pos_mask = pos_chroms == chrom
+        cand_mask = cand_chroms == chrom
+        pos_idx = np.where(pos_mask)[0]
+        cand_idx = np.where(cand_mask)[0]
+
+        group_matches = _match_ungrouped(
+            positive_seqs.iloc[pos_idx].reset_index(drop=True),
+            candidate_seqs.iloc[cand_idx].reset_index(drop=True),
+            gc_bin_size,
+            repeat_bin_size,
+            seed,
+        )
+        matched_indices[pos_idx] = cand_idx[group_matches]
+
+    return matched_indices
+
+
+def _match_ungrouped(
+    positive_seqs: pd.Series,
+    candidate_seqs: pd.Series,
+    gc_bin_size: float,
+    repeat_bin_size: float,
+    seed: int,
+) -> np.ndarray:
+    """Core bin-based matching logic for a single group."""
     rng = np.random.default_rng(seed)
 
     pos_gc = compute_gc_content(positive_seqs).to_numpy()
