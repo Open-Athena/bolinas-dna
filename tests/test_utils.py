@@ -12,6 +12,7 @@ from bolinas.data.utils import (
     get_cds,
     get_downstream_of_CDS,
     get_exons,
+    get_ensembl_functional_exons,
     get_mrna_exons,
     get_ncrna_exons,
     get_promoters,
@@ -2000,3 +2001,62 @@ def test_get_exons():
     assert isinstance(result, GenomicSet)
     assert result.n_intervals() == 3
     assert result.total_size() == 50 + 50 + 100
+
+
+def test_get_ensembl_functional_exons_excludes_retained_intron():
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr1", "chr1"],
+            "start": [100, 300, 500],
+            "end": [200, 400, 600],
+            "strand": ["+", "+", "+"],
+            "feature": ["exon", "exon", "exon"],
+            "attribute": [
+                'transcript_id "t1"; transcript_biotype "protein_coding"',
+                'transcript_id "t2"; transcript_biotype "retained_intron"',
+                'transcript_id "t3"; transcript_biotype "lncRNA"',
+            ],
+            "source": ["test"] * 3,
+            "score": ["."] * 3,
+            "frame": ["."] * 3,
+        }
+    )
+
+    result = get_ensembl_functional_exons(ann)
+    assert result.n_intervals() == 2
+    assert result.total_size() == 200
+
+
+def test_get_ensembl_functional_exons_excludes_all_problematic_biotypes():
+    biotypes = [
+        "retained_intron",
+        "nonsense_mediated_decay",
+        "protein_coding_CDS_not_defined",
+        "processed_pseudogene",
+        "TEC",
+        "artifact",
+        "non_stop_decay",
+    ]
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1"] * (len(biotypes) + 1),
+            "start": [i * 1000 for i in range(len(biotypes) + 1)],
+            "end": [i * 1000 + 100 for i in range(len(biotypes) + 1)],
+            "strand": ["+"] * (len(biotypes) + 1),
+            "feature": ["exon"] * (len(biotypes) + 1),
+            "attribute": [
+                f'transcript_id "t{i}"; transcript_biotype "{bt}"'
+                for i, bt in enumerate(biotypes)
+            ]
+            + ['transcript_id "tgood"; transcript_biotype "protein_coding"'],
+            "source": ["test"] * (len(biotypes) + 1),
+            "score": ["."] * (len(biotypes) + 1),
+            "frame": ["."] * (len(biotypes) + 1),
+        }
+    )
+
+    all_exons = get_exons(ann)
+    functional = get_ensembl_functional_exons(ann)
+
+    assert all_exons.n_intervals() == len(biotypes) + 1
+    assert functional.n_intervals() == 1

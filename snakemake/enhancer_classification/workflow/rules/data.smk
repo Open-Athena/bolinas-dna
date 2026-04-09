@@ -230,7 +230,7 @@ rule extract_exons:
         "results/annotation/{species}/exons.parquet",
     run:
         ann = load_annotation(input[0])
-        exons = get_exons(ann)
+        exons = get_ensembl_functional_exons(ann)
         exons.write_parquet(output[0])
 
 
