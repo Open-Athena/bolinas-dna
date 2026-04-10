@@ -224,6 +224,22 @@ def _get_functional_transcript_exons(ann: pl.DataFrame) -> pl.DataFrame:
     return pl.concat([mrna_exons, ncrna_exons])
 
 
+ENSEMBL_EXCLUDED_TRANSCRIPT_BIOTYPES = [
+    "retained_intron",
+    "nonsense_mediated_decay",
+    "protein_coding_CDS_not_defined",
+    "processed_pseudogene",
+    "transcribed_unprocessed_pseudogene",
+    "transcribed_processed_pseudogene",
+    "unprocessed_pseudogene",
+    "unitary_pseudogene",
+    "translated_processed_pseudogene",
+    "TEC",
+    "artifact",
+    "non_stop_decay",
+]
+
+
 def get_exons(ann: pl.DataFrame) -> GenomicSet:
     """Extract all exon regions from an annotation DataFrame.
 
@@ -234,6 +250,32 @@ def get_exons(ann: pl.DataFrame) -> GenomicSet:
         GenomicSet containing merged exon regions.
     """
     return GenomicSet(ann.filter(pl.col("feature") == "exon"))
+
+
+def get_ensembl_functional_exons(ann: pl.DataFrame) -> GenomicSet:
+    """Extract exon regions from well-supported transcripts only.
+
+    Excludes exons from transcript biotypes that represent annotation
+    artifacts or non-functional transcripts (retained introns, NMD,
+    pseudogenes, TEC, etc.). This avoids incorrectly marking enhancers
+    as exonic based on questionable transcript annotations.
+
+    Args:
+        ann: Annotation DataFrame from load_annotation().
+
+    Returns:
+        GenomicSet containing merged exon regions from well-supported
+        transcripts.
+    """
+    exons = ann.filter(pl.col("feature") == "exon")
+    biotype = exons.select(
+        pl.col("attribute")
+        .str.extract(r'transcript_biotype "([^"]+)"')
+        .alias("transcript_biotype")
+    )["transcript_biotype"]
+    return GenomicSet(
+        exons.filter(~biotype.is_in(ENSEMBL_EXCLUDED_TRANSCRIPT_BIOTYPES))
+    )
 
 
 def get_cds(ann: pl.DataFrame) -> GenomicSet:

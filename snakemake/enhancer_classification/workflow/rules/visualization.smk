@@ -34,5 +34,5 @@ rule predict_region:
             --window-size {params.window_size} \
             --step-size {params.step_size} \
             --output {output} \
-            --name "Enhancer probability"
+            --name "Enhancer probability ({wildcards.model}/{wildcards.dataset})"
         """

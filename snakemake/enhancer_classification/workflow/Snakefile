@@ -23,7 +23,8 @@ wildcard_constraints:
     intervals="|".join(ALL_INTERVALS),
     split_name="|".join(ALL_SPLIT_NAMES),
     conservation="|".join(ALL_CONSERVATIONS),
-    label_type="positives|negatives",
+    label_type="positives|negatives|negative_candidates|negatives_gc_repeat_matched",
+    neg_type="|".join(ALL_NEG_TYPES),
     n=r"\d+",
     model="|".join(MODEL_NAMES) if MODEL_NAMES else "NONE",
 

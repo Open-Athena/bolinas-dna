@@ -230,7 +230,7 @@ rule extract_exons:
         "results/annotation/{species}/exons.parquet",
     run:
         ann = load_annotation(input[0])
-        exons = get_exons(ann)
+        exons = get_ensembl_functional_exons(ann)
         exons.write_parquet(output[0])
 
 
@@ -241,10 +241,17 @@ rule filter_no_exon_overlap:
     output:
         "results/cre/{species}/noexon/{base}.parquet",
     run:
-        intervals = GenomicSet.read_parquet(input.intervals)
+        conservation_window = config["conservation_window"]
+        df = pl.read_parquet(input.intervals)
         exons = GenomicSet.read_parquet(input.exons)
-        filtered = intervals.filter_not_overlapping(exons)
-        filtered.write_parquet(output[0])
+
+        # Check exon overlap on center conservation_window only,
+        # consistent with how conservation is scored
+        center = GenomicList(df).resize(conservation_window)
+        no_overlap = bf.count_overlaps(center._data, exons._data)
+        mask = (no_overlap["count"] == 0).to_numpy()
+
+        df.filter(pl.Series(mask)).write_parquet(output[0])
 
 
 rule make_positives:
@@ -257,13 +264,13 @@ rule make_positives:
     run:
         window_size = config["window_size"]
 
-        intervals = GenomicSet(pl.read_parquet(input.intervals))
+        intervals = GenomicList(pl.read_parquet(input.intervals))
         intervals = intervals.resize(window_size)
 
         genome = GenomicSet.read_bed(input.genome)
         undefined = GenomicSet.read_bed(input.undefined)
         defined = genome - undefined
-        intervals = intervals & defined
+        intervals = intervals.filter_within(defined)
         intervals = intervals.filter_size(min_size=window_size, max_size=window_size)
 
         intervals.write_bed(output[0])
@@ -305,6 +312,115 @@ rule sample_negatives:
         """
 
 
+rule generate_negative_candidates:
+    input:
+        positives="results/intervals/{intervals}/{species}/positives.bed",
+        exclusion="results/intervals/{intervals}/{species}/exclusion.bed",
+        chrom_sizes="results/genome/{species}.chrom.sizes.filtered",
+    output:
+        temp("results/intervals/{intervals}/{species}/negative_candidates.bed"),
+    params:
+        seed=config["seed"],
+        oversampling_factor=config["negative_sampling"]["gc_repeat_matched"][
+            "oversampling_factor"
+        ],
+    conda:
+        "../envs/bioinformatics.yaml"
+    shell:
+        """
+        for i in $(seq 1 {params.oversampling_factor}); do
+            bedtools shuffle \
+                -i {input.positives} \
+                -g {input.chrom_sizes} \
+                -excl {input.exclusion} \
+                -chrom \
+                -seed $(({params.seed} + i))
+        done | sort -k1,1 -k2,2n -u > {output}
+        """
+
+
+rule sample_gc_repeat_matched_negatives:
+    input:
+        pos_fa=local("results/sequences/{intervals}/{species}/positives.fa"),
+        cand_fa=local("results/sequences/{intervals}/{species}/negative_candidates.fa"),
+    output:
+        "results/intervals/{intervals}/{species}/negatives_gc_repeat_matched.bed",
+    params:
+        gc_bin_size=config["negative_sampling"]["gc_repeat_matched"]["gc_bin_size"],
+        repeat_bin_size=config["negative_sampling"]["gc_repeat_matched"][
+            "repeat_bin_size"
+        ],
+        seed=config["seed"],
+    run:
+        pos_seqs = load_fasta(input.pos_fa)
+        cand_seqs = load_fasta(input.cand_fa)
+
+        indices = match_by_gc_repeat(
+            pos_seqs,
+            cand_seqs,
+            gc_bin_size=params.gc_bin_size,
+            repeat_bin_size=params.repeat_bin_size,
+            seed=params.seed,
+        )
+
+        # Parse coordinates from FASTA headers (format: chrom:start-end)
+        matched_ids = cand_seqs.index[indices]
+        coords = matched_ids.str.split(":", expand=True)
+        start_end = coords.get_level_values(1).str.split("-", expand=True)
+        bed = pd.DataFrame(
+            {
+                "chrom": coords.get_level_values(0),
+                "start": start_end.get_level_values(0).astype(int),
+                "end": start_end.get_level_values(1).astype(int),
+            }
+        )
+        bed.to_csv(output[0], sep="\t", header=False, index=False)
+
+
+rule plot_negative_sampling:
+    input:
+        pos_fa=local("results/sequences/{intervals}/{species}/positives.fa"),
+        neg_random_fa=local("results/sequences/{intervals}/{species}/negatives.fa"),
+        neg_matched_fa=local(
+            "results/sequences/{intervals}/{species}/negatives_gc_repeat_matched.fa"
+        ),
+    output:
+        "results/plots/negative_sampling/{intervals}/{species}.svg",
+    run:
+        pos_seqs = load_fasta(input.pos_fa)
+        neg_random_seqs = load_fasta(input.neg_random_fa)
+        neg_matched_seqs = load_fasta(input.neg_matched_fa)
+
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+
+        bins_gc = np.linspace(0, 1, 81)
+        bins_rep = np.linspace(0, 1, 51)
+        hist_kw = dict(histtype="step", linewidth=1.5)
+
+        groups = [
+            (pos_seqs, "Enhancers"),
+            (neg_random_seqs, "Random negatives"),
+            (neg_matched_seqs, "GC/repeat matched"),
+        ]
+
+        for seqs, label in groups:
+            ax1.hist(compute_gc_content(seqs), bins=bins_gc, label=label, **hist_kw)
+        ax1.set_xlabel("GC content")
+        ax1.set_ylabel("Count")
+        ax1.legend()
+
+        for seqs, label in groups:
+            ax2.hist(compute_repeat_fraction(seqs), bins=bins_rep, label=label, **hist_kw)
+        ax2.set_xlabel("Repeat fraction")
+        ax2.set_ylabel("Count")
+        ax2.legend()
+
+        fig.suptitle(f"Negative sampling — {wildcards.species}")
+        fig.tight_layout()
+        fig.savefig(output[0])
+        plt.close(fig)
+
+
 rule prepare_bed_for_seq:
     input:
         "results/intervals/{intervals}/{species}/{label_type}.bed",
@@ -331,9 +447,12 @@ rule extract_sequences:
 rule make_species_parquet:
     input:
         pos=local("results/sequences/{intervals}/{species}/positives.fa"),
-        neg=local("results/sequences/{intervals}/{species}/negatives.fa"),
+        neg=lambda wc: local(
+            f"results/sequences/{wc.intervals}/{wc.species}/"
+            f"{NEGATIVES_FOR_SAMPLING[wc.neg_type]}.fa"
+        ),
     output:
-        "results/parquet/{intervals}/{species}.parquet",
+        "results/parquet/{intervals}/{neg_type}/{species}.parquet",
     run:
         window_size = config["window_size"]
 
@@ -350,7 +469,9 @@ rule build_dataset:
     input:
         lambda wc: [
             f"results/parquet/"
-            f"{config['datasets'][wc.dataset]['intervals']}/{species}.parquet"
+            f"{config['datasets'][wc.dataset]['intervals']}/"
+            f"{config['datasets'][wc.dataset].get('negative_sampling', 'random')}/"
+            f"{species}.parquet"
             for species, splits in (
                 config["splits"][config["datasets"][wc.dataset]["split"]].items()
             )

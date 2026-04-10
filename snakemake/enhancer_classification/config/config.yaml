@@ -159,6 +159,12 @@ splits:
                 ]
             validation: ["19"]
 
+negative_sampling:
+    gc_repeat_matched:
+        oversampling_factor: 20
+        gc_bin_size: 0.02
+        repeat_bin_size: 0.05
+
 datasets:
     v1:
         split: v1
@@ -175,6 +181,10 @@ datasets:
     v5:
         split: v2
         intervals: noexon/conserved/phastCons_43p/20/ELS
+    v6:
+        split: v2
+        intervals: noexon/conserved/phastCons_43p/20/ELS
+        negative_sampling: gc_repeat_matched
 
 # Thresholds from: Sullivan, Patrick F., et al. "Leveraging base-pair mammalian
 # constraint to understand genetic variation and human disease."
@@ -216,13 +226,13 @@ models:
         mlp_hidden_dim: 256
 
 experiments:
-    - { model: finetune, dataset: v5 }
+    - { model: finetune, dataset: v6 }
 
 visualization:
     window_size: 255
     step_size: 32
     checkpoints:
-        - { model: finetune, dataset: v5 }
+        - { model: finetune, dataset: v6 }
     regions:
         - genome: homo_sapiens
           chrom: "7"

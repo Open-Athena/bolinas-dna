@@ -95,7 +95,7 @@ def write_bedgraph(
     ucsc_chrom = f"chr{chrom}"
     with open(path, "w") as f:
         f.write(
-            f'track type=bedGraph name="{track_name}" visibility=full autoScale=on\n'
+            f'track type=bedGraph name="{track_name}" visibility=full autoScale=on windowingFunction=mean\n'
         )
         for (start, end), score in zip(windows, scores):
             f.write(f"{ucsc_chrom}\t{start}\t{end}\t{score:.6f}\n")

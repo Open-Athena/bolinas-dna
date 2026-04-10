@@ -9,8 +9,11 @@ import polars as pl
 import pyBigWig
 from huggingface_hub import hf_hub_download
 
-from bolinas.data.intervals import GenomicSet
-from bolinas.data.utils import ENHANCER_CRE_CLASSES, add_rc, get_exons, load_annotation, load_fasta
+import bioframe as bf
+
+from bolinas.data.intervals import GenomicList, GenomicSet
+from bolinas.data.negative_sampling import compute_gc_content, compute_repeat_fraction, match_by_gc_repeat
+from bolinas.data.utils import ENHANCER_CRE_CLASSES, add_rc, get_ensembl_functional_exons, load_annotation, load_fasta
 
 
 SPECIES = list(config["genome_urls"].keys())
@@ -28,6 +31,15 @@ for _dataset_config in config["datasets"].values():
 ALL_CONSERVATIONS: set[str] = set()
 for _species_cons in config.get("conservation", {}).values():
     ALL_CONSERVATIONS.update(_species_cons.keys())
+
+NEGATIVES_FOR_SAMPLING: dict[str, str] = {
+    "random": "negatives",
+    "gc_repeat_matched": "negatives_gc_repeat_matched",
+}
+
+ALL_NEG_TYPES: set[str] = {"random"}
+for _dataset_config in config["datasets"].values():
+    ALL_NEG_TYPES.add(_dataset_config.get("negative_sampling", "random"))
 
 TRAIN_SPLIT = "train"
 
