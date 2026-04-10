@@ -247,18 +247,9 @@ rule filter_no_exon_overlap:
 
         # Check exon overlap on center conservation_window only,
         # consistent with how conservation is scored
-        size = df["end"] - df["start"]
-        center_adj = (size - conservation_window) // 2
-        center = pl.DataFrame(
-            {
-                "chrom": df["chrom"],
-                "start": df["start"] + center_adj,
-                "end": df["start"] + center_adj + conservation_window,
-            }
-        ).to_pandas()
-
-        overlaps = bf.count_overlaps(center, exons._data)
-        mask = (overlaps["count"] == 0).to_numpy()
+        center = GenomicList(df).resize(conservation_window)
+        no_overlap = bf.count_overlaps(center._data, exons._data)
+        mask = (no_overlap["count"] == 0).to_numpy()
 
         df.filter(pl.Series(mask)).write_parquet(output[0])
 
@@ -273,13 +264,13 @@ rule make_positives:
     run:
         window_size = config["window_size"]
 
-        intervals = GenomicSet(pl.read_parquet(input.intervals))
+        intervals = GenomicList(pl.read_parquet(input.intervals))
         intervals = intervals.resize(window_size)
 
         genome = GenomicSet.read_bed(input.genome)
         undefined = GenomicSet.read_bed(input.undefined)
         defined = genome - undefined
-        intervals = intervals & defined
+        intervals = intervals.filter_within(defined)
         intervals = intervals.filter_size(min_size=window_size, max_size=window_size)
 
         intervals.write_bed(output[0])

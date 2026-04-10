@@ -320,3 +320,97 @@ class GenomicSet:
             path: Path to the output parquet file.
         """
         self._data.to_parquet(path, index=False)
+
+
+class GenomicList:
+    """An ordered list of genomic intervals that preserves each element's identity.
+
+    Unlike GenomicSet, intervals are never merged -- two overlapping intervals
+    remain as separate rows.  This is the right abstraction when each interval
+    represents an independent genomic element (e.g. enhancers resized to a
+    fixed window) and we need per-element filtering.
+
+    Coordinates follow Python semantics (0-based, half-open).
+
+    Args:
+        data: A pandas or polars DataFrame with at least columns
+            ['chrom', 'start', 'end'].  Only these columns are kept.
+    """
+
+    def __init__(self, data: pd.DataFrame | pl.DataFrame) -> None:
+        if isinstance(data, pl.DataFrame):
+            data = data.to_pandas()
+        self._data = data[INTERVAL_COORDS].reset_index(drop=True)
+
+    def __repr__(self) -> str:
+        return f"GenomicList ({len(self._data)} intervals)\n{self._data}"
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, GenomicList):
+            return False
+        return bool(self._data.equals(other._data))
+
+    # -- transforms --
+
+    def resize(self, target_size: int) -> "GenomicList":
+        """Resize every interval to exactly *target_size* bp, centred on
+        its midpoint.  Each element is handled independently."""
+        if target_size <= 0:
+            raise ValueError(f"target_size must be positive, got {target_size}")
+        res = self._data.copy()
+        size = res["end"] - res["start"]
+        diff = target_size - size
+        left_adj = diff // 2
+        right_adj = diff - left_adj
+        res["start"] = res["start"] - left_adj
+        res["end"] = res["end"] + right_adj
+        return GenomicList(res)
+
+    # -- filters --
+
+    def filter_size(
+        self, min_size: int = 0, max_size: int = np.iinfo(np.int64).max
+    ) -> "GenomicList":
+        """Keep only intervals whose size falls in [min_size, max_size]."""
+        size = self._data["end"] - self._data["start"]
+        return GenomicList(self._data.loc[size.between(min_size, max_size)])
+
+    def filter_not_overlapping(self, regions: GenomicSet) -> "GenomicList":
+        """Drop intervals that overlap any region in *regions*."""
+        if len(self._data) == 0 or len(regions._data) == 0:
+            return GenomicList(self._data.copy())
+        counts = bf.count_overlaps(self._data, regions._data)
+        return GenomicList(self._data.loc[counts["count"] == 0])
+
+    def filter_within(self, regions: GenomicSet) -> "GenomicList":
+        """Keep only intervals fully contained within *regions*.
+
+        An interval is kept when its coverage by *regions* equals its
+        full length (i.e. no part falls outside *regions*)."""
+        if len(self._data) == 0:
+            return GenomicList(self._data.copy())
+        if len(regions._data) == 0:
+            return GenomicList(self._data.iloc[:0].copy())
+        cov = bf.coverage(self._data, regions._data, return_input=False)
+        size = self._data["end"] - self._data["start"]
+        return GenomicList(self._data.loc[cov["coverage"] >= size])
+
+    # -- conversions --
+
+    def to_pandas(self) -> pd.DataFrame:
+        return self._data
+
+    def to_polars(self) -> pl.DataFrame:
+        return pl.from_pandas(self._data)
+
+    # -- I/O --
+
+    def write_bed(self, path: str) -> None:
+        self._data.to_csv(path, sep="\t", header=False, index=False)
+
+    @classmethod
+    def from_parquet(cls, path: str) -> "GenomicList":
+        return cls(pd.read_parquet(path))
