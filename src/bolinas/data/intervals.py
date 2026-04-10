@@ -6,6 +6,18 @@ import polars as pl
 INTERVAL_COORDS = ["chrom", "start", "end"]
 
 
+def _resize_df(data: pd.DataFrame, target_size: int) -> pd.DataFrame:
+    """Resize intervals to *target_size* bp, centred on midpoints."""
+    res = data.copy()
+    size = res["end"] - res["start"]
+    diff = target_size - size
+    left_adj = diff // 2
+    right_adj = diff - left_adj
+    res["start"] = res["start"] - left_adj
+    res["end"] = res["end"] + right_adj
+    return res
+
+
 class GenomicSet:
     """A set of genomic intervals that are always non-overlapping.
 
@@ -227,14 +239,7 @@ class GenomicSet:
         """
         if target_size <= 0:
             raise ValueError(f"target_size must be positive, got {target_size}")
-        res = self._data.copy()
-        size = res["end"] - res["start"]
-        diff = target_size - size
-        left_adj = diff // 2
-        right_adj = diff - left_adj
-        res["start"] = res["start"] - left_adj
-        res["end"] = res["end"] + right_adj
-        return GenomicSet(res)
+        return GenomicSet(_resize_df(self._data, target_size))
 
     def add_flank(self, flank: int) -> "GenomicSet":
         """Expand intervals by adding flanking regions on both sides.
@@ -360,14 +365,7 @@ class GenomicList:
         its midpoint.  Each element is handled independently."""
         if target_size <= 0:
             raise ValueError(f"target_size must be positive, got {target_size}")
-        res = self._data.copy()
-        size = res["end"] - res["start"]
-        diff = target_size - size
-        left_adj = diff // 2
-        right_adj = diff - left_adj
-        res["start"] = res["start"] - left_adj
-        res["end"] = res["end"] + right_adj
-        return GenomicList(res)
+        return GenomicList(_resize_df(self._data, target_size))
 
     # -- filters --
 

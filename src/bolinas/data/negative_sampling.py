@@ -22,7 +22,7 @@ def compute_repeat_fraction(sequences: pd.Series) -> pd.Series:
     return lowercase_count / sequences.str.len()
 
 
-def _parse_chrom(index: pd.Index) -> pd.Series:
+def _parse_chrom(index: pd.Index) -> np.ndarray:
     """Extract chromosome from FASTA-style index (chrom:start-end)."""
     return index.to_series().str.split(":").str[0].to_numpy()
 
@@ -102,23 +102,19 @@ def _match_ungrouped(
     cand_gc = compute_gc_content(candidate_seqs).to_numpy()
     cand_repeat = compute_repeat_fraction(candidate_seqs).to_numpy()
 
-    # Assign bins
     pos_gc_bin = (pos_gc / gc_bin_size).astype(int)
     pos_rep_bin = (pos_repeat / repeat_bin_size).astype(int)
     cand_gc_bin = (cand_gc / gc_bin_size).astype(int)
     cand_rep_bin = (cand_repeat / repeat_bin_size).astype(int)
 
-    # Build bin → candidate index mapping
     bin_to_candidates: dict[tuple[int, int], list[int]] = {}
     for i in range(len(candidate_seqs)):
         key = (cand_gc_bin[i], cand_rep_bin[i])
         bin_to_candidates.setdefault(key, []).append(i)
 
-    # Shuffle candidates within each bin for random selection
     for indices in bin_to_candidates.values():
         rng.shuffle(indices)
 
-    # Track consumption position per bin
     bin_pos: dict[tuple[int, int], int] = {k: 0 for k in bin_to_candidates}
 
     matched_indices = np.full(len(positive_seqs), -1, dtype=int)
