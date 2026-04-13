@@ -23,7 +23,11 @@ DATASET_NAMES = list(config["datasets"].keys())
 ALL_INTERVALS: set[str] = set()
 ALL_SPLIT_NAMES: set[str] = set()
 for _dataset_config in config["datasets"].values():
-    ALL_INTERVALS.add(_dataset_config["intervals"])
+    _intervals_cfg = _dataset_config["intervals"]
+    if isinstance(_intervals_cfg, dict):
+        ALL_INTERVALS.update(_intervals_cfg.values())
+    else:
+        ALL_INTERVALS.add(_intervals_cfg)
     _split_config = config["splits"][_dataset_config["split"]]
     for _species_splits in _split_config.values():
         ALL_SPLIT_NAMES.update(_species_splits.keys())
@@ -42,6 +46,17 @@ for _dataset_config in config["datasets"].values():
     ALL_NEG_TYPES.add(_dataset_config.get("negative_sampling", "random"))
 
 TRAIN_SPLIT = "train"
+
+
+def resolve_intervals(intervals_cfg: str | dict, species: str) -> str:
+    """Resolve the intervals path for a species.
+
+    Supports both a single string (all species share the same path) and
+    a per-species dict mapping.
+    """
+    if isinstance(intervals_cfg, dict):
+        return intervals_cfg[species]
+    return intervals_cfg
 
 MODEL_DEFAULTS = config["models"]["default"]
 

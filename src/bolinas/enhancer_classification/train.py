@@ -15,9 +15,12 @@ import json
 from pathlib import Path
 
 import lightning as L
+import numpy as np
 import polars as pl
 import torch
 from lightning.pytorch.loggers import CSVLogger, WandbLogger
+from scipy.special import expit
+from sklearn.metrics import average_precision_score, roc_auc_score
 from torch.utils.data import DataLoader
 
 from bolinas.enhancer_classification.dataset import EnhancerDataset
@@ -115,17 +118,24 @@ def main() -> None:
         default_root_dir=output_dir,
     )
 
+    # Capture W&B run ID before training finalizes it
+    wandb_logger = next(
+        (lg for lg in loggers if isinstance(lg, WandbLogger)), None
+    )
+    wandb_run_id: str | None = None
+    if wandb_logger is not None:
+        wandb_run_id = wandb_logger.experiment.id
+
     trainer.fit(model, train_dataloaders=train_loader, val_dataloaders=val_loader)
 
     # Save checkpoint
     trainer.save_checkpoint(output_ckpt)
 
-    # Write metrics summary
+    # Collect metrics
     metrics = {
         "val_auroc": float(trainer.callback_metrics.get("val_auroc", 0.0)),
         "val_auprc": float(trainer.callback_metrics.get("val_auprc", 0.0)),
     }
-    output_metrics.write_text(json.dumps(metrics, indent=2))
 
     # Save per-sample validation predictions (collected during validation_step)
     if args.output_val_predictions:
@@ -138,6 +148,34 @@ def main() -> None:
         )
         val_meta = val_meta.with_columns(pl.Series("logit", logits_array))
         val_meta.write_parquet(output_val_predictions)
+
+        # Per-species metrics
+        for genome in val_meta["genome"].unique().sort().to_list():
+            subset = val_meta.filter(pl.col("genome") == genome)
+            labels = subset["label"].to_numpy()
+            probs = expit(subset["logit"].to_numpy())
+            if len(np.unique(labels)) == 2:
+                metrics[f"val_auroc/{genome}"] = float(roc_auc_score(labels, probs))
+                metrics[f"val_auprc/{genome}"] = float(
+                    average_precision_score(labels, probs)
+                )
+
+        # Log per-species metrics to W&B (run was finalized by Lightning,
+        # so reopen it with resume="must" using the captured run ID)
+        import wandb
+
+        per_species = {k: v for k, v in metrics.items() if "/" in k}
+        if per_species and wandb_run_id is not None:
+            run = wandb.init(
+                project=WANDB_PROJECT,
+                entity=WANDB_ENTITY,
+                id=wandb_run_id,
+                resume="must",
+            )
+            run.log(per_species)
+            run.finish()
+
+    output_metrics.write_text(json.dumps(metrics, indent=2))
 
 
 if __name__ == "__main__":
