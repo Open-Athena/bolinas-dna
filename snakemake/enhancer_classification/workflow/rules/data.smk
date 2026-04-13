@@ -469,7 +469,7 @@ rule build_dataset:
     input:
         lambda wc: [
             f"results/parquet/"
-            f"{config['datasets'][wc.dataset]['intervals']}/"
+            f"{resolve_intervals(config['datasets'][wc.dataset]['intervals'], species)}/"
             f"{config['datasets'][wc.dataset].get('negative_sampling', 'random')}/"
             f"{species}.parquet"
             for species, splits in (

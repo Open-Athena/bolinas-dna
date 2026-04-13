@@ -187,6 +187,91 @@ splits:
                     "Y",
                 ]
             validation: ["7"]
+    v4a:
+        homo_sapiens:
+            train:
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5",
+                    "6",
+                    "8",
+                    "9",
+                    "10",
+                    "11",
+                    "12",
+                    "13",
+                    "14",
+                    "15",
+                    "16",
+                    "17",
+                    "18",
+                    "19",
+                    "20",
+                    "21",
+                    "22",
+                    "X",
+                    "Y",
+                ]
+            validation: ["7"]
+        mus_musculus:
+            validation: ["5"]
+    v4b:
+        homo_sapiens:
+            train:
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5",
+                    "6",
+                    "8",
+                    "9",
+                    "10",
+                    "11",
+                    "12",
+                    "13",
+                    "14",
+                    "15",
+                    "16",
+                    "17",
+                    "18",
+                    "19",
+                    "20",
+                    "21",
+                    "22",
+                    "X",
+                    "Y",
+                ]
+            validation: ["7"]
+        mus_musculus:
+            train:
+                [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "6",
+                    "7",
+                    "8",
+                    "9",
+                    "10",
+                    "11",
+                    "12",
+                    "13",
+                    "14",
+                    "15",
+                    "16",
+                    "17",
+                    "18",
+                    "19",
+                    "X",
+                    "Y",
+                ]
+            validation: ["5"]
 
 negative_sampling:
     gc_repeat_matched:
@@ -218,6 +303,18 @@ datasets:
         split: v3
         intervals: noexon/conserved/phastCons_43p/20/ELS
         negative_sampling: gc_repeat_matched
+    v8a:
+        split: v4a
+        intervals:
+            homo_sapiens: noexon/conserved/phastCons_43p/20/ELS
+            mus_musculus: noexon/conserved/phastCons_euarchontoglires/20/ELS
+        negative_sampling: gc_repeat_matched
+    v8b:
+        split: v4b
+        intervals:
+            homo_sapiens: noexon/conserved/phastCons_43p/20/ELS
+            mus_musculus: noexon/conserved/phastCons_euarchontoglires/20/ELS
+        negative_sampling: gc_repeat_matched
 
 # Thresholds from: Sullivan, Patrick F., et al. "Leveraging base-pair mammalian
 # constraint to understand genetic variation and human disease."
@@ -232,6 +329,14 @@ conservation:
         phastCons_43p:
             url: "https://cgl.gi.ucsc.edu/data/cactus/zoonomia-2021-track-hub/hg38/phyloPPrimates.bigWig"
             threshold: 0.961
+    mus_musculus:
+        # Euarchontoglires phastCons from UCSC mm10 60-way multiz alignment
+        # (20 species: rodents + primates + treeshrew).
+        # Threshold calibrated so genome-wide conserved fraction (~3.46%)
+        # matches human phastCons_43p at 0.961 (~3.48%).
+        phastCons_euarchontoglires:
+            url: "https://hgdownload.soe.ucsc.edu/goldenPath/mm10/phastCons60way/mm10.60way.phastCons60wayEuarchontoGlire.bw"
+            threshold: 0.986
 
 max_samples:
     validation: 16384
@@ -259,13 +364,15 @@ models:
         mlp_hidden_dim: 256
 
 experiments:
-    - { model: finetune, dataset: v7 }
+    - { model: finetune, dataset: v8a }
+    - { model: finetune, dataset: v8b }
 
 visualization:
     window_size: 255
     step_size: 32
     checkpoints:
-        - { model: finetune, dataset: v7 }
+        - { model: finetune, dataset: v8a }
+        - { model: finetune, dataset: v8b }
     regions:
         - genome: homo_sapiens
           chrom: "7"
