@@ -147,6 +147,9 @@ def main() -> None:
         args.val_parquet,
         columns=["genome", "chrom", "start", "end", "strand", "label"],
     )
+    assert len(logits_array) == len(val_meta), (
+        f"Logit count ({len(logits_array)}) != validation rows ({len(val_meta)})"
+    )
     val_meta = val_meta.with_columns(pl.Series("logit", logits_array))
 
     if args.output_val_predictions:
@@ -154,19 +157,22 @@ def main() -> None:
         val_meta.write_parquet(args.output_val_predictions)
 
     # Per-species metrics
+    per_species: dict[str, float] = {}
     for genome in val_meta["genome"].unique().sort().to_list():
         subset = val_meta.filter(pl.col("genome") == genome)
         labels = subset["label"].to_numpy()
         probs = expit(subset["logit"].to_numpy())
         if len(np.unique(labels)) == 2:
-            metrics[f"val_auroc/{genome}"] = float(roc_auc_score(labels, probs))
-            metrics[f"val_auprc/{genome}"] = float(
+            per_species[f"val_auroc/{genome}"] = float(
+                roc_auc_score(labels, probs)
+            )
+            per_species[f"val_auprc/{genome}"] = float(
                 average_precision_score(labels, probs)
             )
+    metrics.update(per_species)
 
     # Log per-species metrics to W&B (run was finalized by Lightning,
     # so reopen it with resume="must" using the captured run ID)
-    per_species = {k: v for k, v in metrics.items() if "/" in k}
     if per_species and wandb_run_id is not None:
         try:
             run = wandb.init(
