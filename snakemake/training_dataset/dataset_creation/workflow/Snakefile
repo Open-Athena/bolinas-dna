@@ -27,6 +27,7 @@ include: "rules/intervals.smk"
 include: "rules/stats.smk"
 include: "rules/dataset.smk"
 include: "rules/eda.smk"
+include: "rules/enhancer_prediction.smk"
 
 
 rule all:

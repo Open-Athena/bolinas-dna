@@ -18,6 +18,7 @@ from bolinas.data.utils import (
     get_array_split_pairs,
     get_cds,
     get_downstream_of_CDS,
+    get_exons_for_masking,
     get_mrna_exons,
     get_ncrna_exons,
     get_promoters,
@@ -28,6 +29,7 @@ from bolinas.data.utils import (
     read_bed_to_pandas,
     write_pandas_to_bed,
 )
+from bolinas.enhancer_classification.predict import sliding_windows
 
 tqdm.pandas()
 

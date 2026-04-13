@@ -331,6 +331,7 @@ dev = [
 enhancer-classification = [
     { name = "alphagenome-pytorch" },
     { name = "lightning" },
+    { name = "py2bit" },
     { name = "torchmetrics" },
 ]
 
@@ -371,6 +372,7 @@ dev = [
 enhancer-classification = [
     { name = "alphagenome-pytorch", specifier = ">=0.3.0" },
     { name = "lightning", specifier = ">=2.0" },
+    { name = "py2bit" },
     { name = "torchmetrics", specifier = ">=1.0" },
 ]
 
@@ -2072,6 +2074,16 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/16/1c/d880b739b841a8aa81143091c9bdda5e72e226a660aa13178cb312d4b27f/pulp-3.3.0.tar.gz", hash = "sha256:7eb99b9ce7beeb8bbb7ea9d1c919f02f003ab7867e0d1e322f2f2c26dd31c8ba", size = 16301847, upload-time = "2025-09-18T08:14:57.552Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/99/6c/64cafaceea3f99927e84b38a362ec6a8f24f33061c90bda77dfe1cd4c3c6/pulp-3.3.0-py3-none-any.whl", hash = "sha256:dd6ad2d63f196d1254eddf9dcff5cd224912c1f046120cb7c143c5b0eda63fae", size = 16387700, upload-time = "2025-09-18T08:14:53.368Z" },
+]
+
+[[package]]
+name = "py2bit"
+version = "0.3.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/24/59/b64b8f59b0d6455e389ae3a8703557dc6b0fcb503b3a1dd7ca0ae0a7c63d/py2bit-0.3.3.tar.gz", hash = "sha256:264f5bfc39d729f1acad54c760ac04fa8a20d4184f4b505d9c333d2e03253770", size = 18597, upload-time = "2025-01-21T15:43:06.636Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d5/57/72f627822040a28d72a70d0117b33fa120d44ede60c1e775aafc10dde9be/py2bit-0.3.3-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:fda4b374de163f89db9333bbd5035ba3e4212b59b05e7995cf5703145aad02d9", size = 50076, upload-time = "2025-01-21T15:43:10.58Z" },
+    { url = "https://files.pythonhosted.org/packages/2c/bd/6c3eb887b2e7b61fdf63976862f861e69eab7628e8a401f055d2cab52fb7/py2bit-0.3.3-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:27d9962a65e858a1857d1a35803aff44552a96a8b642712d759b1539c47035d3", size = 50034, upload-time = "2025-01-21T15:43:11.792Z" },
 ]
 
 [[package]]
