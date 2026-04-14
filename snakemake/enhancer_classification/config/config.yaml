@@ -417,6 +417,26 @@ seg_models:
         limit_train_batches: 0.1
         limit_val_batches: 0.1
         n_transformer_layers: 2
+    # Phase 1: LR sweep on transformer_two_layers at seed=42.
+    # Existing `transformer_two_layers` covers lr=1e-4/seed=42 (the defaults).
+    xfmr2_lr5e5_s42:
+        limit_train_batches: 0.1
+        limit_val_batches: 0.1
+        n_transformer_layers: 2
+        learning_rate: 5e-5
+        seed: 42
+    xfmr2_lr2e4_s42:
+        limit_train_batches: 0.1
+        limit_val_batches: 0.1
+        n_transformer_layers: 2
+        learning_rate: 2e-4
+        seed: 42
+    xfmr2_lr5e4_s42:
+        limit_train_batches: 0.1
+        limit_val_batches: 0.1
+        n_transformer_layers: 2
+        learning_rate: 5e-4
+        seed: 42
 
 seg_experiments:
     - { model: fast, dataset: seg_v1 }

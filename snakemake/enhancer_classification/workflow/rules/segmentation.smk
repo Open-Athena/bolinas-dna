@@ -273,6 +273,7 @@ rule train_segmentation_model:
         n_transformer_layers=lambda wc: get_seg_model_config(wc.model).get(
             "n_transformer_layers", 0
         ),
+        seed=lambda wc: get_seg_model_config(wc.model).get("seed", config["seed"]),
     shell:
         """
         uv run python -m bolinas.enhancer_segmentation.train \
@@ -292,7 +293,7 @@ rule train_segmentation_model:
             --limit-val-batches {params.limit_val_batches} \
             --n-transformer-layers {params.n_transformer_layers} \
             {params.freeze_flag} \
-            --seed {config[seed]} \
+            --seed {params.seed} \
             --num-workers {threads} \
             --wandb-run seg-{wildcards.model}-{wildcards.dataset}
         """
