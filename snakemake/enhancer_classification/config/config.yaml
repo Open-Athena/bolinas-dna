@@ -437,6 +437,20 @@ seg_models:
         n_transformer_layers: 2
         learning_rate: 5e-4
         seed: 42
+    # Phase 2: second seed at the default lr=1e-4 to measure seed variance
+    # and enable a 2-seed ensemble by averaging logits offline.
+    xfmr2_lr1e4_s123:
+        limit_train_batches: 0.1
+        limit_val_batches: 0.1
+        n_transformer_layers: 2
+        learning_rate: 1e-4
+        seed: 123
+    xfmr2_lr1e4_s456:
+        limit_train_batches: 0.1
+        limit_val_batches: 0.1
+        n_transformer_layers: 2
+        learning_rate: 1e-4
+        seed: 456
 
 seg_experiments:
     - { model: fast, dataset: seg_v1 }
