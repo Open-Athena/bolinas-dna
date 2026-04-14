@@ -88,10 +88,11 @@ def parse_args() -> argparse.Namespace:
 def _as_batches_arg(v: float) -> int | float:
     """Interpret a CLI float as Lightning's int|float batches argument.
 
-    Values >= 1 with no fractional part are treated as an integer count;
-    values in (0, 1] stay as a fraction.
+    Lightning semantics: int = number of batches, float in [0.0, 1.0] =
+    fraction. Values in (0, 1] stay as a fraction (1.0 = all batches);
+    values > 1 with no fractional part become an explicit batch count.
     """
-    if v >= 1 and float(v).is_integer():
+    if v > 1 and float(v).is_integer():
         return int(v)
     return float(v)
 
@@ -226,6 +227,12 @@ def main() -> None:
         )
 
     trainer.fit(model, train_dataloaders=train_loader, val_dataloaders=val_loader)
+
+    # Force a final validation pass on the trained weights. Lightning only
+    # runs val at the end of an epoch by default; with `max_steps` cutting
+    # off mid-epoch the final val otherwise doesn't fire, so val_logits
+    # would hold only the sanity-check tensors from step 0.
+    trainer.validate(model, dataloaders=val_loader, verbose=False)
 
     trainer.save_checkpoint(output_ckpt)
 
