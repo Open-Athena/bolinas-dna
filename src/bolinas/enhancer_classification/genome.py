@@ -96,6 +96,15 @@ class Genome:
 
         chrom_size = self._chrom_sizes[chrom]
 
+        if start >= chrom_size:
+            raise ValueError(
+                f"start {start} is out of range for chromosome {chrom} (size {chrom_size})"
+            )
+        if end < 0:
+            raise ValueError(
+                f"end {end} must be non-negative for chromosome {chrom}"
+            )
+
         clamped_start = max(start, 0)
         clamped_end = min(end, chrom_size)
 

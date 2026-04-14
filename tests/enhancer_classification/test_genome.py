@@ -68,6 +68,15 @@ class TestGenomeBasic:
         with pytest.raises(ValueError, match="start"):
             genome("1", 10, 5)
 
+    def test_start_beyond_chrom_size(self, genome: Genome) -> None:
+        # chrom 1 has size 52
+        with pytest.raises(ValueError, match="out of range"):
+            genome("1", 100, 110)
+
+    def test_negative_end(self, genome: Genome) -> None:
+        with pytest.raises(ValueError, match="non-negative"):
+            genome("1", -10, -5)
+
     def test_subset_chroms(self) -> None:
         g = Genome(FASTA_PATH, subset_chroms={"1"})
         assert "1" in g.chroms

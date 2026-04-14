@@ -303,11 +303,12 @@ def get_exons_for_masking(ann: pl.DataFrame) -> GenomicSet:
         .alias("transcript_biotype")
     )["transcript_biotype"]
 
-    # If most exons have biotype info, use it for smarter filtering
+    # If most exons have biotype info, use it for smarter filtering.
+    # Null biotype rows are kept (treated as not-in-excluded) so we don't
+    # silently drop exons in mixed annotations.
     if biotype.null_count() < len(biotype) // 2:
-        return GenomicSet(
-            exons.filter(~biotype.is_in(ENSEMBL_EXCLUDED_TRANSCRIPT_BIOTYPES))
-        )
+        is_excluded = biotype.is_in(ENSEMBL_EXCLUDED_TRANSCRIPT_BIOTYPES).fill_null(False)
+        return GenomicSet(exons.filter(~is_excluded))
 
     # Fallback: all exons (NCBI annotations lack biotype)
     return GenomicSet(exons)
