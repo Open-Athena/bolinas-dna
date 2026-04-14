@@ -413,10 +413,15 @@ seg_models:
         limit_train_batches: 0.1
         limit_val_batches: 0.1
         n_transformer_layers: 1
+    transformer_two_layers:
+        limit_train_batches: 0.1
+        limit_val_batches: 0.1
+        n_transformer_layers: 2
 
 seg_experiments:
     - { model: fast, dataset: seg_v1 }
     - { model: transformer_one_layer, dataset: seg_v1 }
+    - { model: transformer_two_layers, dataset: seg_v1 }
 
 seg_max_samples:
     validation: 8192
@@ -430,6 +435,7 @@ segmentation_visualization:
     checkpoints:
         - { model: fast, dataset: seg_v1 }
         - { model: transformer_one_layer, dataset: seg_v1 }
+        - { model: transformer_two_layers, dataset: seg_v1 }
     regions:
         # ZRS_human: biological [156790115, 156793672), enlarged to 1 tile.
         - genome: homo_sapiens
