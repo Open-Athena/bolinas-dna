@@ -35,9 +35,9 @@ class Genome:
         subset_chroms: set[str] | None = None,
     ) -> None:
         self._path = Path(path)
-        suffix = self._path.name
+        name = self._path.name
 
-        if suffix.endswith(".2bit"):
+        if name.endswith(".2bit"):
             import py2bit
 
             self._tb = py2bit.open(str(self._path))
@@ -46,7 +46,7 @@ class Genome:
         else:
             self._tb = None
             open_fn = (
-                gzip.open if suffix.endswith(".gz") else open  # noqa: SIM115
+                gzip.open if name.endswith(".gz") else open  # noqa: SIM115
             )
             with open_fn(str(self._path), "rt") as handle:
                 self._genome = pd.Series(

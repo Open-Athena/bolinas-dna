@@ -252,6 +252,15 @@ def get_exons(ann: pl.DataFrame) -> GenomicSet:
     return GenomicSet(ann.filter(pl.col("feature") == "exon"))
 
 
+def _extract_transcript_biotype(exons: pl.DataFrame) -> pl.Series:
+    """Parse the ``transcript_biotype`` attribute from each exon row."""
+    return exons.select(
+        pl.col("attribute")
+        .str.extract(r'transcript_biotype "([^"]+)"')
+        .alias("transcript_biotype")
+    )["transcript_biotype"]
+
+
 def get_ensembl_functional_exons(ann: pl.DataFrame) -> GenomicSet:
     """Extract exon regions from well-supported transcripts only.
 
@@ -268,11 +277,7 @@ def get_ensembl_functional_exons(ann: pl.DataFrame) -> GenomicSet:
         transcripts.
     """
     exons = ann.filter(pl.col("feature") == "exon")
-    biotype = exons.select(
-        pl.col("attribute")
-        .str.extract(r'transcript_biotype "([^"]+)"')
-        .alias("transcript_biotype")
-    )["transcript_biotype"]
+    biotype = _extract_transcript_biotype(exons)
     return GenomicSet(
         exons.filter(~biotype.is_in(ENSEMBL_EXCLUDED_TRANSCRIPT_BIOTYPES))
     )
@@ -297,20 +302,14 @@ def get_exons_for_masking(ann: pl.DataFrame) -> GenomicSet:
     if len(exons) == 0:
         return GenomicSet(exons)
 
-    biotype = exons.select(
-        pl.col("attribute")
-        .str.extract(r'transcript_biotype "([^"]+)"')
-        .alias("transcript_biotype")
-    )["transcript_biotype"]
+    biotype = _extract_transcript_biotype(exons)
 
-    # If most exons have biotype info, use it for smarter filtering.
-    # Null biotype rows are kept (treated as not-in-excluded) so we don't
-    # silently drop exons in mixed annotations.
     if biotype.null_count() < len(biotype) // 2:
+        # Null biotype rows are kept (treated as not-in-excluded) so we don't
+        # silently drop exons in mixed annotations.
         is_excluded = biotype.is_in(ENSEMBL_EXCLUDED_TRANSCRIPT_BIOTYPES).fill_null(False)
         return GenomicSet(exons.filter(~is_excluded))
 
-    # Fallback: all exons (NCBI annotations lack biotype)
     return GenomicSet(exons)
 
 

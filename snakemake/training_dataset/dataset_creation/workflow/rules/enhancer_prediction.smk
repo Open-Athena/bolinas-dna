@@ -1,7 +1,6 @@
-ENHANCER_CONFIG = config.get("enhancer_prediction", {})
+ENHANCER_CONFIG = config["enhancer_prediction"]
 
 
-# Prevent {g} from matching path separators in enhancer prediction rules
 wildcard_constraints:
     g="[^/]+",
 
@@ -69,8 +68,8 @@ rule predict_enhancers:
     output:
         "results/enhancer_predictions/{g}.parquet",
     params:
-        batch_size=ENHANCER_CONFIG.get("batch_size", 512),
-        num_workers=ENHANCER_CONFIG.get("num_workers", 4),
+        batch_size=ENHANCER_CONFIG["batch_size"],
+        num_workers=ENHANCER_CONFIG["num_workers"],
     threads: workflow.cores
     shell:
         """
