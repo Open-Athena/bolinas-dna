@@ -21,10 +21,7 @@ import lightning as L
 import numpy as np
 import polars as pl
 import torch
-import wandb
 from lightning.pytorch.loggers import CSVLogger, WandbLogger
-from scipy.special import expit
-from sklearn.metrics import average_precision_score
 from torch.utils.data import DataLoader
 
 from bolinas.enhancer_segmentation.dataset import SegmentationDataset
@@ -118,8 +115,28 @@ def main() -> None:
     pos_weight = compute_pos_weight(args.train_parquet)
     log.info("Computed pos_weight=%.4f from training set", pos_weight)
 
-    train_ds = SegmentationDataset(args.train_parquet, augment_rc=True)
-    val_ds = SegmentationDataset(args.val_parquet, augment_rc=False)
+    # Build a single genome_to_idx shared by train + val so per-species AUPRC
+    # metrics reference a stable integer mapping regardless of split contents.
+    train_genomes = (
+        pl.read_parquet(args.train_parquet, columns=["genome"])["genome"]
+        .unique()
+        .to_list()
+    )
+    val_genomes = (
+        pl.read_parquet(args.val_parquet, columns=["genome"])["genome"]
+        .unique()
+        .to_list()
+    )
+    genome_to_idx = {
+        g: i for i, g in enumerate(sorted(set(train_genomes) | set(val_genomes)))
+    }
+
+    train_ds = SegmentationDataset(
+        args.train_parquet, augment_rc=True, genome_to_idx=genome_to_idx
+    )
+    val_ds = SegmentationDataset(
+        args.val_parquet, augment_rc=False, genome_to_idx=genome_to_idx
+    )
 
     train_loader = DataLoader(
         train_ds,
@@ -158,6 +175,7 @@ def main() -> None:
         warmup_fraction=args.warmup_fraction,
         num_training_steps=num_training_steps,
         pos_weight=pos_weight,
+        genomes=train_ds.genomes,
     )
 
     model = torch.compile(model)
@@ -185,19 +203,29 @@ def main() -> None:
         default_root_dir=output_dir,
     )
 
+    # Record pos_weight and weights_path to the W&B run while it's still open
+    # (trainer.fit finalizes it). The classification pipeline's post-fit
+    # wandb.init(resume='must') pattern fails silently — per-species AUPRC is
+    # now logged live by the Lightning module's on_validation_epoch_end instead.
     wandb_logger = next((lg for lg in loggers if isinstance(lg, WandbLogger)), None)
-    wandb_run_id: str | None = None
     if wandb_logger is not None:
-        wandb_run_id = wandb_logger.experiment.id
+        wandb_logger.experiment.config.update(
+            {
+                "pos_weight": pos_weight,
+                "weights_path": str(args.weights_path) if args.weights_path else None,
+            },
+            allow_val_change=True,
+        )
 
     trainer.fit(model, train_dataloaders=train_loader, val_dataloaders=val_loader)
 
     trainer.save_checkpoint(output_ckpt)
 
-    metrics = {
-        "val_auprc": float(trainer.callback_metrics.get("val_auprc", 0.0)),
-        "pos_weight": pos_weight,
+    # Collect every val_* metric Lightning logged (includes per-species AUPRC).
+    metrics: dict[str, float] = {
+        k: float(v) for k, v in trainer.callback_metrics.items() if k.startswith("val_")
     }
+    metrics["pos_weight"] = pos_weight
 
     # Per-(window, bin) validation predictions — one row per bin so downstream
     # PR/offline analyses can compute per-species metrics and
@@ -247,32 +275,6 @@ def main() -> None:
     if args.output_val_predictions:
         Path(args.output_val_predictions).parent.mkdir(parents=True, exist_ok=True)
         predictions.write_parquet(args.output_val_predictions)
-
-    # Per-species AUPRC
-    per_species: dict[str, float] = {}
-    for genome in predictions["genome"].unique().sort().to_list():
-        subset = predictions.filter(pl.col("genome") == genome)
-        labels = subset["label"].to_numpy()
-        probs = expit(subset["logit"].to_numpy())
-        if len(np.unique(labels)) == 2:
-            per_species[f"val_auprc/{genome}"] = float(
-                average_precision_score(labels, probs)
-            )
-    metrics.update(per_species)
-
-    if per_species and wandb_run_id is not None:
-        try:
-            run = wandb.init(
-                project=WANDB_PROJECT,
-                entity=WANDB_ENTITY,
-                id=wandb_run_id,
-                resume="must",
-            )
-            run.log(per_species)
-            run.log({"pos_weight": pos_weight})
-            run.finish()
-        except Exception:
-            log.warning("Failed to log per-species metrics to W&B", exc_info=True)
 
     output_metrics.write_text(json.dumps(metrics, indent=2))
 

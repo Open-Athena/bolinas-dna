@@ -42,3 +42,23 @@ def test_freeze_backbone():
         assert not param.requires_grad
     for param in model.head.parameters():
         assert param.requires_grad
+
+
+def test_head_includes_groupnorm():
+    """The head applies channel-wise normalization before the final projection
+    (issue #115 follow-up: stabilize grad norm)."""
+    model = EnhancerSegmenter(weights_path=None, freeze_backbone=False)
+    # Head is Sequential[GroupNorm, Conv1d].
+    assert isinstance(model.head[0], torch.nn.GroupNorm)
+    assert model.head[0].num_channels == 1536
+    assert isinstance(model.head[-1], torch.nn.Conv1d)
+
+
+def test_per_species_metric_per_genome():
+    """Per-species AUPRC metrics are created one per genome."""
+    model = EnhancerSegmenter(
+        weights_path=None,
+        freeze_backbone=False,
+        genomes=["homo_sapiens", "mus_musculus"],
+    )
+    assert set(model.val_auprc_per_species.keys()) == {"homo_sapiens", "mus_musculus"}

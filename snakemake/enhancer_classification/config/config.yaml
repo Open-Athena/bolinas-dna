@@ -390,7 +390,10 @@ seg_models:
         learning_rate: 1e-4
         weight_decay: 0.1
         gradient_clip_val: 1.0
-        batch_size: 16
+        # Batch 32 x 128 bins x ~3.7% pos rate ~= 118 positive bins/batch,
+        # comparable to the classifier's ~128 positive windows per 256 x 0.5
+        # balanced batch. Bump to 64 if L4 memory permits.
+        batch_size: 32
         warmup_fraction: 0.1
         # pos_weight is computed inside train.py from the training parquet.
         # Lightning throughput caps — null / 1.0 means "no cap".
