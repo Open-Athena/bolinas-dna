@@ -53,6 +53,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--warmup-fraction", type=float, default=0.1)
     parser.add_argument(
+        "--n-transformer-layers",
+        type=int,
+        default=0,
+        help="Number of AlphaGenome transformer blocks to stack after the "
+        "CNN encoder (0 = encoder-only).",
+    )
+    parser.add_argument(
         "--max-steps",
         type=int,
         default=-1,
@@ -176,6 +183,7 @@ def main() -> None:
         num_training_steps=num_training_steps,
         pos_weight=pos_weight,
         genomes=train_ds.genomes,
+        n_transformer_layers=args.n_transformer_layers,
     )
 
     model = torch.compile(model)

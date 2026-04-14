@@ -405,9 +405,18 @@ seg_models:
     fast:
         limit_train_batches: 0.1
         limit_val_batches: 0.1
+    # Experiment: one AlphaGenome transformer block stacked on the CNN trunk.
+    # Species embedding is a single learnable 1536-vector initialized from the
+    # pretrained human row (see issue #115 discussion). Fast-run slice to
+    # make a first comparison against the CNN-only baseline.
+    transformer_one_layer:
+        limit_train_batches: 0.1
+        limit_val_batches: 0.1
+        n_transformer_layers: 1
 
 seg_experiments:
     - { model: fast, dataset: seg_v1 }
+    - { model: transformer_one_layer, dataset: seg_v1 }
 
 seg_max_samples:
     validation: 8192
@@ -420,6 +429,7 @@ seg_max_samples:
 segmentation_visualization:
     checkpoints:
         - { model: fast, dataset: seg_v1 }
+        - { model: transformer_one_layer, dataset: seg_v1 }
     regions:
         # ZRS_human: biological [156790115, 156793672), enlarged to 1 tile.
         - genome: homo_sapiens

@@ -270,6 +270,9 @@ rule train_segmentation_model:
         limit_val_batches=lambda wc: get_seg_model_config(wc.model).get(
             "limit_val_batches", 1.0
         ),
+        n_transformer_layers=lambda wc: get_seg_model_config(wc.model).get(
+            "n_transformer_layers", 0
+        ),
     shell:
         """
         uv run python -m bolinas.enhancer_segmentation.train \
@@ -287,6 +290,7 @@ rule train_segmentation_model:
             --max-steps {params.max_steps} \
             --limit-train-batches {params.limit_train_batches} \
             --limit-val-batches {params.limit_val_batches} \
+            --n-transformer-layers {params.n_transformer_layers} \
             {params.freeze_flag} \
             --seed {config[seed]} \
             --num-workers {threads} \

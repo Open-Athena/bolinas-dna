@@ -7,7 +7,7 @@ import lightning as L
 import torch
 import torch.nn as nn
 import torchmetrics
-from alphagenome_pytorch.model import SequenceEncoder
+from alphagenome_pytorch.model import AlphaGenome, SequenceEncoder, TransformerTower
 from transformers import get_cosine_schedule_with_warmup
 
 from bolinas.enhancer_classification.model import (
@@ -16,6 +16,67 @@ from bolinas.enhancer_classification.model import (
 )
 
 log = logging.getLogger(__name__)
+
+
+def _load_pretrained_encoder_tower_org(
+    weights_path: str | Path, n_transformer_layers: int
+) -> tuple[SequenceEncoder, TransformerTower, torch.Tensor]:
+    """Load encoder + tower + human-row organism embedding from an AlphaGenome
+    checkpoint. Returns ``(encoder, tower, organism_embed_row)`` where tower's
+    blocks are truncated to the first ``n_transformer_layers`` and the
+    organism row is the pretrained human (index 0) embedding.
+    """
+    full_model = AlphaGenome.from_pretrained(weights_path, device="cpu")
+
+    encoder = SequenceEncoder()
+    encoder.load_state_dict(full_model.encoder.state_dict())
+
+    tower = TransformerTower(d_model=ENCODER_OUTPUT_DIM)
+    tower.load_state_dict(full_model.tower.state_dict())
+    if n_transformer_layers < len(tower.blocks):
+        tower.blocks = tower.blocks[:n_transformer_layers]
+
+    # Row 0 = human in the pretrained 2-row embedding. We deliberately drop
+    # the mouse row: the segmenter has a single learnable "species" vector
+    # hard-coded to human, which still fine-tunes during training but has no
+    # branching on genome at inference time (future species default to human).
+    organism_row = full_model.organism_embed.weight[0].detach().clone()
+
+    del full_model
+    return encoder, tower, organism_row
+
+
+class _SingleSpeciesTower(nn.Module):
+    """Truncated transformer tower fronted by a single learnable 1536-vector
+    species embedding, hard-coded to human (index 0 of the pretrained model).
+
+    See issue #115 discussion: the AlphaGenome pretrained tower was trained
+    with an organism embedding added to the trunk before attention; feeding
+    it raw encoder output without that embedding is out-of-distribution. We
+    preserve the pretrained regime for human but intentionally collapse the
+    2-row organism embedding to 1 learnable row so the final model has no
+    species-specific bias at inference — new genomes just use index 0 and
+    the embedding fine-tunes during training.
+    """
+
+    def __init__(
+        self,
+        tower: TransformerTower,
+        init_embedding: torch.Tensor | None = None,
+    ) -> None:
+        super().__init__()
+        self.tower = tower
+        self.species_embed = nn.Parameter(
+            init_embedding.clone()
+            if init_embedding is not None
+            else torch.zeros(ENCODER_OUTPUT_DIM)
+        )
+
+    def forward(self, trunk_ncl: torch.Tensor) -> torch.Tensor:
+        # Encoder output is (B, C, S); tower expects NLC (B, S, C).
+        x = trunk_ncl.transpose(1, 2) + self.species_embed
+        x, _pair = self.tower(x)
+        return x.transpose(1, 2)  # back to (B, C, S) for the Conv1d head
 
 
 class EnhancerSegmenter(L.LightningModule):
@@ -36,21 +97,44 @@ class EnhancerSegmenter(L.LightningModule):
         num_training_steps: int | None = None,
         pos_weight: float = 1.0,
         genomes: list[str] | None = None,
+        n_transformer_layers: int = 0,
     ) -> None:
         super().__init__()
         self.save_hyperparameters(ignore=["weights_path"])
         self.genomes: list[str] = list(genomes) if genomes else []
 
-        if weights_path is not None:
+        if weights_path is not None and n_transformer_layers > 0:
+            encoder, tower, org_row = _load_pretrained_encoder_tower_org(
+                weights_path, n_transformer_layers
+            )
+            self.encoder = encoder
+            self.tower = _SingleSpeciesTower(tower, init_embedding=org_row)
+            log.info(
+                "Loaded pretrained AlphaGenome encoder + tower (first %d blocks)"
+                " with single learnable species embedding (init: human) from %s",
+                n_transformer_layers,
+                weights_path,
+            )
+        elif weights_path is not None:
             self.encoder = load_pretrained_encoder(weights_path)
+            self.tower = None
             log.info("Loaded pretrained AlphaGenome encoder from %s", weights_path)
         else:
             self.encoder = SequenceEncoder()
+            if n_transformer_layers > 0:
+                fresh_tower = TransformerTower(d_model=ENCODER_OUTPUT_DIM)
+                fresh_tower.blocks = fresh_tower.blocks[:n_transformer_layers]
+                self.tower = _SingleSpeciesTower(fresh_tower, init_embedding=None)
+            else:
+                self.tower = None
             log.info("No weights_path provided — encoder initialized from scratch")
 
         if freeze_backbone:
             for param in self.encoder.parameters():
                 param.requires_grad = False
+            if self.tower is not None:
+                for param in self.tower.parameters():
+                    param.requires_grad = False
 
         # GroupNorm over channels (equivalent to LayerNorm on each position's
         # 1536-vector) before the final projection. Matches the classifier's
@@ -74,6 +158,8 @@ class EnhancerSegmenter(L.LightningModule):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         trunk, _intermediates = self.encoder(x)
+        if self.tower is not None:
+            trunk = self.tower(trunk)
         logits = self.head(trunk).squeeze(1)
         return logits
 

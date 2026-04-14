@@ -62,3 +62,36 @@ def test_per_species_metric_per_genome():
         genomes=["homo_sapiens", "mus_musculus"],
     )
     assert set(model.val_auprc_per_species.keys()) == {"homo_sapiens", "mus_musculus"}
+
+
+def test_transformer_path_forward_and_shape():
+    """n_transformer_layers>0 inserts a truncated tower and produces the
+    same output shape as the encoder-only path."""
+    model = EnhancerSegmenter(
+        weights_path=None, freeze_backbone=False, n_transformer_layers=1
+    )
+    model.eval()
+    x, _ = _random_batch()
+    with torch.no_grad():
+        logits = model(x)
+    assert logits.shape == (BATCH, NUM_BINS)
+    # Tower exists and has exactly one block.
+    assert model.tower is not None
+    assert len(model.tower.tower.blocks) == 1
+    # Species embedding is a single learnable 1536-vector (not nn.Embedding).
+    assert model.tower.species_embed.shape == (1536,)
+    assert model.tower.species_embed.requires_grad
+
+
+def test_transformer_path_freeze_backbone():
+    """freeze_backbone freezes encoder and tower (including species_embed);
+    only the head remains trainable."""
+    model = EnhancerSegmenter(
+        weights_path=None, freeze_backbone=True, n_transformer_layers=1
+    )
+    for p in model.encoder.parameters():
+        assert not p.requires_grad
+    for p in model.tower.parameters():
+        assert not p.requires_grad
+    for p in model.head.parameters():
+        assert p.requires_grad
