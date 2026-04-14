@@ -349,6 +349,25 @@ Edit `config/config.yaml` to customize the pipeline:
 uv run snakemake
 ```
 
+## Enhancer prediction (recipe v19)
+
+Recipe v19 produces enhancer intervals from a trained `EnhancerClassifier` (see [issue #96](https://github.com/Open-Athena/bolinas-dna/issues/96) for the classifier and [issue #104](https://github.com/Open-Athena/bolinas-dna/issues/104) for the inference pipeline). The classifier is run genome-wide with sliding-window inference, and bins above a logit threshold become the enhancer interval set.
+
+**Pipeline**: `extract_exons` → `scannable_regions` (defined − exons) → `enhancer_prediction_windows` → `predict_enhancers` → `intervals_recipe_v19`.
+
+**Prerequisites**:
+- Install enhancer-classification dependencies: `uv sync --group enhancer-classification`
+- A trained classifier checkpoint (configured via `enhancer_prediction.checkpoint` in `config.yaml`, supports `s3://` URIs via Snakemake `storage()`)
+- A GPU for the `predict_enhancers` rule
+
+**Configuration** (`enhancer_prediction` block in `config.yaml`):
+- `checkpoint`: path or S3 URI to the Lightning checkpoint
+- `window_size`, `step_size`: sliding-window parameters (default 255bp / 128bp)
+- `batch_size`, `num_workers`: inference DataLoader settings
+- `threshold`: logit threshold for recipe v19 (set after analyzing the genome-wide logit distribution)
+
+**Status**: working but slow (~1.4h per genome on L4 GPU). For a faster alternative being explored, see [issue #115](https://github.com/Open-Athena/bolinas-dna/issues/115) (per-bin segmentation).
+
 ## Output
 
 Datasets are uploaded to HuggingFace Hub at the specified `output_hf_prefix`.
