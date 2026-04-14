@@ -2,17 +2,26 @@
 
 Tiles the genome into non-overlapping fixed-size windows, labels each
 ``bin_size`` bin by fractional overlap with conserved enhancers, subsamples
-non-enhancer-containing windows, and trains a Conv1d-head segmenter.
+non-enhancer-containing windows for training (val keeps full coverage), and
+trains a Conv1d-head segmenter. Window size is parameterized per dataset
+via the `w{window_size}` path segment and a per-dataset `window_size` key
+in `seg_datasets`.
 """
 
 from bolinas.enhancer_segmentation.labeling import label_windows_by_bin_overlap
 
 SEG_CFG = config["segmentation"]
-SEG_WINDOW_SIZE = SEG_CFG["window_size"]
 SEG_BIN_SIZE = SEG_CFG["bin_size"]
-SEG_NUM_BINS = SEG_CFG["num_bins"]
 SEG_THRESHOLD = SEG_CFG["bin_overlap_threshold"]
 SEG_BG_MAX = SEG_CFG["background_fraction_max"]
+
+
+def _seg_dataset_window_size(dataset: str) -> int:
+    return int(config["seg_datasets"][dataset]["window_size"])
+
+
+def _num_bins_for(window_size: int) -> int:
+    return window_size // SEG_BIN_SIZE
 
 
 rule tile_genome_segmentation:
@@ -21,8 +30,9 @@ rule tile_genome_segmentation:
         genome_bed="results/genome/{species}.genome.bed",
         undefined="results/genome/{species}.undefined.bed",
     output:
-        "results/segmentation/intervals/{species}/windows.bed",
+        "results/segmentation/w{window_size}/intervals/{species}/windows.bed",
     run:
+        ws = int(wildcards.window_size)
         chrom_sizes = pd.read_csv(
             input.chrom_sizes,
             sep="\t",
@@ -32,8 +42,8 @@ rule tile_genome_segmentation:
         )
         frames = []
         for chrom, size in zip(chrom_sizes["chrom"], chrom_sizes["size"]):
-            starts = np.arange(0, size - SEG_WINDOW_SIZE + 1, SEG_WINDOW_SIZE)
-            ends = starts + SEG_WINDOW_SIZE
+            starts = np.arange(0, size - ws + 1, ws)
+            ends = starts + ws
             frames.append(pd.DataFrame({"chrom": chrom, "start": starts, "end": ends}))
         windows_df = (
             pd.concat(frames, ignore_index=True)
@@ -51,11 +61,13 @@ rule tile_genome_segmentation:
 rule label_segmentation_windows:
     threads: workflow.cores
     input:
-        windows="results/segmentation/intervals/{species}/windows.bed",
+        windows="results/segmentation/w{window_size}/intervals/{species}/windows.bed",
         enhancers="results/cre/{species}/{intervals}.parquet",
     output:
-        "results/segmentation/intervals/{intervals}/{species}/labeled_windows.parquet",
+        "results/segmentation/w{window_size}/intervals/{intervals}/{species}/labeled_windows.parquet",
     run:
+        ws = int(wildcards.window_size)
+        num_bins = _num_bins_for(ws)
         windows = pd.read_csv(
             input.windows,
             sep="\t",
@@ -69,7 +81,7 @@ rule label_segmentation_windows:
             windows,
             enhancers,
             bin_size=SEG_BIN_SIZE,
-            num_bins=SEG_NUM_BINS,
+            num_bins=num_bins,
             threshold=SEG_THRESHOLD,
         )
         labels_list = label_matrix.tolist()
@@ -90,9 +102,9 @@ rule label_segmentation_windows:
 rule subsample_segmentation_windows:
     threads: workflow.cores
     input:
-        "results/segmentation/intervals/{intervals}/{species}/labeled_windows.parquet",
+        "results/segmentation/w{window_size}/intervals/{intervals}/{species}/labeled_windows.parquet",
     output:
-        "results/segmentation/intervals/{intervals}/{species}/sampled_windows.parquet",
+        "results/segmentation/w{window_size}/intervals/{intervals}/{species}/sampled_windows.parquet",
     run:
         seed = config["seed"]
         df = pl.read_parquet(input[0])
@@ -124,12 +136,16 @@ rule subsample_segmentation_windows:
         sampled.write_parquet(output[0])
 
 
+# {windows_kind} selects upstream: "sampled_windows" (post-subsample, used
+# for train) or "labeled_windows" (full coverage, used for validation).
 rule segmentation_windows_to_bed:
+    wildcard_constraints:
+        windows_kind="labeled_windows|sampled_windows",
     input:
-        "results/segmentation/intervals/{intervals}/{species}/sampled_windows.parquet",
+        "results/segmentation/w{window_size}/intervals/{intervals}/{species}/{windows_kind}.parquet",
     output:
         temp(
-            "results/segmentation/intervals/{intervals}/{species}/sampled_windows.4col.bed"
+            "results/segmentation/w{window_size}/intervals/{intervals}/{species}/{windows_kind}.4col.bed"
         ),
     run:
         df = pl.read_parquet(input[0], columns=["chrom", "start", "end"]).to_pandas()
@@ -138,11 +154,15 @@ rule segmentation_windows_to_bed:
 
 
 rule extract_segmentation_sequences:
+    wildcard_constraints:
+        windows_kind="labeled_windows|sampled_windows",
     input:
         twobit="results/genome/{species}.2bit",
-        bed="results/segmentation/intervals/{intervals}/{species}/sampled_windows.4col.bed",
+        bed="results/segmentation/w{window_size}/intervals/{intervals}/{species}/{windows_kind}.4col.bed",
     output:
-        temp("results/segmentation/sequences/{intervals}/{species}/sampled_windows.fa"),
+        temp(
+            "results/segmentation/w{window_size}/sequences/{intervals}/{species}/{windows_kind}.fa"
+        ),
     conda:
         "../envs/bioinformatics.yaml"
     shell:
@@ -151,12 +171,15 @@ rule extract_segmentation_sequences:
 
 rule make_segmentation_species_parquet:
     threads: workflow.cores
+    wildcard_constraints:
+        windows_kind="labeled_windows|sampled_windows",
     input:
-        windows="results/segmentation/intervals/{intervals}/{species}/sampled_windows.parquet",
-        fa="results/segmentation/sequences/{intervals}/{species}/sampled_windows.fa",
+        windows="results/segmentation/w{window_size}/intervals/{intervals}/{species}/{windows_kind}.parquet",
+        fa="results/segmentation/w{window_size}/sequences/{intervals}/{species}/{windows_kind}.fa",
     output:
-        "results/segmentation/parquet/{intervals}/{species}.parquet",
+        "results/segmentation/w{window_size}/parquet/{intervals}/{species}/{windows_kind}.parquet",
     run:
+        ws = int(wildcards.window_size)
         labeled = pl.read_parquet(input.windows)
         seqs = load_fasta(input.fa)
         # FASTA ids are "chrom:start-end" produced by twoBitToFa -bedPos.
@@ -175,8 +198,8 @@ rule make_segmentation_species_parquet:
             labeled
         ), f"Sequence/label join dropped rows: {len(labeled)} -> {len(merged)}"
         assert (
-            merged["seq"].str.len() == SEG_WINDOW_SIZE
-        ).all(), f"Not all sequences are {SEG_WINDOW_SIZE} bp"
+            merged["seq"].str.len() == ws
+        ).all(), f"Not all sequences are {ws} bp"
         # Defined-regions filter guarantees no Ns; assert to catch drift.
         assert (
             not merged["seq"].str.upper().str.contains("N").any()
@@ -195,12 +218,32 @@ rule make_segmentation_species_parquet:
 def _seg_dataset_parquets(wc) -> list[str]:
     cfg = config["seg_datasets"][wc.dataset]
     split_config = config["splits"][cfg["split"]]
+    ws = _seg_dataset_window_size(wc.dataset)
+    # All splits source from the (positive-enriched) subsampled windows. The
+    # non-subsampled full-coverage val is built by a separate rule below so
+    # existing trained checkpoints' train/val inputs remain byte-identical.
     return [
-        f"results/segmentation/parquet/"
+        f"results/segmentation/w{ws}/parquet/"
         f"{resolve_intervals(cfg['intervals'], species)}/"
-        f"{species}.parquet"
+        f"{species}/sampled_windows.parquet"
         for species, splits in split_config.items()
         if wc.split_name in splits
+    ]
+
+
+def _seg_dataset_fullcov_parquets(wc) -> list[str]:
+    """Per-species parquets built from *labeled_windows* (no subsampling) so
+    the validation split covers every bin of the validation chromosomes.
+    Used only by the offline full-coverage eval rule."""
+    cfg = config["seg_datasets"][wc.dataset]
+    split_config = config["splits"][cfg["split"]]
+    ws = _seg_dataset_window_size(wc.dataset)
+    return [
+        f"results/segmentation/w{ws}/parquet/"
+        f"{resolve_intervals(cfg['intervals'], species)}/"
+        f"{species}/labeled_windows.parquet"
+        for species, splits in split_config.items()
+        if "validation" in splits
     ]
 
 
@@ -221,7 +264,10 @@ rule build_segmentation_dataset:
 
         dfs = []
         for parquet_path in input:
-            species = parquet_path.split("/")[-1].removesuffix(".parquet")
+            # Path ends in .../{species}/{windows_kind}.parquet — species is
+            # the second-to-last segment.
+            parts = parquet_path.rstrip("/").split("/")
+            species = parts[-2]
             chroms = split_config[species][wildcards.split_name]
             df = pl.read_parquet(parquet_path)
             df = df.filter(pl.col("chrom").is_in(chroms))
@@ -234,6 +280,33 @@ rule build_segmentation_dataset:
             combined = combined.sample(n=max_samples, seed=seed)
 
         combined = combined.sample(fraction=1.0, seed=seed, shuffle=True)
+        combined.write_parquet(output[0])
+
+
+rule build_segmentation_fullcov_validation:
+    """Assemble a validation parquet that covers every bin of the validation
+    chromosomes (no subsampling, no max_samples cap). Used by the offline
+    full-coverage eval rule so different window-size variants can be compared
+    on the identical set of genomic bins."""
+    threads: workflow.cores
+    input:
+        _seg_dataset_fullcov_parquets,
+    output:
+        "results/segmentation/dataset/{dataset}/validation_fullcov.parquet",
+    run:
+        dataset_config = config["seg_datasets"][wildcards.dataset]
+        split_config = config["splits"][dataset_config["split"]]
+
+        dfs = []
+        for parquet_path in input:
+            parts = parquet_path.rstrip("/").split("/")
+            species = parts[-2]
+            chroms = split_config[species]["validation"]
+            df = pl.read_parquet(parquet_path)
+            df = df.filter(pl.col("chrom").is_in(chroms))
+            dfs.append(df)
+
+        combined = pl.concat(dfs).sort(["genome", "chrom", "start"])
         combined.write_parquet(output[0])
 
 
@@ -299,6 +372,29 @@ rule train_segmentation_model:
         """
 
 
+rule evaluate_segmentation_model_fullcov:
+    """Run a trained segmenter over the full-coverage validation parquet and
+    write a val_predictions_fullcov.parquet compatible with the AUPRC /
+    precision_recall tooling. Reuses an existing best.ckpt; no training."""
+    threads: workflow.cores
+    input:
+        checkpoint="results/segmentation/model/{model}/{dataset}/best.ckpt",
+        val="results/segmentation/dataset/{dataset}/validation_fullcov.parquet",
+    output:
+        val_predictions="results/segmentation/eval/{model}/{dataset}/val_predictions_fullcov.parquet",
+    params:
+        batch_size=lambda wc: get_seg_model_config(wc.model)["batch_size"],
+    shell:
+        """
+        uv run python -m bolinas.enhancer_segmentation.evaluate \
+            --checkpoint {input.checkpoint} \
+            --val-parquet {input.val} \
+            --output {output.val_predictions} \
+            --batch-size {params.batch_size} \
+            --num-workers {threads}
+        """
+
+
 SEG_VIS_CFG = config.get("segmentation_visualization", {})
 SEG_VIS_REGIONS = SEG_VIS_CFG.get("regions", [])
 
@@ -321,8 +417,8 @@ rule predict_segmentation_region:
         chrom=lambda wc: _get_seg_region(wc.name)["chrom"],
         start=lambda wc: _get_seg_region(wc.name)["start"],
         end=lambda wc: _get_seg_region(wc.name)["end"],
-        window_size=SEG_CFG["window_size"],
-        bin_size=SEG_CFG["bin_size"],
+        window_size=lambda wc: _seg_dataset_window_size(wc.dataset),
+        bin_size=SEG_BIN_SIZE,
     shell:
         """
         uv run python -m bolinas.enhancer_segmentation.predict \

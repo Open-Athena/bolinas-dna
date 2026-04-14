@@ -19,6 +19,7 @@ ruleorder: filter_no_exon_overlap > process_cre
 ruleorder: cre_filter_conserved > filter_enhancers
 ruleorder: filter_no_exon_overlap > filter_enhancers
 ruleorder: filter_no_exon_overlap > cre_filter_conserved
+ruleorder: build_segmentation_fullcov_validation > build_segmentation_dataset
 
 
 _ALL_DATASETS = list(set(DATASET_NAMES) | set(SEG_DATASET_NAMES))
@@ -35,6 +36,8 @@ wildcard_constraints:
     neg_type="|".join(ALL_NEG_TYPES),
     n=r"\d+",
     model="|".join(_ALL_MODELS) if _ALL_MODELS else "NONE",
+    window_size=r"\d+",
+    windows_kind="labeled_windows|sampled_windows",
 
 
 rule all:
