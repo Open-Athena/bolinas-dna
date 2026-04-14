@@ -22,7 +22,9 @@ DATASET_NAMES = list(config["datasets"].keys())
 
 ALL_INTERVALS: set[str] = set()
 ALL_SPLIT_NAMES: set[str] = set()
-for _dataset_config in config["datasets"].values():
+for _dataset_config in list(config["datasets"].values()) + list(
+    config.get("seg_datasets", {}).values()
+):
     _intervals_cfg = _dataset_config["intervals"]
     if isinstance(_intervals_cfg, dict):
         ALL_INTERVALS.update(_intervals_cfg.values())

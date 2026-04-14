@@ -367,6 +367,88 @@ experiments:
     - { model: finetune, dataset: v8a }
     - { model: finetune, dataset: v8b }
 
+# Per-bin enhancer segmentation (issue #115). Shares the conservation /
+# exon-filtered enhancer definition with the classification pipeline; the
+# only difference is the model formulation.
+segmentation:
+    window_size: 16384
+    bin_size: 128
+    num_bins: 128  # window_size / bin_size
+    bin_overlap_threshold: 0.5
+    background_fraction_max: 0.1
+
+seg_datasets:
+    seg_v1:
+        split: v4b
+        intervals:
+            homo_sapiens: noexon/conserved/phastCons_43p/20/ELS
+            mus_musculus: noexon/conserved/phastCons_euarchontoglires/20/ELS
+
+seg_models:
+    default:
+        freeze_backbone: false
+        learning_rate: 1e-4
+        weight_decay: 0.1
+        gradient_clip_val: 1.0
+        batch_size: 16
+        warmup_fraction: 0.1
+        # pos_weight is computed inside train.py from the training parquet.
+        # Lightning throughput caps — null / 1.0 means "no cap".
+        max_steps: -1
+        limit_train_batches: 1.0
+        limit_val_batches: 1.0
+    # Fast smoke-test variant: trains on 10% of batches, validates on 10% of
+    # the val set. Reuses the full seg_v1 parquet so no data rebuild.
+    fast:
+        limit_train_batches: 0.1
+        limit_val_batches: 0.1
+
+seg_experiments:
+    - { model: fast, dataset: seg_v1 }
+
+seg_max_samples:
+    validation: 8192
+
+# Bedgraph tracks for segmentation. Each region's length must be a multiple
+# of segmentation.window_size (16384 bp) — precompute by enlarging the
+# biological interval symmetrically. The pipeline tiles the region with
+# non-overlapping 16384 bp windows and emits one score per 128 bp bin.
+# Original biological coords are kept as comments for provenance.
+segmentation_visualization:
+    checkpoints:
+        - { model: fast, dataset: seg_v1 }
+    regions:
+        # ZRS_human: biological [156790115, 156793672), enlarged to 1 tile.
+        - genome: homo_sapiens
+          chrom: "7"
+          start: 156783702
+          end: 156800086
+          name: ZRS_human
+        # ZRS_chicken: biological [8549842, 8556506), enlarged to 1 tile.
+        - genome: gallus_gallus
+          chrom: "2"
+          start: 8544982
+          end: 8561366
+          name: ZRS_chicken
+        # ZRS_mouse: biological [29312497, 29318634), enlarged to 1 tile.
+        - genome: mus_musculus
+          chrom: "5"
+          start: 29307374
+          end: 29323758
+          name: ZRS_mouse
+        # MSE_drosophila: biological [9974394, 9981777), enlarged to 1 tile.
+        - genome: drosophila_melanogaster
+          chrom: "2R"
+          start: 9969894
+          end: 9986278
+          name: MSE_drosophila
+        # LDLR_human: biological [11065606, 11144368), enlarged to 5 tiles.
+        - genome: homo_sapiens
+          chrom: "19"
+          start: 11064027
+          end: 11145947
+          name: LDLR_human
+
 visualization:
     window_size: 255
     step_size: 32
