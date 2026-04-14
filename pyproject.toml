@@ -43,6 +43,7 @@ dev = [
 enhancer-classification = [
     "alphagenome-pytorch>=0.3.0",
     "lightning>=2.0",
+    "py2bit",
     "torchmetrics>=1.0",
 ]
 

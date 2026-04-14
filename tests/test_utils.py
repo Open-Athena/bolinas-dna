@@ -13,6 +13,7 @@ from bolinas.data.utils import (
     get_downstream_of_CDS,
     get_exons,
     get_ensembl_functional_exons,
+    get_exons_for_masking,
     get_mrna_exons,
     get_ncrna_exons,
     get_promoters,
@@ -2060,3 +2061,108 @@ def test_get_ensembl_functional_exons_excludes_all_problematic_biotypes():
 
     assert all_exons.n_intervals() == len(biotypes) + 1
     assert functional.n_intervals() == 1
+
+
+def test_get_exons_for_masking_with_biotype():
+    """With transcript_biotype available, behaves like get_ensembl_functional_exons."""
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr1", "chr1"],
+            "start": [100, 300, 500],
+            "end": [200, 400, 600],
+            "strand": ["+", "+", "+"],
+            "feature": ["exon", "exon", "exon"],
+            "attribute": [
+                'transcript_id "t1"; transcript_biotype "protein_coding"',
+                'transcript_id "t2"; transcript_biotype "retained_intron"',
+                'transcript_id "t3"; transcript_biotype "lncRNA"',
+            ],
+            "source": ["test"] * 3,
+            "score": ["."] * 3,
+            "frame": ["."] * 3,
+        }
+    )
+    result = get_exons_for_masking(ann)
+    # retained_intron excluded → 2 exons kept
+    assert result.n_intervals() == 2
+    assert result.total_size() == 200
+
+
+def test_get_exons_for_masking_without_biotype():
+    """Without transcript_biotype (NCBI GTFs), falls back to all exons."""
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1", "chr1", "chr1"],
+            "start": [100, 300, 500],
+            "end": [200, 400, 600],
+            "strand": ["+", "+", "+"],
+            "feature": ["exon", "exon", "exon"],
+            "attribute": [
+                'gene_id "g1"; gbkey "mRNA"',
+                'gene_id "g2"; gbkey "mRNA"',
+                'gene_id "g3"; gbkey "ncRNA"',
+            ],
+            "source": ["test"] * 3,
+            "score": ["."] * 3,
+            "frame": ["."] * 3,
+        }
+    )
+    result = get_exons_for_masking(ann)
+    # No biotype info → all 3 exons returned
+    assert result.n_intervals() == 3
+    assert result.total_size() == 300
+
+
+def test_get_exons_for_masking_mixed_biotype():
+    """Mixed annotations: exons without biotype must be kept (not silently dropped).
+
+    Most exons have biotype info → Ensembl filtering applies. Exons without
+    biotype should still be kept (treated as not in the excluded list), not
+    silently dropped due to null propagation through ~biotype.is_in(...).
+    """
+    # 5 exons: 4 with biotype (1 excluded retained_intron, 3 kept), 1 without
+    # null_count=1 < 5//2=2 → Ensembl path triggered
+    ann = pl.DataFrame(
+        {
+            "chrom": ["chr1"] * 5,
+            "start": [100, 300, 500, 700, 900],
+            "end": [200, 400, 600, 800, 1000],
+            "strand": ["+"] * 5,
+            "feature": ["exon"] * 5,
+            "attribute": [
+                'transcript_id "t1"; transcript_biotype "protein_coding"',
+                'transcript_id "t2"; transcript_biotype "retained_intron"',
+                'transcript_id "t3"; transcript_biotype "lncRNA"',
+                'transcript_id "t4"; transcript_biotype "miRNA"',
+                'transcript_id "t5"; gbkey "ncRNA"',  # no transcript_biotype
+            ],
+            "source": ["test"] * 5,
+            "score": ["."] * 5,
+            "frame": ["."] * 5,
+        }
+    )
+    result = get_exons_for_masking(ann)
+    # Excluded: retained_intron (1)
+    # Kept: protein_coding, lncRNA, miRNA, no-biotype = 4
+    # Without the null fix, the no-biotype exon would be dropped, giving 3
+    assert result.n_intervals() == 4
+    assert result.total_size() == 400
+
+
+def test_get_exons_for_masking_empty():
+    """Empty annotation returns empty GenomicSet."""
+    ann = pl.DataFrame(
+        {
+            "chrom": pl.Series([], dtype=pl.String),
+            "start": pl.Series([], dtype=pl.Int64),
+            "end": pl.Series([], dtype=pl.Int64),
+            "strand": pl.Series([], dtype=pl.String),
+            "feature": pl.Series([], dtype=pl.String),
+            "attribute": pl.Series([], dtype=pl.String),
+            "source": pl.Series([], dtype=pl.String),
+            "score": pl.Series([], dtype=pl.String),
+            "frame": pl.Series([], dtype=pl.String),
+        }
+    )
+    result = get_exons_for_masking(ann)
+    assert result.n_intervals() == 0

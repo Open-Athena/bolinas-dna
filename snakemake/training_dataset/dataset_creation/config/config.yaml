@@ -119,6 +119,14 @@ promoter_comparison_regions:
     - promoters/256/256
     - promoters/2048/2048
 
+enhancer_prediction:
+    checkpoint: "s3://oa-bolinas/snakemake/enhancer_classification/results/model/finetune/v8b/best.ckpt"
+    window_size: 255
+    step_size: 128
+    batch_size: 1024
+    num_workers: 4
+    threshold: 0.0  # logit threshold for recipe v19 (set after genome-wide analysis)
+
 genome_subset_bed:
     - GCF_000001405.40 # Human
     - GCF_000001635.27 # Mouse

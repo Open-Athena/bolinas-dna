@@ -252,6 +252,15 @@ def get_exons(ann: pl.DataFrame) -> GenomicSet:
     return GenomicSet(ann.filter(pl.col("feature") == "exon"))
 
 
+def _extract_transcript_biotype(exons: pl.DataFrame) -> pl.Series:
+    """Parse the ``transcript_biotype`` attribute from each exon row."""
+    return exons.select(
+        pl.col("attribute")
+        .str.extract(r'transcript_biotype "([^"]+)"')
+        .alias("transcript_biotype")
+    )["transcript_biotype"]
+
+
 def get_ensembl_functional_exons(ann: pl.DataFrame) -> GenomicSet:
     """Extract exon regions from well-supported transcripts only.
 
@@ -268,14 +277,40 @@ def get_ensembl_functional_exons(ann: pl.DataFrame) -> GenomicSet:
         transcripts.
     """
     exons = ann.filter(pl.col("feature") == "exon")
-    biotype = exons.select(
-        pl.col("attribute")
-        .str.extract(r'transcript_biotype "([^"]+)"')
-        .alias("transcript_biotype")
-    )["transcript_biotype"]
+    biotype = _extract_transcript_biotype(exons)
     return GenomicSet(
         exons.filter(~biotype.is_in(ENSEMBL_EXCLUDED_TRANSCRIPT_BIOTYPES))
     )
+
+
+def get_exons_for_masking(ann: pl.DataFrame) -> GenomicSet:
+    """Extract exons to exclude from enhancer scanning.
+
+    When ``transcript_biotype`` is available (Ensembl-style GTFs), excludes
+    retained intron, NMD, pseudogene, and other low-quality transcript exons
+    so that those regions remain scannable for potential enhancers. Falls back
+    to all exons for annotations without biotype information (e.g. NCBI RefSeq),
+    where retained introns are not annotated anyway.
+
+    Args:
+        ann: Annotation DataFrame from load_annotation().
+
+    Returns:
+        GenomicSet of exon regions to mask during enhancer prediction.
+    """
+    exons = ann.filter(pl.col("feature") == "exon")
+    if len(exons) == 0:
+        return GenomicSet(exons)
+
+    biotype = _extract_transcript_biotype(exons)
+
+    if biotype.null_count() < len(biotype) // 2:
+        # Null biotype rows are kept (treated as not-in-excluded) so we don't
+        # silently drop exons in mixed annotations.
+        is_excluded = biotype.is_in(ENSEMBL_EXCLUDED_TRANSCRIPT_BIOTYPES).fill_null(False)
+        return GenomicSet(exons.filter(~is_excluded))
+
+    return GenomicSet(exons)
 
 
 def get_cds(ann: pl.DataFrame) -> GenomicSet:
