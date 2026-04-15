@@ -347,6 +347,9 @@ rule train_segmentation_model:
             "n_transformer_layers", 0
         ),
         seed=lambda wc: get_seg_model_config(wc.model).get("seed", config["seed"]),
+        accumulate_grad_batches=lambda wc: get_seg_model_config(wc.model).get(
+            "accumulate_grad_batches", 1
+        ),
     shell:
         """
         uv run python -m bolinas.enhancer_segmentation.train \
@@ -365,6 +368,7 @@ rule train_segmentation_model:
             --limit-train-batches {params.limit_train_batches} \
             --limit-val-batches {params.limit_val_batches} \
             --n-transformer-layers {params.n_transformer_layers} \
+            --accumulate-grad-batches {params.accumulate_grad_batches} \
             {params.freeze_flag} \
             --seed {params.seed} \
             --num-workers {threads} \

@@ -80,6 +80,15 @@ def parse_args() -> argparse.Namespace:
         help="Fraction (<=1.0) or int number of validation batches. Mirrors "
         "Lightning Trainer.limit_val_batches.",
     )
+    parser.add_argument(
+        "--accumulate-grad-batches",
+        type=int,
+        default=1,
+        help="Number of micro-batches to accumulate per optimizer step. "
+        "Use to keep the effective batch size constant when reducing "
+        "--batch-size for memory; total nucleotides per optimizer step = "
+        "batch_size * accumulate_grad_batches * window_size.",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--wandb-run", type=str, required=True)
     return parser.parse_args()
@@ -204,6 +213,7 @@ def main() -> None:
         max_steps=args.max_steps,
         limit_train_batches=_as_batches_arg(args.limit_train_batches),
         limit_val_batches=_as_batches_arg(args.limit_val_batches),
+        accumulate_grad_batches=args.accumulate_grad_batches,
         precision="bf16-mixed",
         accelerator="gpu",
         devices=1,  # single-GPU only; multi-GPU not supported

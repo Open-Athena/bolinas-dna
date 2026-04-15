@@ -408,6 +408,13 @@ seg_datasets:
         intervals:
             homo_sapiens: noexon/conserved/phastCons_43p/20/ELS
             mus_musculus: noexon/conserved/phastCons_euarchontoglires/20/ELS
+    # 131072 bp windows (1024 bins). batch_size=4 keeps nt/batch const.
+    seg_v1_128k:
+        window_size: 131072
+        split: v4b
+        intervals:
+            homo_sapiens: noexon/conserved/phastCons_43p/20/ELS
+            mus_musculus: noexon/conserved/phastCons_euarchontoglires/20/ELS
 
 seg_models:
     default:
@@ -503,6 +510,14 @@ seg_models:
         learning_rate: 1e-4
         seed: 42
         batch_size: 8
+        max_steps: 811
+        limit_train_batches: 1.0
+        limit_val_batches: 0.1
+    xfmr2_w128k_s42:
+        n_transformer_layers: 2
+        learning_rate: 1e-4
+        seed: 42
+        batch_size: 4
         max_steps: 811
         limit_train_batches: 1.0
         limit_val_batches: 0.1
