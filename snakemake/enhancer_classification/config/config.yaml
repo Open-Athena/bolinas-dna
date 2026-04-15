@@ -393,6 +393,21 @@ seg_datasets:
         intervals:
             homo_sapiens: noexon/conserved/phastCons_43p/20/ELS
             mus_musculus: noexon/conserved/phastCons_euarchontoglires/20/ELS
+    # 32768 bp windows (256 bins). batch_size=16 keeps total nucleotides
+    # per batch constant; max_steps=811 matches 16k compute.
+    seg_v1_32k:
+        window_size: 32768
+        split: v4b
+        intervals:
+            homo_sapiens: noexon/conserved/phastCons_43p/20/ELS
+            mus_musculus: noexon/conserved/phastCons_euarchontoglires/20/ELS
+    # 65536 bp windows (512 bins). batch_size=8 keeps nucleotides/batch const.
+    seg_v1_64k:
+        window_size: 65536
+        split: v4b
+        intervals:
+            homo_sapiens: noexon/conserved/phastCons_43p/20/ELS
+            mus_musculus: noexon/conserved/phastCons_euarchontoglires/20/ELS
 
 seg_models:
     default:
@@ -472,7 +487,25 @@ seg_models:
         batch_size: 64
         max_steps: 811
         limit_train_batches: 1.0   # step cap above is the actual bound
-        limit_val_batches: 1.0
+        # Match prior 10% slice used by transformer_two_layers so val subset
+        # sizes are comparable (~10% of the respective subsampled val).
+        limit_val_batches: 0.1
+    xfmr2_w32k_s42:
+        n_transformer_layers: 2
+        learning_rate: 1e-4
+        seed: 42
+        batch_size: 16
+        max_steps: 811
+        limit_train_batches: 1.0
+        limit_val_batches: 0.1
+    xfmr2_w64k_s42:
+        n_transformer_layers: 2
+        learning_rate: 1e-4
+        seed: 42
+        batch_size: 8
+        max_steps: 811
+        limit_train_batches: 1.0
+        limit_val_batches: 0.1
 
 seg_experiments:
     - { model: fast, dataset: seg_v1 }
