@@ -161,6 +161,12 @@ def parse_args() -> argparse.Namespace:
         "--batch-size", type=int, default=32, help="Inference batch size"
     )
     parser.add_argument("--num-workers", type=int, default=4, help="DataLoader workers")
+    parser.add_argument(
+        "--max-windows",
+        type=int,
+        default=0,
+        help="Truncate windows to first N for smoke tests (0 = no limit)",
+    )
     parser.add_argument("--output", type=Path, required=True, help="Output parquet")
     return parser.parse_args()
 
@@ -171,6 +177,9 @@ def main() -> None:
 
     logger.info("Loading windows from %s", args.windows)
     windows = pl.read_parquet(args.windows)
+    if args.max_windows > 0:
+        windows = windows.head(args.max_windows)
+        logger.info("  Truncated to first %d windows for smoke test", args.max_windows)
     logger.info(
         "  %d windows across %d chromosomes", len(windows), windows["chrom"].n_unique()
     )

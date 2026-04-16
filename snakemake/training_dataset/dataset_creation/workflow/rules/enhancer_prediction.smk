@@ -128,6 +128,7 @@ rule predict_enhancers_segmentation:
         bin_size=SEGMENTATION_CONFIG["bin_size"],
         batch_size=SEGMENTATION_CONFIG["batch_size"],
         num_workers=SEGMENTATION_CONFIG["num_workers"],
+        max_windows=SEGMENTATION_CONFIG["max_windows"],
     threads: workflow.cores
     shell:
         """
@@ -138,6 +139,7 @@ rule predict_enhancers_segmentation:
             --bin-size {params.bin_size} \
             --batch-size {params.batch_size} \
             --num-workers {params.num_workers} \
+            --max-windows {params.max_windows} \
             --output {output}
         """
 

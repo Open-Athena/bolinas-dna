@@ -133,6 +133,7 @@ enhancer_prediction_segmentation:
     bin_size: 128
     batch_size: 32
     num_workers: 4
+    max_windows: 0  # 0 = all windows; set small (e.g. 10) for smoke tests
     # One species per mammalian order, restricted to Chromosome-level or
     # better assemblies, and forcing human + mouse as the Primates /
     # Rodentia reps (our training species). Other orders pick the smallest
