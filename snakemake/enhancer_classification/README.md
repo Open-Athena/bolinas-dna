@@ -3,7 +3,14 @@
 Binary enhancer classifier. For design decisions, results, and iteration
 history see [#96](https://github.com/Open-Athena/bolinas-dna/issues/96).
 
+This pipeline also includes a **per-bin enhancer segmentation** formulation
+(issue [#115](https://github.com/Open-Athena/bolinas-dna/issues/115)) that
+shares the conserved-enhancer definition with the classifier but predicts one
+logit per 128 bp bin inside a 16384 bp window.
+
 ## Dataset output schema
+
+### Classification (255 bp windows)
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -12,17 +19,30 @@ history see [#96](https://github.com/Open-Athena/bolinas-dna/issues/96).
 | `start` | int | 0-based start coordinate |
 | `end` | int | End coordinate (exclusive) |
 | `strand` | str | `"+"` (forward) or `"-"` (reverse complement) |
-| `seq` | str | DNA sequence (255bp) |
+| `seq` | str | DNA sequence (255 bp) |
 | `label` | int | 1 = enhancer, 0 = non-enhancer |
+
+### Segmentation (16384 bp windows, 128 × 128 bp bins)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `genome` | str | Species |
+| `chrom` | str | Chromosome |
+| `start` | int | 0-based window start |
+| `end` | int | Window end (= start + 16384) |
+| `strand` | str | `"+"` or `"-"` (RC augmentation reverses `labels`) |
+| `seq` | str | DNA sequence (16384 bp) |
+| `labels` | list[uint8] | Per-bin label (length 128); 1 if ≥50 % of the bin overlaps a conserved enhancer |
 
 ## Code layout
 
 | File | Description |
 |------|-------------|
-| `src/bolinas/enhancer_classification/dataset.py` | `EnhancerDataset` — PyTorch Dataset loading parquet splits |
-| `src/bolinas/enhancer_classification/model.py` | `EnhancerClassifier` — Lightning module |
-| `src/bolinas/enhancer_classification/train.py` | CLI training script with argparse |
-| `workflow/rules/model.smk` | Snakemake rule calling the train CLI |
+| `src/bolinas/enhancer_classification/{dataset,model,train}.py` | 255 bp binary classifier |
+| `src/bolinas/enhancer_segmentation/{dataset,model,train}.py` | Per-bin segmenter (Conv1d head on encoder) |
+| `src/bolinas/enhancer_segmentation/labeling.py` | `label_windows_by_bin_overlap` — bin-level labels from enhancer intervals |
+| `workflow/rules/model.smk` | Classifier training rules |
+| `workflow/rules/segmentation.smk` | Segmentation data build + training rules |
 
 ## Prerequisites
 

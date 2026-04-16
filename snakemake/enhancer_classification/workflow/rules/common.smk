@@ -14,6 +14,7 @@ import bioframe as bf
 from bolinas.data.intervals import GenomicList, GenomicSet
 from bolinas.data.negative_sampling import compute_gc_content, compute_repeat_fraction, match_by_gc_repeat
 from bolinas.data.utils import ENHANCER_CRE_CLASSES, add_rc, get_ensembl_functional_exons, load_annotation, load_fasta
+from bolinas.enhancer_segmentation.labeling import label_windows_by_bin_overlap
 
 
 SPECIES = list(config["genome_urls"].keys())
@@ -22,7 +23,9 @@ DATASET_NAMES = list(config["datasets"].keys())
 
 ALL_INTERVALS: set[str] = set()
 ALL_SPLIT_NAMES: set[str] = set()
-for _dataset_config in config["datasets"].values():
+for _dataset_config in list(config["datasets"].values()) + list(
+    config.get("seg_datasets", {}).values()
+):
     _intervals_cfg = _dataset_config["intervals"]
     if isinstance(_intervals_cfg, dict):
         ALL_INTERVALS.update(_intervals_cfg.values())
