@@ -513,6 +513,17 @@ seg_models:
         max_steps: 811
         limit_train_batches: 1.0
         limit_val_batches: 0.1
+    # Final full-epoch training at the best architecture (64k, 2 layers,
+    # seed=42). No limit_*_batches cap, no max_steps cap — one full epoch over
+    # the entire training data, full validation each epoch end.
+    xfmr2_w64k_s42_full:
+        n_transformer_layers: 2
+        learning_rate: 1e-4
+        seed: 42
+        batch_size: 8
+        max_steps: -1
+        limit_train_batches: 1.0
+        limit_val_batches: 1.0
     xfmr2_w128k_s42:
         n_transformer_layers: 2
         learning_rate: 1e-4
