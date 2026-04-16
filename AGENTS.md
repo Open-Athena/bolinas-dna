@@ -90,6 +90,16 @@ Don't show or discuss the current implementation unless specifically requested.
 ### No Premature Generalizations
 If you are asked to implement a specific backend, just stick to that. Do not generalize to other common or related use-cases. You can offer to implement these, but only do so if explicitly instructed to.
 
+## GitHub Communication
+
+- When an agent creates a PR or issue, add the `agent-generated` label.
+- Agent comments on PRs/issues must begin with `🤖` unless the exact text was explicitly approved by the user.
+
+## Autonomy Boundaries
+
+- Never push to `main` without explicit user approval.
+- Never close or merge PRs/issues without explicit user approval.
+
 ## Important Notes
 
 - **Coordinate system**: The codebase consistently uses 0-based, half-open intervals for all genomic coordinates
