@@ -119,6 +119,34 @@ def test_multiple_windows_and_positives():
     assert np.flatnonzero(labels[1]).tolist() == [78, 79]
 
 
+def test_multiple_windows_same_chromosome():
+    """Per-chromosome groupby branch must handle multiple windows on the
+    same chrom (rather than one chrom per window)."""
+    windows = pd.DataFrame(
+        {
+            "chrom": ["1", "1", "1"],
+            "start": [0, WINDOW_SIZE, 2 * WINDOW_SIZE],
+            "end": [WINDOW_SIZE, 2 * WINDOW_SIZE, 3 * WINDOW_SIZE],
+        }
+    )
+    # One enhancer in window 0 and one in window 2; window 1 has none.
+    positives = pd.DataFrame(
+        {
+            "chrom": ["1", "1"],
+            "start": [1024, 2 * WINDOW_SIZE + 5000],
+            "end": [1279, 2 * WINDOW_SIZE + 5255],
+        }
+    )
+    labels = label_windows_by_bin_overlap(
+        windows, positives, bin_size=BIN_SIZE, num_bins=NUM_BINS, threshold=0.5
+    )
+    assert labels.shape == (3, NUM_BINS)
+    assert np.flatnonzero(labels[0]).tolist() == [8, 9]
+    assert labels[1].sum() == 0
+    # 2*WINDOW_SIZE + 5000 = bin 39 of window 2 (5000 // 128 = 39).
+    assert np.flatnonzero(labels[2]).tolist() == [39, 40]
+
+
 def test_wrong_window_size_raises():
     windows = pd.DataFrame({"chrom": ["1"], "start": [0], "end": [WINDOW_SIZE + 1]})
     positives = pd.DataFrame(columns=["chrom", "start", "end"]).astype(

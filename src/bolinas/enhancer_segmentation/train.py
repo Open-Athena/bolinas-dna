@@ -15,6 +15,7 @@ Usage::
 import argparse
 import json
 import logging
+import math
 from pathlib import Path
 
 import lightning as L
@@ -172,17 +173,22 @@ def main() -> None:
         persistent_workers=args.num_workers > 0,
     )
 
-    # LR schedule must cosine over the steps actually taken, not the full
-    # epoch — otherwise fast iteration runs decay way too slowly.
-    full_steps = len(train_loader)
+    # LR schedule must cosine over the *optimizer* steps actually taken, not
+    # the full epoch — otherwise fast iteration runs decay way too slowly.
+    # Lightning counts optimizer steps (not micro-batches), so with
+    # accumulate_grad_batches=N the schedule sees len(loader)/N steps.
+    full_micro_batches = len(train_loader)
+    acc = max(1, args.accumulate_grad_batches)
     if args.max_steps > 0:
         num_training_steps = args.max_steps
     elif 0 < args.limit_train_batches <= 1.0:
-        num_training_steps = max(1, int(full_steps * args.limit_train_batches))
+        micro = max(1, int(full_micro_batches * args.limit_train_batches))
+        num_training_steps = max(1, math.ceil(micro / acc))
     elif args.limit_train_batches > 1.0:
-        num_training_steps = min(full_steps, int(args.limit_train_batches))
+        micro = min(full_micro_batches, int(args.limit_train_batches))
+        num_training_steps = max(1, math.ceil(micro / acc))
     else:
-        num_training_steps = full_steps
+        num_training_steps = max(1, math.ceil(full_micro_batches / acc))
 
     model = EnhancerSegmenter(
         weights_path=args.weights_path,

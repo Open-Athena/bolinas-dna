@@ -8,8 +8,6 @@ via the `w{window_size}` path segment and a per-dataset `window_size` key
 in `seg_datasets`.
 """
 
-from bolinas.enhancer_segmentation.labeling import label_windows_by_bin_overlap
-
 SEG_CFG = config["segmentation"]
 SEG_BIN_SIZE = SEG_CFG["bin_size"]
 SEG_THRESHOLD = SEG_CFG["bin_overlap_threshold"]

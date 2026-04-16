@@ -2,6 +2,7 @@
 
 import torch
 
+from bolinas.enhancer_classification.model import ENCODER_OUTPUT_DIM
 from bolinas.enhancer_segmentation.model import EnhancerSegmenter
 
 BIN_SIZE = 128
@@ -79,7 +80,7 @@ def test_transformer_path_forward_and_shape():
     assert model.tower is not None
     assert len(model.tower.tower.blocks) == 1
     # Species embedding is a single learnable 1536-vector (not nn.Embedding).
-    assert model.tower.species_embed.shape == (1536,)
+    assert model.tower.species_embed.shape == (ENCODER_OUTPUT_DIM,)
     assert model.tower.species_embed.requires_grad
 
 

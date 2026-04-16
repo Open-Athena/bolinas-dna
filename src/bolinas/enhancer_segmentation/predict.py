@@ -63,15 +63,16 @@ def predict_tiles(
 ) -> np.ndarray:
     """Return ``(n_tiles, num_bins)`` array of per-bin probabilities."""
     all_probs: list[np.ndarray] = []
-    for i in range(0, len(tiles), batch_size):
-        batch = tiles[i : i + batch_size]
-        seqs = [genome(chrom, s, e) for s, e in batch]
-        onehot = np.stack([sequence_to_onehot(s).astype(np.float32) for s in seqs])
-        x = torch.from_numpy(onehot).to(device)
-        with torch.no_grad():
-            logits = model(x)
+    with torch.inference_mode():
+        for i in range(0, len(tiles), batch_size):
+            batch = tiles[i : i + batch_size]
+            seqs = [genome(chrom, s, e) for s, e in batch]
+            onehot = np.stack([sequence_to_onehot(s).astype(np.float32) for s in seqs])
+            x = torch.from_numpy(onehot).to(device, non_blocking=True)
+            with torch.autocast(device_type=device.type, dtype=torch.bfloat16):
+                logits = model(x)
             probs = torch.sigmoid(logits).float().cpu().numpy()
-        all_probs.append(probs)
+            all_probs.append(probs)
     return np.concatenate(all_probs, axis=0)
 
 
