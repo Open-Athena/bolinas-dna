@@ -23,7 +23,6 @@ from bolinas.enhancer_segmentation.predict_genome import predict_genome
 
 logger = logging.getLogger(__name__)
 
-WINDOW_SIZE = 65536
 BIN_SIZE = 128
 
 
@@ -36,21 +35,23 @@ def main() -> None:
     parser.add_argument("--genome", type=Path, required=True)
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--chrom", type=str, default="22")
+    parser.add_argument("--window-size", type=int, default=65536)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--output", type=Path, default=None)
     args = parser.parse_args()
+    window_size = args.window_size
 
     tb = py2bit.open(str(args.genome))
     chrom_size = tb.chroms()[args.chrom]
     tb.close()
 
-    starts = list(range(0, chrom_size, WINDOW_SIZE))
+    starts = list(range(0, chrom_size, window_size))
     windows = pl.DataFrame(
         {
             "chrom": [args.chrom] * len(starts),
             "start": starts,
-            "end": [s + WINDOW_SIZE for s in starts],
+            "end": [s + window_size for s in starts],
         }
     )
 
@@ -59,7 +60,7 @@ def main() -> None:
         args.chrom,
         chrom_size,
         len(windows),
-        len(windows) * (WINDOW_SIZE // BIN_SIZE),
+        len(windows) * (window_size // BIN_SIZE),
     )
 
     result = predict_genome(
