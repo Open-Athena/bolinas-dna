@@ -27,6 +27,7 @@ from torch.utils.data import DataLoader
 
 from bolinas.enhancer_segmentation.dataset import SegmentationDataset
 from bolinas.enhancer_segmentation.model import EnhancerSegmenter
+from bolinas.enhancer_segmentation.predictions import build_bin_predictions
 
 log = logging.getLogger(__name__)
 
@@ -173,22 +174,18 @@ def main() -> None:
         persistent_workers=args.num_workers > 0,
     )
 
-    # LR schedule must cosine over the *optimizer* steps actually taken, not
-    # the full epoch — otherwise fast iteration runs decay way too slowly.
-    # Lightning counts optimizer steps (not micro-batches), so with
-    # accumulate_grad_batches=N the schedule sees len(loader)/N steps.
+    # Schedule over optimizer steps: Lightning counts post-accumulation steps,
+    # so divide by accumulate_grad_batches.
     full_micro_batches = len(train_loader)
     acc = max(1, args.accumulate_grad_batches)
     if args.max_steps > 0:
         num_training_steps = args.max_steps
-    elif 0 < args.limit_train_batches <= 1.0:
-        micro = max(1, int(full_micro_batches * args.limit_train_batches))
-        num_training_steps = max(1, math.ceil(micro / acc))
-    elif args.limit_train_batches > 1.0:
-        micro = min(full_micro_batches, int(args.limit_train_batches))
-        num_training_steps = max(1, math.ceil(micro / acc))
     else:
-        num_training_steps = max(1, math.ceil(full_micro_batches / acc))
+        if args.limit_train_batches <= 1.0:
+            micro = max(1, int(full_micro_batches * args.limit_train_batches))
+        else:
+            micro = min(full_micro_batches, int(args.limit_train_batches))
+        num_training_steps = max(1, math.ceil(micro / acc))
 
     model = EnhancerSegmenter(
         weights_path=args.weights_path,
@@ -258,52 +255,21 @@ def main() -> None:
     }
     metrics["pos_weight"] = pos_weight
 
-    # Per-(window, bin) validation predictions — one row per bin so downstream
-    # PR/offline analyses can compute per-species metrics and
-    # recall-at-target-precision.
     logits_flat = model.val_logits.compute().cpu().numpy()
     val_meta = pl.read_parquet(
         args.val_parquet,
         columns=["genome", "chrom", "start", "end", "strand", "labels"],
     )
+    # With limit_val_batches < 1.0 Lightning iterates a prefix of the
+    # (unshuffled) val loader; the val parquet is shuffled at build time so
+    # the prefix is a random sample. Truncate val_meta to what was seen.
     num_bins = len(val_meta["labels"][0])
-    # With limit_val_batches < 1.0 Lightning only iterates a prefix of the
-    # (unshuffled) val loader, so logits cover the first K windows. Truncate
-    # val_meta to match — the val parquet is already shuffled at build time
-    # so the prefix is a random sample.
     n_windows_seen = len(logits_flat) // num_bins
     if n_windows_seen < len(val_meta):
         val_meta = val_meta.head(n_windows_seen)
-    expected = len(val_meta) * num_bins
-    assert len(logits_flat) == expected, (
-        f"Logit count ({len(logits_flat)}) != "
-        f"validation rows * num_bins ({len(val_meta)} * {num_bins} = {expected})"
-    )
 
-    bin_size = None
-    if len(val_meta) > 0:
-        window_size = int(val_meta["end"][0] - val_meta["start"][0])
-        bin_size = window_size // num_bins
-
-    labels_flat = np.asarray(val_meta["labels"].to_list(), dtype=np.uint8).reshape(-1)
-    bin_idx = np.tile(np.arange(num_bins, dtype=np.int32), len(val_meta))
-    window_starts = np.repeat(val_meta["start"].to_numpy(), num_bins)
-    predictions = pl.DataFrame(
-        {
-            "genome": np.repeat(val_meta["genome"].to_numpy(), num_bins),
-            "chrom": np.repeat(val_meta["chrom"].to_numpy(), num_bins),
-            "start": window_starts,
-            "end": np.repeat(val_meta["end"].to_numpy(), num_bins),
-            "strand": np.repeat(val_meta["strand"].to_numpy(), num_bins),
-            "bin_idx": bin_idx,
-            "bin_start": window_starts + bin_idx * (bin_size or 0),
-            "bin_end": window_starts + (bin_idx + 1) * (bin_size or 0),
-            "label": labels_flat,
-            "logit": logits_flat,
-        }
-    )
-
-    if args.output_val_predictions:
+    if args.output_val_predictions and len(val_meta) > 0:
+        predictions = build_bin_predictions(val_meta, logits_flat)
         Path(args.output_val_predictions).parent.mkdir(parents=True, exist_ok=True)
         predictions.write_parquet(args.output_val_predictions)
 

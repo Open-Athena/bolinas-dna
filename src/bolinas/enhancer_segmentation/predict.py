@@ -68,7 +68,7 @@ def predict_tiles(
             batch = tiles[i : i + batch_size]
             seqs = [genome(chrom, s, e) for s, e in batch]
             onehot = np.stack([sequence_to_onehot(s).astype(np.float32) for s in seqs])
-            x = torch.from_numpy(onehot).to(device, non_blocking=True)
+            x = torch.from_numpy(onehot).to(device)
             with torch.autocast(device_type=device.type, dtype=torch.bfloat16):
                 logits = model(x)
             probs = torch.sigmoid(logits).float().cpu().numpy()

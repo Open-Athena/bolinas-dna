@@ -213,13 +213,13 @@ class EnhancerSegmenter(L.LightningModule):
         self.log("val_auprc", self.val_auprc.compute(), prog_bar=True, sync_dist=True)
         self.val_auprc.reset()
         for name, metric in self.val_auprc_per_species.items():
-            # torchmetrics.AveragePrecision raises ValueError when no samples
-            # were updated this epoch (e.g. with limit_val_batches < 1.0 the
-            # batch slice may not contain a given genome). Skip cleanly.
+            # AveragePrecision.compute() raises if no samples were seen
+            # (e.g. sparse genomes under limit_val_batches < 1.0).
             if metric.update_count == 0:
                 continue
-            value = metric.compute()
-            self.log(f"val_auprc/{name}", value, prog_bar=False, sync_dist=True)
+            self.log(
+                f"val_auprc/{name}", metric.compute(), prog_bar=False, sync_dist=True
+            )
             metric.reset()
 
     def configure_optimizers(self) -> dict:

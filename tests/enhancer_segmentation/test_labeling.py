@@ -120,8 +120,7 @@ def test_multiple_windows_and_positives():
 
 
 def test_multiple_windows_same_chromosome():
-    """Per-chromosome groupby branch must handle multiple windows on the
-    same chrom (rather than one chrom per window)."""
+    """Handles multiple windows that share a chromosome."""
     windows = pd.DataFrame(
         {
             "chrom": ["1", "1", "1"],

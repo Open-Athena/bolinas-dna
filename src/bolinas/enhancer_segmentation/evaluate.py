@@ -17,6 +17,7 @@ from torch.utils.data import DataLoader
 
 from bolinas.enhancer_segmentation.dataset import SegmentationDataset
 from bolinas.enhancer_segmentation.model import EnhancerSegmenter
+from bolinas.enhancer_segmentation.predictions import build_bin_predictions
 
 log = logging.getLogger(__name__)
 torch.set_float32_matmul_precision("medium")
@@ -74,30 +75,7 @@ def main() -> None:
         args.val_parquet,
         columns=["genome", "chrom", "start", "end", "strand", "labels"],
     )
-    assert len(val_meta) == logits_arr.shape[0], (
-        f"Val rows {len(val_meta)} != logits rows {logits_arr.shape[0]}"
-    )
-
-    window_size = int(val_meta["end"][0] - val_meta["start"][0])
-    bin_size = window_size // num_bins
-
-    labels_flat = np.asarray(val_meta["labels"].to_list(), dtype=np.uint8).reshape(-1)
-    bin_idx = np.tile(np.arange(num_bins, dtype=np.int32), len(val_meta))
-    window_starts = np.repeat(val_meta["start"].to_numpy(), num_bins)
-    predictions = pl.DataFrame(
-        {
-            "genome": np.repeat(val_meta["genome"].to_numpy(), num_bins),
-            "chrom": np.repeat(val_meta["chrom"].to_numpy(), num_bins),
-            "start": window_starts,
-            "end": np.repeat(val_meta["end"].to_numpy(), num_bins),
-            "strand": np.repeat(val_meta["strand"].to_numpy(), num_bins),
-            "bin_idx": bin_idx,
-            "bin_start": window_starts + bin_idx * bin_size,
-            "bin_end": window_starts + (bin_idx + 1) * bin_size,
-            "label": labels_flat,
-            "logit": logits_arr.reshape(-1),
-        }
-    )
+    predictions = build_bin_predictions(val_meta, logits_arr)
 
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     predictions.write_parquet(args.output)

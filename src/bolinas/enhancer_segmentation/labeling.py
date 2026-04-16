@@ -14,10 +14,9 @@ def label_windows_by_bin_overlap(
 ) -> np.ndarray:
     """Label each bin of each window by fractional overlap with ``positives``.
 
-    A bin spanning ``[bin_start, bin_end)`` is labeled 1 iff its overlap with
-    ``positives`` is ``>= ceil(threshold * bin_size)`` bp, else 0. The ceil
-    means a non-integer ``threshold * bin_size`` rounds up — at the default
-    threshold=0.5 with bin_size=128 the threshold is exactly 64 bp.
+    A bin is labeled 1 iff its overlap with ``positives`` is at least
+    ``ceil(threshold * bin_size)`` bp. At the default threshold=0.5,
+    bin_size=128 the cutoff is 64 bp.
 
     Args:
         windows: DataFrame with columns ``chrom, start, end``. Each window must

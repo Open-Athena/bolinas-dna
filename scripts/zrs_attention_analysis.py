@@ -7,6 +7,7 @@ SVG annotated with CREs (cCRE-V4), exons (Ensembl functional), repeat fraction
 """
 
 import io
+import math
 from pathlib import Path
 
 import boto3
@@ -16,6 +17,7 @@ import polars as pl
 import pyBigWig
 import scipy.stats as ss
 import torch
+import torch.nn.functional as F
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
@@ -23,6 +25,8 @@ from alphagenome_pytorch.attention import MHABlock  # noqa: E402
 from alphagenome_pytorch.utils.sequence import sequence_to_onehot  # noqa: E402
 from biofoundation.data import Genome  # noqa: E402
 from matplotlib.patches import Rectangle  # noqa: E402
+
+from alphagenome_pytorch.attention import apply_rope  # noqa: E402
 
 from bolinas.enhancer_segmentation.model import EnhancerSegmenter  # noqa: E402
 
@@ -66,10 +70,6 @@ orig_forward = MHABlock.forward
 
 
 def patched_forward(self, x, attention_bias, compute_dtype=None):
-    import math
-    import torch.nn.functional as F
-    from alphagenome_pytorch.attention import apply_rope
-
     B, S, D = x.shape
     if compute_dtype is None:
         compute_dtype = x.dtype
