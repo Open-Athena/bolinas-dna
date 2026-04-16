@@ -127,6 +127,13 @@ enhancer_prediction:
     num_workers: 4
     threshold: 0.0  # logit threshold for recipe v19 (set after genome-wide analysis)
 
+enhancer_prediction_segmentation:
+    checkpoint: "s3://oa-bolinas/snakemake/enhancer_classification/results/segmentation/model/xfmr2_w64k_s42_full/seg_v1_64k/best.ckpt"
+    window_size: 65536
+    bin_size: 128
+    batch_size: 32
+    num_workers: 4
+
 genome_subset_bed:
     - GCF_000001405.40 # Human
     - GCF_000001635.27 # Mouse

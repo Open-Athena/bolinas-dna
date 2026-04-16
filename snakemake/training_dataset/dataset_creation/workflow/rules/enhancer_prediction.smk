@@ -1,4 +1,5 @@
 ENHANCER_CONFIG = config["enhancer_prediction"]
+SEGMENTATION_CONFIG = config["enhancer_prediction_segmentation"]
 
 
 wildcard_constraints:
@@ -77,6 +78,57 @@ rule predict_enhancers:
             --genome {input.genome} \
             --checkpoint {input.checkpoint} \
             --windows {input.windows} \
+            --batch-size {params.batch_size} \
+            --num-workers {params.num_workers} \
+            --output {output}
+        """
+
+
+rule segmentation_prediction_windows:
+    input:
+        "results/genome/{g}.2bit",
+    output:
+        "results/enhancer_predictions_segmentation/windows/{g}.parquet",
+    run:
+        window_size = SEGMENTATION_CONFIG["window_size"]
+        tb = py2bit.open(input[0])
+        chrom_sizes = tb.chroms()
+        tb.close()
+
+        chroms, starts, ends = [], [], []
+        for chrom, size in chrom_sizes.items():
+            for w_start in range(0, size, window_size):
+                chroms.append(chrom)
+                starts.append(w_start)
+                ends.append(w_start + window_size)
+
+        windows = pl.DataFrame({
+            "chrom": chroms,
+            "start": starts,
+            "end": ends,
+        })
+        windows.write_parquet(output[0])
+
+
+rule predict_enhancers_segmentation:
+    input:
+        genome="results/genome/{g}.2bit",
+        windows="results/enhancer_predictions_segmentation/windows/{g}.parquet",
+        checkpoint=storage(SEGMENTATION_CONFIG["checkpoint"]),
+    output:
+        "results/enhancer_predictions_segmentation/{g}.parquet",
+    params:
+        bin_size=SEGMENTATION_CONFIG["bin_size"],
+        batch_size=SEGMENTATION_CONFIG["batch_size"],
+        num_workers=SEGMENTATION_CONFIG["num_workers"],
+    threads: workflow.cores
+    shell:
+        """
+        uv run python -m bolinas.enhancer_segmentation.predict_genome \
+            --genome {input.genome} \
+            --checkpoint {input.checkpoint} \
+            --windows {input.windows} \
+            --bin-size {params.bin_size} \
             --batch-size {params.batch_size} \
             --num-workers {params.num_workers} \
             --output {output}
