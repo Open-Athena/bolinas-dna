@@ -135,6 +135,14 @@ rule predict_enhancers_segmentation:
         """
 
 
+rule all_enhancer_predictions_segmentation:
+    input:
+        expand(
+            "results/enhancer_predictions_segmentation/{g}.parquet",
+            g=SEGMENTATION_CONFIG["genomes"],
+        ),
+
+
 rule intervals_recipe_v19:
     input:
         "results/enhancer_predictions/{g}.parquet",
