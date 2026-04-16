@@ -1,0 +1,7 @@
+cores: all
+use-conda: true
+# mmseqs2 nucleotide indexing needs ~8 GB of resident memory at -k 15; declare
+# the budget so snakemake serializes the heavy mmseqs rules instead of running
+# `search` and `sanity_self_search` concurrently and OOM-killing the second one.
+resources:
+    - mem_mb=14000
