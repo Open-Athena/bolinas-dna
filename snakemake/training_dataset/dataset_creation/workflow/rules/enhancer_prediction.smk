@@ -95,9 +95,16 @@ rule segmentation_prediction_windows:
         chrom_sizes = tb.chroms()
         tb.close()
 
+        # Only emit windows that fit entirely within a chromosome — the
+        # model was trained on full-context windows and is not robust to
+        # N-padded input. Contigs smaller than window_size and the last
+        # (chrom_size mod window_size) bases of each chromosome are
+        # therefore uncovered. See discussion on issue #118.
         chroms, starts, ends = [], [], []
         for chrom, size in chrom_sizes.items():
-            for w_start in range(0, size, window_size):
+            n_windows = size // window_size
+            for i in range(n_windows):
+                w_start = i * window_size
                 chroms.append(chrom)
                 starts.append(w_start)
                 ends.append(w_start + window_size)

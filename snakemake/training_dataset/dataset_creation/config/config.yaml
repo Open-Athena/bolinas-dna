@@ -133,31 +133,50 @@ enhancer_prediction_segmentation:
     bin_size: 128
     batch_size: 32
     num_workers: 4
-    # One species per mammalian order (23 orders, seed=42).
+    # One species per mammalian order, restricted to Chromosome-level or
+    # better assemblies, and forcing human + mouse as the Primates /
+    # Rodentia reps (our training species). Other orders pick the smallest
+    # genome at Chromosome level. Orders with no Chromosome-level assembly
+    # (Macroscelidea, Scandentia, Sirenia) are dropped — they only have
+    # highly fragmented Scaffold-level genomes.
+    #
+    # Generated via:
+    #
+    #     import pandas as pd
+    #     FORCE_INCLUDE = ["GCF_000001405.40", "GCF_000001635.27"]
+    #     g = pd.read_parquet("config/genomes.parquet")
+    #     mammals = g[g["class"] == "Mammalia"].copy()
+    #     forced = mammals[mammals["Assembly Accession"].isin(FORCE_INCLUDE)]
+    #     others = mammals[
+    #         ~mammals["Assembly Accession"].isin(FORCE_INCLUDE)
+    #         & ~mammals["order"].isin(set(forced["order"]))
+    #         & (mammals["Assembly Level"] == "Chromosome")
+    #     ].copy()
+    #     picked = others.sort_values(
+    #         ["Assembly Stats Total Sequence Length", "Organism Name"]
+    #     ).drop_duplicates("order")
+    #     selected = pd.concat([forced, picked]).sort_values("order")
     genomes:
-        - GCF_050624435.1   # Tenrec ecaudatus (Afrosoricida)
-        - GCF_025265405.1   # Mesoplodon densirostris (Artiodactyla)
-        - GCF_008692635.1   # Crocuta crocuta (Carnivora)
-        - GCF_001890085.2   # Hipposideros armiger (Chiroptera)
-        - GCF_030445035.2   # Dasypus novemcinctus (Cingulata)
-        - GCF_902635505.1   # Sarcophilus harrisii (Dasyuromorphia)
-        - GCF_027409185.1   # Cynocephalus volans (Dermoptera)
-        - GCF_027887165.1   # Monodelphis domestica (Didelphimorphia)
-        - GCF_028372415.1   # Notamacropus eugenii (Diprotodontia)
-        - GCF_027595985.1   # Sorex araneus (Eulipotyphla)
-        - GCF_964237555.1   # Oryctolagus cuniculus (Lagomorpha)
-        - GCF_000299155.1   # Elephantulus edwardii (Macroscelidea)
-        - GCF_019393635.1   # Dromiciops gliroides (Microbiotheria)
-        - GCF_015852505.1   # Tachyglossus aculeatus (Monotremata)
-        - GCF_037893015.1   # Macrotis lagotis (Peramelemorphia)
-        - GCF_020826845.1   # Diceros bicornis (Perissodactyla)
-        - GCF_040802235.1   # Manis javanica (Pholidota)
-        - GCF_015220235.1   # Choloepus didactylus (Pilosa)
-        - GCF_000001405.40  # Homo sapiens (Primates)
-        - GCF_024166365.1   # Elephas maximus (Proboscidea)
-        - GCF_000001635.27  # Mus musculus (Rodentia)
-        - GCF_000334495.1   # Tupaia chinensis (Scandentia)
-        - GCF_000243295.1   # Trichechus manatus (Sirenia)
+        - GCF_050624435.1   # Tenrec ecaudatus (Afrosoricida, 3.9GB)
+        - GCF_009834535.1   # Camelus ferus (Artiodactyla, 2.1GB)
+        - GCF_018350215.1   # Panthera leo (Carnivora, 2.3GB)
+        - GCF_027574615.1   # Eptesicus fuscus (Chiroptera, 2.0GB)
+        - GCF_030445035.2   # Dasypus novemcinctus (Cingulata, 3.6GB)
+        - GCF_902635505.1   # Sarcophilus harrisii (Dasyuromorphia, 3.1GB)
+        - GCF_027409185.1   # Cynocephalus volans (Dermoptera, 2.8GB)
+        - GCF_027887165.1   # Monodelphis domestica (Didelphimorphia, 3.6GB)
+        - GCF_011100635.1   # Trichosurus vulpecula (Diprotodontia, 3.4GB)
+        - GCF_027595985.1   # Sorex araneus (Eulipotyphla, 2.4GB)
+        - GCF_030435755.1   # Ochotona princeps (Lagomorpha, 2.6GB)
+        - GCF_019393635.1   # Dromiciops gliroides (Microbiotheria, 3.3GB)
+        - GCF_004115215.2   # Ornithorhynchus anatinus (Monotremata, 1.9GB)
+        - GCF_037893015.1   # Macrotis lagotis (Peramelemorphia, 3.7GB)
+        - GCF_037783145.1   # Equus przewalskii (Perissodactyla, 2.5GB)
+        - GCF_040802235.1   # Manis javanica (Pholidota, 2.6GB)
+        - GCF_023851605.1   # Tamandua tetradactyla (Pilosa, 3.2GB)
+        - GCF_000001405.40  # Homo sapiens (Primates, 3.1GB)
+        - GCF_024166365.1   # Elephas maximus indicus (Proboscidea, 3.4GB)
+        - GCF_000001635.27  # Mus musculus (Rodentia, 2.7GB)
 
 genome_subset_bed:
     - GCF_000001405.40 # Human
