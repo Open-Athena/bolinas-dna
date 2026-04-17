@@ -17,6 +17,7 @@ include: "rules/extract_seqs.smk"
 include: "rules/search.smk"
 include: "rules/align_minimap2.smk"
 include: "rules/evaluate.smk"
+include: "rules/conservation.smk"
 include: "rules/sanity.smk"
 
 
@@ -25,5 +26,10 @@ rule all:
         expand(
             "results/eval/{aligner}/per_query_report.tsv",
             aligner=config["aligners"],
+        ),
+        expand(
+            "results/eval/{aligner}/recall_by_conservation/{track}.tsv",
+            aligner=config["aligners"],
+            track=config["stratify_by"],
         ),
         "results/sanity/self_recall.parquet",

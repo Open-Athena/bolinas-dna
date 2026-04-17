@@ -62,3 +62,31 @@ max_soft_masked_frac: 0.5
 
 # How many top-bits hits to keep per query in the per-query report.
 report_top_k: 10
+
+# Conservation tracks used to stratify recall@k. Each query dELS is scored
+# by the fraction of bases in its interval whose track value is >= threshold;
+# queries are then bucketed by that fraction into equal-frequency bins.
+# Threshold is from the Zoonomia 241-way mammal paper (Sullivan et al.,
+# Science 2023, doi:10.1126/science.abn2937).
+conservation:
+    hg38:
+        # Cactus 241-way mammalian phyloP (hg38 reference). Most relevant
+        # for hg38↔mm10 since mouse is in the 241 species.
+        phyloP_241m:
+            url: "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/cactus241way/cactus241way.phyloP.bw"
+            threshold: 2.27  # Sullivan et al. 2023 Zoonomia threshold
+        # 43-primate phastCons from the Zoonomia/Cactus hub. Note the
+        # upstream filename says phyloP but the file is phastCons (threshold
+        # is in 0–1 range). Narrower timescale — primates only, no mouse.
+        phastCons_43p:
+            url: "https://cgl.gi.ucsc.edu/data/cactus/zoonomia-2021-track-hub/hg38/phyloPPrimates.bigWig"
+            threshold: 0.961
+
+# Tracks to stratify recall by (subset of `conservation.hg38` keys above).
+stratify_by:
+    - phyloP_241m
+    - phastCons_43p
+
+# Number of equal-frequency bins over the per-query "% bases >= threshold"
+# score (quartiles = 4).
+n_conservation_bins: 4

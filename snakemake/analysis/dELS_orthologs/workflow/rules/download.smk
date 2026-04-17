@@ -97,6 +97,17 @@ rule download_genome_2bit:
         "wget -O {output} {params.url}"
 
 
+rule download_conservation:
+    output:
+        "results/conservation/{species}/{track}.bw",
+    params:
+        url=lambda wildcards: config["conservation"][wildcards.species][
+            wildcards.track
+        ]["url"],
+    shell:
+        "wget -O {output} {params.url}"
+
+
 rule chrom_sizes:
     input:
         "results/genome/{species}.2bit",
