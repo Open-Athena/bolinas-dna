@@ -197,6 +197,37 @@ rule per_query_report:
                 ["query", "rank"], nulls_last=True
             )
 
+            # Ensure every post-filter query has at least one row, so queries that
+            # produced no mmseqs hits AND have no gold partner remain visible.
+        present = set(report["query"].to_list())
+        absent_rows = [
+            {
+                "query": q,
+                "bits": None,
+                "evalue": None,
+                "fident": None,
+                "qcov": None,
+                "tcov": None,
+                "rev_strand": None,
+                "hit_chrom": None,
+                "hit_start": None,
+                "hit_end": None,
+                "mm10_accession": None,
+                "mm10_class": None,
+                "mm10_start": None,
+                "mm10_end": None,
+                "in_gold_standard": None,
+                "rank": None,
+            }
+            for q in query_ids
+            if q not in present
+        ]
+        if absent_rows:
+            absent = pl.DataFrame(absent_rows, schema_overrides=report.schema)
+            report = pl.concat([report, absent], how="diagonal").sort(
+                ["query", "rank"], nulls_last=True
+            )
+
         report.write_parquet(output.parquet)
         report.write_csv(output.tsv, separator="\t")
 

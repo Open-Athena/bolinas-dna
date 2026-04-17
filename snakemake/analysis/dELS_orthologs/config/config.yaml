@@ -38,9 +38,7 @@ search_region:
 
 # Restrict the hg38 query to these specific accessions. Comment out or set to
 # null to use every dELS in the hg38 search region.
-query_accessions:
-    - EH38E2604086
-    - EH38E2604087
+query_accessions: null
 
 mmseqs2:
     sensitivity: 7.5
