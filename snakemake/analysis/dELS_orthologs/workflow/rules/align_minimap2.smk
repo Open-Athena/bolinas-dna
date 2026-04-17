@@ -51,6 +51,8 @@ rule normalize_minimap2_hits:
         # PAF columns (0-indexed): 0=qname 1=qlen 2=qstart 3=qend 4=strand
         # 5=tname 6=tlen 7=tstart 8=tend 9=matches 10=alnlen 11=mapq, then
         # optional SAM-style tags. We keep the first 12 fixed fields.
+        # `hit_chrom` is taken from PAF tname (col 5) — equals the chromosome
+        # name because make_target_window_bed names every record after its chrom.
         rows: list[dict] = []
         with open(input[0]) as f:
             for line in f:
@@ -61,6 +63,7 @@ rule normalize_minimap2_hits:
                 qlen = int(p[1])
                 qstart, qend = int(p[2]), int(p[3])
                 strand = p[4]
+                tname = p[5]
                 tlen = int(p[6])
                 tstart, tend = int(p[7]), int(p[8])
                 matches = int(p[9])
@@ -68,7 +71,7 @@ rule normalize_minimap2_hits:
                 rows.append(
                     {
                         "query": qname,
-                        "hit_chrom": "chr5",
+                        "hit_chrom": tname,
                         "hit_start": win_start + tstart,
                         "hit_end": win_start + tend,
                         "rev_strand": strand == "-",

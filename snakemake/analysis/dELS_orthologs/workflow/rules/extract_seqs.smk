@@ -107,10 +107,11 @@ rule filter_query_by_repeat:
 
 
 rule subset_mm10_cres_to_window:
-    """mm10 only: every Registry-V4 cCRE (any class) inside the mm10 search window.
+    """mm10 only: every Registry-V4 cCRE (any class) inside the mm10 search region.
 
-    Used to annotate which mm10 cCRE each mmseqs hit overlaps. No filter — the
-    target search itself happens against the genomic FASTA, not these records.
+    Used to annotate which mm10 cCRE each aligner hit overlaps. The search
+    itself runs against the genomic FASTA, not these records. In whole-genome
+    mode (`whole_genome: true`) the candidate pool is every mm10 cCRE.
     """
     input:
         "results/cre/mm10/cres.parquet",
@@ -118,25 +119,37 @@ rule subset_mm10_cres_to_window:
         "results/cre/mm10/cres_window.parquet",
     run:
         chrom, start, end = get_search_window("mm10")
-        df = (
-            pl.read_parquet(input[0])
-            .filter(
-                (pl.col("chrom") == chrom)
-                & (pl.col("end") > start)
-                & (pl.col("start") < end)
-            )
-            .sort(["chrom", "start"])
-        )
+        df = pl.read_parquet(input[0])
+        if chrom is not None:
+            df = df.filter(pl.col("chrom") == chrom)
+        if start:
+            df = df.filter(pl.col("end") > start)
+        if end is not None:
+            df = df.filter(pl.col("start") < end)
+        df = df.sort(["chrom", "start"])
         df.write_parquet(output[0])
-        print(f"  mm10: {df.height} cCREs in {chrom}:{start}-{end} (any class)")
+        scope = (
+            "genome-wide"
+            if chrom is None
+            else (f"{chrom}" if end is None else f"{chrom}:{start}-{end}")
+        )
+        print(f"  mm10: {df.height} cCREs in {scope} (any class)")
 
 
 rule make_target_window_bed:
     """BED describing the mm10 target extent.
 
-    In windowed mode: a single line around ZRS ± `flank_bp`.
-    In whole-chrom mode (`whole_chrom: true` in config): the full chromosome
-    span, read from `{species}.chrom.sizes` (produced by `chrom_sizes`).
+    Three modes (via `config["search_region"]["mm10"]`):
+    - whole-genome (`whole_genome: true`): one line per standard mm10
+      chromosome (chr1..chr19, chrX, chrY); excludes chrM, chr*_random,
+      chrUn_*, alt scaffolds.
+    - whole-chromosome (`whole_chrom: true`): one line spanning the full
+      configured chromosome.
+    - windowed (default): one line around ZRS ± `flank_bp`.
+
+    Each line's name column is the chromosome name (so the resulting FASTA
+    record is named after its chrom and downstream `hit_chrom` can be lifted
+    directly from the aligner's per-hit target name).
     """
     input:
         chrom_sizes="results/genome/mm10.chrom.sizes",
@@ -144,23 +157,31 @@ rule make_target_window_bed:
         temp("results/target/mm10_window.bed"),
     run:
         region = config["search_region"]["mm10"]
-        chrom = region["chrom"]
-        if region.get("whole_chrom"):
-            sizes = {}
-            with open(input.chrom_sizes) as f:
-                for line in f:
-                    c, s = line.rstrip("\n").split("\t")
-                    sizes[c] = int(s)
-            end = sizes[chrom]
-            start = 0
-            name = chrom
+        sizes = {}
+        with open(input.chrom_sizes) as f:
+            for line in f:
+                c, s = line.rstrip("\n").split("\t")
+                sizes[c] = int(s)
+
+        lines: list[str] = []
+        if region.get("whole_genome"):
+            for c in MM10_STANDARD_CHROMS:
+                if c not in sizes:
+                    continue
+                lines.append(f"{c}\t0\t{sizes[c]}\t{c}")
+        elif region.get("whole_chrom"):
+            chrom = region["chrom"]
+            lines.append(f"{chrom}\t0\t{sizes[chrom]}\t{chrom}")
         else:
+            chrom = region["chrom"]
             flank = region.get("flank_bp", 0)
             start = max(0, region["start"] - flank)
             end = region["end"] + flank
-            name = "mm10_window"
+            lines.append(f"{chrom}\t{start}\t{end}\t{chrom}")
+
         with open(output[0], "w") as f:
-            f.write(f"{chrom}\t{start}\t{end}\t{name}\n")
+            for line in lines:
+                f.write(line + "\n")
 
 
 rule extract_target_fasta:

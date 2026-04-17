@@ -100,14 +100,17 @@ rule normalize_mmseqs2_hits:
     Unified schema (tab-separated, with header):
         query  hit_chrom  hit_start  hit_end  rev_strand  score  fident  evalue  qcov  tcov
 
-    Coordinates are absolute 0-based half-open mm10 BED coords.
+    `hit_chrom` is taken from mmseqs's per-hit `target` column (which equals
+    the FASTA record name = the chromosome name, since make_target_window_bed
+    names every record after its chrom). `win_start` adds the windowed-mode
+    offset; it is 0 in whole-chrom and whole-genome modes.
     """
     input:
         "results/search/hits.tsv",
     output:
         "results/align/mmseqs2/hits.tsv",
     run:
-        chrom, win_start, _ = get_search_window("mm10")
+        _, win_start, _ = get_search_window("mm10")
         raw = pl.read_csv(
             input[0],
             separator="\t",
@@ -126,7 +129,7 @@ rule normalize_mmseqs2_hits:
         )
         unified = raw.select(
             pl.col("query"),
-            pl.lit(chrom).alias("hit_chrom"),
+            pl.col("target").alias("hit_chrom"),
             (pl.min_horizontal("tstart", "tend") - 1 + win_start).alias("hit_start"),
             pl.max_horizontal("tstart", "tend").add(win_start).alias("hit_end"),
             (pl.col("tend") < pl.col("tstart")).alias("rev_strand"),

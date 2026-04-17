@@ -31,17 +31,23 @@ search_region:
         name: "ZRS_human"
         flank_bp: 0
     mm10:
-        chrom: "chr5"
-        whole_chrom: true
-        # ZRS biological coords on the mm10 side (for reference; ignored when
-        # whole_chrom is true): start=29312497 end=29318634 flank_bp=100000
+        whole_genome: true
+        # whole-chromosome and windowed alternatives (each ignored when
+        # whole_genome is true):
+        #   chrom: "chr5"
+        #   whole_chrom: true
+        #   start: 29312497  end: 29318634  flank_bp: 100000
 
 # Restrict the hg38 query to these specific accessions. Comment out or set to
 # null to use every dELS in the hg38 search region.
 query_accessions: null
 
+# mmseqs2 nucleotide search at -k 15 needs ~50-80 GB resident for whole-mm10
+# targets (empty k-mer table ~8 GB + occupied lists scaling with target size).
+# The current 15 GB dev box can't fit it; comment back in once we move to a
+# bigger instance (r6i.8xlarge or similar — see issue #120 thread for sizing).
 aligners:
-    - mmseqs2
+    # - mmseqs2
     - minimap2
 
 mmseqs2:
