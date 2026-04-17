@@ -48,7 +48,19 @@ query_accessions: null
 # bigger instance (r6i.8xlarge or similar — see issue #120 thread for sizing).
 aligners:
     # - mmseqs2
-    - minimap2
+    - minimap2_map-ont
+    - minimap2_map-ont_k13
+    - minimap2_map-ont_k11
+    - minimap2_asm20_tuned
+
+# Flag strings for each `minimap2_*` aligner. The align rule matches any
+# aligner name with the `minimap2_.+` wildcard constraint and pulls flags
+# from this dict.
+minimap2_variants:
+    minimap2_map-ont: "-cx map-ont --secondary=yes -N 50"
+    minimap2_map-ont_k13: "-cx map-ont -k 13 --secondary=yes -N 50"
+    minimap2_map-ont_k11: "-cx map-ont -k 11 --secondary=yes -N 50"
+    minimap2_asm20_tuned: "-cx asm20 -B 4 -O 4,24 -E 2,1 --secondary=yes -N 50"
 
 mmseqs2:
     sensitivity: 7.5

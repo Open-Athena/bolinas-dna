@@ -1,15 +1,13 @@
-"""Minimap2 alignment of hg38 query dELS against the mm10 target window.
+"""Minimap2 alignment variants of hg38 query dELS against the mm10 target.
 
-Uses `-x map-ont` rather than `asm5/10/20`. The asm presets have mismatch and
-gap penalties tuned for ≤5% divergence between contig-scale assemblies; on
-~20% divergent non-coding dELS pairs they reject all alignments. `map-ont`'s
-noisy-read scoring (lower `-B` mismatch penalty, lower `-O,E` gap penalties)
-tolerates that divergence and also uses a smaller k-mer (`-k 15` vs `-k 19`),
-which is necessary to seed at all on 200-400 bp queries with ~20% error.
+Each entry in `config["minimap2_variants"]` (keyed by aligner name matching
+the `minimap2_.+` wildcard) maps to a full flag string. Downstream rules
+(`normalize_minimap2_hits`, `per_query_report`, `recall_by_conservation`)
+fan out automatically on the same `{aligner}` wildcard.
 
-The issue body's reference to sweeping `-x asm5/asm10/asm20 + hand-tuned
-scoring` remains the eventual goal; for this hello-world we just pick a
-single preset that demonstrably recovers hits.
+See issue #120 for the default / tuning hypotheses. The `-x map-ont` preset
+was chosen as the initial baseline because asm5/10/20 defaults reject all
+hg38↔mm10 dELS alignments at ~20% divergence on 200–400 bp queries.
 """
 
 
@@ -18,15 +16,19 @@ rule minimap2_align:
         target="results/target/mm10_window.fasta",
         query="results/cre/hg38/query.filtered.fasta",
     output:
-        paf="results/align/minimap2/raw.paf",
+        paf="results/align/{aligner}/raw.paf",
+    wildcard_constraints:
+        aligner="minimap2_.+",
+    params:
+        flags=lambda wildcards: config["minimap2_variants"][wildcards.aligner],
     threads: workflow.cores
     resources:
-        mem_mb=4000,
+        mem_mb=8000,
     conda:
         "../envs/minimap2.yaml"
     shell:
         """
-        minimap2 -cx map-ont -t {threads} --secondary=yes -N 50 \
+        minimap2 {params.flags} -t {threads} \
             {input.target} {input.query} > {output.paf}
         """
 
@@ -42,9 +44,11 @@ rule normalize_minimap2_hits:
     window start. `evalue` is null — minimap2 doesn't emit one.
     """
     input:
-        "results/align/minimap2/raw.paf",
+        "results/align/{aligner}/raw.paf",
     output:
-        "results/align/minimap2/hits.tsv",
+        "results/align/{aligner}/hits.tsv",
+    wildcard_constraints:
+        aligner="minimap2_.+",
     run:
         _, win_start, _ = get_search_window("mm10")
 
@@ -116,5 +120,6 @@ rule normalize_minimap2_hits:
             )
         df.write_csv(output[0], separator="\t", include_header=True)
         print(
-            f"  minimap2: {df.height} alignments across {df['query'].n_unique()} queries"
+            f"  {wildcards.aligner}: {df.height} alignments across "
+            f"{df['query'].n_unique()} queries"
         )
