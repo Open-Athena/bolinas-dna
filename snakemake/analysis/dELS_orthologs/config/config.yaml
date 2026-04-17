@@ -88,5 +88,5 @@ stratify_by:
     - phastCons_43p
 
 # Number of equal-frequency bins over the per-query "% bases >= threshold"
-# score (quartiles = 4).
-n_conservation_bins: 4
+# score (deciles = 10).
+n_conservation_bins: 10
