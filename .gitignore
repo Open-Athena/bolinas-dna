@@ -1,5 +1,5 @@
-.claude/settings.local.json
-.claude/worktrees/
+.claude/*
+!.claude/skills
 .snakemake/
 results/
 tmp/

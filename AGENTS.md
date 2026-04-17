@@ -17,6 +17,11 @@ The codebase has two main components:
    - When working on a feature, do not try to run the whole pipeline, only the step relevant to the feature.
    - Run with `uv run snakemake`
 
+3. **Agent Skills** (`.agents/skills/`) - Reusable skills that any agent runtime can discover
+   - Canonical, agent-agnostic location. Claude Code picks them up via the tracked `.claude/skills → ../.agents/skills` symlink; other agent runtimes can symlink in the same way.
+   - Each skill lives in its own directory with a `SKILL.md` (YAML frontmatter: `name`, `description`; markdown body with instructions) plus optional `scripts/`, `references/`, `assets/`.
+   - Prefer bundling the skill's script(s) inside the skill directory over the repo-root `scripts/` so the skill is self-contained and portable.
+
 ## Development Practices
 
 - **Package management**: Use `uv` for Python dependencies
