@@ -30,11 +30,12 @@ rule process_cre:
         df.write_parquet(output[0])
 
 
-rule filter_cres_to_dels:
-    """Restrict to the configured cCRE class (`dELS` per the analysis scope).
+rule filter_cres_by_class:
+    """Restrict to the configured cCRE class, or pass through if `cre_class` is null.
 
-    See https://github.com/Open-Athena/bolinas-dna/issues/120 for the dELS-only
-    motivation.
+    Output filename is legacy (`dels.parquet`) — kept stable so downstream
+    paths don't need renaming. With `cre_class: null` the output contains
+    every Registry-V4 cCRE (all classes), not just dELS.
     """
     input:
         "results/cre/{species}/cres.parquet",
@@ -43,9 +44,13 @@ rule filter_cres_to_dels:
     params:
         cre_class=config["cre_class"],
     run:
-        df = pl.read_parquet(input[0]).filter(pl.col("cre_class") == params.cre_class)
+        df = pl.read_parquet(input[0])
+        if params.cre_class is not None:
+            df = df.filter(pl.col("cre_class") == params.cre_class)
+            print(f"  {wildcards.species}: {df.height} {params.cre_class} cCREs")
+        else:
+            print(f"  {wildcards.species}: {df.height} cCREs (all classes)")
         df.write_parquet(output[0])
-        print(f"  {wildcards.species}: {df.height} {params.cre_class} cCREs")
 
 
 rule restrict_hg38_dels_to_gold_standard:

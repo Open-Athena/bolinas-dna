@@ -1,12 +1,12 @@
 # dELS_orthologs hello-world: how do hg38 ZRS dELS map onto mm10?
 # See README.md and snakemake/analysis/dELS_orthologs/workflow/Snakefile.
 
-# Restrict the hg38 query side to a single Registry-V4 cCRE class. Per the
-# tracking issue (Open-Athena/bolinas-dna#120), this analysis is dELS-only.
-# Note: not applied to mm10 — the mm10 candidate pool is intentionally
-# class-agnostic so we can see hits to e.g. mouse `CA` cCREs that are the
-# orthologous element on the mouse side (see issue body).
-cre_class: "dELS"
+# Restrict the hg38 query side to a single Registry-V4 cCRE class (e.g.
+# `"dELS"`), or leave as `null` to use every class. When null, the query
+# set is every hg38 cCRE with a gold-standard partner; reports that need
+# to break out by class (e.g. `recall_by_class_and_conservation`) read
+# the class from the query parquet.
+cre_class: null
 
 cre_urls:
     hg38: "https://downloads.wenglab.org/Registry-V4/GRCh38-cCREs.bed"
@@ -48,10 +48,11 @@ query_accessions: null
 # bigger instance (r6i.8xlarge or similar — see issue #120 thread for sizing).
 aligners:
     # - mmseqs2
-    - minimap2_map-ont
-    - minimap2_map-ont_k13
-    - minimap2_map-ont_k11
-    - minimap2_asm20_tuned
+    # Other variants (kept in the minimap2_variants dict below for later):
+    # - minimap2_map-ont
+    # - minimap2_map-ont_k13
+    # - minimap2_asm20_tuned
+    - minimap2_map-ont_k11  # winner of the earlier k sweep; ~20% aggregate
 
 # Flag strings for each `minimap2_*` aligner. The align rule matches any
 # aligner name with the `minimap2_.+` wildcard constraint and pulls flags
@@ -100,5 +101,9 @@ stratify_by:
     - phastCons_43p
 
 # Number of equal-frequency bins over the per-query "% bases >= threshold"
-# score (deciles = 10).
+# score (deciles = 10) for the quantile-binned reports.
 n_conservation_bins: 10
+
+# Width of the fixed-size bins for the fixed-bin report (0.1 = 10%).
+# Bins span [0, width), [width, 2*width), ..., [(n-1)*width, n*width].
+conservation_bin_width: 0.10

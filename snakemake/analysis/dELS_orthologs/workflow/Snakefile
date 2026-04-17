@@ -32,4 +32,14 @@ rule all:
             aligner=config["aligners"],
             track=config["stratify_by"],
         ),
+        expand(
+            "results/eval/{aligner}/recall_by_class_and_conservation_fixed/{track}.tsv",
+            aligner=config["aligners"],
+            track=config["stratify_by"],
+        ),
+        expand(
+            "results/eval/{aligner}/recall_by_class_and_conservation_quantile/{track}.tsv",
+            aligner=config["aligners"],
+            track=config["stratify_by"],
+        ),
         "results/sanity/self_recall.parquet",
