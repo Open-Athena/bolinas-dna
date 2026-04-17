@@ -18,6 +18,7 @@ include: "rules/search.smk"
 include: "rules/align_minimap2.smk"
 include: "rules/evaluate.smk"
 include: "rules/conservation.smk"
+include: "rules/plots.smk"
 include: "rules/sanity.smk"
 
 
@@ -39,6 +40,16 @@ rule all:
         ),
         expand(
             "results/eval/{aligner}/recall_by_class_and_conservation_quantile/{track}.tsv",
+            aligner=config["aligners"],
+            track=config["stratify_by"],
+        ),
+        expand(
+            "results/plots/{aligner}/{track}_recall_heatmap.png",
+            aligner=config["aligners"],
+            track=config["stratify_by"],
+        ),
+        expand(
+            "results/plots/{aligner}/{track}_recall_curves.png",
             aligner=config["aligners"],
             track=config["stratify_by"],
         ),
