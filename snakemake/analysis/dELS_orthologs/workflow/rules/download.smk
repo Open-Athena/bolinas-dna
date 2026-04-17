@@ -64,3 +64,14 @@ rule download_genome_2bit:
         url=lambda wildcards: config["genome_urls"][wildcards.species],
     shell:
         "wget -O {output} {params.url}"
+
+
+rule chrom_sizes:
+    input:
+        "results/genome/{species}.2bit",
+    output:
+        "results/genome/{species}.chrom.sizes",
+    conda:
+        "../envs/bioinformatics.yaml"
+    shell:
+        "twoBitInfo {input} {output}"

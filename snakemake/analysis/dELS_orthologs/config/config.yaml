@@ -20,8 +20,9 @@ genome_urls:
     mm10: "https://hgdownload.soe.ucsc.edu/goldenPath/mm10/bigZips/mm10.2bit"
 
 # Asymmetric search: query side = ZRS biological coords (no flank); target side
-# = ZRS ± 100 kb. Coordinates from
-# snakemake/enhancer_classification/config/config.yaml lines 555-572.
+# = whole mm10 chromosome containing ZRS. Each species supports either windowed
+# (chrom + start + end + flank_bp) or whole-chromosome (whole_chrom: true) mode.
+# Coordinates from snakemake/enhancer_classification/config/config.yaml lines 555-572.
 search_region:
     hg38:
         chrom: "chr7"
@@ -31,10 +32,9 @@ search_region:
         flank_bp: 0
     mm10:
         chrom: "chr5"
-        start: 29312497
-        end: 29318634
-        name: "ZRS_mouse"
-        flank_bp: 100000
+        whole_chrom: true
+        # ZRS biological coords on the mm10 side (for reference; ignored when
+        # whole_chrom is true): start=29312497 end=29318634 flank_bp=100000
 
 # Restrict the hg38 query to these specific accessions. Comment out or set to
 # null to use every dELS in the hg38 search region.

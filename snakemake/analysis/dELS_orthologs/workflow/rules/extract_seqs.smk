@@ -132,12 +132,35 @@ rule subset_mm10_cres_to_window:
 
 
 rule make_target_window_bed:
+    """BED describing the mm10 target extent.
+
+    In windowed mode: a single line around ZRS ± `flank_bp`.
+    In whole-chrom mode (`whole_chrom: true` in config): the full chromosome
+    span, read from `{species}.chrom.sizes` (produced by `chrom_sizes`).
+    """
+    input:
+        chrom_sizes="results/genome/mm10.chrom.sizes",
     output:
         temp("results/target/mm10_window.bed"),
     run:
-        chrom, start, end = get_search_window("mm10")
+        region = config["search_region"]["mm10"]
+        chrom = region["chrom"]
+        if region.get("whole_chrom"):
+            sizes = {}
+            with open(input.chrom_sizes) as f:
+                for line in f:
+                    c, s = line.rstrip("\n").split("\t")
+                    sizes[c] = int(s)
+            end = sizes[chrom]
+            start = 0
+            name = chrom
+        else:
+            flank = region.get("flank_bp", 0)
+            start = max(0, region["start"] - flank)
+            end = region["end"] + flank
+            name = "mm10_window"
         with open(output[0], "w") as f:
-            f.write(f"{chrom}\t{start}\t{end}\tmm10_window\n")
+            f.write(f"{chrom}\t{start}\t{end}\t{name}\n")
 
 
 rule extract_target_fasta:

@@ -19,9 +19,9 @@ region:
   `chr7:156,790,115–156,793,672`, no flank — optionally narrowed further to a
   configured accession list (`query_accessions` in config; `null` = every
   dELS in the window).
-- **Target** (mm10): one ~206 kb genomic interval covering ZRS ± 100 kb —
-  `chr5:29,212,497–29,418,634` — flank gives the mouse ortholog room to sit
-  anywhere within the wider locus.
+- **Target** (mm10): whole mm10 `chr5` (`whole_chrom: true` in config).
+  Switch `whole_chrom` off + set `start`/`end`/`flank_bp` to run against a
+  narrower window (e.g. ZRS ± 100 kb).
 - **Aligners** (configured via `aligners` in config):
   - **mmseqs2** — nucleotide search at `-s 7.5`, no identity filter,
     `--strand 2`, `--mask-lower-case 1`.

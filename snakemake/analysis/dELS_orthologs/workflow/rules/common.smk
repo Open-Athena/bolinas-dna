@@ -9,19 +9,25 @@ import polars as pl
 import seaborn as sns
 
 
-def get_search_window(species: str) -> tuple[str, int, int]:
-    """Return the flanked (chrom, start, end) of the search region for `species`.
+def get_search_window(species: str) -> tuple[str, int, int | None]:
+    """Return (chrom, start, end) of the search region for `species`.
 
-    Flanks are per-species (asymmetric search): the hg38 query side uses
-    `flank_bp: 0` (ZRS proper) while the mm10 target side uses `flank_bp:
-    100000` (room for the mouse ortholog to sit anywhere within the wider
-    locus).
+    Windowed mode (default): applies per-species `flank_bp` to the configured
+    biological coordinates. End is the flanked end.
+
+    Whole-chromosome mode (`whole_chrom: true` in config): returns (chrom, 0,
+    None). Callers that need the chromosome length should read it from the
+    `{species}.chrom.sizes` file; callers that only need `start` for coord
+    projection (the normalize rules) can ignore end.
     """
     region = config["search_region"][species]
-    flank = region["flank_bp"]
+    chrom = region["chrom"]
+    if region.get("whole_chrom"):
+        return chrom, 0, None
+    flank = region.get("flank_bp", 0)
     start = max(0, region["start"] - flank)
     end = region["end"] + flank
-    return region["chrom"], start, end
+    return chrom, start, end
 
 
 def soft_masked_fraction_per_record(fasta_path: str) -> dict[str, float]:
