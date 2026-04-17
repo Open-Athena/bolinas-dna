@@ -40,6 +40,7 @@ search_region:
 # null to use every dELS in the hg38 search region.
 query_accessions:
     - EH38E2604086
+    - EH38E2604087
 
 mmseqs2:
     sensitivity: 7.5
