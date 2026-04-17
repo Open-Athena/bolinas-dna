@@ -30,7 +30,10 @@ from subprocess import (
     check_output,
     run,
 )
+from typing import Literal
 from urllib.parse import quote
+
+OutputFormat = Literal["url", "markdown", "img", "auto"]
 
 CONFIG_KEY = "assets.gist"
 FALLBACK_KEY = "pr.gist"
@@ -246,7 +249,10 @@ def upload_files_to_gist(
 
 
 def format_output(
-    filename: str, url: str, format_type: str = "auto", alt_text: str | None = None
+    filename: str,
+    url: str,
+    format_type: OutputFormat = "auto",
+    alt_text: str | None = None,
 ) -> str:
     """Format a URL for display as plain URL, markdown image, or HTML img tag."""
     if not alt_text:

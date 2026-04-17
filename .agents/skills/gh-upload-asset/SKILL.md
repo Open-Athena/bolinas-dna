@@ -15,9 +15,7 @@ Do NOT use it for files that are already committed to a GitHub repo. Link to the
 
 ## How it works
 
-The script uses a single "assets" gist per user, stored in git config under `assets.gist` (falling back to the `ghpr`-compatible `pr.gist`). First invocation creates a secret gist and records the ID. Subsequent uploads push to the `assets` branch of that gist and return permanent, commit-pinned raw URLs of the form `https://gist.githubusercontent.com/<user>/<gist-id>/raw/<sha>/<file>`.
-
-This design is important to understand: because each URL is pinned to a specific commit in the gist, the content a reader sees never changes even if later uploads overwrite the same filename. That is why pasting the URL into a PR comment works reliably.
+The script uses a single "assets" gist per user, stored in git config under `assets.gist` (falling back to the `ghpr`-compatible `pr.gist`). First invocation creates a secret gist and records the ID. Subsequent uploads push to the `assets` branch and return raw URLs of the form `https://gist.githubusercontent.com/<user>/<gist-id>/raw/<sha>/<file>` — pinned to a specific commit, so later uploads overwriting the same filename don't change what a reader sees.
 
 ## Invocation
 
