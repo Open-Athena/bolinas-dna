@@ -1,4 +1,5 @@
-.claude/
+.claude/settings.local.json
+.claude/worktrees/
 .snakemake/
 results/
 tmp/
