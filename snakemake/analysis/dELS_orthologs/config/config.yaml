@@ -48,11 +48,16 @@ query_accessions: null
 # bigger instance (r6i.8xlarge or similar — see issue #120 thread for sizing).
 aligners:
     # - mmseqs2
-    # Other variants (kept in the minimap2_variants dict below for later):
+    # Other variants from earlier sweeps (kept in minimap2_variants below):
     # - minimap2_map-ont
     # - minimap2_map-ont_k13
     # - minimap2_asm20_tuned
-    - minimap2_map-ont_k11  # winner of the earlier k sweep; ~20% aggregate
+    - minimap2_map-ont_k11  # k-sweep winner; baseline for this sweep
+    - minimap2_map-ont_k11_B3  # softer mismatch penalty
+    - minimap2_map-ont_k11_s20m20  # lower min DP + chain thresholds
+    # - minimap2_map-ont_k9  # k=9 seeds too densely; minimap2 hit-lists blow
+    #   up and alignment phase takes 20+ min on whole mm10. Dropped for now;
+    #   would need smaller target or a bigger box to explore.
 
 # Flag strings for each `minimap2_*` aligner. The align rule matches any
 # aligner name with the `minimap2_.+` wildcard constraint and pulls flags
@@ -62,6 +67,13 @@ minimap2_variants:
     minimap2_map-ont_k13: "-cx map-ont -k 13 --secondary=yes -N 50"
     minimap2_map-ont_k11: "-cx map-ont -k 11 --secondary=yes -N 50"
     minimap2_asm20_tuned: "-cx asm20 -B 4 -O 4,24 -E 2,1 --secondary=yes -N 50"
+    # Second-round tuning at the k=11 winner:
+    # - B 3 = softer mismatch penalty (default map-ont is -B 5)
+    # - s 20 -m 20 = accept weaker alignments (defaults are -s 40 -m 40)
+    # - k 9 = even denser seeding (4^9 = 262K possible k-mers; fits on 15 GB)
+    minimap2_map-ont_k11_B3: "-cx map-ont -k 11 -B 3 --secondary=yes -N 50"
+    minimap2_map-ont_k11_s20m20: "-cx map-ont -k 11 -s 20 -m 20 --secondary=yes -N 50"
+    minimap2_map-ont_k9: "-cx map-ont -k 9 --secondary=yes -N 50"
 
 mmseqs2:
     sensitivity: 7.5
