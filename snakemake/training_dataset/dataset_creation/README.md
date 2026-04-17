@@ -368,6 +368,31 @@ Recipe v19 produces enhancer intervals from a trained `EnhancerClassifier` (see 
 
 **Status**: working but slow (~1.4h per genome on L4 GPU). For a faster alternative being explored, see [issue #115](https://github.com/Open-Athena/bolinas-dna/issues/115) (per-bin segmentation).
 
+## Interval projection across genomes (`interval_mappings`)
+
+The pipeline supports defining an interval set on one source genome and projecting it onto other genomes via local pairwise alignment. This makes it possible to train on regions — like ENCODE cCRE enhancers — that only exist as a native annotation in a small number of species, while still getting per-species sequences.
+
+Each configured mapping produces `results/intervals/{name}/{g}.parquet` for every genome. On the source genome the file is a chrom-normalized copy of the configured source parquet; on other genomes it is the result of alignment + best-hit-per-query projection. Downstream rules (windowing, FASTA extraction, sharding, HF upload) treat these the same as annotation-derived interval sets — origin is not visible past the projection step.
+
+**Configuration** (`interval_mappings` block in `config.yaml`):
+
+```yaml
+interval_mappings:
+    - name: ELS_conserved_20_minimap2_map_ont
+      source_parquet: results/cre/ELS_conserved_20.parquet
+      source_chrom_style: ucsc_stripped # bare-digit chroms; remap to RefSeq NC_*
+      source_genome: GCF_000001405.40
+      mapper: minimap2
+      preset: "-cx map-ont -N 1 --secondary=no"
+      flank_bp: 0
+```
+
+Naming convention: underscored, semantic `{source_name}_{mapper}_{preset}` (no dots — they're fragile in HF dataset IDs and Snakemake wildcards). Name a variant with a different flank or preset as its own entry, e.g. `ELS_conserved_20_minimap2_map_ont_flank100`.
+
+**Referencing a mapping in the dataset config:** add its name wherever you would list a legacy recipe, e.g. `intervals.training: ["ELS_conserved_20_minimap2_map_ont/255/128"]`, pair with the `human_mouse` (or any suitable) genome_set, and the full windows → fasta → shards → HF upload flow runs unchanged.
+
+**Status:** v1 (issue [#123](https://github.com/Open-Athena/bolinas-dna/issues/123)): minimap2 only, flank 0, default preset. Expected recall ~20% at ~98% precision per [#120](https://github.com/Open-Athena/bolinas-dna/issues/120). Flank sweep, soft-mask filtering, identity threshold, and alternative aligners are left for future iterations.
+
 ## Output
 
 Datasets are uploaded to HuggingFace Hub at the specified `output_hf_prefix`.

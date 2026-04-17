@@ -28,6 +28,7 @@ include: "rules/stats.smk"
 include: "rules/dataset.smk"
 include: "rules/eda.smk"
 include: "rules/enhancer_prediction.smk"
+include: "rules/interval_alignment.smk"
 
 
 rule all:
