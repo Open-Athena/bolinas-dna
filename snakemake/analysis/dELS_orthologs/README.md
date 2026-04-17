@@ -11,21 +11,30 @@ Tracking issue: [Open-Athena/bolinas-dna#120](https://github.com/Open-Athena/bol
 ## Hello-world scope: ZRS locus, asymmetric search
 
 This iteration is intentionally tiny. It runs the entire pipeline (download,
-class filter, repeat filter, mmseqs2 search, hit→cCRE annotation) on the
-**ZRS limb-enhancer locus** with an asymmetric search region:
+class filter, repeat filter, align with each configured aligner, hit→cCRE
+annotation) on the **ZRS limb-enhancer locus** with an asymmetric search
+region:
 
 - **Query** (hg38): dELS that fall *inside biological ZRS proper* —
   `chr7:156,790,115–156,793,672`, no flank — optionally narrowed further to a
-  configured accession list (default: just `EH38E2604086`).
+  configured accession list (`query_accessions` in config; `null` = every
+  dELS in the window).
 - **Target** (mm10): one ~206 kb genomic interval covering ZRS ± 100 kb —
   `chr5:29,212,497–29,418,634` — flank gives the mouse ortholog room to sit
   anywhere within the wider locus.
-- **Method**: mmseqs2 nucleotide search at one sensitive setting (`-s 7.5`,
-  no identity filter, `--strand 2`, `--mask-lower-case 1`).
+- **Aligners** (configured via `aligners` in config):
+  - **mmseqs2** — nucleotide search at `-s 7.5`, no identity filter,
+    `--strand 2`, `--mask-lower-case 1`.
+  - **minimap2** — `-x map-ont` preset (asm5/10/20 are too strict for
+    ~20% divergent non-coding dELS at 200–400 bp; map-ont's noisy-read
+    scoring and smaller k-mer seed both alignments).
+
+Each aligner produces hits in a shared schema (`results/align/{aligner}/hits.tsv`)
+and its own per-query report (`results/eval/{aligner}/per_query_report.tsv`).
 
 The pipeline runs in seconds because the query set is tiny and the target is
-small. It answers a focused question per query: *does the human dELS find a
-mouse ortholog inside the wider mouse window, and what is that ortholog?*
+small. It answers a focused question per query: *does each method recover the
+same mouse ortholog the Cactus-derived gold standard identifies?*
 
 ## Run
 
@@ -35,8 +44,8 @@ uv run snakemake -n            # dry-run
 uv run snakemake               # full run; takes a few minutes (genome 2bits dominate)
 ```
 
-Conda envs (`workflow/envs/{mmseqs2,bioinformatics}.yaml`) are installed
-automatically via `--use-conda` from the profile.
+Conda envs (`workflow/envs/{mmseqs2,minimap2,bioinformatics}.yaml`) are
+installed automatically via `--use-conda` from the profile.
 
 ## Filters
 
@@ -66,13 +75,17 @@ overlaps, not to seed the search.
 
 Headline:
 
-- `results/eval/per_query_report.tsv` — for each query, top-k mmseqs2 hits
-  with absolute mm10 coordinates, the overlapping mm10 cCRE accession + class
-  + coords, and an `in_gold_standard` flag. Gold-standard partners that the
-  search did **not** recover are appended as null-bits rows so misses are
-  visible alongside hits. Mirror parquet at `results/eval/per_query_report.parquet`.
-- `results/sanity/self_recall.parquet` — hg38 query-vs-itself recall@1
-  (sanity floor; should be 1.0).
+- `results/eval/{aligner}/per_query_report.tsv` — for each query, top-k hits
+  from this aligner with absolute mm10 coordinates, the overlapping mm10
+  cCRE accession + class + coords, and an `in_gold_standard` flag. Gold-
+  standard partners that the aligner did **not** recover are appended as
+  null-score rows; post-filter queries with no hits and no gold partner get
+  a single null row so they remain visible. Mirror parquet alongside.
+- `results/align/{aligner}/hits.tsv` — unified-schema per-aligner hits
+  (`query, hit_chrom, hit_start, hit_end, rev_strand, score, fident,
+  evalue, qcov, tcov`) in absolute mm10 BED coordinates.
+- `results/sanity/self_recall.parquet` — hg38 query-vs-itself recall@1 via
+  mmseqs2 (sanity floor; should be 1.0).
 
 Intermediate:
 

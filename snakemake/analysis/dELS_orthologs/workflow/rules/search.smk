@@ -92,3 +92,48 @@ rule convertalis:
             {output.tsv} \
             --format-output "query,target,tstart,tend,bits,evalue,fident,qcov,tcov"
         """
+
+
+rule normalize_mmseqs2_hits:
+    """Project mmseqs2 convertalis output to the aligner-agnostic unified schema.
+
+    Unified schema (tab-separated, with header):
+        query  hit_chrom  hit_start  hit_end  rev_strand  score  fident  evalue  qcov  tcov
+
+    Coordinates are absolute 0-based half-open mm10 BED coords.
+    """
+    input:
+        "results/search/hits.tsv",
+    output:
+        "results/align/mmseqs2/hits.tsv",
+    run:
+        chrom, win_start, _ = get_search_window("mm10")
+        raw = pl.read_csv(
+            input[0],
+            separator="\t",
+            has_header=False,
+            new_columns=[
+                "query",
+                "target",
+                "tstart",
+                "tend",
+                "bits",
+                "evalue",
+                "fident",
+                "qcov",
+                "tcov",
+            ],
+        )
+        unified = raw.select(
+            pl.col("query"),
+            pl.lit(chrom).alias("hit_chrom"),
+            (pl.min_horizontal("tstart", "tend") - 1 + win_start).alias("hit_start"),
+            pl.max_horizontal("tstart", "tend").add(win_start).alias("hit_end"),
+            (pl.col("tend") < pl.col("tstart")).alias("rev_strand"),
+            pl.col("bits").alias("score"),
+            pl.col("fident"),
+            pl.col("evalue"),
+            pl.col("qcov"),
+            pl.col("tcov"),
+        )
+        unified.write_csv(output[0], separator="\t", include_header=True)

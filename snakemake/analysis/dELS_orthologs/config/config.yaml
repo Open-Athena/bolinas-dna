@@ -40,6 +40,10 @@ search_region:
 # null to use every dELS in the hg38 search region.
 query_accessions: null
 
+aligners:
+    - mmseqs2
+    - minimap2
+
 mmseqs2:
     sensitivity: 7.5
     max_accept: 100

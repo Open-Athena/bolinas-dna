@@ -1,8 +1,9 @@
-"""Snakemake workflow: hg38↔mm10 dELS ortholog recovery via mmseqs2.
+"""Snakemake workflow: hg38↔mm10 dELS ortholog recovery via cheap pairwise aligners.
 
 This iteration is a hello-world scoped to the ZRS limb-enhancer locus
-(±100 kb in each genome). See ../README.md for context. The broader plan
-(other aligners, search-space variants, conservation stratification) lives in
+(±100 kb on the mm10 side; hg38 side is ZRS proper). See ../README.md for
+context. The broader plan (additional aligners, search-space variants,
+conservation stratification) lives in
 https://github.com/Open-Athena/bolinas-dna/issues/120.
 """
 
@@ -14,11 +15,15 @@ include: "rules/common.smk"
 include: "rules/download.smk"
 include: "rules/extract_seqs.smk"
 include: "rules/search.smk"
+include: "rules/align_minimap2.smk"
 include: "rules/evaluate.smk"
 include: "rules/sanity.smk"
 
 
 rule all:
     input:
-        "results/eval/per_query_report.tsv",
+        expand(
+            "results/eval/{aligner}/per_query_report.tsv",
+            aligner=config["aligners"],
+        ),
         "results/sanity/self_recall.parquet",
