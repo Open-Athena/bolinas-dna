@@ -14,11 +14,12 @@ hg38↔mm10 dELS alignments at ~20% divergence on 200–400 bp queries.
 rule minimap2_align:
     input:
         target="results/target/mm10_window.fasta",
-        query="results/cre/hg38/query.filtered.fasta",
+        query="results/cre/hg38/flank_{flank}/query.filtered.fasta",
     output:
-        paf="results/align/{aligner}/raw.paf",
+        paf="results/align/{aligner}/flank_{flank}/raw.paf",
     wildcard_constraints:
         aligner="minimap2_.+",
+        flank=r"-?\d+",
     params:
         flags=lambda wildcards: config["minimap2_variants"][wildcards.aligner],
     threads: workflow.cores
@@ -44,11 +45,12 @@ rule normalize_minimap2_hits:
     window start. `evalue` is null — minimap2 doesn't emit one.
     """
     input:
-        "results/align/{aligner}/raw.paf",
+        "results/align/{aligner}/flank_{flank}/raw.paf",
     output:
-        "results/align/{aligner}/hits.tsv",
+        "results/align/{aligner}/flank_{flank}/hits.tsv",
     wildcard_constraints:
         aligner="minimap2_.+",
+        flank=r"-?\d+",
     run:
         _, win_start, _ = get_search_window("mm10")
 

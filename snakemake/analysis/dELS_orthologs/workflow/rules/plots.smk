@@ -10,9 +10,11 @@ Two plots per (aligner, track):
 
 rule plot_recall_heatmap:
     input:
-        "results/eval/{aligner}/recall_by_class_and_conservation_fixed/{track}.parquet",
+        "results/eval/{aligner}/flank_{flank}/recall_by_class_and_conservation_fixed/{track}.parquet",
     output:
-        "results/plots/{aligner}/{track}_recall_heatmap.png",
+        "results/plots/{aligner}/flank_{flank}/{track}_recall_heatmap.png",
+    wildcard_constraints:
+        flank=r"-?\d+",
     run:
         df = pl.read_parquet(input[0]).filter(pl.col("k") == 1).to_pandas()
 
@@ -56,9 +58,11 @@ rule plot_recall_heatmap:
 
 rule plot_recall_curves:
     input:
-        "results/eval/{aligner}/recall_by_class_and_conservation_fixed/{track}.parquet",
+        "results/eval/{aligner}/flank_{flank}/recall_by_class_and_conservation_fixed/{track}.parquet",
     output:
-        "results/plots/{aligner}/{track}_recall_curves.png",
+        "results/plots/{aligner}/flank_{flank}/{track}_recall_curves.png",
+    wildcard_constraints:
+        flank=r"-?\d+",
     run:
         df = pl.read_parquet(input[0]).filter(pl.col("k") == 1).to_pandas()
 

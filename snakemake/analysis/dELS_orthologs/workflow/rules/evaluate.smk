@@ -15,13 +15,15 @@ asymmetry at ZRS.
 
 rule per_query_report:
     input:
-        hits="results/align/{aligner}/hits.tsv",
+        hits="results/align/{aligner}/flank_{flank}/hits.tsv",
         query="results/cre/hg38/query.filtered.parquet",
         mm10_cres="results/cre/mm10/cres_window.parquet",
         gold="results/orthologs/hg38_mm10.tsv",
     output:
-        parquet="results/eval/{aligner}/per_query_report.parquet",
-        tsv="results/eval/{aligner}/per_query_report.tsv",
+        parquet="results/eval/{aligner}/flank_{flank}/per_query_report.parquet",
+        tsv="results/eval/{aligner}/flank_{flank}/per_query_report.tsv",
+    wildcard_constraints:
+        flank=r"-?\d+",
     params:
         top_k=config["report_top_k"],
     run:

@@ -25,32 +25,38 @@ include: "rules/sanity.smk"
 rule all:
     input:
         expand(
-            "results/eval/{aligner}/per_query_report.tsv",
+            "results/eval/{aligner}/flank_{flank}/per_query_report.tsv",
             aligner=config["aligners"],
+            flank=config["query_flanks_bp"],
         ),
         expand(
-            "results/eval/{aligner}/recall_by_conservation/{track}.tsv",
+            "results/eval/{aligner}/flank_{flank}/recall_by_conservation/{track}.tsv",
             aligner=config["aligners"],
+            flank=config["query_flanks_bp"],
             track=config["stratify_by"],
         ),
         expand(
-            "results/eval/{aligner}/recall_by_class_and_conservation_fixed/{track}.tsv",
+            "results/eval/{aligner}/flank_{flank}/recall_by_class_and_conservation_fixed/{track}.tsv",
             aligner=config["aligners"],
+            flank=config["query_flanks_bp"],
             track=config["stratify_by"],
         ),
         expand(
-            "results/eval/{aligner}/recall_by_class_and_conservation_quantile/{track}.tsv",
+            "results/eval/{aligner}/flank_{flank}/recall_by_class_and_conservation_quantile/{track}.tsv",
             aligner=config["aligners"],
+            flank=config["query_flanks_bp"],
             track=config["stratify_by"],
         ),
         expand(
-            "results/plots/{aligner}/{track}_recall_heatmap.png",
+            "results/plots/{aligner}/flank_{flank}/{track}_recall_heatmap.png",
             aligner=config["aligners"],
+            flank=config["query_flanks_bp"],
             track=config["stratify_by"],
         ),
         expand(
-            "results/plots/{aligner}/{track}_recall_curves.png",
+            "results/plots/{aligner}/flank_{flank}/{track}_recall_curves.png",
             aligner=config["aligners"],
+            flank=config["query_flanks_bp"],
             track=config["stratify_by"],
         ),
         "results/sanity/self_recall.parquet",

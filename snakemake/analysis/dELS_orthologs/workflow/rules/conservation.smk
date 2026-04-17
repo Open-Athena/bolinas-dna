@@ -63,11 +63,13 @@ rule recall_by_conservation:
     computed over the post-filter query universe.
     """
     input:
-        report="results/eval/{aligner}/per_query_report.parquet",
+        report="results/eval/{aligner}/flank_{flank}/per_query_report.parquet",
         scores="results/conservation/hg38/{track}/query_scores.parquet",
     output:
-        parquet="results/eval/{aligner}/recall_by_conservation/{track}.parquet",
-        tsv="results/eval/{aligner}/recall_by_conservation/{track}.tsv",
+        parquet="results/eval/{aligner}/flank_{flank}/recall_by_conservation/{track}.parquet",
+        tsv="results/eval/{aligner}/flank_{flank}/recall_by_conservation/{track}.tsv",
+    wildcard_constraints:
+        flank=r"-?\d+",
     params:
         n_bins=config["n_conservation_bins"],
     run:
@@ -155,12 +157,14 @@ rule recall_by_class_and_conservation_fixed:
     dELS/PLS spread higher up — intentional, for cross-class comparability.
     """
     input:
-        report="results/eval/{aligner}/per_query_report.parquet",
+        report="results/eval/{aligner}/flank_{flank}/per_query_report.parquet",
         scores="results/conservation/hg38/{track}/query_scores.parquet",
         query="results/cre/hg38/query.filtered.parquet",
     output:
-        parquet="results/eval/{aligner}/recall_by_class_and_conservation_fixed/{track}.parquet",
-        tsv="results/eval/{aligner}/recall_by_class_and_conservation_fixed/{track}.tsv",
+        parquet="results/eval/{aligner}/flank_{flank}/recall_by_class_and_conservation_fixed/{track}.parquet",
+        tsv="results/eval/{aligner}/flank_{flank}/recall_by_class_and_conservation_fixed/{track}.tsv",
+    wildcard_constraints:
+        flank=r"-?\d+",
     params:
         bin_width=config["conservation_bin_width"],
     run:
@@ -255,12 +259,14 @@ rule recall_by_class_and_conservation_quantile:
     give equal-sample-size conservation ranges.
     """
     input:
-        report="results/eval/{aligner}/per_query_report.parquet",
+        report="results/eval/{aligner}/flank_{flank}/per_query_report.parquet",
         scores="results/conservation/hg38/{track}/query_scores.parquet",
         query="results/cre/hg38/query.filtered.parquet",
     output:
-        parquet="results/eval/{aligner}/recall_by_class_and_conservation_quantile/{track}.parquet",
-        tsv="results/eval/{aligner}/recall_by_class_and_conservation_quantile/{track}.tsv",
+        parquet="results/eval/{aligner}/flank_{flank}/recall_by_class_and_conservation_quantile/{track}.parquet",
+        tsv="results/eval/{aligner}/flank_{flank}/recall_by_class_and_conservation_quantile/{track}.tsv",
+    wildcard_constraints:
+        flank=r"-?\d+",
     params:
         n_bins=config["n_conservation_bins"],
     run:
