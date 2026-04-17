@@ -11,24 +11,35 @@ Asymmetric design:
 
 
 rule subset_dels_to_window:
-    """hg38 only: dELS that fall inside the hg38 search window (= ZRS proper)."""
+    """hg38 only: gold-standard-in dELS restricted to the hg38 search region.
+
+    Reads the gold-filtered set (`dels_in_gold.parquet`) so every query has,
+    by construction, at least one gold-standard mm10 partner. Window
+    restriction is applied on top: in windowed mode, keep only dELS inside
+    the configured chrom:start-end; in `whole_chrom` mode, keep only dELS on
+    the configured chromosome; in `whole_genome` mode, no further filtering.
+    """
     input:
-        "results/cre/hg38/dels.parquet",
+        "results/cre/hg38/dels_in_gold.parquet",
     output:
         "results/cre/hg38/dels_window.parquet",
     run:
         chrom, start, end = get_search_window("hg38")
-        df = (
-            pl.read_parquet(input[0])
-            .filter(
-                (pl.col("chrom") == chrom)
-                & (pl.col("end") > start)
-                & (pl.col("start") < end)
-            )
-            .sort(["chrom", "start"])
-        )
+        df = pl.read_parquet(input[0])
+        if chrom is not None:
+            df = df.filter(pl.col("chrom") == chrom)
+        if start:
+            df = df.filter(pl.col("end") > start)
+        if end is not None:
+            df = df.filter(pl.col("start") < end)
+        df = df.sort(["chrom", "start"])
         df.write_parquet(output[0])
-        print(f"  hg38: {df.height} dELS in {chrom}:{start}-{end}")
+        scope = (
+            "genome-wide"
+            if chrom is None
+            else (f"{chrom}" if end is None else f"{chrom}:{start}-{end}")
+        )
+        print(f"  hg38: {df.height} gold-standard-in dELS in {scope}")
 
 
 rule select_query_accessions:

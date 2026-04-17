@@ -48,6 +48,37 @@ rule filter_cres_to_dels:
         print(f"  {wildcards.species}: {df.height} {params.cre_class} cCREs")
 
 
+rule restrict_hg38_dels_to_gold_standard:
+    """hg38 only: keep dELS that appear in the Cactus-derived gold-standard TSV.
+
+    Queries without a gold-standard partner cannot contribute to recall
+    against the gold standard — including them would just be compute waste
+    (aligning ~1.1 M extra dELS whose results are vacuous for the metric).
+    The `per_query_report` filter that restricts eval to "hg38 partner in
+    query set AND mm10 partner in candidate pool" would drop them at eval
+    time anyway; this just moves the filter up to the pipeline boundary.
+    """
+    input:
+        dels="results/cre/hg38/dels.parquet",
+        gold="results/orthologs/hg38_mm10.tsv",
+    output:
+        "results/cre/hg38/dels_in_gold.parquet",
+    run:
+        gold_hg38 = (
+            pl.read_csv(
+                input.gold,
+                separator="\t",
+                has_header=False,
+                new_columns=["hg38", "mm10"],
+            )["hg38"]
+            .unique()
+            .to_list()
+        )
+        df = pl.read_parquet(input.dels).filter(pl.col("accession").is_in(gold_hg38))
+        df.write_parquet(output[0])
+        print(f"  hg38: {df.height} dELS have a gold-standard mm10 partner")
+
+
 rule download_orthologs:
     output:
         "results/orthologs/hg38_mm10.tsv",
