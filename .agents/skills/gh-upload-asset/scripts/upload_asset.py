@@ -1,11 +1,20 @@
-"""Upload files to GitHub Gists via cloning, committing, and pushing.
+#!/usr/bin/env python3
+"""Upload files to a GitHub Gist and get permanent URLs.
+
+Clones a user-owned "assets" gist, copies files into the assets branch, pushes,
+and prints URLs that render inline in GitHub-flavored markdown. The gist ID is
+read from git config ``assets.gist`` (falling back to ``pr.gist`` for ghpr
+interop); if no gist is configured, a new secret one is created and the ID is
+saved to ``assets.gist``.
 
 Adapted from https://github.com/ryan-williams/git-helpers
-(github/gist_upload.py, github/gh-upload-img.py) by Ryan Williams.
+(github/gh-upload-img.py and github/gist_upload.py) by Ryan Williams.
 Modified to use HTTPS with gh auth credential helper, remove the local-clone
-path, add type annotations, and simplify error handling.
+path, add type annotations, simplify error handling, and fold the CLI and
+library into a single module.
 """
 
+import argparse
 import mimetypes
 import re
 import shutil
@@ -21,7 +30,23 @@ from subprocess import (
     check_output,
     run,
 )
+from typing import Literal
 from urllib.parse import quote
+
+OutputFormat = Literal["url", "markdown", "img", "auto"]
+
+CONFIG_KEY = "assets.gist"
+FALLBACK_KEY = "pr.gist"
+IMAGE_EXTENSIONS = {
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".svg",
+    ".webp",
+    ".ico",
+    ".bmp",
+}
 
 err = partial(print, file=sys.stderr)
 
@@ -35,6 +60,34 @@ def _run_quiet(cmd: list[str], **kwargs) -> None:
             if text:
                 err(text)
         raise CalledProcessError(result.returncode, cmd)
+
+
+def _run_git(args: list[str], *, cwd: Path) -> None:
+    check_call(["git", *args], cwd=cwd, stdout=DEVNULL, stderr=DEVNULL)
+
+
+def _run_git_output(args: list[str], *, cwd: Path) -> str:
+    return check_output(["git", *args], cwd=cwd, stderr=DEVNULL).decode().strip()
+
+
+def _git_config_get(key: str) -> str | None:
+    """Read a git config value, returning None if unset."""
+    try:
+        return (
+            check_output(["git", "config", key], stderr=DEVNULL).decode().strip()
+            or None
+        )
+    except (CalledProcessError, FileNotFoundError):
+        return None
+
+
+def _git_config_set(key: str, value: str) -> bool:
+    """Set a git config value. Returns True on success."""
+    try:
+        check_call(["git", "config", key, value], stderr=DEVNULL)
+        return True
+    except (CalledProcessError, FileNotFoundError):
+        return False
 
 
 def _get_github_username() -> str | None:
@@ -65,6 +118,33 @@ def create_gist(
     except CalledProcessError as e:
         err(f"Error creating gist: {e}")
     return None
+
+
+def _get_or_create_gist(
+    gist_id: str | None = None, description: str = "Asset uploads"
+) -> str | None:
+    """Return an existing gist ID from git config, or create a new one."""
+    if gist_id:
+        return gist_id
+
+    for key in (CONFIG_KEY, FALLBACK_KEY):
+        gist_id = _git_config_get(key)
+        if gist_id:
+            err(f"# Using gist from {key}: {gist_id}")
+            return gist_id
+
+    err("# Creating new gist for assets...")
+    gist_id = create_gist(description)
+    if not gist_id:
+        err("Error: Could not create gist")
+        return None
+
+    err(f"# Created gist: {gist_id}")
+    if _git_config_set(CONFIG_KEY, gist_id):
+        err(f"# Saved gist ID to git config {CONFIG_KEY}")
+    else:
+        err("# Warning: couldn't save gist ID to git config (not in a git repo?)")
+    return gist_id
 
 
 def upload_files_to_gist(
@@ -169,7 +249,10 @@ def upload_files_to_gist(
 
 
 def format_output(
-    filename: str, url: str, format_type: str = "auto", alt_text: str | None = None
+    filename: str,
+    url: str,
+    format_type: OutputFormat = "auto",
+    alt_text: str | None = None,
 ) -> str:
     """Format a URL for display as plain URL, markdown image, or HTML img tag."""
     if not alt_text:
@@ -177,18 +260,8 @@ def format_output(
 
     output_format = format_type
     if format_type == "auto":
-        image_extensions = {
-            ".png",
-            ".jpg",
-            ".jpeg",
-            ".gif",
-            ".svg",
-            ".webp",
-            ".ico",
-            ".bmp",
-        }
         ext = Path(filename).suffix.lower()
-        if ext in image_extensions:
+        if ext in IMAGE_EXTENSIONS:
             output_format = "markdown"
         else:
             mime_type, _ = mimetypes.guess_type(filename)
@@ -203,9 +276,62 @@ def format_output(
     return url
 
 
-def _run_git(args: list[str], *, cwd: Path) -> None:
-    check_call(["git", *args], cwd=cwd, stdout=DEVNULL, stderr=DEVNULL)
+def _unique_name(path: str, all_paths: list[str]) -> str:
+    """Derive a gist-safe filename, prefixing parent dirs to disambiguate duplicates."""
+    p = Path(path)
+    basenames = [Path(f).name for f in all_paths]
+    if basenames.count(p.name) <= 1:
+        return p.name
+    # Walk up parent directories until the name is unique among all paths
+    parts = list(p.parts)
+    for depth in range(2, len(parts) + 1):
+        candidate = "_".join(parts[-depth:])
+        candidates = ["_".join(list(Path(f).parts)[-depth:]) for f in all_paths]
+        if candidates.count(candidate) <= 1:
+            return candidate
+    return p.name
 
 
-def _run_git_output(args: list[str], *, cwd: Path) -> str:
-    return check_output(["git", *args], cwd=cwd, stderr=DEVNULL).decode().strip()
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Upload files to a GitHub Gist and get permanent URLs"
+    )
+    parser.add_argument("files", nargs="+", help="Files to upload")
+    parser.add_argument("-a", "--alt", help="Alt text for markdown/img format")
+    parser.add_argument(
+        "-b", "--branch", default="assets", help="Branch name in gist (default: assets)"
+    )
+    parser.add_argument(
+        "-f",
+        "--format",
+        choices=["url", "markdown", "img", "auto"],
+        default="auto",
+        help="Output format (default: auto — markdown for images, url for others)",
+    )
+    parser.add_argument(
+        "-g", "--gist", help="Gist ID to use (creates new if not specified)"
+    )
+    args = parser.parse_args()
+
+    gist_id = _get_or_create_gist(args.gist)
+    if not gist_id:
+        sys.exit(1)
+
+    files = [(path, _unique_name(path, args.files)) for path in args.files]
+
+    results = upload_files_to_gist(
+        files,
+        gist_id,
+        branch=args.branch,
+        commit_msg="Add assets",
+    )
+
+    for orig_name, _safe_name, url in results:
+        print(format_output(orig_name, url, args.format, args.alt))
+
+    if not results:
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
