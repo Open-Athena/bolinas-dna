@@ -95,24 +95,31 @@ rule per_query_report:
         )
         query_ids = pl.read_parquet(input.query)["accession"].to_list()
 
-        gold_pairs = set(
-            zip(
-                gold["hg38_accession"].to_list(),
-                gold["mm10_accession_gold"].to_list(),
+        # Gold-pair lookup vectorized as a left-join on (query, mm10_accession).
+        # At 311K queries × top-k hits the prior `map_elements` over millions
+        # of rows was the dominant cost; a polars join runs in ≪1 s.
+        gold_df = (
+            gold.rename(
+                {"hg38_accession": "query", "mm10_accession_gold": "mm10_accession"}
             )
+            .with_columns(pl.lit(True).alias("in_gold_standard"))
+            .unique(subset=["query", "mm10_accession"])
         )
-        joined = joined.with_columns(
-            pl.struct(["query", "mm10_accession"])
-            .map_elements(
-                lambda r: (r["query"], r["mm10_accession"]) in gold_pairs,
-                return_dtype=pl.Boolean,
-            )
-            .alias("in_gold_standard"),
-        )
+        joined = joined.join(
+            gold_df, on=["query", "mm10_accession"], how="left"
+        ).with_columns(pl.col("in_gold_standard").fill_null(False))
 
-        # Top-k hits per query by score desc; one row per (query, hit). Hits
-        # that fall in inter-cCRE space (no overlap) get null mm10 fields
-        # but are still ranked.
+        # Per-query gold partners, O(N) dict build. Reused below by both the
+        # missing-rows loop and the stdout summary — the previous
+        # `{m for h, m in gold_pairs if h == q}` scan was O(N·M) and would
+        # have taken hours at 311K queries × 537K gold pairs.
+        gold_by_query: dict[str, list[str]] = {}
+        for h, m in zip(
+            gold["hg38_accession"].to_list(),
+            gold["mm10_accession_gold"].to_list(),
+        ):
+            gold_by_query.setdefault(h, []).append(m)
+
         report = (
             joined.sort(["query", "score"], descending=[False, True])
             .with_columns(
@@ -139,7 +146,7 @@ rule per_query_report:
         missing_rows = []
         mm10_cre_lookup = {r["accession"]: r for r in mm10_cres.iter_rows(named=True)}
         for q in query_ids:
-            for partner in {m for h, m in gold_pairs if h == q}:
+            for partner in set(gold_by_query.get(q, [])):
                 if (q, partner) not in recovered:
                     cre = mm10_cre_lookup.get(partner)
                     missing_rows.append(
@@ -200,16 +207,32 @@ rule per_query_report:
         report.write_parquet(output.parquet)
         report.write_csv(output.tsv, separator="\t")
 
-        print(f"\n=== per-query report ({wildcards.aligner}) ===")
-        for q in query_ids:
-            sub = report.filter(pl.col("query") == q)
-            n_hits = sub.filter(pl.col("rank").is_not_null()).height
-            n_gold_recovered = sub.filter(
-                pl.col("in_gold_standard") & pl.col("rank").is_not_null()
-            ).height
-            n_gold_total = sum(1 for h, _m in gold_pairs if h == q)
-            print(
-                f"  {q}: {n_hits} hits in window; "
-                f"{n_gold_recovered}/{n_gold_total} gold-standard partner(s) recovered"
+        # Aggregate stdout summary — scales to 300K+ queries without a
+        # per-query line. Recall@k is the top-level metric from issue #120.
+        n_queries = len(query_ids)
+        queries_with_hits = report.filter(pl.col("rank").is_not_null())[
+            "query"
+        ].n_unique()
+        queries_with_gold = sum(1 for q in query_ids if gold_by_query.get(q))
+        recovered_at_k: dict[int, int] = {}
+        for k in (1, 5, 10):
+            q_with_gold_at_k = (
+                report.filter(
+                    pl.col("in_gold_standard")
+                    & pl.col("rank").is_not_null()
+                    & (pl.col("rank") <= k)
+                )["query"]
+                .unique()
+                .to_list()
             )
-        print(f"\nFull report at {output.tsv}")
+            recovered_at_k[k] = len(set(q_with_gold_at_k) & set(query_ids))
+
+        print(f"\n=== per-query report summary ({wildcards.aligner}) ===")
+        print(f"  total queries (post-filter):      {n_queries:,}")
+        print(f"  queries with ≥1 hit:              {queries_with_hits:,}")
+        print(f"  queries with ≥1 gold partner:     {queries_with_gold:,}")
+        for k in (1, 5, 10):
+            denom = queries_with_gold
+            recall = recovered_at_k[k] / denom if denom else float("nan")
+            print(f"  recall@{k}: {recovered_at_k[k]:,}/{denom:,} = " f"{recall:.4f}")
+        print(f"\nFull per-query report at {output.tsv}")
