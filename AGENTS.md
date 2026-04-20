@@ -12,7 +12,7 @@
 
 This is research code. Prioritize **reproducibility** and **correctness** over architectural elegance.
 
-- **Put Python logic in `src/bolinas/` so pytest can reach it.** Even pipeline-specific functions belong in the library — the goal is testability, not a polished shared API. Snakemake `run:` blocks and `.smk` rules should be thin glue calling into `src/bolinas/`. Don't add `.py` script files under `snakemake/` (no `workflow/scripts/`) — all Python logic goes in the library.
+- **Put Python logic in `src/bolinas/` so pytest can reach it.** Even pipeline-specific functions belong in the library — the goal is testability, not a polished shared API. Inline Python in Snakemake rules (`run:` blocks in `Snakefile`/`.smk` files) should be thin glue calling into `src/bolinas/`. Don't add `.py` script files under `snakemake/` (no `workflow/scripts/`) — all Python logic goes in the library.
 - **Duplication beats premature abstraction *within* the library.** The "testable home" rule governs *entry* into `src/bolinas/` — move logic in freely, even if similar code already exists elsewhere. A separate, weaker rule governs *deduplication*: only merge two similar functions into one shared helper when the shape has stabilized and they're genuinely doing the same thing. Until then, two near-copies in two pipeline modules is better than a premature abstraction coupling unrelated experiments.
 - **Modularity is a means, not a goal.** Don't refactor for reuse that may never come. Straight-line code that reads top-to-bottom is often preferable to layered abstractions.
 - **Test aggressively.** Every non-trivial function in `src/bolinas/` should have tests — that's the whole reason logic lives there. For pipelines, add sanity checks on outputs (row counts, value ranges, coordinate invariants) rather than trusting that "it ran".
@@ -25,7 +25,7 @@ This is research code. Prioritize **reproducibility** and **correctness** over a
 
 The codebase has two main components:
 
-1. **Python Library** (`src/bolinas/`) - The testable home for Python logic across the project. Pipeline-specific modules belong here too — this is not a polished shared API, it's the place where pytest can reach the code. Pipeline scripts should be thin glue calling into this.
+1. **Python Library** (`src/bolinas/`) - Python logic for all pipelines lives here, including pipeline-specific modules. See **Research Code Values** above for why, and for how Snakemake rules should relate to it.
 
 2. **Pipelines** (`snakemake/`) - Data processing workflows implemented in Snakemake
    - Read the pipeline's README before working on it — each `snakemake/<pipeline>/` has its own. If you change pipeline behaviour, update the README in the same PR so the next human or agent can onboard from it.
