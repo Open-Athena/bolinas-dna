@@ -12,10 +12,11 @@ The codebase has two main components:
    - Try to move us much shared functionality (e.g. functions) from the pipelines here, so they are subject to higher quality standards (e.g. typing, testing)
 
 2. **Pipelines** (`snakemake/`) - Data processing workflows implemented in Snakemake
-   - See individual pipeline READMEs for details on what each pipeline does and how to configure them
-   - Always do a dry-run first. Be extra careful whenever Snakemake is planning to rerun a very slow step (ask for my permission).
-   - When working on a feature, do not try to run the whole pipeline, only the step relevant to the feature.
-   - Run with `uv run snakemake`
+   - Read the pipeline's README before working on it — each `snakemake/<pipeline>/` has its own. If you change pipeline behaviour, update the README in the same PR so the next human or agent can onboard from it.
+   - Always dry-run first (`-n` / `--dry-run`) before any real invocation.
+   - Stop before reruns of steps the changes you made for this task did not intentionally touch. If the dry-run shows Snakemake planning to rerun an upstream or unrelated step — retriggered by a timestamp change, an unrelated code edit, `--rerun-triggers` defaults, etc. — stop and ask before running. Default assumption: such reruns are unintended and potentially expensive (training, genome downloads, large bedtools jobs).
+   - Invoke as `uv run snakemake …` from the repo root, not bare `snakemake`.
+   - Put pipeline-wide defaults (`cores`, `use-conda`, `default-storage-provider`, etc.) in the pipeline's `workflow/profiles/default/config.yaml`, not on the CLI. Snakemake auto-loads that profile, so every invocation picks them up.
 
 ## Development Practices
 
