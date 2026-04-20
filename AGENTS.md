@@ -4,11 +4,14 @@
 
 **Bolinas** is a framework for developing genomic language models (gLMs). It includes training dataset creation and evaluations.
 
+## Domain Conventions
+
+- **Coordinate system.** The codebase consistently uses 0-based, half-open intervals for all genomic coordinates. Assume this everywhere; call out any deviation explicitly. Conversions to/from 1-based closed formats (GTF, VCF, SAM) happen at the tool boundary, not inside our code.
+
 ## Research Code Values
 
 This is research code. Prioritize **reproducibility** and **correctness** over architectural elegance.
 
-- **Coordinate system.** The codebase consistently uses 0-based, half-open intervals for all genomic coordinates. Assume this everywhere; call out any deviation explicitly.
 - **Duplication beats premature abstraction.** Copying a function or a few lines between pipelines is fine when the alternative is a shared helper that couples unrelated experiments. Only promote code to `src/bolinas/` once the shape is stable and genuinely shared.
 - **Modularity is a means, not a goal.** Don't refactor for reuse that may never come. Straight-line scripts that read top-to-bottom are often preferable to layered abstractions.
 - **Test aggressively.** Every non-trivial function in `src/bolinas/` should have tests. For pipelines, add sanity checks on outputs (row counts, value ranges, coordinate invariants) rather than trusting that "it ran".
