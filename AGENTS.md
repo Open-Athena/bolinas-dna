@@ -94,7 +94,8 @@ If you are asked to implement a specific backend, just stick to that. Do not gen
 ## GitHub Communication
 
 - When an agent creates a PR or issue, add the `agent-generated` label.
-- Agent comments on PRs/issues must begin with `🤖` unless the exact text was explicitly approved by the user.
+- Agent comments on PRs/issues must begin with `🤖`.
+- For iterative investigations the user wants tracked in their own issue, use the `agent-research` skill — issue body is the living doc, comments are the append-only log with commit-pinned permalinks to code.
 
 ## Autonomy Boundaries
 
