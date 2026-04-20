@@ -31,6 +31,7 @@ from bolinas.data.utils import (
     write_pandas_to_bed,
 )
 from bolinas.enhancer_classification.predict import sliding_windows
+from bolinas.enhancer_segmentation.predict_genome import tile_chromosomes
 
 tqdm.pandas()
 

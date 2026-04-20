@@ -378,6 +378,7 @@ Runs the per-bin segmentation model from [issue #115](https://github.com/Open-At
 - Install enhancer-classification dependencies: `uv sync --group enhancer-classification`
 - A trained `EnhancerSegmenter` checkpoint (configured via `enhancer_prediction_segmentation.checkpoint` in `config.yaml`; supports `s3://` URIs via Snakemake `storage()`)
 - A GPU for the prediction rule
+- ~5GB free local disk per active job for the Snakemake S3 cache (genome ~2–3GB + checkpoint ~1.5GB). The cache is cleaned up between jobs.
 
 **Configuration** (`enhancer_prediction_segmentation` block in `config.yaml`):
 - `checkpoint`: path or S3 URI to the Lightning checkpoint

@@ -19,7 +19,10 @@ from pathlib import Path
 import polars as pl
 import py2bit
 
-from bolinas.enhancer_segmentation.predict_genome import predict_genome
+from bolinas.enhancer_segmentation.predict_genome import (
+    predict_genome,
+    tile_chromosomes,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,14 +49,8 @@ def main() -> None:
     chrom_size = tb.chroms()[args.chrom]
     tb.close()
 
-    starts = list(range(0, chrom_size, window_size))
-    windows = pl.DataFrame(
-        {
-            "chrom": [args.chrom] * len(starts),
-            "start": starts,
-            "end": [s + window_size for s in starts],
-        }
-    )
+    tiles = tile_chromosomes({args.chrom: chrom_size}, window_size)
+    windows = pl.DataFrame(tiles, schema=["chrom", "start", "end"], orient="row")
 
     logger.info(
         "Chromosome %s: %d bp, %d windows (%d bins)",

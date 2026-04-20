@@ -90,31 +90,14 @@ rule segmentation_prediction_windows:
     output:
         "results/enhancer_predictions_segmentation/windows/{g}.parquet",
     run:
-        window_size = SEGMENTATION_CONFIG["window_size"]
         tb = py2bit.open(input[0])
         chrom_sizes = tb.chroms()
         tb.close()
 
-        # Only emit windows that fit entirely within a chromosome — the
-        # model was trained on full-context windows and is not robust to
-        # N-padded input. Contigs smaller than window_size and the last
-        # (chrom_size mod window_size) bases of each chromosome are
-        # therefore uncovered. See discussion on issue #118.
-        chroms, starts, ends = [], [], []
-        for chrom, size in chrom_sizes.items():
-            n_windows = size // window_size
-            for i in range(n_windows):
-                w_start = i * window_size
-                chroms.append(chrom)
-                starts.append(w_start)
-                ends.append(w_start + window_size)
-
-        windows = pl.DataFrame({
-            "chrom": chroms,
-            "start": starts,
-            "end": ends,
-        })
-        windows.write_parquet(output[0])
+        tiles = tile_chromosomes(chrom_sizes, SEGMENTATION_CONFIG["window_size"])
+        pl.DataFrame(tiles, schema=["chrom", "start", "end"], orient="row").write_parquet(
+            output[0]
+        )
 
 
 rule predict_enhancers_segmentation:

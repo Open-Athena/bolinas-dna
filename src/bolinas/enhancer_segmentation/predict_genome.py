@@ -30,6 +30,26 @@ from bolinas.enhancer_segmentation.model import EnhancerSegmenter
 logger = logging.getLogger(__name__)
 
 
+def tile_chromosomes(
+    chrom_sizes: dict[str, int], window_size: int
+) -> list[tuple[str, int, int]]:
+    """Emit non-overlapping full-context windows for each chromosome.
+
+    Only windows that fit entirely within a chromosome are emitted —
+    the model was trained on unpadded sequence and cannot be trusted
+    on N-padded input. Contigs shorter than ``window_size`` and the
+    last ``size % window_size`` bases of each chromosome are therefore
+    uncovered. See discussion on issue #118.
+    """
+    windows: list[tuple[str, int, int]] = []
+    for chrom, size in chrom_sizes.items():
+        n_windows = size // window_size
+        for i in range(n_windows):
+            start = i * window_size
+            windows.append((chrom, start, start + window_size))
+    return windows
+
+
 class GenomeWindowDataset(Dataset):
     """Map-style dataset of genomic windows for segmentation inference.
 
@@ -84,6 +104,13 @@ def predict_genome(
         DataFrame with columns ``chrom``, ``bin_start``, ``bin_end``, ``logit``
         — one row per bin across all windows.
     """
+    window_size = int(windows["end"][0] - windows["start"][0])
+    if window_size % bin_size != 0:
+        raise ValueError(
+            f"window_size ({window_size}) must be a multiple of bin_size ({bin_size})"
+        )
+    expected_num_bins = window_size // bin_size
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     if torch.cuda.is_available():
@@ -117,6 +144,12 @@ def predict_genome(
     assert predictions is not None
     all_logits = np.concatenate([p.float().numpy() for p in predictions])
     num_bins = all_logits.shape[1]
+    if num_bins != expected_num_bins:
+        raise ValueError(
+            f"Model produced {num_bins} bins per window but window_size "
+            f"({window_size}) / bin_size ({bin_size}) = {expected_num_bins}. "
+            f"Check that --bin-size matches the model's native downsampling."
+        )
     total_bins = len(windows) * num_bins
 
     logger.info(
