@@ -68,25 +68,15 @@ For each new run, finding, or course-correction:
 
 - Upload any plots via `gh-upload-asset`.
 - Post a **new** `gh issue comment` prefixed with `🤖`. One comment per atomic update. Content is append-only: don't edit a comment to change what it said. Formatting fixes (typos, broken markdown, re-wrapping) are fine.
-- **Reference code with permalinks, always.** Every code reference in a comment uses a GitHub permalink pinned to a commit SHA — never `main` or a branch name. Shape:
+- **Pin code references to a commit SHA, never `main` or a branch name.** Pick the granularity that matches what you're showing:
+  - a single line or range when specific lines matter: `/blob/<sha>/<path>#L42` or `#L42-L68`
+  - a whole file when the file is the thing: `/blob/<sha>/<path>`
+  - a subdirectory when the iteration touches several related files: `/tree/<sha>/<path>/`
+  - a commit or range when "here's what this round of work did" is the point: `/commit/<sha>` or `/compare/<a>...<b>`
 
-  ```
-  https://github.com/<owner>/<repo>/blob/<sha>/<path>#L<line>
-  ```
+  `gh browse <path>[:<line>] -n -c "$(git rev-parse HEAD)"` handles the line / file / directory shapes. For commit links, construct directly: `https://github.com/$(gh repo view --json nameWithOwner -q .nameWithOwner)/commit/$(git rev-parse HEAD)`.
 
-  Quick ways to produce one (substitute your own `<path>` and `<line>`):
-
-  ```
-  # copy a permalink for the current HEAD, a specific line in a file
-  gh browse src/bolinas/intervals.py:42 -n -c "$(git rev-parse HEAD)"
-
-  # or construct it yourself
-  SHA=$(git rev-parse HEAD)
-  REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-  echo "https://github.com/$REPO/blob/$SHA/src/bolinas/intervals.py#L42"
-  ```
-
-  Both forms require the SHA to be pushed to a branch visible on GitHub — otherwise the URL will 404 for readers. If the referenced code isn't yet pushed, push first (to the current branch — *not* `main`) before posting the link.
+  Whatever the shape, the SHA has to be pushed to a branch GitHub can see — push to the current branch (*not* `main`) before posting, otherwise the URL 404s.
 
 - If the takeaway changes the headline story, **also** edit the issue body's *Current findings* / *Open questions*. Body edits are retroactive-safe; comments are not.
 - **Scope changes get their own comment.** When the thread's direction shifts — adding a question, dropping one, narrowing methodology — post a `🤖` comment that names the shift explicitly ("Scope update: dropping X, adding Y because Z"), *then* update the *Scope* section of the body. Never rewrite *Scope* silently.
