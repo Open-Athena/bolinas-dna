@@ -21,10 +21,9 @@ import lightning as L
 import numpy as np
 import polars as pl
 import torch
-from alphagenome_pytorch.utils.sequence import sequence_to_onehot
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 
-from bolinas.enhancer_classification.genome import Genome
+from bolinas.enhancer_classification.genome_window_dataset import GenomeWindowDataset
 from bolinas.enhancer_segmentation.model import EnhancerSegmenter
 
 logger = logging.getLogger(__name__)
@@ -48,38 +47,6 @@ def tile_chromosomes(
             start = i * window_size
             windows.append((chrom, start, start + window_size))
     return windows
-
-
-class GenomeWindowDataset(Dataset):
-    """Map-style dataset of genomic windows for segmentation inference.
-
-    Window coordinates come from a pre-computed parquet file. Sequences are
-    lazily extracted from the genome in ``__getitem__``, so each DataLoader
-    worker opens its own file handle (shared memory-mapped pages for 2bit).
-
-    Args:
-        genome_path: Path to genome file (.2bit or .fa/.fa.gz).
-        windows: DataFrame with ``chrom``, ``start``, ``end`` columns.
-    """
-
-    def __init__(self, genome_path: Path, windows: pl.DataFrame) -> None:
-        self._genome_path = genome_path
-        self._chroms = windows["chrom"].to_numpy()
-        self._starts = windows["start"].to_numpy().astype(np.int64)
-        self._ends = windows["end"].to_numpy().astype(np.int64)
-        self._genome: Genome | None = None
-
-    def __len__(self) -> int:
-        return len(self._starts)
-
-    def __getitem__(self, idx: int) -> torch.Tensor:
-        if self._genome is None:
-            self._genome = Genome(self._genome_path)
-        seq = self._genome(
-            str(self._chroms[idx]), int(self._starts[idx]), int(self._ends[idx])
-        )
-        onehot = sequence_to_onehot(seq).astype(np.float32)
-        return torch.from_numpy(onehot)
 
 
 def predict_genome(
@@ -119,7 +86,8 @@ def predict_genome(
     model = EnhancerSegmenter.load_from_checkpoint(checkpoint_path, map_location=device)
     model.to(device)
     model.eval()
-    model = torch.compile(model)
+    if torch.cuda.is_available():
+        model = torch.compile(model)
 
     dataset = GenomeWindowDataset(genome_path, windows)
     dataloader = DataLoader(
@@ -141,7 +109,8 @@ def predict_genome(
     predictions = trainer.predict(model, dataloader)
     elapsed = time.perf_counter() - t0
 
-    assert predictions is not None
+    if predictions is None:
+        raise RuntimeError("trainer.predict returned None")
     all_logits = np.concatenate([p.float().numpy() for p in predictions])
     num_bins = all_logits.shape[1]
     if num_bins != expected_num_bins:

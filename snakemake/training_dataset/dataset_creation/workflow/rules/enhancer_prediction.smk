@@ -114,7 +114,10 @@ rule predict_enhancers_segmentation:
         max_windows=SEGMENTATION_CONFIG["max_windows"],
     threads: workflow.cores
     shell:
+        # Persist the torch.compile cache across per-genome invocations so
+        # every genome after the first skips the ~30s Inductor compile step.
         """
+        TORCHINDUCTOR_CACHE_DIR=.snakemake/torchinductor_cache \
         uv run python -m bolinas.enhancer_segmentation.predict_genome \
             --genome {input.genome} \
             --checkpoint {input.checkpoint} \

@@ -22,46 +22,12 @@ import lightning as L
 import numpy as np
 import polars as pl
 import torch
-from alphagenome_pytorch.utils.sequence import sequence_to_onehot
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 
-from bolinas.enhancer_classification.genome import Genome
+from bolinas.enhancer_classification.genome_window_dataset import GenomeWindowDataset
 from bolinas.enhancer_classification.model import EnhancerClassifier
 
 logger = logging.getLogger(__name__)
-
-
-class GenomeWindowDataset(Dataset):
-    """Map-style dataset of sliding windows over genomic regions.
-
-    Window coordinates are pre-computed from a parquet file. Sequences are
-    lazily extracted from the genome in ``__getitem__``, so the full genome
-    is never materialized as one-hot tensors.
-
-    Each DataLoader worker opens its own ``py2bit`` / FASTA handle. For 2bit
-    files this means shared memory-mapped pages across workers.
-
-    Args:
-        genome_path: Path to genome file (.2bit or .fa/.fa.gz).
-        windows: DataFrame with ``chrom``, ``start``, ``end`` columns.
-    """
-
-    def __init__(self, genome_path: Path, windows: pl.DataFrame) -> None:
-        self._genome_path = genome_path
-        self._chroms = windows["chrom"].to_numpy()
-        self._starts = windows["start"].to_numpy().astype(np.int64)
-        self._ends = windows["end"].to_numpy().astype(np.int64)
-        self._genome: Genome | None = None
-
-    def __len__(self) -> int:
-        return len(self._starts)
-
-    def __getitem__(self, idx: int) -> torch.Tensor:
-        if self._genome is None:
-            self._genome = Genome(self._genome_path)
-        seq = self._genome(str(self._chroms[idx]), int(self._starts[idx]), int(self._ends[idx]))
-        onehot = sequence_to_onehot(seq).astype(np.float32)
-        return torch.from_numpy(onehot)
 
 
 def predict_genome(
@@ -125,9 +91,7 @@ def predict_genome(
         len(all_logits) / elapsed,
     )
 
-    return windows.with_columns(
-        pl.Series("logit", all_logits, dtype=pl.Float32)
-    )
+    return windows.with_columns(pl.Series("logit", all_logits, dtype=pl.Float32))
 
 
 def parse_args() -> argparse.Namespace:
@@ -146,12 +110,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--batch-size", type=int, default=512, help="Inference batch size"
     )
-    parser.add_argument(
-        "--num-workers", type=int, default=4, help="DataLoader workers"
-    )
-    parser.add_argument(
-        "--output", type=Path, required=True, help="Output parquet"
-    )
+    parser.add_argument("--num-workers", type=int, default=4, help="DataLoader workers")
+    parser.add_argument("--output", type=Path, required=True, help="Output parquet")
     return parser.parse_args()
 
 
@@ -161,7 +121,9 @@ def main() -> None:
 
     logger.info("Loading windows from %s", args.windows)
     windows = pl.read_parquet(args.windows)
-    logger.info("  %d windows across %d chromosomes", len(windows), windows["chrom"].n_unique())
+    logger.info(
+        "  %d windows across %d chromosomes", len(windows), windows["chrom"].n_unique()
+    )
 
     result = predict_genome(
         genome_path=args.genome,
