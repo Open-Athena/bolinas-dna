@@ -2,14 +2,30 @@
 
 ## Project Overview
 
-**Bolinas** is a framework for developing genomic language models (gLMs). It includes training dataset creation and evaluations.
+**Bolinas** is a framework for developing genomic language models (gLMs).
+
+## Domain Conventions
+
+- **Coordinate system.** The codebase consistently uses 0-based, half-open intervals for all genomic coordinates. Assume this everywhere; call out any deviation explicitly. Conversions to/from 1-based closed formats (GTF, VCF, SAM) happen at the tool boundary, not inside our code.
+
+## Research Code Values
+
+This is research code. Prioritize **reproducibility** and **correctness** over architectural elegance.
+
+- **Put Python logic in `src/bolinas/` so pytest can reach it.** Even pipeline-specific functions belong in the library — the goal is testability, not a polished shared API. Inline Python in Snakemake rules (`run:` blocks in `Snakefile`/`.smk` files) should be thin glue calling into `src/bolinas/`. Don't add `.py` script files under `snakemake/` (no `workflow/scripts/`) — all Python logic goes in the library.
+- **Duplication beats premature abstraction *within* the library.** The "testable home" rule governs *entry* into `src/bolinas/` — move logic in freely, even if similar code already exists elsewhere. A separate, weaker rule governs *deduplication*: only merge two similar functions into one shared helper when the shape has stabilized and they're genuinely doing the same thing. Until then, two near-copies in two pipeline modules is better than a premature abstraction coupling unrelated experiments.
+- **Modularity is a means, not a goal.** Don't refactor for reuse that may never come. Straight-line code that reads top-to-bottom is often preferable to layered abstractions.
+- **Test aggressively.** Every non-trivial function in `src/bolinas/` should have tests — that's the whole reason logic lives there. For pipelines, add sanity checks on outputs (row counts, value ranges, coordinate invariants) rather than trusting that "it ran".
+- **Assert defensively, everywhere.** Use `assert` liberally for invariants that *should* hold: coordinate bounds, dataframe shapes, no NaNs where none are expected, set membership, monotonicity, matching lengths between parallel arrays. A loud failure near the bug is worth far more than a silently corrupted result feeding into training.
+- **Fail fast on silent-corruption risks.** Bioinformatics is full of off-by-one errors, strand mix-ups, and reference-build mismatches. When a result could be quietly wrong, prefer a check that crashes over a comment saying "this should be correct".
+- **No premature generalizations.** If asked to implement a specific backend, dataset, or model variant, stick to that. Don't generalize to related use-cases on your own — offer the option, but only expand the scope when explicitly told to.
+- **Stay in scope.** Don't remove or rewrite unrelated code in other pipelines or library modules while working on a task. Unrelated experiments may depend on exact current behavior.
 
 ## Code Structure
 
 The codebase has two main components:
 
-1. **Python Library** (`src/bolinas/`) - Core utilities for genomic interval manipulation and data processing
-   - Try to move us much shared functionality (e.g. functions) from the pipelines here, so they are subject to higher quality standards (e.g. typing, testing)
+1. **Python Library** (`src/bolinas/`) - Python logic for all pipelines lives here, including pipeline-specific modules. See **Research Code Values** above for why, and for how Snakemake rules should relate to it.
 
 2. **Pipelines** (`snakemake/`) - Data processing workflows implemented in Snakemake
    - Read the pipeline's README before working on it — each `snakemake/<pipeline>/` has its own. If you change pipeline behaviour, update the README in the same PR so the next human or agent can onboard from it.
@@ -27,83 +43,16 @@ The codebase has two main components:
 - **Documentation**: Before merging a PR, make sure all the relevant READMEs are updated.
 
 ### Type Annotations
-- Use Python 3.11+ type annotation syntax throughout
-- Include type hints for all function parameters and return values
-- Use `typing` module imports only when necessary for complex types
-- Prefer built-in generic types (e.g., `list[str]` instead of `List[str]`)
-
-### Constants Over Magic Numbers
-- Replace hard-coded values with named constants
-- Use descriptive constant names that explain the value's purpose
-- Keep constants at the top of the file or in a dedicated constants file
-
-### Meaningful Names
-- Variables, functions, and classes should reveal their purpose
-- Names should explain why something exists and how it's used
-
-### Smart Comments
-- Don't comment on what the code does - make the code self-documenting
-- Use comments to explain why something is done a certain way
-- Document APIs, complex algorithms, and non-obvious side effects
-
-### Clean Structure
-- Keep related code together
-- Organize code in a logical hierarchy
-- Use consistent file and folder naming conventions
-
-### Code Quality Maintenance
-- Refactor continuously
-- Fix technical debt early
-- Leave code cleaner than you found it
-
-## Behavioral Guidelines
-
-### Verify Information
-Always verify information before presenting it. Do not make assumptions or speculate without clear evidence.
-
-### No Apologies
-Never use apologies.
-
-### No Understanding Feedback
-Avoid giving feedback about understanding in comments or documentation.
-
-### No Summaries Of Your Work
-Don't summarize changes made.
-
-### No Unnecessary Confirmations
-Don't ask for confirmation of information already provided in the context.
-
-### Preserve Existing Code
-Don't remove unrelated code or functionalities. Pay attention to preserving existing structures.
-
-### No Implementation Checks
-Don't ask the user to verify implementations that are visible in the provided context.
-
-### No Unnecessary Updates
-Don't suggest updates or changes to files when there are no actual modifications needed.
-
-### Provide Real File Links
-Always provide links to the real files, not x.md.
-
-### No Current Implementation
-Don't show or discuss the current implementation unless specifically requested.
-
-### No Premature Generalizations
-If you are asked to implement a specific backend, just stick to that. Do not generalize to other common or related use-cases. You can offer to implement these, but only do so if explicitly instructed to.
-
-## GitHub Communication
-
-- When an agent creates a PR or issue, add the `agent-generated` label.
-- Agent comments on PRs/issues must begin with `🤖`.
-- For iterative investigations the user wants tracked in their own issue, use the `agent-research` skill — issue body is the living doc, comments are the append-only log with commit-pinned permalinks to code.
+- Type-annotate all function parameters and return values in `src/bolinas/`.
+- Use Python 3.11+ syntax (`list[str]`, `X | None`); reach for `typing` only for constructs that still require it.
 
 ## Autonomy Boundaries
 
 - Never push to `main` without explicit user approval.
 - Never close or merge PRs/issues without explicit user approval.
 
-## Important Notes
+## GitHub Communication
 
-- **Coordinate system**: The codebase consistently uses 0-based, half-open intervals for all genomic coordinates
-- **Installation and usage**: See README.md for installation commands and general usage
-- **Pipeline details**: Each pipeline has its own README with configuration options and usage instructions
+- When an agent creates a PR or issue, add the `agent-generated` label.
+- Agent comments on PRs/issues must begin with `🤖`.
+- For iterative investigations the user wants tracked in their own issue, use the `agent-research` skill — issue body is the living doc, comments are the append-only log with commit-pinned permalinks to code.
