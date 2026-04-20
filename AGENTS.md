@@ -43,7 +43,7 @@ The codebase has two main components:
 - **Documentation**: Before merging a PR, make sure all the relevant READMEs are updated.
 
 ### Type Annotations
-- Type-annotate all function parameters and return values in `src/bolinas/`. Pipeline scripts are lower priority but encouraged.
+- Type-annotate all function parameters and return values in `src/bolinas/`.
 - Use Python 3.11+ syntax (`list[str]`, `X | None`); reach for `typing` only for constructs that still require it.
 
 ## Autonomy Boundaries
