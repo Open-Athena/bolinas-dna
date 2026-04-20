@@ -127,6 +127,58 @@ enhancer_prediction:
     num_workers: 4
     threshold: 0.0  # logit threshold for recipe v19 (set after genome-wide analysis)
 
+enhancer_prediction_segmentation:
+    checkpoint: "s3://oa-bolinas/snakemake/enhancer_classification/results/segmentation/model/xfmr2_w64k_s42_full/seg_v1_64k/best.ckpt"
+    window_size: 65536
+    bin_size: 128
+    batch_size: 32
+    num_workers: 4
+    max_windows: 0  # 0 = all windows; set small (e.g. 10) for smoke tests
+    # One species per mammalian order, restricted to Chromosome-level or
+    # better assemblies, and forcing human + mouse as the Primates /
+    # Rodentia reps (our training species). Other orders pick the smallest
+    # genome at Chromosome level. Orders with no Chromosome-level assembly
+    # (Macroscelidea, Scandentia, Sirenia) are dropped — they only have
+    # highly fragmented Scaffold-level genomes.
+    #
+    # Generated via:
+    #
+    #     import pandas as pd
+    #     FORCE_INCLUDE = ["GCF_000001405.40", "GCF_000001635.27"]
+    #     g = pd.read_parquet("config/genomes.parquet")
+    #     mammals = g[g["class"] == "Mammalia"].copy()
+    #     forced = mammals[mammals["Assembly Accession"].isin(FORCE_INCLUDE)]
+    #     others = mammals[
+    #         ~mammals["Assembly Accession"].isin(FORCE_INCLUDE)
+    #         & ~mammals["order"].isin(set(forced["order"]))
+    #         & (mammals["Assembly Level"] == "Chromosome")
+    #     ].copy()
+    #     picked = others.sort_values(
+    #         ["Assembly Stats Total Sequence Length", "Organism Name"]
+    #     ).drop_duplicates("order")
+    #     selected = pd.concat([forced, picked]).sort_values("order")
+    genomes:
+        - GCF_050624435.1   # Tenrec ecaudatus (Afrosoricida, 3.9GB)
+        - GCF_009834535.1   # Camelus ferus (Artiodactyla, 2.1GB)
+        - GCF_018350215.1   # Panthera leo (Carnivora, 2.3GB)
+        - GCF_027574615.1   # Eptesicus fuscus (Chiroptera, 2.0GB)
+        - GCF_030445035.2   # Dasypus novemcinctus (Cingulata, 3.6GB)
+        - GCF_902635505.1   # Sarcophilus harrisii (Dasyuromorphia, 3.1GB)
+        - GCF_027409185.1   # Cynocephalus volans (Dermoptera, 2.8GB)
+        - GCF_027887165.1   # Monodelphis domestica (Didelphimorphia, 3.6GB)
+        - GCF_011100635.1   # Trichosurus vulpecula (Diprotodontia, 3.4GB)
+        - GCF_027595985.1   # Sorex araneus (Eulipotyphla, 2.4GB)
+        - GCF_030435755.1   # Ochotona princeps (Lagomorpha, 2.6GB)
+        - GCF_019393635.1   # Dromiciops gliroides (Microbiotheria, 3.3GB)
+        - GCF_004115215.2   # Ornithorhynchus anatinus (Monotremata, 1.9GB)
+        - GCF_037893015.1   # Macrotis lagotis (Peramelemorphia, 3.7GB)
+        - GCF_037783145.1   # Equus przewalskii (Perissodactyla, 2.5GB)
+        - GCF_040802235.1   # Manis javanica (Pholidota, 2.6GB)
+        - GCF_023851605.1   # Tamandua tetradactyla (Pilosa, 3.2GB)
+        - GCF_000001405.40  # Homo sapiens (Primates, 3.1GB)
+        - GCF_024166365.1   # Elephas maximus indicus (Proboscidea, 3.4GB)
+        - GCF_000001635.27  # Mus musculus (Rodentia, 2.7GB)
+
 genome_subset_bed:
     - GCF_000001405.40 # Human
     - GCF_000001635.27 # Mouse

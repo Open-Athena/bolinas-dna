@@ -368,6 +368,32 @@ Recipe v19 produces enhancer intervals from a trained `EnhancerClassifier` (see 
 
 **Status**: working but slow (~1.4h per genome on L4 GPU). For a faster alternative being explored, see [issue #115](https://github.com/Open-Athena/bolinas-dna/issues/115) (per-bin segmentation).
 
+## Whole-genome segmentation prediction
+
+Runs the per-bin segmentation model from [issue #115](https://github.com/Open-Athena/bolinas-dna/issues/115) across whole genomes, producing 128bp-resolution enhancer logits — see [issue #118](https://github.com/Open-Athena/bolinas-dna/issues/118).
+
+**Pipeline**: `segmentation_prediction_windows` → `predict_enhancers_segmentation`. Aggregate target: `all_enhancer_predictions_segmentation`.
+
+**Prerequisites**:
+- Install enhancer-classification dependencies: `uv sync --group enhancer-classification`
+- A trained `EnhancerSegmenter` checkpoint (configured via `enhancer_prediction_segmentation.checkpoint` in `config.yaml`; supports `s3://` URIs via Snakemake `storage()`)
+- A GPU for the prediction rule
+- ~5GB free local disk per active job for the Snakemake S3 cache (genome ~2–3GB + checkpoint ~1.5GB). The cache is cleaned up between jobs.
+
+**Configuration** (`enhancer_prediction_segmentation` block in `config.yaml`):
+- `checkpoint`: path or S3 URI to the Lightning checkpoint
+- `window_size`: window size in bp (64kbp for the default 64k-context transformer model)
+- `bin_size`: output bin size in bp (128 for the default model)
+- `batch_size`, `num_workers`: inference DataLoader settings
+- `max_windows`: truncate to first N windows for smoke tests (0 = no limit)
+- `genomes`: list of Assembly Accessions to predict
+
+**Window tiling**: only full-context windows are emitted — the model was trained on unpadded sequence and is not robust to N-padded inputs. Consequence: contigs smaller than `window_size` and chromosome tails not aligned to `window_size` are uncovered. This restricts the selection to Chromosome-level assemblies; see #118 for discussion of future improvements (training with padding, smaller-context model).
+
+**Output**: one parquet per genome at `results/enhancer_predictions_segmentation/{g}.parquet` (stored to S3 by the default profile) with schema `(chrom: str, bin_start: int64, bin_end: int64, logit: float32)` — one row per 128bp bin.
+
+**Status**: ~1h per genome on L4 GPU (~65 min). See #118 for benchmarks and a follow-up [#119](https://github.com/Open-Athena/bolinas-dna/issues/119) for parallel execution across multiple GPU instances via AWS Batch.
+
 ## Output
 
 Datasets are uploaded to HuggingFace Hub at the specified `output_hf_prefix`.

@@ -1,4 +1,5 @@
 ENHANCER_CONFIG = config["enhancer_prediction"]
+SEGMENTATION_CONFIG = config["enhancer_prediction_segmentation"]
 
 
 wildcard_constraints:
@@ -81,6 +82,60 @@ rule predict_enhancers:
             --num-workers {params.num_workers} \
             --output {output}
         """
+
+
+rule segmentation_prediction_windows:
+    input:
+        "results/genome/{g}.2bit",
+    output:
+        "results/enhancer_predictions_segmentation/windows/{g}.parquet",
+    run:
+        tb = py2bit.open(input[0])
+        chrom_sizes = tb.chroms()
+        tb.close()
+
+        tiles = tile_chromosomes(chrom_sizes, SEGMENTATION_CONFIG["window_size"])
+        pl.DataFrame(tiles, schema=["chrom", "start", "end"], orient="row").write_parquet(
+            output[0]
+        )
+
+
+rule predict_enhancers_segmentation:
+    input:
+        genome="results/genome/{g}.2bit",
+        windows="results/enhancer_predictions_segmentation/windows/{g}.parquet",
+        checkpoint=storage(SEGMENTATION_CONFIG["checkpoint"]),
+    output:
+        "results/enhancer_predictions_segmentation/{g}.parquet",
+    params:
+        bin_size=SEGMENTATION_CONFIG["bin_size"],
+        batch_size=SEGMENTATION_CONFIG["batch_size"],
+        num_workers=SEGMENTATION_CONFIG["num_workers"],
+        max_windows=SEGMENTATION_CONFIG["max_windows"],
+    threads: workflow.cores
+    shell:
+        # Persist the torch.compile cache across per-genome invocations so
+        # every genome after the first skips the ~30s Inductor compile step.
+        """
+        TORCHINDUCTOR_CACHE_DIR=.snakemake/torchinductor_cache \
+        uv run python -m bolinas.enhancer_segmentation.predict_genome \
+            --genome {input.genome} \
+            --checkpoint {input.checkpoint} \
+            --windows {input.windows} \
+            --bin-size {params.bin_size} \
+            --batch-size {params.batch_size} \
+            --num-workers {params.num_workers} \
+            --max-windows {params.max_windows} \
+            --output {output}
+        """
+
+
+rule all_enhancer_predictions_segmentation:
+    input:
+        expand(
+            "results/enhancer_predictions_segmentation/{g}.parquet",
+            g=SEGMENTATION_CONFIG["genomes"],
+        ),
 
 
 rule intervals_recipe_v19:

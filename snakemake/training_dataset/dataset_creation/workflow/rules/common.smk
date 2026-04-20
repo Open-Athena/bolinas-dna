@@ -2,6 +2,7 @@
 import numpy as np
 import pandas as pd
 import polars as pl
+import py2bit
 import pyBigWig
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -30,6 +31,7 @@ from bolinas.data.utils import (
     write_pandas_to_bed,
 )
 from bolinas.enhancer_classification.predict import sliding_windows
+from bolinas.enhancer_segmentation.predict_genome import tile_chromosomes
 
 tqdm.pandas()
 
