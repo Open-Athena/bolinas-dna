@@ -86,7 +86,7 @@ For each new run, finding, or course-correction:
   echo "https://github.com/$REPO/blob/$SHA/src/bolinas/intervals.py#L42"
   ```
 
-  Both forms require the SHA to be pushed to a branch visible on GitHub — otherwise the URL will 404 for readers. If the referenced code isn't yet pushed, push first (to the current branch — *not* `main`) before posting the link. Links that drift to later code are worse than no link.
+  Both forms require the SHA to be pushed to a branch visible on GitHub — otherwise the URL will 404 for readers. If the referenced code isn't yet pushed, push first (to the current branch — *not* `main`) before posting the link.
 
 - If the takeaway changes the headline story, **also** edit the issue body's *Current findings* / *Open questions*. Body edits are retroactive-safe; comments are not.
 - **Scope changes get their own comment.** When the thread's direction shifts — adding a question, dropping one, narrowing methodology — post a `🤖` comment that names the shift explicitly ("Scope update: dropping X, adding Y because Z"), *then* update the *Scope* section of the body. Never rewrite *Scope* silently.
