@@ -46,7 +46,7 @@ Three things. No more.
      --body-file <path>
    ```
 
-   Title is prefixed with `🤖 ` per [CLAUDE.md](../../../CLAUDE.md).
+   Title is prefixed with `🤖 ` to match how recent agent-generated issues are titled (e.g. #120, #123). [CLAUDE.md](../../../CLAUDE.md) mandates the prefix on *comments*; prefixing the title is convention, not a rule.
 3. If a pipeline is needed, scaffold `snakemake/analysis/<name>/` following an existing example (e.g. `snakemake/analysis/sequence_similarity/`) and link it from the issue body.
 
 The repo's `.github/ISSUE_TEMPLATE/experiment.md` is WandB-flavored and does not match this workflow — do not route through it.
@@ -74,19 +74,19 @@ For each new run, finding, or course-correction:
   https://github.com/<owner>/<repo>/blob/<sha>/<path>#L<line>
   ```
 
-  Quick ways to produce one:
+  Quick ways to produce one (substitute your own `<path>` and `<line>`):
 
   ```
-  # copy a permalink for the current HEAD, line L in FILE
-  gh browse FILE:L -n -c "$(git rev-parse HEAD)"
+  # copy a permalink for the current HEAD, a specific line in a file
+  gh browse src/bolinas/intervals.py:42 -n -c "$(git rev-parse HEAD)"
 
   # or construct it yourself
   SHA=$(git rev-parse HEAD)
   REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-  echo "https://github.com/$REPO/blob/$SHA/FILE#LL"
+  echo "https://github.com/$REPO/blob/$SHA/src/bolinas/intervals.py#L42"
   ```
 
-  Links that drift to later code are worse than no link. If the referenced code isn't yet pushed, push first (to the current branch — *not* `main`) so the SHA resolves publicly.
+  Both forms require the SHA to be pushed to a branch visible on GitHub — otherwise the URL will 404 for readers. If the referenced code isn't yet pushed, push first (to the current branch — *not* `main`) before posting the link. Links that drift to later code are worse than no link.
 
 - If the takeaway changes the headline story, **also** edit the issue body's *Current findings* / *Open questions*. Body edits are retroactive-safe; comments are not.
 - **Scope changes get their own comment.** When the thread's direction shifts — adding a question, dropping one, narrowing methodology — post a `🤖` comment that names the shift explicitly ("Scope update: dropping X, adding Y because Z"), *then* update the *Scope* section of the body. Never rewrite *Scope* silently.
