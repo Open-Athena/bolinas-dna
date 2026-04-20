@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**Bolinas** is a framework for developing genomic language models (gLMs). It includes training dataset creation and evaluations.
+**Bolinas** is a framework for developing genomic language models (gLMs).
 
 ## Domain Conventions
 
