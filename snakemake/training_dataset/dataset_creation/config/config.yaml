@@ -39,6 +39,28 @@ genome_sets:
     - name: humans
       rank_key: species
       rank_value: "Homo sapiens"
+    - name: human_mouse
+      accessions:
+          - GCF_000001405.40 # Human
+          - GCF_000001635.27 # Mouse
+
+# Interval sets defined on one source genome and projected onto others via
+# local pairwise alignment. Each entry produces intervals at
+# results/intervals/{name}/{g}.parquet for every configured genome — the
+# source-genome file is a chrom-normalized copy of `source_parquet`; other
+# genomes come from the `mapper` alignment. Downstream (fasta extraction,
+# windowing, HF upload) consumes these alongside annotation-derived interval
+# sets; the origin is not visible past this rule.
+interval_mappings:
+    - name: ELS_conserved_20_minimap2_map_ont
+      source_parquet: results/cre/ELS_conserved_20.parquet
+      source_chrom_style: ucsc_stripped
+      source_genome: GCF_000001405.40
+      mapper: minimap2
+      # -I 1G splits the target index into ≤1GB batches so the rule fits in
+      # ~15GB of RAM on the dev box; trades a small amount of wall time.
+      preset: "-cx map-ont -N 1 --secondary=no -I 1G"
+      flank_bp: 0
 
 output_hf_prefix: bolinas-dna/genomes-v5
 

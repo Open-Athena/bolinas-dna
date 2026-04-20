@@ -63,23 +63,28 @@ def load_genome_sets(
     genomes: pd.DataFrame, genome_sets_config: list[dict]
 ) -> dict[str, list[str]]:
     """
-    Load genome sets based on taxonomic filtering criteria.
+    Load genome sets by taxonomic rank filtering or by an explicit accession list.
+
+    Each entry must have a `name`; then either:
+    - `rank_key` + `rank_value` to select all genomes with that taxonomic rank, or
+    - `accessions` as a flat list of Assembly Accessions.
 
     Args:
         genomes: DataFrame with genomes indexed by Assembly Accession
-        genome_sets_config: List of dicts with 'name', 'rank_key', and 'rank_value' keys
+        genome_sets_config: List of dicts describing each genome set.
 
     Returns:
-        Dictionary mapping subset names to lists of genome Assembly Accessions
+        Dictionary mapping subset names to lists of genome Assembly Accessions.
     """
     genome_sets = {}
     for genome_set in genome_sets_config:
         name = genome_set["name"]
-        rank_key = genome_set["rank_key"]
-        rank_value = genome_set["rank_value"]
-
-        # Filter genomes based on the rank criteria
-        filtered = genomes[genomes[rank_key] == rank_value]
-        genome_sets[name] = filtered.index.tolist()
+        if "accessions" in genome_set:
+            genome_sets[name] = list(genome_set["accessions"])
+        else:
+            rank_key = genome_set["rank_key"]
+            rank_value = genome_set["rank_value"]
+            filtered = genomes[genomes[rank_key] == rank_value]
+            genome_sets[name] = filtered.index.tolist()
 
     return genome_sets
