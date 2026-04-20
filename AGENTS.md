@@ -12,9 +12,10 @@
 
 This is research code. Prioritize **reproducibility** and **correctness** over architectural elegance.
 
-- **Duplication beats premature abstraction.** Copying a function or a few lines between pipelines is fine when the alternative is a shared helper that couples unrelated experiments. Only promote code to `src/bolinas/` once the shape is stable and genuinely shared.
-- **Modularity is a means, not a goal.** Don't refactor for reuse that may never come. Straight-line scripts that read top-to-bottom are often preferable to layered abstractions.
-- **Test aggressively.** Every non-trivial function in `src/bolinas/` should have tests. For pipelines, add sanity checks on outputs (row counts, value ranges, coordinate invariants) rather than trusting that "it ran".
+- **Put Python logic in `src/bolinas/` so pytest can reach it.** Even pipeline-specific functions belong in the library — the goal is testability, not a polished shared API. Pipeline scripts (`snakemake/**/scripts/*.py`, `workflow/Snakefile`) should be thin glue calling into `src/bolinas/`. Logic that only lives inside a Snakemake rule or a script is effectively untestable.
+- **Duplication beats premature abstraction.** Within `src/bolinas/`, copying a function across pipeline-specific modules is fine when the alternative is a shared helper that couples unrelated experiments. Consolidate only when the shape is stable and genuinely shared.
+- **Modularity is a means, not a goal.** Don't refactor for reuse that may never come. Straight-line code that reads top-to-bottom is often preferable to layered abstractions.
+- **Test aggressively.** Every non-trivial function in `src/bolinas/` should have tests — that's the whole reason logic lives there. For pipelines, add sanity checks on outputs (row counts, value ranges, coordinate invariants) rather than trusting that "it ran".
 - **Assert defensively, everywhere.** Use `assert` liberally for invariants that *should* hold: coordinate bounds, dataframe shapes, no NaNs where none are expected, set membership, monotonicity, matching lengths between parallel arrays. A loud failure near the bug is worth far more than a silently corrupted result feeding into training.
 - **Fail fast on silent-corruption risks.** Bioinformatics is full of off-by-one errors, strand mix-ups, and reference-build mismatches. When a result could be quietly wrong, prefer a check that crashes over a comment saying "this should be correct".
 - **No premature generalizations.** If asked to implement a specific backend, dataset, or model variant, stick to that. Don't generalize to related use-cases on your own — offer the option, but only expand the scope when explicitly told to.
@@ -24,7 +25,7 @@ This is research code. Prioritize **reproducibility** and **correctness** over a
 
 The codebase has two main components:
 
-1. **Python Library** (`src/bolinas/`) - Core utilities for genomic interval manipulation and data processing. Code lives here once it's stable and genuinely shared across pipelines; see Research Code Values for when to promote.
+1. **Python Library** (`src/bolinas/`) - The testable home for Python logic across the project. Pipeline-specific modules belong here too — this is not a polished shared API, it's the place where pytest can reach the code. Pipeline scripts should be thin glue calling into this.
 
 2. **Pipelines** (`snakemake/`) - Data processing workflows implemented in Snakemake
    - Read the pipeline's README before working on it — each `snakemake/<pipeline>/` has its own. If you change pipeline behaviour, update the README in the same PR so the next human or agent can onboard from it.
