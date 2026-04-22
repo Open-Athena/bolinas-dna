@@ -92,7 +92,7 @@ rule normalize_minimap2_genome_hits:
         else:
             paf_df_for_overlap = pl.DataFrame([
                 {"hg38_chrom": r["hg38_chrom"], "hg38_start": r["hg38_start"],
-                 "hg38_end": r["hg38_end"], "_paf_idx": i}
+                 "hg38_end": r["hg38_end"], "paf_idx": i}
                 for i, r in enumerate(paf_rows)
             ]).to_pandas()
             j = bf.overlap(
@@ -105,7 +105,7 @@ rule normalize_minimap2_genome_hits:
             )
             out_rows: list[dict] = []
             for row in j.itertuples(index=False):
-                paf = paf_rows[row._paf_idx]
+                paf = paf_rows[row.paf_idx]
                 if not paf["cigar"]:
                     continue
                 lifted = cigar_lift(
