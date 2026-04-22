@@ -16,6 +16,4 @@ query_flanks_bp:
     - 0
 
 aligners:
-    - mmseqs2
-    - minimap2_map-ont_k11
-    - lastz
+    - fastga  # BFS iteration #4 — only the new method; prior aligners' results stored locally
