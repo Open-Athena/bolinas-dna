@@ -5,7 +5,9 @@ name: dels-orthologs-mmseqs2
 # resident at -k 15). See issue #120 for context.
 
 resources:
-  infra: aws/us-east-1
+  # us-east-2 matches the account's main working region + same-region S3 for
+  # any future cached-data patterns (e.g. genomes, mmseqs indexes).
+  infra: aws/us-east-2
   instance_type: r6i.8xlarge   # 32 vCPU, 256 GB RAM
   disk_size: 300               # genomes + bigwigs + mmseqs index + conda envs
 
