@@ -49,13 +49,21 @@ rule fastga_uppercase_query:
 
 
 rule fastga_align:
+    """FASTGA variant wildcard. Flag string comes from config["fastga_variants"][aligner];
+    baseline `fastga` key maps to the default `-s100 -i.55`. Additional variants
+    (lower chain threshold, shorter seeds, etc.) are added to `fastga_variants`
+    in config and fan out automatically through the same downstream eval rules.
+    """
     input:
         target="results/target/mm10_window.upper.fasta",
         query="results/cre/hg38/flank_{flank}/query.filtered.upper.fasta",
     output:
-        paf="results/align/fastga/flank_{flank}/raw.paf",
+        paf="results/align/{aligner}/flank_{flank}/raw.paf",
     wildcard_constraints:
+        aligner=r"fastga(_.*)?",
         flank=r"-?\d+",
+    params:
+        flags=lambda wc: config.get("fastga_variants", {}).get(wc.aligner, "-s100 -i.55"),
     threads: workflow.cores
     resources:
         mem_mb=32000,
@@ -64,7 +72,7 @@ rule fastga_align:
     shell:
         r"""
         FastGA -v -k -T{threads} -paf \
-            -s100 -i.55 \
+            {params.flags} \
             {input.query} {input.target} \
             > {output.paf}
         """
@@ -90,10 +98,11 @@ rule normalize_fastga_hits:
       trailing `.N` to recover the original cCRE accession.
     """
     input:
-        "results/align/fastga/flank_{flank}/raw.paf",
+        "results/align/{aligner}/flank_{flank}/raw.paf",
     output:
-        "results/align/fastga/flank_{flank}/hits.tsv",
+        "results/align/{aligner}/flank_{flank}/hits.tsv",
     wildcard_constraints:
+        aligner=r"fastga(_.*)?",
         flank=r"-?\d+",
     run:
         _, win_start, _ = get_search_window("mm10")

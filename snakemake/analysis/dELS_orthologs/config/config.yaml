@@ -78,6 +78,21 @@ minimap2_variants:
 mmseqs2:
     sensitivity: 7.5
     max_accept: 100
+
+# Flag strings for each `fastga_*` aligner. The `fastga_align` rule matches any
+# aligner name with the `fastga(_.*)?` wildcard constraint and pulls flags
+# from this dict. Entries cover:
+# - `-s100`: allow <1 kb alignments (default 1000 rejects every 300-500 bp cCRE).
+# - `-i.55`: float 0.55 is FASTGA's hardcoded lower bound (default 0.7 too strict
+#   for ~75% cross-species identity tail).
+# - `-c<N>`: chain-coverage percentage; default 85 demands a long chain, often
+#   unavailable for short queries.
+# - `-l<N>`: minimum seed length; default 100 nearly equals the median cCRE.
+fastga_variants:
+    fastga: "-s100 -i.55"
+    fastga_c50: "-s100 -i.55 -c50"
+    fastga_l50: "-s100 -i.55 -l50"
+    fastga_c50_l50: "-s100 -i.55 -c50 -l50"
     # Whole-mm10 nucleotide index + occupied-list growth needs headroom above
     # the 15 GB dev-box budget. Override on the cloud profile (r6i.8xlarge, 256 GB).
     mem_mb: 14000
