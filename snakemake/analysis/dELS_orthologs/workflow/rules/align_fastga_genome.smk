@@ -89,7 +89,7 @@ rule fastga_genome_align:
         "../envs/fastga.yaml"
     shell:
         r"""
-        FastGA -v -k -T{threads} -paf \
+        FastGA -v -k -T{threads} -pafx \
             {params.flags} \
             {input.query} {input.target} \
             > {output.paf}
@@ -97,20 +97,18 @@ rule fastga_genome_align:
 
 
 rule normalize_fastga_genome_hits:
-    """Project whole-genome FASTGA PAF to the unified per-cCRE hits schema.
+    """Project whole-genome FASTGA PAF to the unified per-cCRE hits schema
+    via exact CIGAR-based lift.
 
-    FASTGA alignments at genome-vs-genome scale are often multi-kb syntenic
-    blocks (median ~9 kb on hg38↔mm10 at default params). Crediting each
-    alignment's full mm10 span to every overlapping hg38 cCRE inflates
-    hit_chrom/hit_start/hit_end to the whole-block mm10 range, which then
-    picks up every mm10 cCRE in the block as a candidate partner — top-1
-    ends up arbitrary among many, precision collapses to ~12%.
+    FASTGA alignments at genome-vs-genome scale are multi-kb syntenic blocks
+    (median ~9 kb on hg38↔mm10). We need per-cCRE mm10 coords, not block-
+    level. An earlier proportional-lift approximation drifted by cumulative
+    gap offsets (hundreds of bp), missing mm10 cCRE boundaries.
 
-    Fix: for each (alignment, overlapping cCRE) pair, **proportional-lift**
-    the cCRE's hg38 sub-interval to a mm10 sub-interval via `proportional_lift`
-    (linear interpolation within the alignment, gap-ignoring). The lifted
-    mm10 span is what downstream per_query_report intersects with mm10 cCREs,
-    so only the mm10 cCRE actually aligned to each hg38 cCRE gets credit.
+    Fix: use `bolinas.lift.cigar_lift` to walk each alignment's CIGAR string
+    (present because we pass `-pafx` to FASTGA) and compute the exact mm10
+    sub-coords corresponding to each overlapping hg38 cCRE's span. Tested
+    at `tests/test_lift.py`.
     """
     input:
         paf="results/align/{aligner}/flank_0/raw.paf",
@@ -120,7 +118,9 @@ rule normalize_fastga_genome_hits:
     wildcard_constraints:
         aligner=r"fastga_genome(_.*)?",
     run:
-        # Parse PAF rows into a pandas-friendly frame first (we need bioframe).
+        from bolinas.lift import cigar_lift
+
+        # Parse PAF rows, retaining CIGAR from the `cg:Z:` tag (-pafx output).
         paf_rows: list[dict] = []
         with open(input.paf) as f:
             for line in f:
@@ -128,55 +128,55 @@ rule normalize_fastga_genome_hits:
                     continue
                 p = line.rstrip("\n").split("\t")
                 qname = p[0]
-                qlen = int(p[1])
                 qstart, qend = int(p[2]), int(p[3])
                 strand = p[4]
                 tname = p[5]
                 tstart, tend = int(p[7]), int(p[8])
                 matches = int(p[9])
+                cigar = ""
                 fident: float | None = None
                 for tag in p[12:]:
-                    if tag.startswith("dv:f:"):
+                    if tag.startswith("cg:Z:"):
+                        cigar = tag[5:]
+                    elif tag.startswith("dv:f:"):
                         fident = 1.0 - float(tag[5:])
-                        break
                 if fident is None:
                     alnlen = int(p[10])
                     fident = matches / alnlen if alnlen else 0.0
-                paf_rows.append(
-                    {
-                        "hg38_chrom": qname,
-                        "hg38_start": qstart,
-                        "hg38_end": qend,
-                        "rev_strand": strand == "-",
-                        "hit_chrom": tname,
-                        "hit_start": tstart,
-                        "hit_end": tend,
-                        "score": matches,
-                        "fident": fident,
-                        "qcov": (qend - qstart) / qlen if qlen else 0.0,
-                        "tcov": 0.0,  # target-coverage is meaningless at whole-chrom target scale
-                    }
-                )
-        paf_df = pl.DataFrame(paf_rows) if paf_rows else pl.DataFrame(schema={
-            "hg38_chrom": pl.Utf8, "hg38_start": pl.Int64, "hg38_end": pl.Int64,
-            "rev_strand": pl.Boolean, "hit_chrom": pl.Utf8, "hit_start": pl.Int64,
-            "hit_end": pl.Int64, "score": pl.Int64, "fident": pl.Float64,
-            "qcov": pl.Float64, "tcov": pl.Float64,
-        })
+                paf_rows.append({
+                    "hg38_chrom": qname,
+                    "hg38_start": qstart,
+                    "hg38_end": qend,
+                    "strand": strand,
+                    "hit_chrom": tname,
+                    "hit_start": tstart,
+                    "hit_end": tend,
+                    "score": matches,
+                    "fident": fident,
+                    "cigar": cigar,
+                })
+        print(f"  {wildcards.aligner}: {len(paf_rows)} PAF rows, "
+              f"{sum(1 for r in paf_rows if r['cigar'])} with CIGAR")
 
-        # Intersect hg38 alignment spans with hg38 query cCRE intervals,
-        # then proportional-lift each cCRE's hg38 span → mm10 sub-interval.
         cres = pl.read_parquet(input.query_cres).select("chrom", "start", "end", "accession")
-        if paf_df.height == 0:
-            unified = pl.DataFrame(schema={
-                "query": pl.Utf8, "hit_chrom": pl.Utf8, "hit_start": pl.Int64,
-                "hit_end": pl.Int64, "rev_strand": pl.Boolean, "score": pl.Int64,
-                "fident": pl.Float64, "evalue": pl.Float64, "qcov": pl.Float64,
-                "tcov": pl.Float64,
-            })
+
+        schema_unified = {
+            "query": pl.Utf8, "hit_chrom": pl.Utf8, "hit_start": pl.Int64,
+            "hit_end": pl.Int64, "rev_strand": pl.Boolean, "score": pl.Int64,
+            "fident": pl.Float64, "evalue": pl.Float64, "qcov": pl.Float64,
+            "tcov": pl.Float64,
+        }
+
+        if not paf_rows:
+            unified = pl.DataFrame(schema=schema_unified)
         else:
+            paf_df_for_overlap = pl.DataFrame([
+                {"hg38_chrom": r["hg38_chrom"], "hg38_start": r["hg38_start"],
+                 "hg38_end": r["hg38_end"], "_paf_idx": i}
+                for i, r in enumerate(paf_rows)
+            ]).to_pandas()
             j = bf.overlap(
-                paf_df.to_pandas(),
+                paf_df_for_overlap,
                 cres.to_pandas(),
                 cols1=("hg38_chrom", "hg38_start", "hg38_end"),
                 cols2=("chrom", "start", "end"),
@@ -185,46 +185,34 @@ rule normalize_fastga_genome_hits:
             )
             out_rows: list[dict] = []
             for row in j.itertuples(index=False):
-                lifted = proportional_lift(
-                    qs=row.hg38_start, qe=row.hg38_end,
-                    ts=row.hit_start, te=row.hit_end,
-                    rev=bool(row.rev_strand),
-                    cs=row.start_cre, ce=row.end_cre,
+                paf = paf_rows[row._paf_idx]
+                if not paf["cigar"]:
+                    continue  # can't lift without CIGAR
+                lifted = cigar_lift(
+                    q_start=paf["hg38_start"], q_end=paf["hg38_end"],
+                    t_start=paf["hit_start"], t_end=paf["hit_end"],
+                    strand=paf["strand"], cigar=paf["cigar"],
+                    lift_q_start=row.start_cre, lift_q_end=row.end_cre,
                 )
                 if lifted is None:
                     continue
                 mt_start, mt_end = lifted
-                ccre_len = row.end_cre - row.start_cre
-                aln_qlen = row.hg38_end - row.hg38_start
-                # Scale score proportionally so per-cCRE rankings see a
-                # cCRE-scale match count rather than the whole block's.
-                score_scaled = int(round(row.score * min(ccre_len, aln_qlen) / aln_qlen)) if aln_qlen else 0
                 out_rows.append({
                     "query": row.accession_cre,
-                    "hit_chrom": row.hit_chrom,
+                    "hit_chrom": paf["hit_chrom"],
                     "hit_start": mt_start,
                     "hit_end": mt_end,
-                    "rev_strand": bool(row.rev_strand),
-                    "score": score_scaled,
-                    "fident": float(row.fident),
+                    "rev_strand": paf["strand"] == "-",
+                    "score": int(paf["score"] * (row.end_cre - row.start_cre) / max(1, paf["hg38_end"] - paf["hg38_start"])),
+                    "fident": paf["fident"],
                     "evalue": None,
-                    "qcov": 1.0,  # cCRE fully contained in alignment by construction
+                    "qcov": 1.0,
                     "tcov": 0.0,
                 })
-            unified = pl.DataFrame(out_rows, schema={
-                "query": pl.Utf8, "hit_chrom": pl.Utf8, "hit_start": pl.Int64,
-                "hit_end": pl.Int64, "rev_strand": pl.Boolean, "score": pl.Int64,
-                "fident": pl.Float64, "evalue": pl.Float64, "qcov": pl.Float64,
-                "tcov": pl.Float64,
-            }) if out_rows else pl.DataFrame(schema={
-                "query": pl.Utf8, "hit_chrom": pl.Utf8, "hit_start": pl.Int64,
-                "hit_end": pl.Int64, "rev_strand": pl.Boolean, "score": pl.Int64,
-                "fident": pl.Float64, "evalue": pl.Float64, "qcov": pl.Float64,
-                "tcov": pl.Float64,
-            })
+            unified = pl.DataFrame(out_rows, schema=schema_unified) if out_rows else pl.DataFrame(schema=schema_unified)
+
         unified.write_csv(output[0], separator="\t", include_header=True)
         print(
             f"  {wildcards.aligner}: {unified.height} cCRE-assigned alignments "
-            f"across {unified['query'].n_unique()} queries "
-            f"(from {paf_df.height} PAF rows)"
+            f"across {unified['query'].n_unique()} queries"
         )
