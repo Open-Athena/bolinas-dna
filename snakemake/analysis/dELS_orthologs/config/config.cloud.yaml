@@ -16,7 +16,7 @@ query_flanks_bp:
     - 0
 
 aligners:
-    - minimap2_genome  # native whole-hg38 vs whole-mm10 regime (-cx asm20).
+    - minimap2_genome  # now with -cx map-ont -k 11 (same as cCRE-queries winner)
 
 query_flanks_bp:
     - 0  # flank doesn't apply at whole-genome scale (every base of hg38 is in the search).
