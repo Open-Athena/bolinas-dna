@@ -93,6 +93,9 @@ fastga_variants:
     fastga_c50: "-s100 -i.55 -c50"
     fastga_l50: "-s100 -i.55 -l50"
     fastga_c50_l50: "-s100 -i.55 -c50 -l50"
+    # Native-regime (whole-genome vs whole-genome). Same flag defaults as
+    # the cCRE-as-queries variant above, to isolate the input framing effect.
+    fastga_genome: "-s100 -i.55"
     # Whole-mm10 nucleotide index + occupied-list growth needs headroom above
     # the 15 GB dev-box budget. Override on the cloud profile (r6i.8xlarge, 256 GB).
     mem_mb: 14000

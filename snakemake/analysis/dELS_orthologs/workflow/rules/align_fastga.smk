@@ -60,7 +60,7 @@ rule fastga_align:
     output:
         paf="results/align/{aligner}/flank_{flank}/raw.paf",
     wildcard_constraints:
-        aligner=r"fastga(_.*)?",
+        aligner=r"fastga(?!_genome)(_[^/]*)?",
         flank=r"-?\d+",
     params:
         flags=lambda wc: config.get("fastga_variants", {}).get(wc.aligner, "-s100 -i.55"),
@@ -102,7 +102,7 @@ rule normalize_fastga_hits:
     output:
         "results/align/{aligner}/flank_{flank}/hits.tsv",
     wildcard_constraints:
-        aligner=r"fastga(_.*)?",
+        aligner=r"fastga(?!_genome)(_[^/]*)?",
         flank=r"-?\d+",
     run:
         _, win_start, _ = get_search_window("mm10")
