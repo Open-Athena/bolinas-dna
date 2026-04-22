@@ -19,7 +19,9 @@ aligners:
     - fastga
     - fastga_c50
     - fastga_l50
-    - fastga_c50_l50
+    # - fastga_c50_l50  # combined loosening crashes FASTGA with "Cannot write
+    #   overlap gather file /tmp/…" — probably an internal limit being hit when
+    #   both seed density and chain coverage are relaxed. Skipping for now.
 
 query_flanks_bp:
     - 0
