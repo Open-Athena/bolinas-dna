@@ -1,0 +1,3 @@
+# Local-only dirs — results from prior iterations, shouldn't be rsynced.
+results/
+results-*/
