@@ -10,6 +10,8 @@ resources:
   infra: aws/us-east-2
   instance_type: r6i.8xlarge   # 32 vCPU, 256 GB RAM
   disk_size: 300               # genomes + bigwigs + mmseqs index + conda envs
+  labels:
+    project: dna               # cost-attribution tag on the AWS EC2 instance
 
 workdir: .
 
