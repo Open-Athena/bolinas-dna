@@ -16,4 +16,11 @@ query_flanks_bp:
     - 0
 
 aligners:
-    - lastz_hoxd55  # DFS iteration on the BFS winner — HOXD55 is more permissive than HOXD70
+    - fastga
+    - fastga_c50
+    - fastga_l50
+    - fastga_c50_l50
+
+query_flanks_bp:
+    - 0
+    - 100
