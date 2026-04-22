@@ -16,7 +16,7 @@ query_flanks_bp:
     - 0
 
 aligners:
-    - fastga_genome  # native whole-hg38 vs whole-mm10 regime — FASTGA's design target.
+    - minimap2_genome  # native whole-hg38 vs whole-mm10 regime (-cx asm20).
 
 query_flanks_bp:
     - 0  # flank doesn't apply at whole-genome scale (every base of hg38 is in the search).
