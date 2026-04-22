@@ -1,3 +1,24 @@
-# Local-only dirs — results from prior iterations, shouldn't be rsynced.
+# .skyignore REPLACES .gitignore for SkyPilot workdir rsync. Mirror the
+# relevant parts of .gitignore here + the sky-specific additions.
+
+# Python virtual envs — must rebuild on the cluster with cluster-local paths.
+.venv/
+venv/
+
+# Snakemake's local DAG / conda-env cache: the cluster has its own that
+# should not be clobbered by our local copy.
+.snakemake/
+
+# Byte-compiled / cached Python.
+__pycache__/
+*.py[codz]
+
+# Pipeline results — local analysis artefacts, don't travel to the cluster.
 results/
 results-*/
+
+# Agent state (per-repo .claude/worktrees, tmp files).
+.claude/
+
+# Git metadata (the cluster doesn't need the git database).
+.git/
