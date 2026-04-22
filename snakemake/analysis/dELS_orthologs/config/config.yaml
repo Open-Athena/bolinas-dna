@@ -74,6 +74,8 @@ minimap2_variants:
     minimap2_map-ont_k11_B3: "-cx map-ont -k 11 -B 3 --secondary=yes -N 50"
     minimap2_map-ont_k11_s20m20: "-cx map-ont -k 11 -s 20 -m 20 --secondary=yes -N 50"
     minimap2_map-ont_k9: "-cx map-ont -k 9 --secondary=yes -N 50"
+    # Genome-vs-genome (native asm-vs-asm) regime; used by align_minimap2_genome.smk.
+    minimap2_genome: "-cx asm20 --secondary=yes -N 50"
 
 mmseqs2:
     sensitivity: 7.5

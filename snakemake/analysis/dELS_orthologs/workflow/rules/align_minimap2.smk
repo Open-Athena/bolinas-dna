@@ -18,7 +18,7 @@ rule minimap2_align:
     output:
         paf="results/align/{aligner}/flank_{flank}/raw.paf",
     wildcard_constraints:
-        aligner="minimap2_.+",
+        aligner=r"minimap2_(?!genome)[^/]+",
         flank=r"-?\d+",
     params:
         flags=lambda wildcards: config["minimap2_variants"][wildcards.aligner],
@@ -49,7 +49,7 @@ rule normalize_minimap2_hits:
     output:
         "results/align/{aligner}/flank_{flank}/hits.tsv",
     wildcard_constraints:
-        aligner="minimap2_.+",
+        aligner=r"minimap2_(?!genome)[^/]+",
         flank=r"-?\d+",
     run:
         _, win_start, _ = get_search_window("mm10")
