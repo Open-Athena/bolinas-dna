@@ -9,6 +9,13 @@ mmseqs2:
     mem_mb: 220000
     split_memory_limit: "220G"
 
-# query_flanks_bp inherited from base config (-50, 0, +100). The flank-0
-# baseline iteration passed cleanly on r6i.8xlarge in ~90 s per aligner,
-# so we can afford the full 3-flank × 2-aligner sweep in one launch.
+# For the lastz BFS iteration, restrict to flank=0 and a smaller aligner set
+# so we don't multiply lastz's runtime across flanks it wasn't proven on yet.
+# minimap2_map-ont_k11 runs at the same flank for fresh same-hardware reference.
+query_flanks_bp:
+    - 0
+
+aligners:
+    - mmseqs2
+    - minimap2_map-ont_k11
+    - lastz
