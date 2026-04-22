@@ -99,19 +99,18 @@ rule fastga_genome_align:
 rule normalize_fastga_genome_hits:
     """Project whole-genome FASTGA PAF to the unified per-cCRE hits schema.
 
-    The PAF rows describe alignments between hg38 and mm10 genomic intervals
-    (no cCRE awareness). For each alignment, we intersect its hg38 span with
-    every hg38 cCRE BED interval and emit one hit row per overlapping cCRE,
-    with the cCRE accession as `query` and the original mm10 span as the hit.
-    per_query_report.smk then ranks hits within each cCRE and computes
-    recall/precision as for every other aligner.
+    FASTGA alignments at genome-vs-genome scale are often multi-kb syntenic
+    blocks (median ~9 kb on hg38↔mm10 at default params). Crediting each
+    alignment's full mm10 span to every overlapping hg38 cCRE inflates
+    hit_chrom/hit_start/hit_end to the whole-block mm10 range, which then
+    picks up every mm10 cCRE in the block as a candidate partner — top-1
+    ends up arbitrary among many, precision collapses to ~12%.
 
-    If one alignment overlaps multiple cCREs (rare with non-overlapping cCREs
-    but possible near boundaries), each gets its own row sharing the same
-    mm10 hit interval and score. Top-k ranking within each cCRE is then
-    per-cCRE, so the same mm10 hit can legitimately be top-1 for two
-    adjacent cCREs — that matches the eval semantics already used by the
-    cCRE-as-queries pipeline.
+    Fix: for each (alignment, overlapping cCRE) pair, **proportional-lift**
+    the cCRE's hg38 sub-interval to a mm10 sub-interval via `proportional_lift`
+    (linear interpolation within the alignment, gap-ignoring). The lifted
+    mm10 span is what downstream per_query_report intersects with mm10 cCREs,
+    so only the mm10 cCRE actually aligned to each hg38 cCRE gets credit.
     """
     input:
         paf="results/align/{aligner}/flank_0/raw.paf",
@@ -165,7 +164,8 @@ rule normalize_fastga_genome_hits:
             "qcov": pl.Float64, "tcov": pl.Float64,
         })
 
-        # Intersect hg38 alignment spans with hg38 query cCRE intervals.
+        # Intersect hg38 alignment spans with hg38 query cCRE intervals,
+        # then proportional-lift each cCRE's hg38 span → mm10 sub-interval.
         cres = pl.read_parquet(input.query_cres).select("chrom", "start", "end", "accession")
         if paf_df.height == 0:
             unified = pl.DataFrame(schema={
@@ -183,21 +183,45 @@ rule normalize_fastga_genome_hits:
                 suffixes=("", "_cre"),
                 how="inner",
             )
-            unified = (
-                pl.from_pandas(j)
-                .select(
-                    pl.col("accession_cre").alias("query"),
-                    pl.col("hit_chrom"),
-                    pl.col("hit_start"),
-                    pl.col("hit_end"),
-                    pl.col("rev_strand"),
-                    pl.col("score"),
-                    pl.col("fident"),
-                    pl.lit(None, dtype=pl.Float64).alias("evalue"),
-                    pl.col("qcov"),
-                    pl.col("tcov"),
+            out_rows: list[dict] = []
+            for row in j.itertuples(index=False):
+                lifted = proportional_lift(
+                    qs=row.hg38_start, qe=row.hg38_end,
+                    ts=row.hit_start, te=row.hit_end,
+                    rev=bool(row.rev_strand),
+                    cs=row.start_cre, ce=row.end_cre,
                 )
-            )
+                if lifted is None:
+                    continue
+                mt_start, mt_end = lifted
+                ccre_len = row.end_cre - row.start_cre
+                aln_qlen = row.hg38_end - row.hg38_start
+                # Scale score proportionally so per-cCRE rankings see a
+                # cCRE-scale match count rather than the whole block's.
+                score_scaled = int(round(row.score * min(ccre_len, aln_qlen) / aln_qlen)) if aln_qlen else 0
+                out_rows.append({
+                    "query": row.accession_cre,
+                    "hit_chrom": row.hit_chrom,
+                    "hit_start": mt_start,
+                    "hit_end": mt_end,
+                    "rev_strand": bool(row.rev_strand),
+                    "score": score_scaled,
+                    "fident": float(row.fident),
+                    "evalue": None,
+                    "qcov": 1.0,  # cCRE fully contained in alignment by construction
+                    "tcov": 0.0,
+                })
+            unified = pl.DataFrame(out_rows, schema={
+                "query": pl.Utf8, "hit_chrom": pl.Utf8, "hit_start": pl.Int64,
+                "hit_end": pl.Int64, "rev_strand": pl.Boolean, "score": pl.Int64,
+                "fident": pl.Float64, "evalue": pl.Float64, "qcov": pl.Float64,
+                "tcov": pl.Float64,
+            }) if out_rows else pl.DataFrame(schema={
+                "query": pl.Utf8, "hit_chrom": pl.Utf8, "hit_start": pl.Int64,
+                "hit_end": pl.Int64, "rev_strand": pl.Boolean, "score": pl.Int64,
+                "fident": pl.Float64, "evalue": pl.Float64, "qcov": pl.Float64,
+                "tcov": pl.Float64,
+            })
         unified.write_csv(output[0], separator="\t", include_header=True)
         print(
             f"  {wildcards.aligner}: {unified.height} cCRE-assigned alignments "

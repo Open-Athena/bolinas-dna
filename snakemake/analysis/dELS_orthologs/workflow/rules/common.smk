@@ -47,6 +47,41 @@ def is_whole_genome(species: str) -> bool:
 MM10_STANDARD_CHROMS = [f"chr{i}" for i in range(1, 20)] + ["chrX", "chrY"]
 
 
+def proportional_lift(
+    qs: int, qe: int, ts: int, te: int, rev: bool, cs: int, ce: int
+) -> tuple[int, int] | None:
+    """Linear proportional lift of a cCRE query interval to target coords
+    within an alignment, ignoring gaps.
+
+    Given an alignment mapping query `[qs, qe)` → target `[ts, te)`
+    (and a reverse-strand flag), and a cCRE query interval `[cs, ce)`
+    contained in `[qs, qe)`, return the target sub-interval corresponding
+    to the cCRE's portion of the alignment.
+
+    On reverse-stranded alignments, the target end of the cCRE's span maps
+    to the target "lower" coord and vice versa — we swap accordingly.
+
+    Returns None if the cCRE does not overlap the alignment. If the cCRE
+    extends past the alignment boundary, the lift is clipped to the
+    alignment span.
+
+    This is a first-order approximation — correct for gap-free alignments,
+    off by the number of gaps on either side for gappy ones. Exact lift
+    requires CIGAR parsing.
+    """
+    aln_len = qe - qs
+    if aln_len <= 0 or ce <= qs or cs >= qe:
+        return None
+    cs_clip = max(cs, qs)
+    ce_clip = min(ce, qe)
+    frac_start = (cs_clip - qs) / aln_len
+    frac_end = (ce_clip - qs) / aln_len
+    t_span = te - ts
+    if rev:
+        return int(ts + (1.0 - frac_end) * t_span), int(ts + (1.0 - frac_start) * t_span)
+    return int(ts + frac_start * t_span), int(ts + frac_end * t_span)
+
+
 def soft_masked_fraction_per_record(fasta_path: str) -> dict[str, float]:
     """Per-record fraction of lowercase (soft-masked, RepeatMasker) bases."""
     fracs: dict[str, float] = {}

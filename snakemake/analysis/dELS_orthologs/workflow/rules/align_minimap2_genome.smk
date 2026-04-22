@@ -84,6 +84,10 @@ rule normalize_minimap2_genome_hits:
         }
         paf_df = pl.DataFrame(paf_rows, schema=schema) if paf_rows else pl.DataFrame(schema=schema)
 
+        # Proportional-lift each cCRE's hg38 sub-interval → mm10 sub-interval.
+        # See the rationale in align_fastga_genome.smk: long genome-scale
+        # alignments otherwise credit the whole block's mm10 span to every
+        # overlapping cCRE and tank precision.
         cres = pl.read_parquet(input.query_cres).select("chrom", "start", "end", "accession")
         if paf_df.height == 0:
             unified = pl.DataFrame(schema={
@@ -101,21 +105,39 @@ rule normalize_minimap2_genome_hits:
                 suffixes=("", "_cre"),
                 how="inner",
             )
-            unified = (
-                pl.from_pandas(j)
-                .select(
-                    pl.col("accession_cre").alias("query"),
-                    pl.col("hit_chrom"),
-                    pl.col("hit_start"),
-                    pl.col("hit_end"),
-                    pl.col("rev_strand"),
-                    pl.col("score"),
-                    pl.col("fident"),
-                    pl.lit(None, dtype=pl.Float64).alias("evalue"),
-                    pl.col("qcov"),
-                    pl.col("tcov"),
+            out_rows: list[dict] = []
+            for row in j.itertuples(index=False):
+                lifted = proportional_lift(
+                    qs=row.hg38_start, qe=row.hg38_end,
+                    ts=row.hit_start, te=row.hit_end,
+                    rev=bool(row.rev_strand),
+                    cs=row.start_cre, ce=row.end_cre,
                 )
-            )
+                if lifted is None:
+                    continue
+                mt_start, mt_end = lifted
+                ccre_len = row.end_cre - row.start_cre
+                aln_qlen = row.hg38_end - row.hg38_start
+                score_scaled = int(round(row.score * min(ccre_len, aln_qlen) / aln_qlen)) if aln_qlen else 0
+                out_rows.append({
+                    "query": row.accession_cre,
+                    "hit_chrom": row.hit_chrom,
+                    "hit_start": mt_start,
+                    "hit_end": mt_end,
+                    "rev_strand": bool(row.rev_strand),
+                    "score": score_scaled,
+                    "fident": float(row.fident),
+                    "evalue": None,
+                    "qcov": 1.0,
+                    "tcov": 0.0,
+                })
+            schema_unified = {
+                "query": pl.Utf8, "hit_chrom": pl.Utf8, "hit_start": pl.Int64,
+                "hit_end": pl.Int64, "rev_strand": pl.Boolean, "score": pl.Int64,
+                "fident": pl.Float64, "evalue": pl.Float64, "qcov": pl.Float64,
+                "tcov": pl.Float64,
+            }
+            unified = pl.DataFrame(out_rows, schema=schema_unified) if out_rows else pl.DataFrame(schema=schema_unified)
         unified.write_csv(output[0], separator="\t", include_header=True)
         print(
             f"  {wildcards.aligner}: {unified.height} cCRE-assigned alignments "
