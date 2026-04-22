@@ -16,4 +16,4 @@ query_flanks_bp:
     - 0
 
 aligners:
-    - fastga  # BFS iteration #4 — only the new method; prior aligners' results stored locally
+    - lastz_hoxd55  # DFS iteration on the BFS winner — HOXD55 is more permissive than HOXD70

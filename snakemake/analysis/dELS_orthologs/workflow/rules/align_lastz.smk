@@ -41,24 +41,35 @@ rule extract_mm10_chrom_fasta:
         assert found, f"chromosome {wanted} not found in {input[0]}"
 
 
+LASTZ_SCORING_MATRIX = {
+    "lastz": "HOXD70.Q",
+    "lastz_hoxd55": "HOXD55.Q",
+}
+
+
 rule lastz_align_per_chrom:
     """lastz one mm10 chromosome vs all queries at a given flank.
+
+    The `{aligner}` wildcard selects the scoring matrix via `LASTZ_SCORING_MATRIX`:
+    - `lastz` → HOXD70 (default divergent-species scoring)
+    - `lastz_hoxd55` → HOXD55 (more permissive; slightly weaker mismatch penalties,
+      used by UCSC for the most-divergent mammal pairs)
 
     Output format: `general-` (headerless tabular) with the subset of fields
     we normalize downstream. `zstart1` and `zstart2` are 0-based starts; paired
     `end1`/`end2` are 0-based half-open (so `end - zstart == length`). `name1`
     is the target chrom (mm10), `name2` is the query accession (hg38 cCRE).
     `strand1` is always '+' because we pass target without the `[revcomp]`
-    modifier; `strand2` encodes the match orientation. `score`, `nmatch`,
-    `ncolumn` are the HOXD70 score, # matched bases, and alignment columns.
+    modifier; `strand2` encodes the match orientation.
     """
     input:
         target="results/target/by_chrom/{chrom}.fasta",
         query="results/cre/hg38/flank_{flank}/query.filtered.fasta",
-        scores="workflow/resources/HOXD70.Q",
+        scores=lambda wc: f"workflow/resources/{LASTZ_SCORING_MATRIX[wc.aligner]}",
     output:
-        temp("results/align/lastz/flank_{flank}/by_chrom/{chrom}.general"),
+        temp("results/align/{aligner}/flank_{flank}/by_chrom/{chrom}.general"),
     wildcard_constraints:
+        aligner=r"lastz(_.*)?",
         chrom=r"chr[0-9XY]+",
         flank=r"-?\d+",
     threads: 1
@@ -93,13 +104,15 @@ rule normalize_lastz_hits:
     """
     input:
         lambda wc: expand(
-            "results/align/lastz/flank_{flank}/by_chrom/{chrom}.general",
+            "results/align/{aligner}/flank_{flank}/by_chrom/{chrom}.general",
+            aligner=[wc.aligner],
             flank=[wc.flank],
             chrom=MM10_STANDARD_CHROMS,
         ),
     output:
-        "results/align/lastz/flank_{flank}/hits.tsv",
+        "results/align/{aligner}/flank_{flank}/hits.tsv",
     wildcard_constraints:
+        aligner=r"lastz(_.*)?",
         flank=r"-?\d+",
     run:
         _, win_start, _ = get_search_window("mm10")
@@ -154,6 +167,6 @@ rule normalize_lastz_hits:
         df = pl.DataFrame(rows, schema=schema) if rows else pl.DataFrame(schema=schema)
         df.write_csv(output[0], separator="\t", include_header=True)
         print(
-            f"  lastz flank={wildcards.flank}: {df.height} alignments across "
-            f"{df['query'].n_unique()} queries"
+            f"  {wildcards.aligner} flank={wildcards.flank}: {df.height} alignments "
+            f"across {df['query'].n_unique()} queries"
         )
