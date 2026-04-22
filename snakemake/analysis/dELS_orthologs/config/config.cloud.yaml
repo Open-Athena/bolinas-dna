@@ -9,8 +9,6 @@ mmseqs2:
     mem_mb: 220000
     split_memory_limit: "220G"
 
-# Focused first mmseqs2-on-whole-mm10 run: baseline flank only.
-# Flank sweep for mmseqs2 is deferred to a follow-up iteration once we've
-# verified recall/precision numbers at the baseline are sensible.
-query_flanks_bp:
-    - 0
+# query_flanks_bp inherited from base config (-50, 0, +100). The flank-0
+# baseline iteration passed cleanly on r6i.8xlarge in ~90 s per aligner,
+# so we can afford the full 3-flank × 2-aligner sweep in one launch.
