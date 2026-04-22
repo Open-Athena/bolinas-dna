@@ -44,15 +44,14 @@ query_accessions: null
 
 # mmseqs2 nucleotide search at -k 15 needs ~50-80 GB resident for whole-mm10
 # targets (empty k-mer table ~8 GB + occupied lists scaling with target size).
-# The current 15 GB dev box can't fit it; comment back in once we move to a
-# bigger instance (r6i.8xlarge or similar — see issue #120 thread for sizing).
+# Only enable on a large-memory instance (r6i.8xlarge, 256 GB, or similar).
 aligners:
-    # - mmseqs2
+    - mmseqs2
     # Other variants from earlier sweeps (kept in minimap2_variants below):
     # - minimap2_map-ont
     # - minimap2_map-ont_k13
     # - minimap2_asm20_tuned
-    - minimap2_map-ont_k11  # k-sweep winner; only variant for the flank sweep
+    - minimap2_map-ont_k11  # k-sweep winner; re-run on the same hardware for side-by-side
     # Variants kept in minimap2_variants for later cross-axis experiments:
     # - minimap2_map-ont_k11_B3
     # - minimap2_map-ont_k11_s20m20
@@ -79,6 +78,10 @@ minimap2_variants:
 mmseqs2:
     sensitivity: 7.5
     max_accept: 100
+    # Whole-mm10 nucleotide index + occupied-list growth needs headroom above
+    # the 15 GB dev-box budget. Override on the cloud profile (r6i.8xlarge, 256 GB).
+    mem_mb: 14000
+    split_memory_limit: "12G"
 
 # Drop hg38 dELS whose soft-masked (lowercase, repeat-annotated) fraction
 # exceeds this threshold. mmseqs2 with `--mask-lower-case 1` has no k-mer

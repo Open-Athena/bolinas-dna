@@ -1,10 +1,14 @@
-"""Sanity check: hg38 dELS (post-filter) searched against themselves."""
+"""Sanity check: hg38 dELS (post-filter) searched against themselves.
+
+Pinned to flank=0: self-alignment is flank-invariant by construction (query == target),
+so running it across the flank sweep would produce essentially identical results.
+"""
 
 
 rule sanity_self_search:
     input:
-        query_db="results/search/queryDB",
-        query_dbtype="results/search/queryDB.dbtype",
+        query_db="results/search/flank_0/queryDB",
+        query_dbtype="results/search/flank_0/queryDB.dbtype",
     output:
         result_index="results/sanity/selfDB.index",
         result_dbtype="results/sanity/selfDB.dbtype",
@@ -13,9 +17,10 @@ rule sanity_self_search:
         tmp_dir="results/sanity/tmp",
         sensitivity=config["mmseqs2"]["sensitivity"],
         max_accept=config["mmseqs2"]["max_accept"],
+        split_memory_limit=config["mmseqs2"].get("split_memory_limit", "12G"),
     threads: workflow.cores
     resources:
-        mem_mb=14000,
+        mem_mb=config["mmseqs2"].get("mem_mb", 14000),
     conda:
         "../envs/mmseqs2.yaml"
     shell:
@@ -29,7 +34,7 @@ rule sanity_self_search:
             --search-type 3 \
             --strand 2 \
             --mask-lower-case 1 \
-            --split-memory-limit 12G \
+            --split-memory-limit {params.split_memory_limit} \
             -s {params.sensitivity} \
             --max-accept {params.max_accept} \
             --threads {threads}
@@ -39,7 +44,7 @@ rule sanity_self_search:
 
 rule sanity_self_convertalis:
     input:
-        query_db="results/search/queryDB",
+        query_db="results/search/flank_0/queryDB",
         result_index="results/sanity/selfDB.index",
     output:
         tsv="results/sanity/self_hits.tsv",
