@@ -1,0 +1,68 @@
+# SkyPilot task: Evo2 baseline on TraitGym Mendelian v2 (issue #131).
+#
+# One YAML, three model sizes:
+#   - evo2_1b_base, evo2_7b: 1×H100, data-parallel via torchrun --nproc_per_node=1
+#   - evo2_40b:              8×H100, plain python so Vortex can shard the model
+#
+# See skypilot/README.md for launch recipes.
+
+name: evo2-traitgym
+
+resources:
+  # Cloud unpinned: AWS p5 H100 capacity has been spotty; Lambda has 1×H100 in
+  # europe-central-1 for cheaper. Pick whichever works.
+  # Note: Lambda does NOT support image_id: docker:..., so we skip it entirely
+  # and rely on the cloud's base ML image (DLAMI on AWS, Lambda Stack on Lambda).
+  accelerators: H100:1
+  labels:
+    project: dna
+  disk_size: 256  # evo2_40b weights ~80 GB in FP8, plus genome and scratch
+
+workdir: .
+
+envs:
+  MODEL: evo2_1b_base
+  HF_TOKEN: ""  # pass via `sky launch --env HF_TOKEN=...` if evo2 weights or dataset are gated
+
+setup: |
+  set -euxo pipefail
+  # Lambda's base image ships CUDA + torch; AWS DLAMI too. We just need evo2 +
+  # biofoundation + bolinas on top. --break-system-packages for containers that
+  # mark /usr site-packages as externally-managed.
+  PIP_FLAGS="--break-system-packages"
+  python3 -m pip install $PIP_FLAGS --upgrade pip
+  python3 -m pip install $PIP_FLAGS evo2
+  python3 -m pip install $PIP_FLAGS \
+    git+https://github.com/Open-Athena/biofoundation.git@main \
+    --use-deprecated=legacy-resolver
+  python3 -m pip install $PIP_FLAGS -e .
+  # grch38 primary assembly (Ensembl release-113), same as evals_v1
+  mkdir -p results
+  if [ ! -f results/genome.fa.gz ]; then
+    wget -q -O results/genome.fa.gz \
+      http://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz
+  fi
+
+run: |
+  set -euxo pipefail
+  export OMP_NUM_THREADS=8
+  # Forward HF_TOKEN only if the caller actually provided one (gated weights).
+  if [ -n "${HF_TOKEN:-}" ]; then
+    export HUGGING_FACE_HUB_TOKEN="$HF_TOKEN"
+  fi
+  # Preflight: evo2's own forward-pass sanity test. Catches bad TE/flash-attn
+  # installs and FP8 regressions before we burn the full eval. Reference losses
+  # are hardcoded for Hopper; on Blackwell (B200) numerics may drift a bit.
+  # Log-only — do not gate the eval on the script's return code (it uses a
+  # strict eps=1e-3 that can false-fail on a different GPU generation).
+  echo "=== evo2 self-test for ${MODEL} ==="
+  python -m evo2.test.test_evo2 --model_name "${MODEL}" || true
+  echo "=== end self-test ==="
+  # Always launch with plain python — Evo2/Vortex handles its own multi-GPU
+  # sharding internally. Do NOT use torchrun: HF Trainer's DDP wrapping fights
+  # Vortex's device placement. For small models this means we "waste" the
+  # extra GPUs on the node; that's fine.
+  python scripts/evo2_traitgym_v2.py \
+    --model "$MODEL" \
+    --split train \
+    --genome-path results/genome.fa.gz
