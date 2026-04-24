@@ -201,6 +201,50 @@ def test_mean_phastcons_from_bigwig(tmp_path):
     assert out["mean_phastcons"].to_list() == [pytest.approx(1.0), pytest.approx(0.0)]
 
 
+def test_handles_val_predictions_with_window_and_bin_columns():
+    """Regression: the real val_predictions parquet has both window-level
+    (``start``, ``end``) *and* bin-level (``bin_start``, ``bin_end``) columns.
+    The overlap helpers must build their bedframe from the bin columns only,
+    without renaming into a collision with the window columns.
+    """
+    preds = pl.DataFrame(
+        {
+            "genome": ["h"] * 3,
+            "chrom": ["1"] * 3,
+            # Window-level coords (length = 65536).
+            "start": [0, 0, 0],
+            "end": [65536, 65536, 65536],
+            "strand": ["+"] * 3,
+            "bin_idx": [0, 1, 2],
+            "bin_start": [0, 128, 256],
+            "bin_end": [128, 256, 384],
+            "label": [0, 0, 1],
+            "logit": [5.0, 2.0, -3.0],
+        }
+    ).cast({"label": pl.UInt8, "logit": pl.Float32, "bin_idx": pl.Int32})
+    exons = pl.DataFrame({"chrom": ["1"], "start": [100], "end": [200]})
+    cres = pl.DataFrame(
+        {"chrom": ["1"], "start": [250], "end": [300], "cre_class": ["dELS"]}
+    )
+    out = top_misclassified_bins(
+        preds,
+        exons_by_species={"h": exons},
+        all_cres_by_species={"h": cres},
+        conservation_bw_by_species={},
+        top_k=3,
+    )
+    # Don't care about exact ordering; just verify the call doesn't crash and
+    # annotations are plausible.
+    assert out.height == 3
+    fp = out.filter(pl.col("error_type") == "false_positive").sort("logit", descending=True)
+    # Highest-logit FP bin is at bin_start=0 (logit=5.0): overlaps exon
+    # [100,200) because exon crosses bin [0,128); does NOT overlap dELS.
+    row0 = fp.row(0, named=True)
+    assert row0["bin_start"] == 0
+    assert row0["overlaps_exon"] is True
+    assert row0["overlaps_any_cre"] is False
+
+
 def test_empty_predictions_returns_empty_frame():
     preds = pl.DataFrame(
         schema={

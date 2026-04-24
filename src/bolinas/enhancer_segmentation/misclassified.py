@@ -28,6 +28,24 @@ def _prob_from_logit(logit: np.ndarray) -> np.ndarray:
     return 1.0 / (1.0 + np.exp(-logit.astype(np.float64)))
 
 
+def _bins_to_bedframe(bins: pl.DataFrame) -> "pd.DataFrame":
+    """Build a 3-column pandas bedframe (chrom/start/end) from the bin columns
+    of ``val_predictions``. Critically, we do *not* rename ``bin_start`` to
+    ``start`` on the full frame — the predictions df has both window-level
+    ``start``/``end`` and bin-level ``bin_start``/``bin_end``, and a rename
+    would produce duplicate column labels that break bioframe's dtype check.
+    """
+    import pandas as pd
+
+    return pd.DataFrame(
+        {
+            "chrom": bins["chrom"].cast(pl.Utf8).to_list(),
+            "start": bins["bin_start"].to_list(),
+            "end": bins["bin_end"].to_list(),
+        }
+    )
+
+
 def _overlap_flags(
     bins: pl.DataFrame, intervals: pl.DataFrame, chrom_col: str = "chrom"
 ) -> np.ndarray:
@@ -39,9 +57,8 @@ def _overlap_flags(
     """
     if intervals.height == 0 or bins.height == 0:
         return np.zeros(bins.height, dtype=bool)
-    b = bins.to_pandas().rename(columns={"bin_start": "start", "bin_end": "end"})
-    i = intervals.to_pandas()[[chrom_col, "start", "end"]]
-    b[chrom_col] = b[chrom_col].astype(str)
+    b = _bins_to_bedframe(bins)
+    i = intervals.to_pandas()[[chrom_col, "start", "end"]].copy()
     i[chrom_col] = i[chrom_col].astype(str)
     counts = bf.count_overlaps(b, i)["count"].to_numpy()
     return counts > 0
@@ -56,13 +73,9 @@ def _overlap_cre_classes(
     """
     if all_cres.height == 0 or bins.height == 0:
         return [None] * bins.height
-    b = (
-        bins.with_row_index("bin_idx")
-        .to_pandas()
-        .rename(columns={"bin_start": "start", "bin_end": "end"})
-    )
-    b["chrom"] = b["chrom"].astype(str)
-    i = all_cres.to_pandas()
+    b = _bins_to_bedframe(bins)
+    b["bin_idx"] = np.arange(bins.height)
+    i = all_cres.to_pandas().copy()
     i["chrom"] = i["chrom"].astype(str)
     joined = bf.overlap(b, i, how="left", suffixes=("", "_cre"))
     out: list[str | None] = [None] * bins.height
