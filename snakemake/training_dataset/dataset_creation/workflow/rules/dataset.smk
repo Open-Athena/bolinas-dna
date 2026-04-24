@@ -108,24 +108,22 @@ rule create_functional_validation:
 
 rule merge_datasets:
     """Merge per-genome training parquets, shuffle, and shard into JSONL."""
-    # Pin intervals to recipe/window/step so paths like
-    # `enhancer_seg_mammals_v1/v20/255/128` can't get split as
-    # `genome_set=enhancer_seg_mammals_v1/v20/255, intervals=128`. The global
-    # genome_set constraint alone wasn't enough — snakemake matched the
-    # constraint against the prefix. Pinning intervals to v\d+/\d+/\d+
-    # eliminates the ambiguity. Same constraint added to hf_upload_training.
-    wildcard_constraints:
-        intervals=r"v\d+/\d+/\d+",
+    # Use explicit {recipe}/{w}/{s} wildcards (each bounded by '/' in the
+    # path template) instead of a single {intervals} wildcard whose slashes
+    # would race with the genome_set wildcard for greedy matching, producing
+    # bogus splits like `genome_set=enhancer_seg_mammals_v1/v20/255, intervals=128`.
     input:
         lambda wildcards: expand(
-            "results/dataset_genome/{intervals}/{g}.parquet",
-            intervals=wildcards.intervals,
+            "results/dataset_genome/{recipe}/{w}/{s}/{g}.parquet",
+            recipe=wildcards.recipe,
+            w=wildcards.w,
+            s=wildcards.s,
             g=genome_sets[wildcards.genome_set],
         ),
     output:
         temp(local(
             expand(
-                "results/dataset/{{genome_set}}/{{intervals}}/data/train/{shard}.jsonl",
+                "results/dataset/{{genome_set}}/{{recipe}}/{{w}}/{{s}}/data/train/{shard}.jsonl",
                 shard=SHARDS,
             )
         )),
@@ -156,26 +154,21 @@ rule compress_shard:
 
 rule hf_upload_training:
     """Upload training dataset shards to HuggingFace."""
-    wildcard_constraints:
-        intervals=r"v\d+/\d+/\d+",
     input:
         local(expand(
-            "results/dataset/{{genome_set}}/{{intervals}}/data/train/{shard}.jsonl.zst",
+            "results/dataset/{{genome_set}}/{{recipe}}/{{w}}/{{s}}/data/train/{shard}.jsonl.zst",
             shard=SHARDS,
         )),
     output:
-        touch("results/upload.done/training/{genome_set}/{intervals}"),
+        touch("results/upload.done/training/{genome_set}/{recipe}/{w}/{s}"),
     params:
-        # HF dataset repo names cannot contain '/' (other than the org/name
-        # divider), so substitute slashes from both wildcards even though
-        # genome_set should never contain one.
         name=lambda wildcards: (
             config["output_hf_prefix"]
-            + "-genome_set-" + wildcards.genome_set.replace("/", "_")
-            + "-intervals-" + wildcards.intervals.replace("/", "_")
+            + "-genome_set-" + wildcards.genome_set
+            + "-intervals-" + f"{wildcards.recipe}_{wildcards.w}_{wildcards.s}"
         ),
         data_dir=lambda wildcards: (
-            f"results/dataset/{wildcards.genome_set}/{wildcards.intervals}"
+            f"results/dataset/{wildcards.genome_set}/{wildcards.recipe}/{wildcards.w}/{wildcards.s}"
         ),
     threads: workflow.cores
     shell:
