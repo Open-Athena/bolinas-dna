@@ -1,0 +1,19 @@
+# Overrides for big-memory cloud instances (r6i.8xlarge, 256 GB RAM / 32 vCPU).
+# Layered on top of config/config.yaml via
+#   snakemake --configfile config/config.yaml --configfile config/config.cloud.yaml
+# Pair with `--resources mem_mb=220000` on the CLI.
+#
+# `interval_mappings` is a list, so Snakemake replaces it wholesale when
+# merging; duplicate every active entry here with its cloud memory knobs.
+
+interval_mappings:
+    - name: ELS_conserved_20_mmseqs2_s75
+      source_parquet: results/cre/ELS_conserved_20.parquet
+      source_chrom_style: ucsc_stripped
+      source_genome: GCF_000001405.40
+      mapper: mmseqs2
+      sensitivity: 7.5
+      max_accept: 1
+      split_memory_limit: "220G"
+      mem_mb: 220000
+      flank_bp: 0
