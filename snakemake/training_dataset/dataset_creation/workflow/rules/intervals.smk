@@ -60,6 +60,7 @@ rule make_windows:
         "../envs/bioinformatics.yaml"
     shell:
         """
+        mkdir -p $(dirname {output})
         bedtools makewindows -b {input[0]} -w {wildcards.w} -s {wildcards.s} | \
         awk '$3-$2 == {wildcards.w}' | \
         gzip > {output}
