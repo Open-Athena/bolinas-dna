@@ -396,7 +396,7 @@ Naming convention: underscored, semantic `{source_name}_{mapper}_{preset}` (no d
 
 **Resources:** mmseqs2 nucleotide search against a whole mammalian target genome needs ~50-80 GB resident at the full index, so real runs use a big-memory cloud instance (r6i.8xlarge, 256 GB). `split_memory_limit` lets a smaller box fit at the cost of wall time; the defaults shown above target the 15 GB dev box.
 
-**Status:** v1 (issue [#123](https://github.com/Open-Athena/bolinas-dna/issues/123)): mmseqs2 only, flank 0, `-s 7.5 --max-accept 1`. Expected recall ~70% at ~97% precision per [#120](https://github.com/Open-Athena/bolinas-dna/issues/120), where mmseqs2 at this sensitivity is the Pareto-optimal low-cost point on the hg38↔mm10 cCRE ortholog benchmark. Sensitivity sweep, flank sweep, soft-mask filtering, and alternative aligners (e.g. lastz for the high-recall end of the frontier) are left for future iterations.
+**Status:** v1 (issue [#123](https://github.com/Open-Athena/bolinas-dna/issues/123)): mmseqs2 only, flank 0, `-s 7.5 --max-accept 1`. On hg38→mm39 this projects 375,932 `ELS_conserved_20` enhancers to **229,288 mouse intervals (61.0% recall)**, vs. minimap2 `-cx map-ont`'s 20.7% (prior PR #125 baseline) — consistent with the ~3× recall advantage reported in [#120](https://github.com/Open-Athena/bolinas-dna/issues/120) at comparable precision. Run time: ~2 min wall (createdb 7 s, search 110 s, convertalis 0.3 s) on r6i.8xlarge (32 vCPU, 256 GB RAM), ~26 GB peak RSS. Sensitivity sweep, flank sweep, soft-mask filtering, and alternative aligners (e.g. lastz for the high-recall end of the frontier) are left for future iterations.
 
 ## Output
 
