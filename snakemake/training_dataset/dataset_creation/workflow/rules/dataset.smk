@@ -201,7 +201,10 @@ rule hf_upload_training:
         ),
     threads: workflow.cores
     shell:
-        "hf upload-large-folder {params.name} --repo-type dataset {params.data_dir}"
+        """
+        mkdir -p $(dirname {output})
+        hf upload-large-folder {params.name} --repo-type dataset {params.data_dir}
+        """
 
 
 rule hf_upload_validation:
@@ -220,4 +223,7 @@ rule hf_upload_validation:
             + wildcards.intervals.replace("/", "_")
         ),
     shell:
-        "hf upload {params.name} {input} validation.parquet --repo-type dataset"
+        """
+        mkdir -p $(dirname {output})
+        hf upload {params.name} {input} validation.parquet --repo-type dataset
+        """
