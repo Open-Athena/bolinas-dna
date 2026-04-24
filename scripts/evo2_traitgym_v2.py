@@ -45,7 +45,14 @@ def main() -> None:
     p.add_argument(
         "--model",
         required=True,
-        choices=["evo2_1b_base", "evo2_7b", "evo2_40b"],
+        choices=[
+            "evo2_1b_base",
+            "evo2_7b",
+            "evo2_7b_base",
+            "evo2_40b",
+            "evo2_40b_base",
+            "evo2_20b",
+        ],
     )
     p.add_argument("--split", default="train")
     p.add_argument(
