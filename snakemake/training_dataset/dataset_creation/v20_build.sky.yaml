@@ -50,6 +50,12 @@ setup: |
 
 run: |
   set -euxo pipefail
+  # SkyPilot's login bash sources ~/.bashrc which defines a `conda` shell
+  # function and sets CONDA_EXE to the AMI's stale miniconda3 (23.11.0 — too
+  # old for snakemake). Unset the function and re-point CONDA_EXE so the
+  # subprocesses snakemake spawns find our miniforge3 conda (24.7+).
+  unset -f conda 2>/dev/null || true
+  export CONDA_EXE="$HOME/miniforge3/bin/conda"
   export PATH="$HOME/miniforge3/bin:$HOME/.local/bin:$PATH"
   cd ~/sky_workdir/snakemake/training_dataset/dataset_creation
 
