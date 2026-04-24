@@ -131,7 +131,10 @@ rule mmseqs2_target_db:
     same `{g}` share one targetDB. `--mask-lower-case 1` stores soft-masked
     flags; the search rule respects them. Outputs the `.dbtype` sentinel so
     downstream rules can depend on the prefix without listing every sidecar
-    file mmseqs2 produces.
+    file mmseqs2 produces. The explicit `mkdir -p` is needed because with
+    the S3 storage backend Snakemake doesn't materialize the local parent
+    directory for a `send to storage` output before the shell runs, so
+    mmseqs2's first `.source` write would otherwise fail.
     """
     input:
         fasta="results/genome/{g}.fa",
@@ -143,7 +146,10 @@ rule mmseqs2_target_db:
     conda:
         "../envs/mmseqs2.yaml"
     shell:
-        "mmseqs createdb {input.fasta} {params.prefix} --mask-lower-case 1"
+        """
+        mkdir -p $(dirname {params.prefix})
+        mmseqs createdb {input.fasta} {params.prefix} --mask-lower-case 1
+        """
 
 
 rule mmseqs2_query_db:
@@ -160,7 +166,10 @@ rule mmseqs2_query_db:
     conda:
         "../envs/mmseqs2.yaml"
     shell:
-        "mmseqs createdb {input.fasta} {params.prefix} --mask-lower-case 1"
+        """
+        mkdir -p $(dirname {params.prefix})
+        mmseqs createdb {input.fasta} {params.prefix} --mask-lower-case 1
+        """
 
 
 rule align_intervals_mmseqs2:
