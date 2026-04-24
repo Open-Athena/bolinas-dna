@@ -37,13 +37,25 @@ envs:
 
 setup: |
   set -euxo pipefail
-  # uv and miniforge are preinstalled on the DLAMI; sanity-check.
+  # uv
   which uv || (curl -LsSf https://astral.sh/uv/install.sh | sh)
-  which mamba || which conda || echo "snakemake --use-conda requires conda"
+  # Snakemake 8.x --use-conda requires conda >= 24.7.1. AWS DLAMI ships an
+  # older conda (23.11 as of this writing), so install miniforge into
+  # $HOME/miniforge and prepend it to PATH for both setup and run phases.
+  if [ ! -d $HOME/miniforge ]; then
+    curl -L https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh \
+      -o /tmp/miniforge.sh
+    bash /tmp/miniforge.sh -b -p $HOME/miniforge
+  fi
+  export PATH="$HOME/miniforge/bin:$PATH"
+  grep -q 'miniforge/bin' ~/.bashrc || echo 'export PATH=$HOME/miniforge/bin:$PATH' >> ~/.bashrc
+  conda --version
+  mamba --version
   uv sync --frozen --group enhancer-classification
 
 run: |
   set -euxo pipefail
+  export PATH="$HOME/miniforge/bin:$PATH"
   cd snakemake/enhancer_classification
   # Dry-run first (required by AGENTS.md). Abort if unexpected upstream
   # rules are scheduled for rerun. The user-visible summary is appended to
