@@ -1,11 +1,18 @@
 rule prepare_intervals_for_window_seq:
-    """Add placeholder name column ('.') required by twoBitToFa -bedPos."""
+    """Add placeholder name column ('.') required by twoBitToFa -bedPos.
+
+    `mkdir -p` is needed because with the S3 default-storage backend
+    Snakemake doesn't materialize the local parent directory of a
+    `send to storage` output before the shell runs — same gotcha that
+    hits mmseqs2 createdb in interval_alignment.smk.
+    """
     input:
         "results/intervals/{intervals}/{g}.bed.gz",
     output:
         temp("results/intervals_for_window_seq/{intervals}/{g}.bed.gz"),
     shell:
         """
+        mkdir -p $(dirname {output})
         zcat {input} |
         awk 'BEGIN {{OFS="\\t"}} {{print $1, $2, $3, "."}}' |
         gzip > {output}
@@ -22,7 +29,10 @@ rule window_seq:
     conda:
         "../envs/bioinformatics.yaml"
     shell:
-        "twoBitToFa {input[0]} {output} -bed={input[1]} -bedPos"
+        """
+        mkdir -p $(dirname {output})
+        twoBitToFa {input[0]} {output} -bed={input[1]} -bedPos
+        """
 
 
 rule make_parquet:
