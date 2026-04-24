@@ -149,3 +149,27 @@ rule intervals_recipe_v19:
         df = df.filter(pl.col("logit") >= threshold)
         intervals = GenomicSet(df.select(["chrom", "start", "end"]))
         intervals.write_bed(output[0])
+
+
+# Segmentation-based enhancer recipe: top-quantile bins from the per-bin
+# segmentation predictions (#118 / PR #126), each resized to a fixed window
+# centered on its midpoint, then exon-masked and clipped to defined regions.
+rule intervals_recipe_v20:
+    input:
+        predictions="results/enhancer_predictions_segmentation/{g}.parquet",
+        exons="results/intervals/exons/{g}.parquet",
+        defined="results/intervals/defined/{g}.bed.gz",
+    output:
+        "results/intervals/recipe/v20/{g}.bed.gz",
+    run:
+        top_quantile = SEGMENTATION_CONFIG["recipe_top_quantile"]
+        target_size = SEGMENTATION_CONFIG["recipe_target_size"]
+
+        bin_logits = pl.read_parquet(input.predictions)
+        windows = top_quantile_bins_to_windows(
+            bin_logits, top_quantile=top_quantile, target_size=target_size
+        )
+        exons = GenomicSet.read_parquet(input.exons)
+        defined = GenomicSet.read_bed(input.defined)
+        windows = (windows - exons) & defined
+        windows.write_bed(output[0])

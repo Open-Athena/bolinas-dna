@@ -14,7 +14,22 @@ genomes = load_genome_info(config["genomes_path"])
 genome_sets = load_genome_sets(genomes, config["genome_sets"])
 genome_sets_list = list(genome_sets.keys())
 training_intervals = config["intervals"]["training"]
+training_per_genome_set = config["intervals"].get("training_per_genome_set", {})
 validation_intervals = config["intervals"]["validation"]
+
+# (genome_set, intervals) pairs that the `all` rule should build.
+# Default: cartesian product of training_intervals across every genome_set.
+# Override: any genome_set listed in training_per_genome_set uses ONLY the
+# recipes given there (this lets specialised genome_sets like
+# enhancer_seg_mammals_v1 build only v20 without also pulling in v5/v1/v15).
+for gs in training_per_genome_set:
+    assert gs in genome_sets, (
+        f"training_per_genome_set references unknown genome_set {gs!r}"
+    )
+training_targets: list[tuple[str, str]] = []
+for gs in genome_sets_list:
+    recipes = training_per_genome_set.get(gs, training_intervals)
+    training_targets.extend((gs, iv) for iv in recipes)
 
 
 wildcard_constraints:
@@ -32,11 +47,7 @@ include: "rules/enhancer_prediction.smk"
 
 rule all:
     input:
-        expand(
-            "results/upload.done/training/{genome_set}/{intervals}",
-            genome_set=genome_sets_list,
-            intervals=training_intervals,
-        ),
+        [f"results/upload.done/training/{gs}/{iv}" for gs, iv in training_targets],
         expand(
             "results/upload.done/validation/{intervals}",
             intervals=validation_intervals,

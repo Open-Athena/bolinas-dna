@@ -302,7 +302,10 @@ Edit `config/config.yaml` to customize the pipeline:
 
 - **`genomes_path`** - Path to filtered genome list (parquet file from genome_selection pipeline)
 
-- **`intervals`** - List of interval types to generate
+- **`intervals`** - Interval types to generate
+  - `intervals.training`: list of `{recipe}/{window_size}/{overlap}` strings; built across the cartesian product of *every* `genome_set`.
+  - `intervals.training_per_genome_set` (optional): mapping `{genome_set: [recipes...]}` for recipes that only apply to a specific genome_set (e.g., `v20` segmentation-predicted enhancers only exist for the 20 mammals scored in PR #126, exposed as `enhancer_seg_mammals_v1`).
+  - `intervals.validation`: list of recipes used to build the conservation-aware human validation parquet.
   - Format: `{recipe}/{window_size}/{overlap}`
   - Examples:
     - `v1/512/256` - Promoters with 512bp windows and 256bp overlap
@@ -313,10 +316,10 @@ Edit `config/config.yaml` to customize the pipeline:
     - **v2**: mRNA exons + promoters
     - **v3**: CDS regions only
 
-- **`genome_sets`** - Taxonomic groupings for separate datasets
-  - Each set defined by `name`, `rank_key`, and `rank_value`
-  - Example: `{name: "mammals", rank_key: "class", rank_value: "Mammalia"}`
-  - Creates separate datasets for each taxonomic group
+- **`genome_sets`** - Groupings for separate datasets. Each entry has a `name`, plus *either*:
+  - `rank_key` + `rank_value` for taxonomic filtering (e.g., `{rank_key: "class", rank_value: "Mammalia"}`), or
+  - `accessions`: an explicit list of Assembly Accessions (e.g., the 20 species in `enhancer_seg_mammals_v1`).
+  - Creates separate datasets for each group.
 
 - **`output_hf_prefix`** - HuggingFace repository prefix (e.g., "username/dataset-name")
 
@@ -393,6 +396,27 @@ Runs the per-bin segmentation model from [issue #115](https://github.com/Open-At
 **Output**: one parquet per genome at `results/enhancer_predictions_segmentation/{g}.parquet` (stored to S3 by the default profile) with schema `(chrom: str, bin_start: int64, bin_end: int64, logit: float32)` — one row per 128bp bin.
 
 **Status**: ~1h per genome on L4 GPU (~65 min). See #118 for benchmarks and a follow-up [#119](https://github.com/Open-Athena/bolinas-dna/issues/119) for parallel execution across multiple GPU instances via AWS Batch.
+
+## Recipe v20 (segmentation-based enhancers)
+
+Recipe v20 is the segmentation analogue of v19: it converts the per-bin segmentation logits from PR #126 into 255 bp enhancer windows for use as gLM training data. See [issue #133](https://github.com/Open-Athena/bolinas-dna/issues/133).
+
+**Pipeline**: `predict_enhancers_segmentation` (per-bin parquet from #118) → `intervals_recipe_v20`.
+
+**Algorithm**:
+1. Load per-bin logits.
+2. Threshold by per-genome quantile: keep bins with `logit >= quantile(1 - top_quantile)`. No held-out PR-curve calibration in this iteration.
+3. Resize each surviving 128 bp bin to a `recipe_target_size` bp window centered on its midpoint (auto-merge overlapping windows via `GenomicSet`).
+4. Subtract all functional exons (`get_exons_for_masking` — CDS + UTR + ncRNA, low-quality biotypes already excluded).
+5. Intersect with `defined` (drops N-runs and clips off-chromosome edges).
+
+**Configuration** (`enhancer_prediction_segmentation` block in `config.yaml`):
+- `recipe_top_quantile` (default `0.01` — top 1% of bins per genome)
+- `recipe_target_size` (default `255` bp)
+
+**Coverage**: only the 20 chromosome-level mammals listed in `enhancer_prediction_segmentation.genomes`, exposed as the `enhancer_seg_mammals_v1` genome_set. The recipe is wired into the dataset-assembly via `intervals.training_per_genome_set` so the `all` rule produces the HF dataset `bolinas-dna/genomes-v5-genome_set-enhancer_seg_mammals_v1-intervals-v20_255_128`.
+
+**Threshold calibration on chr7 with held-out PR curves is deferred** — that would replace the quantile threshold with a precision-targeted one. Tracked under #96.
 
 ## Output
 
