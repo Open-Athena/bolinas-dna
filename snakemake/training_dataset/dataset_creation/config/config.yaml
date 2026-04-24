@@ -43,6 +43,35 @@ genome_sets:
       accessions:
           - GCF_000001405.40 # Human
           - GCF_000001635.27 # Mouse
+    # One species per mammalian order (Chromosome-level assemblies only),
+    # matching the #118 segmentation benchmark subset so v30 is directly
+    # comparable to the whole-genome segmentation model's outputs on the
+    # same species. 20 species total. Source / selection criteria are
+    # documented on `enhancer_prediction_segmentation.genomes` below; this
+    # set duplicates the accession list so `load_genome_sets` can consume
+    # it and downstream rules iterate over the same per-species set.
+    - name: mammals_seg20
+      accessions:
+          - GCF_050624435.1  # Tenrec ecaudatus (Afrosoricida)
+          - GCF_009834535.1  # Camelus ferus (Artiodactyla)
+          - GCF_018350215.1  # Panthera leo (Carnivora)
+          - GCF_027574615.1  # Eptesicus fuscus (Chiroptera)
+          - GCF_030445035.2  # Dasypus novemcinctus (Cingulata)
+          - GCF_902635505.1  # Sarcophilus harrisii (Dasyuromorphia)
+          - GCF_027409185.1  # Cynocephalus volans (Dermoptera)
+          - GCF_027887165.1  # Monodelphis domestica (Didelphimorphia)
+          - GCF_011100635.1  # Trichosurus vulpecula (Diprotodontia)
+          - GCF_027595985.1  # Sorex araneus (Eulipotyphla)
+          - GCF_030435755.1  # Ochotona princeps (Lagomorpha)
+          - GCF_019393635.1  # Dromiciops gliroides (Microbiotheria)
+          - GCF_004115215.2  # Ornithorhynchus anatinus (Monotremata)
+          - GCF_037893015.1  # Macrotis lagotis (Peramelemorphia)
+          - GCF_037783145.1  # Equus przewalskii (Perissodactyla)
+          - GCF_040802235.1  # Manis javanica (Pholidota)
+          - GCF_023851605.1  # Tamandua tetradactyla (Pilosa)
+          - GCF_000001405.40 # Homo sapiens (Primates)
+          - GCF_024166365.1  # Elephas maximus indicus (Proboscidea)
+          - GCF_000001635.27 # Mus musculus (Rodentia)
 
 # Interval sets defined on one source genome and projected onto others via
 # local pairwise alignment. Each entry produces intervals at

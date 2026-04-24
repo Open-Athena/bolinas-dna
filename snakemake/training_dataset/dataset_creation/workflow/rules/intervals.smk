@@ -503,9 +503,8 @@ rule intervals_recipe_v17:
             zip(chrom_map["ucsc"].str.replace("chr", ""), chrom_map["refseq"])
         )
 
-        df = (
-            pl.read_parquet(input.cre)
-            .with_columns(pl.col("chrom").replace_strict(simple_to_refseq))
+        df = pl.read_parquet(input.cre).with_columns(
+            pl.col("chrom").replace_strict(simple_to_refseq)
         )
         intervals = GenomicSet(df)
         intervals = intervals.resize(255)
@@ -528,12 +527,44 @@ rule intervals_recipe_v18:
             zip(chrom_map["ucsc"].str.replace("chr", ""), chrom_map["refseq"])
         )
 
-        df = (
-            pl.read_parquet(input.cre)
-            .with_columns(pl.col("chrom").replace_strict(simple_to_refseq))
+        df = pl.read_parquet(input.cre).with_columns(
+            pl.col("chrom").replace_strict(simple_to_refseq)
         )
         intervals = GenomicSet(df)
         intervals = intervals.resize(255)
         defined = GenomicSet.read_bed(input.defined)
         intervals = intervals & defined
         intervals.write_bed(output[0])
+
+
+# Cross-species projected ELS_conserved_20 enhancers with functional exons
+# subtracted. Per-species: on hg38 this is the `intervals_source_unified`
+# passthrough (equivalent to v18 after resize+scannable); on other genomes
+# it's the mmseqs2 best-hit projection from hg38. Scannable = defined
+# minus low-quality-excluded exons (see `rule scannable_regions` in
+# `enhancer_prediction.smk`); using the same masking as recipe v19 so the
+# two recipes are directly comparable.
+rule intervals_recipe_v30:
+    input:
+        projected="results/intervals/ELS_conserved_20_mmseqs2_s75/{g}.parquet",
+        scannable="results/intervals/scannable/{g}.bed.gz",
+    output:
+        "results/intervals/recipe/v30/{g}.bed.gz",
+    run:
+        intervals = GenomicSet.read_parquet(input.projected)
+        intervals = intervals.resize(255)
+        scannable = GenomicSet.read_bed(input.scannable)
+        intervals = intervals & scannable
+        intervals.write_bed(output[0])
+
+
+rule all_intervals_recipe_v30_mammals_seg20:
+    """Convenience target: the recipe v30 bed.gz for each genome in
+    `mammals_seg20`. Does NOT trigger the full `rule all` HF upload —
+    add `v30/255/128` to `intervals.training` in config to enable that.
+    """
+    input:
+        expand(
+            "results/intervals/recipe/v30/{g}.bed.gz",
+            g=genome_sets.get("mammals_seg20", []),
+        ),

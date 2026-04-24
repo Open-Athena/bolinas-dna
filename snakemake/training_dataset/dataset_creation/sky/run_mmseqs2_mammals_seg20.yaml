@@ -1,0 +1,55 @@
+name: training-dataset-mmseqs2-mammals-seg20
+
+# Projects the `ELS_conserved_20` enhancer intervals from hg38 onto the
+# 20-species `mammals_seg20` set (one per mammalian order, Chromosome-level
+# assemblies only — matches the #118 segmentation benchmark subset).
+# Serial on one r6i.8xlarge: ~2 min/species × 20 ≈ 40 min wall-clock.
+
+resources:
+    infra: aws/us-east-2
+    instance_type: r6i.8xlarge   # 32 vCPU, 256 GB RAM
+    disk_size: 300               # genome 2bits + mmseqs DBs + conda envs
+    labels:
+        project: dna
+
+workdir: .
+
+setup: |
+    set -euxo pipefail
+
+    if [ ! -d "$HOME/miniforge3" ]; then
+        curl -fsSL -o /tmp/miniforge.sh https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
+        bash /tmp/miniforge.sh -b -p "$HOME/miniforge3"
+        rm /tmp/miniforge.sh
+    fi
+
+    if ! command -v uv >/dev/null 2>&1; then
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+    fi
+
+    grep -q 'miniforge3/bin' "$HOME/.bashrc" || \
+        echo 'export PATH="$HOME/miniforge3/bin:$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+
+    export PATH="$HOME/.local/bin:$PATH"
+    uv sync --group enhancer-classification
+
+run: |
+    set -euxo pipefail
+
+    source "$HOME/miniforge3/etc/profile.d/conda.sh"
+    export PATH="$HOME/miniforge3/bin:$HOME/.local/bin:$PATH"
+    export CONDA_EXE="$HOME/miniforge3/bin/conda"
+    conda --version
+
+    cd snakemake/training_dataset/dataset_creation
+
+    # Convenience rule expands to the per-species target parquets across
+    # every configured `interval_mappings` entry × mammals_seg20 genomes.
+    uv run --project ../../.. --group enhancer-classification snakemake \
+        all_mapped_intervals_mammals_seg20 \
+        --cores 32 \
+        --use-conda \
+        --resources mem_mb=220000 \
+        --configfile config/config.yaml config/config.cloud.yaml \
+        --printshellcmds \
+        --rerun-incomplete

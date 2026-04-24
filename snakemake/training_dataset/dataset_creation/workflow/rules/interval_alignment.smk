@@ -219,6 +219,20 @@ rule project_intervals_mmseqs2:
         )
 
 
+rule all_mapped_intervals_mammals_seg20:
+    """Bulk target for cloud runs: every configured `interval_mappings`
+    entry × every genome in the `mammals_seg20` set. Useful to produce
+    the per-species parquets that recipe v30 consumes without triggering
+    the full `rule all` HF-upload end-to-end build.
+    """
+    input:
+        expand(
+            "results/intervals/{name}/{g}.parquet",
+            name=list(MAPPINGS.keys()),
+            g=genome_sets.get("mammals_seg20", []),
+        ),
+
+
 rule mapped_intervals_parquet_to_recipe_bed:
     """Adapter: convert unified-namespace mapped parquet to the bed.gz path
     the existing dataset pipeline expects.
