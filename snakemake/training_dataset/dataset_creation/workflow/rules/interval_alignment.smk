@@ -1,13 +1,19 @@
-"""Generalized interval projection across genomes via local alignment.
+"""Generalized interval projection across genomes via mmseqs2 nucleotide search.
 
 Produces `results/intervals/{name}/{g}.parquet` for each genome `g`. On the
 source genome, the file is a chrom-normalized copy of the configured source
 parquet. On target genomes, the file is the result of aligning the source
-intervals onto `g` with minimap2 and keeping the best hit per query.
+intervals onto `g` with mmseqs2 (nucleotide mode) and keeping the best hit
+per query by bit score.
 
 Configured via the `interval_mappings` block in config.yaml. For v1 every
 mapping uses `HUMAN_GENOME` as its source; the wildcard constraints below
 assume that, and should be generalized if more source genomes are added.
+
+Choice of aligner (mmseqs2 over minimap2) follows issue #120, where mmseqs2
+at `-s 7.5` is Pareto-optimal on the low-cost end of the recall-vs-compute
+frontier for hg38↔mm10 cCRE orthologs (~70% R@1 at ~97% P@1 on the
+phyloP_241m-conserved subset, vs. minimap2's ~40% R@1).
 """
 
 MAPPINGS = {m["name"]: m for m in config.get("interval_mappings", [])}
@@ -15,7 +21,7 @@ _MAPPING_NAMES = "|".join(MAPPINGS.keys()) if MAPPINGS else "__never_matches__"
 
 
 rule genome_fa:
-    """Whole-genome FASTA; required as the minimap2 target."""
+    """Whole-genome FASTA; required as the mmseqs2 target input."""
     input:
         "results/genome/{g}.2bit",
     output:
@@ -61,7 +67,7 @@ rule make_alignment_query_bed:
     intervals (hi <= lo) are dropped.
 
     The 4th column is the source interval id (`chrom:start-end`) so hits can
-    be traced back to their query in debug workflows.
+    be traced back to their query.
     """
     input:
         source_parquet=lambda w: (
@@ -118,61 +124,155 @@ rule extract_alignment_query_fasta:
         "twoBitToFa {input.twobit} {output} -bed={input.bed}"
 
 
-rule align_intervals_minimap2:
-    """Run minimap2 aligning the source-interval FASTAs against target genome."""
+rule mmseqs2_target_db:
+    """Build a reusable mmseqs2 nucleotide DB from the target genome FASTA.
+
+    Factored per-target (not per-mapping) so multiple mappings with the
+    same `{g}` share one targetDB. `--mask-lower-case 1` stores soft-masked
+    flags; the search rule respects them. Outputs the `.dbtype` sentinel so
+    downstream rules can depend on the prefix without listing every sidecar
+    file mmseqs2 produces.
+    """
     input:
-        query="results/interval_alignment/{name}/{g}.query.fa",
-        target="results/genome/{g}.fa",
+        fasta="results/genome/{g}.fa",
     output:
-        "results/interval_alignment/{name}/{g}.paf.gz",
+        dbtype="results/interval_alignment/mmseqs2_target_db/{g}/targetDB.dbtype",
+    params:
+        prefix="results/interval_alignment/mmseqs2_target_db/{g}/targetDB",
+    threads: 1
+    conda:
+        "../envs/mmseqs2.yaml"
+    shell:
+        "mmseqs createdb {input.fasta} {params.prefix} --mask-lower-case 1"
+
+
+rule mmseqs2_query_db:
+    """Build an mmseqs2 nucleotide DB from the per-mapping query FASTA."""
+    input:
+        fasta="results/interval_alignment/{name}/{g}.query.fa",
+    output:
+        dbtype="results/interval_alignment/{name}/queryDB/{g}/queryDB.dbtype",
+    params:
+        prefix="results/interval_alignment/{name}/queryDB/{g}/queryDB",
     wildcard_constraints:
         name=_MAPPING_NAMES,
+    threads: 1
+    conda:
+        "../envs/mmseqs2.yaml"
+    shell:
+        "mmseqs createdb {input.fasta} {params.prefix} --mask-lower-case 1"
+
+
+rule align_intervals_mmseqs2:
+    """Run mmseqs2 nucleotide search of the query DB against the target DB.
+
+    Flags mirror snakemake/analysis/dELS_orthologs (issue #120):
+    - `--search-type 3` forces nucleotide mode (no auto-detect surprises).
+    - `--strand 2` searches forward + reverse complement targets.
+    - `--mask-lower-case 1` excludes soft-masked repeats from k-mer seeding.
+    - `-s` (sensitivity) and `--max-accept` come from the mapping config.
+    - `--split-memory-limit` lets the rule fit a small-RAM box at the cost
+      of wall time; whole-mm10 nucleotide search needs ~50-80 GB resident
+      unsplit, so large targets require either a big instance or a small
+      split.
+    """
+    input:
+        query_dbtype="results/interval_alignment/{name}/queryDB/{g}/queryDB.dbtype",
+        target_dbtype="results/interval_alignment/mmseqs2_target_db/{g}/targetDB.dbtype",
+    output:
+        result_index="results/interval_alignment/{name}/{g}.resultDB.index",
+        result_dbtype="results/interval_alignment/{name}/{g}.resultDB.dbtype",
     params:
-        preset=lambda w: MAPPINGS[w.name]["preset"],
+        query_prefix="results/interval_alignment/{name}/queryDB/{g}/queryDB",
+        target_prefix="results/interval_alignment/mmseqs2_target_db/{g}/targetDB",
+        result_prefix="results/interval_alignment/{name}/{g}.resultDB",
+        tmp_dir="results/interval_alignment/{name}/{g}.mmseqs2_tmp",
+        sensitivity=lambda w: MAPPINGS[w.name].get("sensitivity", 7.5),
+        max_accept=lambda w: MAPPINGS[w.name].get("max_accept", 1),
+        split_memory_limit=lambda w: MAPPINGS[w.name].get("split_memory_limit", "12G"),
+    wildcard_constraints:
+        name=_MAPPING_NAMES,
     threads: workflow.cores
     resources:
-        mem_mb=16000,
+        mem_mb=lambda w: MAPPINGS[w.name].get("mem_mb", 14000),
     conda:
-        "../envs/minimap2.yaml"
+        "../envs/mmseqs2.yaml"
     shell:
         """
-        minimap2 {params.preset} -t {threads} {input.target} {input.query} | \
-            gzip > {output}
+        mkdir -p {params.tmp_dir}
+        mmseqs search \
+            {params.query_prefix} \
+            {params.target_prefix} \
+            {params.result_prefix} \
+            {params.tmp_dir} \
+            --search-type 3 \
+            --strand 2 \
+            --mask-lower-case 1 \
+            --split-memory-limit {params.split_memory_limit} \
+            -s {params.sensitivity} \
+            --max-accept {params.max_accept} \
+            --threads {threads}
+        rm -rf {params.tmp_dir}
         """
 
 
-rule project_intervals_minimap2:
-    """Pick the best hit per query from the PAF and emit target-coord intervals."""
+rule convertalis_mmseqs2:
+    """Convert the mmseqs2 resultDB to a TSV of per-hit alignments."""
     input:
-        paf="results/interval_alignment/{name}/{g}.paf.gz",
+        query_dbtype="results/interval_alignment/{name}/queryDB/{g}/queryDB.dbtype",
+        target_dbtype="results/interval_alignment/mmseqs2_target_db/{g}/targetDB.dbtype",
+        result_index="results/interval_alignment/{name}/{g}.resultDB.index",
+    output:
+        tsv=temp("results/interval_alignment/{name}/{g}.hits.tsv"),
+    params:
+        query_prefix="results/interval_alignment/{name}/queryDB/{g}/queryDB",
+        target_prefix="results/interval_alignment/mmseqs2_target_db/{g}/targetDB",
+        result_prefix="results/interval_alignment/{name}/{g}.resultDB",
+    wildcard_constraints:
+        name=_MAPPING_NAMES,
+    threads: 1
+    conda:
+        "../envs/mmseqs2.yaml"
+    shell:
+        """
+        mmseqs convertalis \
+            {params.query_prefix} \
+            {params.target_prefix} \
+            {params.result_prefix} \
+            {output.tsv} \
+            --format-output "query,target,tstart,tend,bits,evalue,fident,qcov,tcov"
+        """
+
+
+rule project_intervals_mmseqs2:
+    """Project mmseqs2 hits to target-coord intervals and keep one per query."""
+    input:
+        tsv="results/interval_alignment/{name}/{g}.hits.tsv",
     output:
         "results/intervals/{name}/{g}.parquet",
     wildcard_constraints:
         name=_MAPPING_NAMES,
         g=f"(?!{HUMAN_GENOME}).*",
     run:
-        import gzip
-        import tempfile
+        from bolinas.alignment.mmseqs2 import (
+            best_hit_per_query,
+            parse_mmseqs2_hits,
+            project_hits_to_intervals,
+        )
 
-        from bolinas.alignment.minimap2 import best_hit_per_query, parse_paf
-
-        # parse_paf takes a text path; decompress inline to keep it simple.
-        with gzip.open(input.paf, "rt") as fin:
-            with tempfile.NamedTemporaryFile("w", suffix=".paf", delete=False) as fout:
-                fout.write(fin.read())
-                tmp_paf = fout.name
-
-        df = parse_paf(tmp_paf)
-        best = best_hit_per_query(df)
+        hits = parse_mmseqs2_hits(input.tsv)
+        projected = project_hits_to_intervals(hits)
+        best = best_hit_per_query(projected)
         (
             best.select(["chrom", "start", "end"])
             .sort(["chrom", "start", "end"])
             .write_parquet(output[0])
         )
+        n_queries = projected["query"].n_unique() if projected.height else 0
         print(
             f"  {wildcards.name} → {wildcards.g}: "
-            f"{best.height}/{df['query'].n_unique() if df.height else 0} "
-            f"queries mapped ({df.height} total alignments)"
+            f"{best.height}/{n_queries} queries mapped "
+            f"({projected.height} total alignments)"
         )
 
 
