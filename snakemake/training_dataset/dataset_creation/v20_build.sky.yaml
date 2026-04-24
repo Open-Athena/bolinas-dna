@@ -20,8 +20,10 @@ resources:
 
 workdir: .
 
-envs:
-  HF_TOKEN: ""
+# Sync the local HuggingFace auth token file to the cluster (read by the HF SDK
+# automatically — no env vars, no shell-history exposure).
+file_mounts:
+  ~/.cache/huggingface/token: ~/.cache/huggingface/token
 
 setup: |
   set -euxo pipefail
@@ -50,11 +52,6 @@ run: |
   set -euxo pipefail
   export PATH="$HOME/miniforge3/bin:$HOME/.local/bin:$PATH"
   cd ~/sky_workdir/snakemake/training_dataset/dataset_creation
-
-  # Optional HF auth (only needed for hf_upload_training rule)
-  if [ -n "${HF_TOKEN:-}" ]; then
-    export HUGGING_FACE_HUB_TOKEN="$HF_TOKEN"
-  fi
 
   # Sanity dry-run on the targeted v20 build path. The actual rule runs are
   # invoked via `sky exec` after launch — see header comment for commands.
