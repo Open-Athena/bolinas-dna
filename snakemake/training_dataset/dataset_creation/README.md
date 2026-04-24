@@ -378,20 +378,25 @@ Each configured mapping produces `results/intervals/{name}/{g}.parquet` for ever
 
 ```yaml
 interval_mappings:
-    - name: ELS_conserved_20_minimap2_map_ont
+    - name: ELS_conserved_20_mmseqs2_s75
       source_parquet: results/cre/ELS_conserved_20.parquet
       source_chrom_style: ucsc_stripped # bare-digit chroms; remap to RefSeq NC_*
       source_genome: GCF_000001405.40
-      mapper: minimap2
-      preset: "-cx map-ont -N 1 --secondary=no"
+      mapper: mmseqs2
+      sensitivity: 7.5
+      max_accept: 1
+      split_memory_limit: "12G"  # override on big-mem cloud instances
+      mem_mb: 14000
       flank_bp: 0
 ```
 
-Naming convention: underscored, semantic `{source_name}_{mapper}_{preset}` (no dots — they're fragile in HF dataset IDs and Snakemake wildcards). Name a variant with a different flank or preset as its own entry, e.g. `ELS_conserved_20_minimap2_map_ont_flank100`.
+Naming convention: underscored, semantic `{source_name}_{mapper}_{preset}` (no dots — they're fragile in HF dataset IDs and Snakemake wildcards). Name a variant with different flags as its own entry, e.g. `ELS_conserved_20_mmseqs2_s75_flank100`.
 
-**Referencing a mapping in the dataset config:** add its name wherever you would list a legacy recipe, e.g. `intervals.training: ["ELS_conserved_20_minimap2_map_ont/255/128"]`, pair with the `human_mouse` (or any suitable) genome_set, and the full windows → fasta → shards → HF upload flow runs unchanged.
+**Referencing a mapping in the dataset config:** add its name wherever you would list a legacy recipe, e.g. `intervals.training: ["ELS_conserved_20_mmseqs2_s75/255/128"]`, pair with the `human_mouse` (or any suitable) genome_set, and the full windows → fasta → shards → HF upload flow runs unchanged.
 
-**Status:** v1 (issue [#123](https://github.com/Open-Athena/bolinas-dna/issues/123)): minimap2 only, flank 0, default preset. Expected recall ~20% at ~98% precision per [#120](https://github.com/Open-Athena/bolinas-dna/issues/120). Flank sweep, soft-mask filtering, identity threshold, and alternative aligners are left for future iterations.
+**Resources:** mmseqs2 nucleotide search against a whole mammalian target genome needs ~50-80 GB resident at the full index, so real runs use a big-memory cloud instance (r6i.8xlarge, 256 GB). `split_memory_limit` lets a smaller box fit at the cost of wall time; the defaults shown above target the 15 GB dev box.
+
+**Status:** v1 (issue [#123](https://github.com/Open-Athena/bolinas-dna/issues/123)): mmseqs2 only, flank 0, `-s 7.5 --max-accept 1`. Expected recall ~70% at ~97% precision per [#120](https://github.com/Open-Athena/bolinas-dna/issues/120), where mmseqs2 at this sensitivity is the Pareto-optimal low-cost point on the hg38↔mm10 cCRE ortholog benchmark. Sensitivity sweep, flank sweep, soft-mask filtering, and alternative aligners (e.g. lastz for the high-recall end of the frontier) are left for future iterations.
 
 ## Output
 

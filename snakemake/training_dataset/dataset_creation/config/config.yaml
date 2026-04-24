@@ -52,14 +52,22 @@ genome_sets:
 # windowing, HF upload) consumes these alongside annotation-derived interval
 # sets; the origin is not visible past this rule.
 interval_mappings:
-    - name: ELS_conserved_20_minimap2_map_ont
+    - name: ELS_conserved_20_mmseqs2_s75
       source_parquet: results/cre/ELS_conserved_20.parquet
       source_chrom_style: ucsc_stripped
       source_genome: GCF_000001405.40
-      mapper: minimap2
-      # -I 1G splits the target index into ≤1GB batches so the rule fits in
-      # ~15GB of RAM on the dev box; trades a small amount of wall time.
-      preset: "-cx map-ont -N 1 --secondary=no -I 1G"
+      mapper: mmseqs2
+      # -s 7.5 / --max-accept 1 is the Pareto-optimal low-cost point from
+      # issue #120 (hg38↔mm10 cCRE orthologs: ~70% R@1 at ~97% P@1).
+      # max-accept 1 enforces the "one best target interval per source
+      # interval" contract downstream.
+      sensitivity: 7.5
+      max_accept: 1
+      # Whole-mammal nucleotide search needs ~50-80 GB resident. Defaults
+      # here fit the 15 GB dev box (slow — large targets really need the
+      # cloud profile); override on skypilot / big-mem runs.
+      split_memory_limit: "12G"
+      mem_mb: 14000
       flank_bp: 0
 
 output_hf_prefix: bolinas-dna/genomes-v5
