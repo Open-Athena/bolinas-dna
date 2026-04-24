@@ -34,6 +34,10 @@ envs:
   # up the 5 new seg_experiments from config.
   TARGETS: all_seg_pos_exploration
   SNAKEMAKE_EXTRA_FLAGS: ""
+  # Disable W&B logging by default — this sweep's results land in S3 via
+  # snakemake, not W&B. Override at exec time to enable:
+  # `--env WANDB_MODE=online --env WANDB_API_KEY=<your key>`.
+  WANDB_MODE: disabled
 
 setup: |
   set -euxo pipefail
