@@ -17,10 +17,12 @@
 name: seg-positive-set
 
 resources:
-  # L4 (24 GB) was proven sufficient for 64k-context 2-layer transformer in
-  # #115's context-size sweep. us-east-2 matches the project's pinned region.
+  # L4 (24 GB GPU) on g6.2xlarge for 32 GB host RAM — g6.xlarge (16 GB) OOMs
+  # the Ray driver during snakemake data-prep of the 2 GB train parquets.
+  # us-east-2 matches the project's pinned region (project=dna tag).
   cloud: aws
   region: us-east-2
+  instance_type: g6.2xlarge
   accelerators: L4:1
   labels:
     project: dna
