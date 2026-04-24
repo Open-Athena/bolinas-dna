@@ -160,7 +160,11 @@ rule hf_upload_training:
             shard=SHARDS,
         )),
     output:
-        touch("results/upload.done/training/{genome_set}/{recipe}/{w}/{s}"),
+        # Explicit `touch {output}` in shell instead of snakemake's `touch()`
+        # wrapper -- with default-storage-provider=s3 the wrapper doesn't
+        # auto-create the marker, leaving snakemake to declare the output
+        # missing even though the upload succeeded.
+        "results/upload.done/training/{genome_set}/{recipe}/{w}/{s}",
     params:
         name=lambda wildcards: (
             config["output_hf_prefix"]
@@ -172,7 +176,11 @@ rule hf_upload_training:
         ),
     threads: workflow.cores
     shell:
-        "hf upload-large-folder {params.name} --repo-type dataset {params.data_dir}"
+        """
+        hf upload-large-folder {params.name} --repo-type dataset {params.data_dir}
+        mkdir -p $(dirname {output})
+        touch {output}
+        """
 
 
 rule hf_upload_validation:
