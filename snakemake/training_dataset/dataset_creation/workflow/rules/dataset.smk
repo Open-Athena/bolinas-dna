@@ -108,6 +108,14 @@ rule create_functional_validation:
 
 rule merge_datasets:
     """Merge per-genome training parquets, shuffle, and shard into JSONL."""
+    # Pin intervals to recipe/window/step so paths like
+    # `enhancer_seg_mammals_v1/v20/255/128` can't get split as
+    # `genome_set=enhancer_seg_mammals_v1/v20/255, intervals=128`. The global
+    # genome_set constraint alone wasn't enough — snakemake matched the
+    # constraint against the prefix. Pinning intervals to v\d+/\d+/\d+
+    # eliminates the ambiguity. Same constraint added to hf_upload_training.
+    wildcard_constraints:
+        intervals=r"v\d+/\d+/\d+",
     input:
         lambda wildcards: expand(
             "results/dataset_genome/{intervals}/{g}.parquet",
@@ -148,6 +156,8 @@ rule compress_shard:
 
 rule hf_upload_training:
     """Upload training dataset shards to HuggingFace."""
+    wildcard_constraints:
+        intervals=r"v\d+/\d+/\d+",
     input:
         local(expand(
             "results/dataset/{{genome_set}}/{{intervals}}/data/train/{shard}.jsonl.zst",
@@ -156,9 +166,12 @@ rule hf_upload_training:
     output:
         touch("results/upload.done/training/{genome_set}/{intervals}"),
     params:
+        # HF dataset repo names cannot contain '/' (other than the org/name
+        # divider), so substitute slashes from both wildcards even though
+        # genome_set should never contain one.
         name=lambda wildcards: (
             config["output_hf_prefix"]
-            + "-genome_set-" + wildcards.genome_set
+            + "-genome_set-" + wildcards.genome_set.replace("/", "_")
             + "-intervals-" + wildcards.intervals.replace("/", "_")
         ),
         data_dir=lambda wildcards: (
