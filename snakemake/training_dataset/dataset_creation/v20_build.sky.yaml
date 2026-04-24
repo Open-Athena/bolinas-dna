@@ -1,0 +1,61 @@
+# SkyPilot task for the recipe v20 (segmentation-based enhancers) build.
+# Issue #133, sub-issue of #96.
+#
+# Usage:
+#   sky launch -c bolinas-v20 snakemake/training_dataset/dataset_creation/v20_build.sky.yaml
+#   # smoke test (after launch)
+#   sky exec bolinas-v20 -- 'cd snakemake/training_dataset/dataset_creation && uv run snakemake results/intervals/recipe/v20/GCF_000001405.40.bed.gz --cores 4'
+#   # full run
+#   sky exec bolinas-v20 -- 'cd snakemake/training_dataset/dataset_creation && uv run snakemake results/upload.done/training/enhancer_seg_mammals_v1/v20/255/128'
+
+name: bolinas-v20
+
+resources:
+  cpus: 16+
+  memory: 32+
+  disk_size: 100
+  infra: aws/us-east-2  # per project convention; matches S3 bucket region for free transfer
+  labels:
+    project: dna
+
+workdir: .
+
+envs:
+  HF_TOKEN: ""
+
+setup: |
+  set -euxo pipefail
+
+  # 1. miniforge (for conda envs used by bioinformatics rules: bedtools, twoBitToFa, etc.)
+  if [ ! -d "$HOME/miniforge3" ]; then
+    wget -q https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh -O /tmp/miniforge.sh
+    bash /tmp/miniforge.sh -b -p "$HOME/miniforge3"
+  fi
+  export PATH="$HOME/miniforge3/bin:$PATH"
+  echo 'export PATH="$HOME/miniforge3/bin:$PATH"' >> ~/.bashrc
+
+  # 2. uv (python package manager)
+  if ! command -v uv >/dev/null 2>&1; then
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+  fi
+  export PATH="$HOME/.local/bin:$PATH"
+  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+
+  # 3. sync python deps (the segmentation predict path is not exercised in v20,
+  # but enhancer-classification group includes py2bit which the snakefile imports)
+  cd ~/sky_workdir
+  uv sync --group enhancer-classification
+
+run: |
+  set -euxo pipefail
+  export PATH="$HOME/miniforge3/bin:$HOME/.local/bin:$PATH"
+  cd ~/sky_workdir/snakemake/training_dataset/dataset_creation
+
+  # Optional HF auth (only needed for hf_upload_training rule)
+  if [ -n "${HF_TOKEN:-}" ]; then
+    export HUGGING_FACE_HUB_TOKEN="$HF_TOKEN"
+  fi
+
+  # Sanity dry-run on the targeted v20 build path. The actual rule runs are
+  # invoked via `sky exec` after launch — see header comment for commands.
+  uv run snakemake -n results/upload.done/training/enhancer_seg_mammals_v1/v20/255/128

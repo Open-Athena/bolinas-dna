@@ -18,6 +18,12 @@ intervals:
         - v5/255/128 # CDS
         - v1/255/128 # upstream
         - v15/255/128 # downstream
+    # Recipes that only apply to a subset of genome_sets (e.g., v20 segmentation-
+    # predicted enhancers only exist for the 20 mammals scored in PR #126).
+    # Each entry: {genome_set: [recipe/w/s, ...]}.
+    training_per_genome_set:
+        enhancer_seg_mammals_v1:
+            - v20/255/128
     validation: # step = window for max diversity
         - v5/255/255
         - v1/255/255
@@ -39,6 +45,31 @@ genome_sets:
     - name: humans
       rank_key: species
       rank_value: "Homo sapiens"
+    # Explicit accession list for the 20 mammals covered by the segmentation
+    # prediction pipeline. Must stay in sync with
+    # enhancer_prediction_segmentation.genomes below.
+    - name: enhancer_seg_mammals_v1
+      accessions:
+          - GCF_050624435.1   # Tenrec ecaudatus (Afrosoricida)
+          - GCF_009834535.1   # Camelus ferus (Artiodactyla)
+          - GCF_018350215.1   # Panthera leo (Carnivora)
+          - GCF_027574615.1   # Eptesicus fuscus (Chiroptera)
+          - GCF_030445035.2   # Dasypus novemcinctus (Cingulata)
+          - GCF_902635505.1   # Sarcophilus harrisii (Dasyuromorphia)
+          - GCF_027409185.1   # Cynocephalus volans (Dermoptera)
+          - GCF_027887165.1   # Monodelphis domestica (Didelphimorphia)
+          - GCF_011100635.1   # Trichosurus vulpecula (Diprotodontia)
+          - GCF_027595985.1   # Sorex araneus (Eulipotyphla)
+          - GCF_030435755.1   # Ochotona princeps (Lagomorpha)
+          - GCF_019393635.1   # Dromiciops gliroides (Microbiotheria)
+          - GCF_004115215.2   # Ornithorhynchus anatinus (Monotremata)
+          - GCF_037893015.1   # Macrotis lagotis (Peramelemorphia)
+          - GCF_037783145.1   # Equus przewalskii (Perissodactyla)
+          - GCF_040802235.1   # Manis javanica (Pholidota)
+          - GCF_023851605.1   # Tamandua tetradactyla (Pilosa)
+          - GCF_000001405.40  # Homo sapiens (Primates)
+          - GCF_024166365.1   # Elephas maximus indicus (Proboscidea)
+          - GCF_000001635.27  # Mus musculus (Rodentia)
 
 output_hf_prefix: bolinas-dna/genomes-v5
 
@@ -134,6 +165,11 @@ enhancer_prediction_segmentation:
     batch_size: 32
     num_workers: 4
     max_windows: 0  # 0 = all windows; set small (e.g. 10) for smoke tests
+    # Recipe v20 thresholding: keep the top fraction of bins by logit (per-genome
+    # quantile, label-free). Each surviving bin is resized to recipe_target_size
+    # bp centered on its midpoint, then exon-masked and intersected with defined.
+    recipe_top_quantile: 0.01
+    recipe_target_size: 255
     # One species per mammalian order, restricted to Chromosome-level or
     # better assemblies, and forcing human + mouse as the Primates /
     # Rodentia reps (our training species). Other orders pick the smallest
