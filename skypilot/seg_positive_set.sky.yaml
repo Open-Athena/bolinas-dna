@@ -1,0 +1,54 @@
+# SkyPilot task: positive-set-definition sweep for the per-bin enhancer
+# segmenter (sub-issue of #96, follow-up to #115).
+#
+# Runs five `seg_experiments` serially on a single L4: baseline + four
+# positive-set variants (all-CREs, cons30, cons50, no-exon). Baseline R0
+# resolves its checkpoint from S3 (cached from #115) so only R1-R4 actually
+# train. Snakemake DAG handles ordering of data-prep / train / eval /
+# bedgraph / misclassified-analysis internally.
+#
+# Launch:
+#   sky launch -c seg-pos skypilot/seg_positive_set.sky.yaml
+# Subsequent iterations on the same cluster:
+#   sky exec seg-pos skypilot/seg_positive_set.sky.yaml
+# Teardown at session end:
+#   sky down seg-pos
+
+name: seg-positive-set
+
+resources:
+  # L4 (24 GB) was proven sufficient for 64k-context 2-layer transformer in
+  # #115's context-size sweep. us-east-2 matches the project's pinned region.
+  cloud: aws
+  region: us-east-2
+  accelerators: L4:1
+  labels:
+    project: dna
+  disk_size: 128
+
+workdir: .
+
+envs:
+  # Override at exec time with e.g. `sky exec ... --env TARGETS="..."` to run
+  # a subset of rules. Default: run the full all_segmentation DAG, which picks
+  # up the 5 new seg_experiments from config.
+  TARGETS: all_seg_pos_exploration
+  SNAKEMAKE_EXTRA_FLAGS: ""
+
+setup: |
+  set -euxo pipefail
+  # uv and miniforge are preinstalled on the DLAMI; sanity-check.
+  which uv || (curl -LsSf https://astral.sh/uv/install.sh | sh)
+  which mamba || which conda || echo "snakemake --use-conda requires conda"
+  uv sync --frozen
+
+run: |
+  set -euxo pipefail
+  cd snakemake/enhancer_classification
+  # Dry-run first (required by AGENTS.md). Abort if unexpected upstream
+  # rules are scheduled for rerun. The user-visible summary is appended to
+  # dryrun.log for later review.
+  uv run snakemake --dry-run $TARGETS $SNAKEMAKE_EXTRA_FLAGS 2>&1 | tee dryrun.log
+  # Actual run. `--cores all` + `use-conda` come from
+  # workflow/profiles/default/config.yaml; no need to repeat here.
+  uv run snakemake $TARGETS $SNAKEMAKE_EXTRA_FLAGS

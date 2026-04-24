@@ -11,6 +11,14 @@ cre_urls:
     homo_sapiens: "https://downloads.wenglab.org/Registry-V4/GRCh38-cCREs.bed"
     mus_musculus: "https://downloads.wenglab.org/Registry-V4/mm10-cCREs.bed"
 
+# Group aliases used as the `{cre_class}` wildcard in `filter_cre_class` and
+# downstream rules. `ELS` reproduces the original enhancer-only positive set;
+# `ALL` is every class in the ENCODE SCREEN v4 registry (verified by
+# inspecting results/cre/{species}/all.parquet).
+cre_class_groups:
+    ELS: [dELS, pELS]
+    ALL: [PLS, pELS, dELS, CA, CA-CTCF, CA-H3K4me3, CA-TF, TF]
+
 genome_urls:
     homo_sapiens: "https://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa.gz"
     mus_musculus: "https://ftp.ensembl.org/pub/release-102/fasta/mus_musculus/dna/Mus_musculus.GRCm38.dna_sm.primary_assembly.fa.gz"
@@ -416,6 +424,37 @@ seg_datasets:
             homo_sapiens: noexon/conserved/phastCons_43p/20/ELS
             mus_musculus: noexon/conserved/phastCons_euarchontoglires/20/ELS
 
+    # Positive-set-definition sweep (sub-issue of #96). Same 64k window, same
+    # v4b split, same xfmr2_w64k_s42 model as `seg_v1_64k` baseline — only the
+    # intervals differ. AU-PRC is NOT comparable across these definitions
+    # (base rates differ); use per-bin val AU-PRC only as within-definition
+    # difficulty, and compare runs qualitatively via bedgraphs and top-10
+    # misclassified regions.
+    seg_pos_all_64k:
+        window_size: 65536
+        split: v4b
+        intervals:
+            homo_sapiens: noexon/conserved/phastCons_43p/20/ALL
+            mus_musculus: noexon/conserved/phastCons_euarchontoglires/20/ALL
+    seg_pos_cons30_64k:
+        window_size: 65536
+        split: v4b
+        intervals:
+            homo_sapiens: noexon/conserved/phastCons_43p/30/ELS
+            mus_musculus: noexon/conserved/phastCons_euarchontoglires/30/ELS
+    seg_pos_cons50_64k:
+        window_size: 65536
+        split: v4b
+        intervals:
+            homo_sapiens: noexon/conserved/phastCons_43p/50/ELS
+            mus_musculus: noexon/conserved/phastCons_euarchontoglires/50/ELS
+    seg_pos_withexon_64k:
+        window_size: 65536
+        split: v4b
+        intervals:
+            homo_sapiens: conserved/phastCons_43p/20/ELS
+            mus_musculus: conserved/phastCons_euarchontoglires/20/ELS
+
 seg_models:
     default:
         freeze_backbone: false
@@ -537,6 +576,12 @@ seg_experiments:
     - { model: fast, dataset: seg_v1 }
     - { model: transformer_one_layer, dataset: seg_v1 }
     - { model: transformer_two_layers, dataset: seg_v1 }
+    # Positive-set-definition sweep (sub-issue of #96).
+    - { model: xfmr2_w64k_s42, dataset: seg_v1_64k }
+    - { model: xfmr2_w64k_s42, dataset: seg_pos_all_64k }
+    - { model: xfmr2_w64k_s42, dataset: seg_pos_cons30_64k }
+    - { model: xfmr2_w64k_s42, dataset: seg_pos_cons50_64k }
+    - { model: xfmr2_w64k_s42, dataset: seg_pos_withexon_64k }
 
 seg_max_samples:
     validation: 8192
@@ -551,6 +596,12 @@ segmentation_visualization:
         - { model: fast, dataset: seg_v1 }
         - { model: transformer_one_layer, dataset: seg_v1 }
         - { model: transformer_two_layers, dataset: seg_v1 }
+        # Positive-set-definition sweep (sub-issue of #96).
+        - { model: xfmr2_w64k_s42, dataset: seg_v1_64k }
+        - { model: xfmr2_w64k_s42, dataset: seg_pos_all_64k }
+        - { model: xfmr2_w64k_s42, dataset: seg_pos_cons30_64k }
+        - { model: xfmr2_w64k_s42, dataset: seg_pos_cons50_64k }
+        - { model: xfmr2_w64k_s42, dataset: seg_pos_withexon_64k }
     regions:
         # ZRS_human: biological [156790115, 156793672), enlarged to 1 tile.
         - genome: homo_sapiens

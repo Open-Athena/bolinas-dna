@@ -455,3 +455,75 @@ rule segmentation_precision_recall:
             }
         )
         pr.write_parquet(output.parquet)
+
+
+TOP_N_SEG_MISCLASSIFIED = 10
+
+
+def _conservation_for_intervals(intervals_path: str) -> str:
+    """Parse the conservation track name out of a segmentation interval path.
+
+    Paths look like ``conserved/{track}/{n}/{cre_class}`` optionally prefixed
+    with ``noexon/``.
+    """
+    parts = intervals_path.split("/")
+    assert "conserved" in parts, f"Expected 'conserved' segment in {intervals_path}"
+    return parts[parts.index("conserved") + 1]
+
+
+def _seg_misclassified_inputs(wc) -> dict:
+    cfg = config["seg_datasets"][wc.dataset]
+    split_config = config["splits"][cfg["split"]]
+    val_species = [s for s, splits in split_config.items() if "validation" in splits]
+    inputs = {
+        "val_predictions": (
+            f"results/segmentation/eval/{wc.model}/{wc.dataset}/val_predictions_fullcov.parquet"
+        ),
+    }
+    for species in val_species:
+        intervals_path = resolve_intervals(cfg["intervals"], species)
+        cons_track = _conservation_for_intervals(intervals_path)
+        inputs[f"all_cre_{species}"] = f"results/cre/{species}/all.parquet"
+        inputs[f"exons_{species}"] = f"results/annotation/{species}/exons.parquet"
+        inputs[f"conservation_{species}"] = (
+            f"results/conservation/{species}/{cons_track}.bw"
+        )
+    return inputs
+
+
+rule segmentation_misclassified_regions:
+    """Top-k false-positive and false-negative bins per species, annotated with
+    exon / full-SCREEN-cCRE / phastCons overlap for manual inspection."""
+    input:
+        unpack(_seg_misclassified_inputs),
+    output:
+        parquet="results/segmentation/model/{model}/{dataset}/misclassified.parquet",
+        tsv="results/segmentation/model/{model}/{dataset}/misclassified.tsv",
+    run:
+        from bolinas.enhancer_segmentation.misclassified import top_misclassified_bins
+
+        cfg = config["seg_datasets"][wildcards.dataset]
+        split_config = config["splits"][cfg["split"]]
+        val_species = [s for s, splits in split_config.items() if "validation" in splits]
+
+        preds = pl.read_parquet(input.val_predictions)
+
+        exons_by_species = {
+            s: pl.read_parquet(input[f"exons_{s}"]) for s in val_species
+        }
+        all_cres_by_species = {
+            s: pl.read_parquet(input[f"all_cre_{s}"]) for s in val_species
+        }
+        conservation_bw_by_species = {
+            s: input[f"conservation_{s}"] for s in val_species
+        }
+
+        out = top_misclassified_bins(
+            preds,
+            exons_by_species=exons_by_species,
+            all_cres_by_species=all_cres_by_species,
+            conservation_bw_by_species=conservation_bw_by_species,
+            top_k=TOP_N_SEG_MISCLASSIFIED,
+        )
+        out.write_parquet(output.parquet)
+        out.write_csv(output.tsv, separator="\t")

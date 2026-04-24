@@ -16,9 +16,16 @@ SEG_EXPERIMENTS = config.get("seg_experiments", [])
 
 
 ruleorder: filter_no_exon_overlap > process_cre
-ruleorder: cre_filter_conserved > filter_enhancers
-ruleorder: filter_no_exon_overlap > filter_enhancers
+ruleorder: cre_filter_conserved > filter_cre_class
+ruleorder: filter_no_exon_overlap > filter_cre_class
 ruleorder: filter_no_exon_overlap > cre_filter_conserved
+# Needed after generalizing to the `{cre_class}` wildcard: without this,
+# `process_cre` (output: {species}/all.parquet) matches whenever the species
+# wildcard is under-constrained, including bogus paths like
+# `{species}/{cre_class}_conservation/{conservation}.parquet`.
+ruleorder: cre_conservation > process_cre
+ruleorder: cre_conservation > filter_cre_class
+ruleorder: process_cre > filter_cre_class
 ruleorder: build_segmentation_fullcov_validation > build_segmentation_dataset
 
 
@@ -77,6 +84,43 @@ rule all_segmentation:
             for ckpt in config.get("segmentation_visualization", {}).get(
                 "checkpoints", []
             )
+            for region in config.get("segmentation_visualization", {}).get(
+                "regions", []
+            )
+        ],
+
+
+# Positive-set-definition exploration (sub-issue of #96). Isolates the five
+# new experiments from `all_segmentation` so we don't trigger retraining of
+# the original `seg_v1` experiments (whose intermediate `sampled_windows`
+# parquets aren't in S3, causing a spurious DAG cascade).
+SEG_POS_EXPLORATION_DATASETS = [
+    "seg_v1_64k",
+    "seg_pos_all_64k",
+    "seg_pos_cons30_64k",
+    "seg_pos_cons50_64k",
+    "seg_pos_withexon_64k",
+]
+SEG_POS_EXPLORATION_MODEL = "xfmr2_w64k_s42"
+
+
+rule all_seg_pos_exploration:
+    input:
+        [
+            f"results/segmentation/model/{SEG_POS_EXPLORATION_MODEL}/{d}/metrics.json"
+            for d in SEG_POS_EXPLORATION_DATASETS
+        ],
+        [
+            f"results/segmentation/model/{SEG_POS_EXPLORATION_MODEL}/{d}/precision_recall.parquet"
+            for d in SEG_POS_EXPLORATION_DATASETS
+        ],
+        [
+            f"results/segmentation/model/{SEG_POS_EXPLORATION_MODEL}/{d}/misclassified.parquet"
+            for d in SEG_POS_EXPLORATION_DATASETS
+        ],
+        [
+            f"results/segmentation/visualization/{SEG_POS_EXPLORATION_MODEL}/{d}/{region['name']}.bedgraph"
+            for d in SEG_POS_EXPLORATION_DATASETS
             for region in config.get("segmentation_visualization", {}).get(
                 "regions", []
             )

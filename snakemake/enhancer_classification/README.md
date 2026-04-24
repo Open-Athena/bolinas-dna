@@ -41,6 +41,7 @@ logit per 128 bp bin inside a 16384 bp window.
 | `src/bolinas/enhancer_classification/{dataset,model,train}.py` | 255 bp binary classifier |
 | `src/bolinas/enhancer_segmentation/{dataset,model,train}.py` | Per-bin segmenter (Conv1d head on encoder) |
 | `src/bolinas/enhancer_segmentation/labeling.py` | `label_windows_by_bin_overlap` — bin-level labels from enhancer intervals |
+| `src/bolinas/enhancer_segmentation/misclassified.py` | `top_misclassified_bins` — per-species FP/FN ranking with exon/SCREEN-cCRE/phastCons annotations |
 | `workflow/rules/model.smk` | Classifier training rules |
 | `workflow/rules/segmentation.smk` | Segmentation data build + training rules |
 
@@ -60,3 +61,23 @@ uv run snakemake
 ## Configuration
 
 See `config/config.yaml`.
+
+### Positive-set variants via `cre_class_groups`
+
+The `{cre_class}` wildcard in the interval path (e.g. `noexon/conserved/phastCons_43p/20/ELS`) is a **group alias** defined in `config["cre_class_groups"]`. Each alias maps to a list of raw ENCODE SCREEN v4 classes:
+
+- `ELS` → `[dELS, pELS]` — enhancer-like signatures, the original positive set.
+- `ALL` → all 8 SCREEN v4 classes (`PLS, pELS, dELS, CA, CA-CTCF, CA-H3K4me3, CA-TF, TF`).
+
+Add your own alias (e.g. `PLS_only: [PLS]`) to `cre_class_groups` and reference it in a `seg_datasets` entry's `intervals` path to run the pipeline against a new positive-set definition — no Python changes needed. The four knobs compose freely:
+
+| Axis | How to change |
+|------|---------------|
+| CRE class | Swap `{cre_class}` suffix (e.g. `.../20/ALL` instead of `.../20/ELS`). |
+| Conservation stringency | Bump `{n}` (minimum conserved bp inside the 150 bp center, out of 150). |
+| Conservation track | Use a different `{conservation}` segment (e.g. `phyloP_241m` instead of `phastCons_43p`); add a new entry under `config.conservation.{species}` if needed. |
+| Exon subtraction | Include or drop the leading `noexon/` segment. |
+
+### Positive-set exploration (sub-issue of #96)
+
+`seg_datasets` entries `seg_pos_all_64k`, `seg_pos_cons30_64k`, `seg_pos_cons50_64k`, `seg_pos_withexon_64k` — five-run serial sweep varying the positive-set definition one axis at a time, sharing the `xfmr2_w64k_s42` model (2 transformer layers, 64k window, step-capped at 811). Launched via `skypilot/seg_positive_set.sky.yaml`.

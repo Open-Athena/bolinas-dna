@@ -98,15 +98,23 @@ rule process_cre:
         )
 
 
-rule filter_enhancers:
+rule filter_cre_class:
+    # `{cre_class}` is a group alias defined in `config["cre_class_groups"]`
+    # (e.g. ELS -> [dELS, pELS], ALL -> the full ENCODE SCREEN v4 set).
+    # Constrained to alphanumerics (no underscore) so it can't collide with
+    # the `{cre_class}_conservation/...` output pattern of `cre_conservation`.
     input:
         "results/cre/{species}/all.parquet",
     output:
-        "results/cre/{species}/ELS.parquet",
+        "results/cre/{species}/{cre_class}.parquet",
+    wildcard_constraints:
+        cre_class=r"[A-Za-z0-9]+",
     run:
+        classes = config["cre_class_groups"][wildcards.cre_class]
+        assert len(classes) > 0, f"Empty cre_class_groups entry for {wildcards.cre_class}"
         (
             pl.read_parquet(input[0])
-            .filter(pl.col("cre_class").is_in(ENHANCER_CRE_CLASSES))
+            .filter(pl.col("cre_class").is_in(classes))
             .select(["chrom", "start", "end"])
             .write_parquet(output[0])
         )
@@ -123,10 +131,13 @@ rule download_conservation:
 
 rule cre_conservation:
     input:
-        cre="results/cre/{species}/ELS.parquet",
+        cre="results/cre/{species}/{cre_class}.parquet",
         conservation="results/conservation/{species}/{conservation}.bw",
     output:
-        "results/cre/{species}/ELS_conservation/{conservation}.parquet",
+        "results/cre/{species}/{cre_class}_conservation/{conservation}.parquet",
+    wildcard_constraints:
+        cre_class=r"[A-Za-z0-9]+",
+        conservation=r"[A-Za-z0-9_]+",
     run:
         threshold = config["conservation"][wildcards.species][wildcards.conservation]["threshold"]
         conservation_window = config["conservation_window"]
@@ -174,9 +185,11 @@ rule cre_conservation:
 
 rule plot_conservation:
     input:
-        "results/cre/{species}/ELS_conservation/{conservation}.parquet",
+        "results/cre/{species}/{cre_class}_conservation/{conservation}.parquet",
     output:
-        "results/plots/conservation/{species}/{conservation}.svg",
+        "results/plots/conservation/{species}/{cre_class}/{conservation}.svg",
+    wildcard_constraints:
+        cre_class=r"[A-Za-z0-9_]+",
     run:
         df = pl.read_parquet(input[0])
         threshold = config["conservation"][wildcards.species][wildcards.conservation]["threshold"]
@@ -201,9 +214,12 @@ rule plot_conservation:
 
 rule cre_filter_conserved:
     input:
-        "results/cre/{species}/ELS_conservation/{conservation}.parquet",
+        "results/cre/{species}/{cre_class}_conservation/{conservation}.parquet",
     output:
-        "results/cre/{species}/conserved/{conservation}/{n}/ELS.parquet",
+        "results/cre/{species}/conserved/{conservation}/{n}/{cre_class}.parquet",
+    wildcard_constraints:
+        cre_class=r"[A-Za-z0-9_]+",
+        n=r"\d+",
     run:
         min_conserved = int(wildcards.n)
         (
