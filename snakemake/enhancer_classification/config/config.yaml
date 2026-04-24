@@ -587,10 +587,10 @@ seg_max_samples:
     validation: 8192
 
 # Bedgraph tracks for segmentation. Each region's length must be a multiple
-# of segmentation.window_size (16384 bp) — precompute by enlarging the
-# biological interval symmetrically. The pipeline tiles the region with
-# non-overlapping 16384 bp windows and emits one score per 128 bp bin.
-# Original biological coords are kept as comments for provenance.
+# of the checkpoint's `window_size`. Sized to 65536 bp (one 64k tile, or
+# four 16k tiles — backwards-compatible with the earlier 16k checkpoints)
+# so the same region list works for both seg_v1 (16k) and seg_v1_64k (64k)
+# families. Original biological coords are kept as comments for provenance.
 segmentation_visualization:
     checkpoints:
         - { model: fast, dataset: seg_v1 }
@@ -603,35 +603,37 @@ segmentation_visualization:
         - { model: xfmr2_w64k_s42, dataset: seg_pos_cons50_64k }
         - { model: xfmr2_w64k_s42, dataset: seg_pos_withexon_64k }
     regions:
-        # ZRS_human: biological [156790115, 156793672), enlarged to 1 tile.
+        # ZRS_human: biological [156790115, 156793672), center 156791894,
+        # enlarged symmetrically to 65536 bp (1 tile at 64k, 4 at 16k).
         - genome: homo_sapiens
           chrom: "7"
-          start: 156783702
-          end: 156800086
+          start: 156759126
+          end: 156824662
           name: ZRS_human
-        # ZRS_chicken: biological [8549842, 8556506), enlarged to 1 tile.
+        # ZRS_chicken: biological [8549842, 8556506), center 8553174.
         - genome: gallus_gallus
           chrom: "2"
-          start: 8544982
-          end: 8561366
+          start: 8520406
+          end: 8585942
           name: ZRS_chicken
-        # ZRS_mouse: biological [29312497, 29318634), enlarged to 1 tile.
+        # ZRS_mouse: biological [29312497, 29318634), center 29315566.
         - genome: mus_musculus
           chrom: "5"
-          start: 29307374
-          end: 29323758
+          start: 29282798
+          end: 29348334
           name: ZRS_mouse
-        # MSE_drosophila: biological [9974394, 9981777), enlarged to 1 tile.
+        # MSE_drosophila: biological [9974394, 9981777), center 9978086.
         - genome: drosophila_melanogaster
           chrom: "2R"
-          start: 9969894
-          end: 9986278
+          start: 9945318
+          end: 10010854
           name: MSE_drosophila
-        # LDLR_human: biological [11065606, 11144368), enlarged to 5 tiles.
+        # LDLR_human: biological [11065606, 11144368), center 11104987,
+        # enlarged to 131072 bp (2 tiles at 64k, 8 at 16k).
         - genome: homo_sapiens
           chrom: "19"
-          start: 11064027
-          end: 11145947
+          start: 11039451
+          end: 11170523
           name: LDLR_human
 
 visualization:
