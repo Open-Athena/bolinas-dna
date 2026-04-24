@@ -34,12 +34,12 @@ include: "rules/interval_alignment.smk"
 rule all:
     input:
         expand(
-            "results/upload.done/training/{genome_set}/{intervals}",
+            "results/upload.done/{genome_set}/training/{intervals}.uploaded",
             genome_set=genome_sets_list,
             intervals=training_intervals,
         ),
         expand(
-            "results/upload.done/validation/{intervals}",
+            "results/upload.done/validation/{intervals}.uploaded",
             intervals=validation_intervals,
         ),
 

@@ -15,34 +15,11 @@ add_rc: true
 
 intervals:
     training:
-        - v5/255/128 # CDS
-        - v1/255/128 # upstream
-        - v15/255/128 # downstream
+        - v30/255/128 # mmseqs2-projected ELS_conserved_20 minus functional exons
     validation: # step = window for max diversity
-        - v5/255/255
-        - v1/255/255
-        - v15/255/255
+        - v30/255/255
 
 genome_sets:
-    - name: animals
-      rank_key: kingdom
-      rank_value: Metazoa
-    - name: vertebrates
-      rank_key: phylum
-      rank_value: Chordata
-    - name: mammals
-      rank_key: class
-      rank_value: Mammalia
-    - name: primates
-      rank_key: order
-      rank_value: Primates
-    - name: humans
-      rank_key: species
-      rank_value: "Homo sapiens"
-    - name: human_mouse
-      accessions:
-          - GCF_000001405.40 # Human
-          - GCF_000001635.27 # Mouse
     # One species per mammalian order (Chromosome-level assemblies only),
     # matching the #118 segmentation benchmark subset so v30 is directly
     # comparable to the whole-genome segmentation model's outputs on the

@@ -1,0 +1,64 @@
+name: training-dataset-hf-upload-v30
+
+# End-to-end dataset build for the v30 / mammals_seg20 combination:
+#   window_seq → FASTA → parquet (per species) → merge/shuffle/shard
+#   → compress → HF upload (training + validation).
+#
+# The mmseqs2 projections and v30 beds are already on S3 from
+# `sky/run_mmseqs2_mammals_seg20.yaml`, so this run only does the
+# downstream data-prep + upload work.
+
+resources:
+    infra: aws/us-east-2
+    instance_type: r6i.8xlarge   # 32 vCPU, 256 GB RAM (merge_datasets
+                                 # loads 20 species into one dataframe).
+    disk_size: 300
+    labels:
+        project: dna
+
+workdir: .
+
+# The HF CLI reads the token from ~/.cache/huggingface/token. Syncing the
+# local HF cache mounts credentials on the cluster so `hf upload` can
+# authenticate. The token is the user's own HF account token for
+# publishing to their namespace; no cross-account exfiltration.
+file_mounts:
+    ~/.cache/huggingface: ~/.cache/huggingface
+
+setup: |
+    set -euxo pipefail
+
+    if [ ! -d "$HOME/miniforge3" ]; then
+        curl -fsSL -o /tmp/miniforge.sh https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
+        bash /tmp/miniforge.sh -b -p "$HOME/miniforge3"
+        rm /tmp/miniforge.sh
+    fi
+
+    if ! command -v uv >/dev/null 2>&1; then
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+    fi
+
+    grep -q 'miniforge3/bin' "$HOME/.bashrc" || \
+        echo 'export PATH="$HOME/miniforge3/bin:$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+
+    export PATH="$HOME/.local/bin:$PATH"
+    uv sync --group enhancer-classification
+
+run: |
+    set -euxo pipefail
+
+    source "$HOME/miniforge3/etc/profile.d/conda.sh"
+    export PATH="$HOME/miniforge3/bin:$HOME/.local/bin:$PATH"
+    export CONDA_EXE="$HOME/miniforge3/bin/conda"
+
+    cd snakemake/training_dataset/dataset_creation
+
+    # Default `rule all` target; config has been narrowed to only
+    # mammals_seg20 × v30/255/128 (training) + v30/255/255 (validation).
+    uv run --project ../../.. --group enhancer-classification snakemake \
+        --cores 32 \
+        --use-conda \
+        --resources mem_mb=220000 \
+        --configfile config/config.yaml \
+        --printshellcmds \
+        --rerun-incomplete

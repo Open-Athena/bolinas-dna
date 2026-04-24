@@ -61,10 +61,7 @@ rule create_functional_validation:
         threshold = val_config["phylop_threshold"]
 
         # Load chrom name mapping (RefSeq -> UCSC)
-        chrom_map = dict(
-            pl.read_csv(input.chrom_mapping, separator="\t")
-            .iter_rows()
-        )
+        chrom_map = dict(pl.read_csv(input.chrom_mapping, separator="\t").iter_rows())
 
         # Load and subsample sequences
         series = load_fasta(input.fasta)
@@ -88,6 +85,7 @@ rule create_functional_validation:
 
         bw = pyBigWig.open(input.bigwig)
 
+
         def encode_case(row):
             """Encode conservation as case: uppercase iff phyloP >= threshold."""
             chrom_refseq, coords = row["id"].rsplit(":", 1)
@@ -99,6 +97,7 @@ rule create_functional_validation:
                 b.upper() if s >= threshold else b.lower()
                 for b, s in zip(row["seq"], scores)
             )
+
 
         df["seq"] = df.apply(encode_case, axis=1)
         bw.close()
@@ -115,12 +114,24 @@ rule merge_datasets:
             g=genome_sets[wildcards.genome_set],
         ),
     output:
-        temp(local(
-            expand(
-                "results/dataset/{{genome_set}}/{{intervals}}/data/train/{shard}.jsonl",
-                shard=SHARDS,
+        temp(
+            local(
+                expand(
+                    "results/dataset/{{genome_set}}/{{intervals}}/data/train/{shard}.jsonl",
+                    shard=SHARDS,
+                )
             )
-        )),
+        ),
+    wildcard_constraints:
+        # Prevents `genome_set` from greedily absorbing the leading
+        # `{recipe}/{w}/` of `{intervals}` when the path has several slashes
+        # (e.g. `mammals_seg20/v30/255/128`). Without this, the default
+        # matcher can split as genome_set=`mammals_seg20/v30/255`,
+        # intervals=`128`. Must be repeated on every rule that uses this
+        # two-wildcard layout because global constraints apply as a regex
+        # substring, not as a full-string anchor.
+        genome_set="|".join(genome_sets_list),
+        intervals=r"[^/]+/\d+/\d+",
     threads: workflow.cores
     run:
         df = pl.concat(
@@ -130,9 +141,7 @@ rule merge_datasets:
             ),
         ).sample(fraction=1, shuffle=True, seed=config["shuffle_seed"])
         split_pairs = get_array_split_pairs(len(df), len(output))
-        for path, (start, end) in tqdm(
-            zip(output, split_pairs), total=len(output)
-        ):
+        for path, (start, end) in tqdm(zip(output, split_pairs), total=len(output)):
             df.slice(start, end - start).write_ndjson(path)
 
 
@@ -147,19 +156,35 @@ rule compress_shard:
 
 
 rule hf_upload_training:
-    """Upload training dataset shards to HuggingFace."""
+    """Upload training dataset shards to HuggingFace.
+
+    Output marker path inserts the literal segment `training` between
+    `{genome_set}` and `{intervals}` so Snakemake's wildcard matcher
+    can't greedily absorb the `{recipe}/{w}/{s}` of `intervals` into
+    `genome_set`. `wildcard_constraints` alone wasn't enough here:
+    Snakemake's DAG-construction regex still produced the wrong split
+    (`genome_set=mammals_seg20/v30/255, intervals=128`) even with tight
+    rule-level constraints, so we add a literal anchor.
+    """
     input:
-        local(expand(
-            "results/dataset/{{genome_set}}/{{intervals}}/data/train/{shard}.jsonl.zst",
-            shard=SHARDS,
-        )),
+        local(
+            expand(
+                "results/dataset/{{genome_set}}/{{intervals}}/data/train/{shard}.jsonl.zst",
+                shard=SHARDS,
+            )
+        ),
     output:
-        touch("results/upload.done/training/{genome_set}/{intervals}"),
+        touch("results/upload.done/{genome_set}/training/{intervals}.uploaded"),
+    wildcard_constraints:
+        genome_set="|".join(genome_sets_list),
+        intervals=r"[^/]+/\d+/\d+",
     params:
         name=lambda wildcards: (
             config["output_hf_prefix"]
-            + "-genome_set-" + wildcards.genome_set
-            + "-intervals-" + wildcards.intervals.replace("/", "_")
+            + "-genome_set-"
+            + wildcards.genome_set
+            + "-intervals-"
+            + wildcards.intervals.replace("/", "_")
         ),
         data_dir=lambda wildcards: (
             f"results/dataset/{wildcards.genome_set}/{wildcards.intervals}"
@@ -174,12 +199,15 @@ rule hf_upload_validation:
     input:
         "results/validation/{intervals}/validation.parquet",
     output:
-        touch("results/upload.done/validation/{intervals}"),
+        touch("results/upload.done/validation/{intervals}.uploaded"),
+    wildcard_constraints:
+        intervals=r"[^/]+/\d+/\d+",
     params:
         name=lambda wildcards: (
             config["output_hf_prefix"]
             + "-validation"
-            + "-intervals-" + wildcards.intervals.replace("/", "_")
+            + "-intervals-"
+            + wildcards.intervals.replace("/", "_")
         ),
     shell:
         "hf upload {params.name} {input} validation.parquet --repo-type dataset"
