@@ -40,7 +40,7 @@ setup: |
   # uv and miniforge are preinstalled on the DLAMI; sanity-check.
   which uv || (curl -LsSf https://astral.sh/uv/install.sh | sh)
   which mamba || which conda || echo "snakemake --use-conda requires conda"
-  uv sync --frozen
+  uv sync --frozen --group enhancer-classification
 
 run: |
   set -euxo pipefail
