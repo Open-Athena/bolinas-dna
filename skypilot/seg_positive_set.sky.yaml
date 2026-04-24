@@ -44,14 +44,19 @@ run: |
   set -euxo pipefail
   # Snakemake 8.x --use-conda requires conda >= 24.7.1. AWS DLAMI ships an
   # older conda (23.11 as of this writing), so install miniforge into
-  # $HOME/miniforge and prepend it to PATH. Idempotent — no-op on reruns,
-  # so `sky exec` iterations work without re-running setup.
+  # $HOME/miniforge. Idempotent — no-op on reruns, so `sky exec`
+  # iterations work without re-running setup.
   if [ ! -d $HOME/miniforge ]; then
     curl -L https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh \
       -o /tmp/miniforge.sh
     bash /tmp/miniforge.sh -b -p $HOME/miniforge
   fi
-  export PATH="$HOME/miniforge/bin:$PATH"
+  # Clear inherited conda state from the DLAMI's preinstalled miniconda3 so
+  # snakemake's conda-version check resolves our miniforge conda, not the
+  # 23.11 on the image.
+  unset CONDA_EXE CONDA_PREFIX CONDA_DEFAULT_ENV CONDA_PYTHON_EXE CONDA_SHLVL
+  source "$HOME/miniforge/etc/profile.d/conda.sh"
+  conda --version  # sanity: should print conda >= 24.7
   cd snakemake/enhancer_classification
   # Dry-run first (required by AGENTS.md). Abort if unexpected upstream
   # rules are scheduled for rerun. The user-visible summary is appended to
