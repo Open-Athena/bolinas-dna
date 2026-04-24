@@ -15,14 +15,51 @@ import numpy as np
 import pandas as pd
 
 
+def find_max_batch_size(
+    model,
+    window_size: int = 8192,
+    start: int = 64,
+    vocab_size: int = 512,
+) -> int:
+    """OOM-descent: start at ``start``, halve on CUDA OOM until a forward
+    pass through ``model`` survives. HF Trainer's ``auto_find_batch_size`` is
+    a no-op for ``predict()``, so we tune explicitly.
+
+    The dummy input has shape ``[B*2, L]`` to match ``compute_llr_clm`` which
+    flattens the ``[B, 2, L]`` (ref+alt per variant) tensor before the fwd
+    pass.
+    """
+    import torch
+
+    bs = start
+    while bs >= 1:
+        try:
+            x = torch.randint(0, vocab_size, (bs * 2, window_size), device="cuda:0")
+            with torch.inference_mode():
+                _ = model(x)
+            torch.cuda.empty_cache()
+            return bs
+        except RuntimeError as e:
+            # Catch both OutOfMemoryError *and* 32-bit index overflow
+            # (canUse32BitIndexMath). The latter kicks in around bs*L*hidden ≳ 2^31
+            # — e.g. bs=64 × 8192ctx × 2048hidden for 1B. Either way, halve.
+            msg = str(e)
+            if "out of memory" not in msg.lower() and "32BitIndexMath" not in msg:
+                raise
+            torch.cuda.empty_cache()
+            bs //= 2
+    raise RuntimeError("Even batch_size=1 doesn't fit — check model/GPU.")
+
+
 def compute_evo2_llr(
     model_name: str,
     dataset: pd.DataFrame,
     genome_path: str | Path,
     window_size: int = 8192,
-    batch_size: int = 8,
+    batch_size: int | None = None,
     num_workers: int = 8,
     data_transform_on_the_fly: bool = True,
+    tune_start: int = 64,
 ) -> np.ndarray:
     """Compute per-variant LLR using an Evo2 checkpoint.
 
@@ -34,9 +71,12 @@ def compute_evo2_llr(
         genome_path: Path to genome reference FASTA (.fa / .fa.gz).
         window_size: Context length in bp. Fixed to 8192 for the issue #131
             eval per user request.
-        batch_size: Per-device eval batch size passed through to HF Trainer.
+        batch_size: Per-device eval batch size. If ``None`` (default), run an
+            OOM-descent tune starting from ``tune_start`` and pick the largest
+            that survives a forward pass.
         num_workers: Dataloader workers.
         data_transform_on_the_fly: Forwarded to ``run_llr_clm``.
+        tune_start: Initial batch size to probe when ``batch_size is None``.
 
     Returns:
         1-D float numpy array of LLR values (alt_logprob - ref_logprob),
@@ -55,6 +95,10 @@ def compute_evo2_llr(
     model = Evo2CausalLM(_model)
     tokenizer = Evo2Tokenizer(_model.tokenizer)
     genome = Genome(str(genome_path))
+
+    if batch_size is None:
+        batch_size = find_max_batch_size(model, window_size=window_size, start=tune_start)
+        print(f"[evo2] tuned batch_size={batch_size} (start={tune_start})")
 
     hf_dataset = Dataset.from_pandas(dataset, preserve_index=False)
 

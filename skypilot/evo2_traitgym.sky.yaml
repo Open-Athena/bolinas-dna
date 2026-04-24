@@ -22,21 +22,37 @@ workdir: .
 
 envs:
   MODEL: evo2_1b_base
+  # Number of GPUs to expose to the container (and thus to Vortex). 1B and 7B
+  # fit on one H100, and Vortex auto-sharding across 2 GPUs breaks HF Trainer
+  # input placement — so pin to 1 for those and use 2 only for 40B.
+  N_GPUS: "1"
+  LIMIT: ""  # if non-empty, pass --limit N to the script for smoke-tests
+  BATCH_SIZE: ""  # if non-empty, pass --batch-size N; otherwise auto-tune
   HF_TOKEN: ""  # pass via `sky launch --env HF_TOKEN=...` if evo2 weights or dataset are gated
 
 setup: |
   set -euxo pipefail
-  # Lambda's base image ships CUDA + torch; AWS DLAMI too. We just need evo2 +
-  # biofoundation + bolinas on top. --break-system-packages for containers that
-  # mark /usr site-packages as externally-managed.
-  PIP_FLAGS="--break-system-packages"
-  python3 -m pip install $PIP_FLAGS --upgrade pip
-  python3 -m pip install $PIP_FLAGS evo2
-  python3 -m pip install $PIP_FLAGS \
-    git+https://github.com/Open-Athena/biofoundation.git@main \
-    --use-deprecated=legacy-resolver
-  python3 -m pip install $PIP_FLAGS -e .
-  # grch38 primary assembly (Ensembl release-113), same as evals_v1
+  # Docker-first setup. Lambda's base image has docker + nvidia-container-runtime
+  # preinstalled. We use NVIDIA's pytorch image (TE + flash-attn + CUDA 12.8 +
+  # matched torch already baked in) and layer evo2 + biofoundation on top.
+  # This avoids the from-source hell we hit trying to build TE/flash-attn on
+  # Lambda's bare image.
+  sudo docker pull nvcr.io/nvidia/pytorch:25.04-py3
+  cat > /tmp/evo2.Dockerfile <<'EOF'
+  FROM nvcr.io/nvidia/pytorch:25.04-py3
+  RUN pip install --break-system-packages evo2
+  RUN pip install --break-system-packages \
+      git+https://github.com/Open-Athena/biofoundation.git@main \
+      --use-deprecated=legacy-resolver
+  # nvcr image's transformers wants regex>=2025.10.22 but ships an older one
+  # pinned via a pip constraint file (/etc/pip/constraint.txt). Unset
+  # PIP_CONSTRAINT to bypass, then upgrade regex.
+  RUN PIP_CONSTRAINT= pip install --break-system-packages -U "regex>=2025.10.22"
+  # bolinas is installed via PYTHONPATH at run-time (pure Python, no build).
+  WORKDIR /workspace
+  EOF
+  sudo docker build -t evo2-eval:latest -f /tmp/evo2.Dockerfile /tmp
+  # Genome (GRCh38 primary assembly, Ensembl release-113, same as evals_v1)
   mkdir -p results
   if [ ! -f results/genome.fa.gz ]; then
     wget -q -O results/genome.fa.gz \
@@ -45,24 +61,45 @@ setup: |
 
 run: |
   set -euxo pipefail
-  export OMP_NUM_THREADS=8
-  # Forward HF_TOKEN only if the caller actually provided one (gated weights).
-  if [ -n "${HF_TOKEN:-}" ]; then
-    export HUGGING_FACE_HUB_TOKEN="$HF_TOKEN"
+  # Clean up child docker container on signal (sky cancel sends SIGTERM to
+  # this bash script but does NOT propagate into the container, leaking GPU
+  # memory. The trap + --name ensures stale containers don't pin GPUs).
+  CONTAINER_NAME="evo2-eval-${MODEL}-$$"
+  trap 'sudo docker rm -f "$CONTAINER_NAME" 2>/dev/null || true' EXIT INT TERM
+  # Pick GPU visibility via CUDA_VISIBLE_DEVICES inside the container.
+  # "0" alone = single GPU (1B/7B); "0,1" = both GPUs for 40B (Vortex shards).
+  # We always pass --gpus all so the container has nvidia access, then use
+  # CUDA_VISIBLE_DEVICES to restrict what CUDA sees.
+  if [ "$N_GPUS" = "2" ] || [ "$N_GPUS" = "all" ]; then
+    CUDA_DEVS="0,1"
+  else
+    CUDA_DEVS="0"
   fi
-  # Preflight: evo2's own forward-pass sanity test. Catches bad TE/flash-attn
-  # installs and FP8 regressions before we burn the full eval. Reference losses
-  # are hardcoded for Hopper; on Blackwell (B200) numerics may drift a bit.
-  # Log-only — do not gate the eval on the script's return code (it uses a
-  # strict eps=1e-3 that can false-fail on a different GPU generation).
-  echo "=== evo2 self-test for ${MODEL} ==="
-  python -m evo2.test.test_evo2 --model_name "${MODEL}" || true
-  echo "=== end self-test ==="
-  # Always launch with plain python — Evo2/Vortex handles its own multi-GPU
-  # sharding internally. Do NOT use torchrun: HF Trainer's DDP wrapping fights
-  # Vortex's device placement. For small models this means we "waste" the
-  # extra GPUs on the node; that's fine.
-  python scripts/evo2_traitgym_v2.py \
-    --model "$MODEL" \
-    --split train \
-    --genome-path results/genome.fa.gz
+  # Run everything inside the evo2-eval container. Bolinas's src/ is exposed
+  # via PYTHONPATH so we don't need a pip install of the local package.
+  # Don't launch with torchrun — Evo2/Vortex handles its own multi-GPU
+  # sharding; HF Trainer DDP on top of Vortex breaks device placement.
+  sudo docker run --rm --name "$CONTAINER_NAME" --gpus all --ipc=host --shm-size=16g \
+    -v "$PWD":/workspace -w /workspace \
+    -e MODEL="$MODEL" -e HF_TOKEN="${HF_TOKEN:-}" \
+    -e LIMIT="${LIMIT:-}" -e BATCH_SIZE="${BATCH_SIZE:-}" \
+    -e CUDA_VISIBLE_DEVICES="$CUDA_DEVS" \
+    -e OMP_NUM_THREADS=8 \
+    -e PYTHONPATH=/workspace/src \
+    evo2-eval:latest \
+    bash -c '
+      set -euxo pipefail
+      if [ -n "${HF_TOKEN:-}" ]; then export HUGGING_FACE_HUB_TOKEN="$HF_TOKEN"; fi
+      echo "=== evo2 self-test for ${MODEL} ==="
+      python -m evo2.test.test_evo2 --model_name "${MODEL}" || true
+      echo "=== end self-test ==="
+      LIMIT_ARG=""
+      if [ -n "${LIMIT:-}" ]; then LIMIT_ARG="--limit ${LIMIT}"; fi
+      BS_ARG=""
+      if [ -n "${BATCH_SIZE:-}" ]; then BS_ARG="--batch-size ${BATCH_SIZE}"; fi
+      python scripts/evo2_traitgym_v2.py \
+        --model "$MODEL" \
+        --split train \
+        --genome-path results/genome.fa.gz \
+        ${LIMIT_ARG} ${BS_ARG}
+    '

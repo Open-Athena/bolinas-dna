@@ -42,8 +42,14 @@ def main() -> None:
         help="Output parquet path. Defaults to results/evo2_traitgym_v2/{model}_{split}.parquet",
     )
     p.add_argument("--window-size", type=int, default=8192)
-    p.add_argument("--batch-size", type=int, default=8)
+    p.add_argument("--batch-size", type=int, default=None,
+                   help="Per-device eval batch size. If omitted, auto-tune "
+                        "by OOM-descent from --tune-start.")
+    p.add_argument("--tune-start", type=int, default=64,
+                   help="Starting batch size for OOM-descent tuning.")
     p.add_argument("--num-workers", type=int, default=8)
+    p.add_argument("--limit", type=int, default=None,
+                   help="Only score the first N variants. Smoke-test flag.")
     args = p.parse_args()
 
     if args.output is None:
@@ -54,6 +60,9 @@ def main() -> None:
     assert not missing, f"dataset is missing required columns: {missing}"
     assert ds["label"].isna().sum() == 0, "label column contains NaN"
     assert set(ds["label"].unique()) <= {0, 1}, "label is not binary 0/1"
+    if args.limit is not None:
+        ds = ds.head(args.limit).reset_index(drop=True)
+        print(f"[evo2] --limit {args.limit} applied, scoring {len(ds)} variants")
 
     print(f"[evo2] model={args.model} split={args.split} n={len(ds)}")
     print(f"[evo2] subsets:\n{ds['subset'].value_counts().to_string()}")
@@ -64,6 +73,7 @@ def main() -> None:
         genome_path=args.genome_path,
         window_size=args.window_size,
         batch_size=args.batch_size,
+        tune_start=args.tune_start,
         num_workers=args.num_workers,
     )
 
