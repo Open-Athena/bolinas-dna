@@ -212,11 +212,10 @@ rule project_intervals_mmseqs2:
             .sort(["chrom", "start", "end"])
             .write_parquet(output[0])
         )
-        n_queries = projected["query"].n_unique() if projected.height else 0
         print(
             f"  {wildcards.name} → {wildcards.g}: "
-            f"{best.height}/{n_queries} queries mapped "
-            f"({projected.height} total alignments)"
+            f"{best.height:,} mapped intervals "
+            f"({projected.height:,} total alignments before best-hit dedup)"
         )
 
 
