@@ -24,10 +24,13 @@ intervals:
     training_per_genome_set:
         enhancer_seg_mammals_v1:
             - v20/255/128
+        mammals_seg20:
+            - v30/255/128 # mmseqs2-projected ELS_conserved_20 minus functional exons
     validation: # step = window for max diversity
         - v5/255/255
         - v1/255/255
         - v15/255/255
+        - v30/255/255
 
 genome_sets:
     - name: animals

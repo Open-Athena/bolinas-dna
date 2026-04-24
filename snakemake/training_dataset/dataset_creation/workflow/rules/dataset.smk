@@ -61,10 +61,7 @@ rule create_functional_validation:
         threshold = val_config["phylop_threshold"]
 
         # Load chrom name mapping (RefSeq -> UCSC)
-        chrom_map = dict(
-            pl.read_csv(input.chrom_mapping, separator="\t")
-            .iter_rows()
-        )
+        chrom_map = dict(pl.read_csv(input.chrom_mapping, separator="\t").iter_rows())
 
         # Load and subsample sequences
         series = load_fasta(input.fasta)
@@ -88,6 +85,7 @@ rule create_functional_validation:
 
         bw = pyBigWig.open(input.bigwig)
 
+
         def encode_case(row):
             """Encode conservation as case: uppercase iff phyloP >= threshold."""
             chrom_refseq, coords = row["id"].rsplit(":", 1)
@@ -99,6 +97,7 @@ rule create_functional_validation:
                 b.upper() if s >= threshold else b.lower()
                 for b, s in zip(row["seq"], scores)
             )
+
 
         df["seq"] = df.apply(encode_case, axis=1)
         bw.close()
@@ -136,9 +135,7 @@ rule merge_datasets:
             ),
         ).sample(fraction=1, shuffle=True, seed=config["shuffle_seed"])
         split_pairs = get_array_split_pairs(len(df), len(output))
-        for path, (start, end) in tqdm(
-            zip(output, split_pairs), total=len(output)
-        ):
+        for path, (start, end) in tqdm(zip(output, split_pairs), total=len(output)):
             df.slice(start, end - start).write_ndjson(path)
 
 

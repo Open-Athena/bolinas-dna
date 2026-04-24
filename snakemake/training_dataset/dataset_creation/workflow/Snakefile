@@ -54,7 +54,7 @@ rule all:
             for iv in training_per_genome_set.get(gs, training_intervals)
         ],
         expand(
-            "results/upload.done/validation/{intervals}",
+            "results/upload.done/validation/{intervals}.uploaded",
             intervals=validation_intervals,
         ),
 
