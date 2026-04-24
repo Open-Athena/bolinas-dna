@@ -31,10 +31,18 @@ def find_max_batch_size(
     """
     import torch
 
+    # For sharded Vortex models (40B on 2 GPUs) the embedding layer may live
+    # on a non-cuda:0 device. Send the probe input to whichever device the
+    # first parameter is on, matching what biofoundation's Trainer pathway
+    # does at inference time.
+    try:
+        probe_device = next(model.parameters()).device
+    except StopIteration:
+        probe_device = torch.device("cuda:0")
     bs = start
     while bs >= 1:
         try:
-            x = torch.randint(0, vocab_size, (bs * 2, window_size), device="cuda:0")
+            x = torch.randint(0, vocab_size, (bs * 2, window_size), device=probe_device)
             with torch.inference_mode():
                 _ = model(x)
             torch.cuda.empty_cache()
@@ -93,6 +101,29 @@ def compute_evo2_llr(
 
     _model = Evo2(model_name)
     model = Evo2CausalLM(_model)
+
+    # For sharded Vortex models (40B on 2 GPUs), the embedding layer may
+    # land on a non-cuda:0 device, AND the model's output logits come out on
+    # the last shard's device. HF Trainer / biofoundation's scoring fns
+    # expect input_ids and logits to live on the same device (torch.gather).
+    # Wrap the adapter's forward so:
+    #   1. input_ids are moved to the embedding's device (input side)
+    #   2. logits are moved back to the caller's device (output side)
+    # Both are no-ops in the single-GPU case.
+    _embed_device = _model.model.embedding_layer.weight.device
+    _orig_forward = model.forward
+
+    def _sharded_forward(input_ids):
+        caller_device = input_ids.device
+        if input_ids.device != _embed_device:
+            input_ids = input_ids.to(_embed_device)
+        logits = _orig_forward(input_ids)
+        if logits.device != caller_device:
+            logits = logits.to(caller_device)
+        return logits
+
+    model.forward = _sharded_forward
+
     tokenizer = Evo2Tokenizer(_model.tokenizer)
     genome = Genome(str(genome_path))
 

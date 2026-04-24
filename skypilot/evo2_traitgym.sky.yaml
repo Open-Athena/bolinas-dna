@@ -28,6 +28,7 @@ envs:
   N_GPUS: "1"
   LIMIT: ""  # if non-empty, pass --limit N to the script for smoke-tests
   BATCH_SIZE: ""  # if non-empty, pass --batch-size N; otherwise auto-tune
+  SKIP_SELF_TEST: ""  # if non-empty, skip evo2's forward-pass self-test
   HF_TOKEN: ""  # pass via `sky launch --env HF_TOKEN=...` if evo2 weights or dataset are gated
 
 setup: |
@@ -83,6 +84,7 @@ run: |
     -v "$PWD":/workspace -w /workspace \
     -e MODEL="$MODEL" -e HF_TOKEN="${HF_TOKEN:-}" \
     -e LIMIT="${LIMIT:-}" -e BATCH_SIZE="${BATCH_SIZE:-}" \
+    -e SKIP_SELF_TEST="${SKIP_SELF_TEST:-}" \
     -e CUDA_VISIBLE_DEVICES="$CUDA_DEVS" \
     -e OMP_NUM_THREADS=8 \
     -e PYTHONPATH=/workspace/src \
@@ -90,9 +92,13 @@ run: |
     bash -c '
       set -euxo pipefail
       if [ -n "${HF_TOKEN:-}" ]; then export HUGGING_FACE_HUB_TOKEN="$HF_TOKEN"; fi
-      echo "=== evo2 self-test for ${MODEL} ==="
-      python -m evo2.test.test_evo2 --model_name "${MODEL}" || true
-      echo "=== end self-test ==="
+      if [ -z "${SKIP_SELF_TEST:-}" ]; then
+        echo "=== evo2 self-test for ${MODEL} ==="
+        python -m evo2.test.test_evo2 --model_name "${MODEL}" || true
+        echo "=== end self-test ==="
+      else
+        echo "[skip] self-test disabled via SKIP_SELF_TEST"
+      fi
       LIMIT_ARG=""
       if [ -n "${LIMIT:-}" ]; then LIMIT_ARG="--limit ${LIMIT}"; fi
       BS_ARG=""
