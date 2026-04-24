@@ -124,78 +124,36 @@ rule extract_alignment_query_fasta:
         "twoBitToFa {input.twobit} {output} -bed={input.bed}"
 
 
-rule mmseqs2_target_db:
-    """Build a reusable mmseqs2 nucleotide DB from the target genome FASTA.
-
-    Factored per-target (not per-mapping) so multiple mappings with the
-    same `{g}` share one targetDB. `--mask-lower-case 1` stores soft-masked
-    flags; the search rule respects them. Outputs the `.dbtype` sentinel so
-    downstream rules can depend on the prefix without listing every sidecar
-    file mmseqs2 produces. The explicit `mkdir -p` is needed because with
-    the S3 storage backend Snakemake doesn't materialize the local parent
-    directory for a `send to storage` output before the shell runs, so
-    mmseqs2's first `.source` write would otherwise fail.
-    """
-    input:
-        fasta="results/genome/{g}.fa",
-    output:
-        dbtype="results/interval_alignment/mmseqs2_target_db/{g}/targetDB.dbtype",
-    params:
-        prefix="results/interval_alignment/mmseqs2_target_db/{g}/targetDB",
-    threads: 1
-    conda:
-        "../envs/mmseqs2.yaml"
-    shell:
-        """
-        mkdir -p $(dirname {params.prefix})
-        mmseqs createdb {input.fasta} {params.prefix} --mask-lower-case 1
-        """
-
-
-rule mmseqs2_query_db:
-    """Build an mmseqs2 nucleotide DB from the per-mapping query FASTA."""
-    input:
-        fasta="results/interval_alignment/{name}/{g}.query.fa",
-    output:
-        dbtype="results/interval_alignment/{name}/queryDB/{g}/queryDB.dbtype",
-    params:
-        prefix="results/interval_alignment/{name}/queryDB/{g}/queryDB",
-    wildcard_constraints:
-        name=_MAPPING_NAMES,
-    threads: 1
-    conda:
-        "../envs/mmseqs2.yaml"
-    shell:
-        """
-        mkdir -p $(dirname {params.prefix})
-        mmseqs createdb {input.fasta} {params.prefix} --mask-lower-case 1
-        """
-
-
 rule align_intervals_mmseqs2:
-    """Run mmseqs2 nucleotide search of the query DB against the target DB.
+    """Build mmseqs2 query + target DBs, run nucleotide search, emit hits TSV.
 
-    Flags mirror snakemake/analysis/dELS_orthologs (issue #120):
+    Consolidated into one rule because mmseqs2 produces a fan of sidecar
+    files per DB (`.index`, `.source`, `.lookup`, `_h*`, ...) that are
+    awkward to declare individually, and the pipeline's S3 default-storage
+    backend only uploads declared outputs. Keeping the DBs in a local
+    `mktemp -d` tmpdir sidesteps the upload entirely — only the final
+    `{g}.hits.tsv` gets stored, and a rerun rebuilds the DBs from the
+    (cached) input FASTAs.
+
+    Search flags mirror snakemake/analysis/dELS_orthologs (issue #120):
     - `--search-type 3` forces nucleotide mode (no auto-detect surprises).
     - `--strand 2` searches forward + reverse complement targets.
     - `--mask-lower-case 1` excludes soft-masked repeats from k-mer seeding.
     - `-s` (sensitivity) and `--max-accept` come from the mapping config.
     - `--split-memory-limit` lets the rule fit a small-RAM box at the cost
-      of wall time; whole-mm10 nucleotide search needs ~50-80 GB resident
+      of wall time; whole-mammal nucleotide search needs ~50-80 GB resident
       unsplit, so large targets require either a big instance or a small
       split.
+
+    `tstart,tend,bits,evalue,fident,qcov,tcov` is the column set consumed
+    by `bolinas.alignment.mmseqs2.parse_mmseqs2_hits`.
     """
     input:
-        query_dbtype="results/interval_alignment/{name}/queryDB/{g}/queryDB.dbtype",
-        target_dbtype="results/interval_alignment/mmseqs2_target_db/{g}/targetDB.dbtype",
+        query="results/interval_alignment/{name}/{g}.query.fa",
+        target="results/genome/{g}.fa",
     output:
-        result_index="results/interval_alignment/{name}/{g}.resultDB.index",
-        result_dbtype="results/interval_alignment/{name}/{g}.resultDB.dbtype",
+        tsv=temp("results/interval_alignment/{name}/{g}.hits.tsv"),
     params:
-        query_prefix="results/interval_alignment/{name}/queryDB/{g}/queryDB",
-        target_prefix="results/interval_alignment/mmseqs2_target_db/{g}/targetDB",
-        result_prefix="results/interval_alignment/{name}/{g}.resultDB",
-        tmp_dir="results/interval_alignment/{name}/{g}.mmseqs2_tmp",
         sensitivity=lambda w: MAPPINGS[w.name].get("sensitivity", 7.5),
         max_accept=lambda w: MAPPINGS[w.name].get("max_accept", 1),
         split_memory_limit=lambda w: MAPPINGS[w.name].get("split_memory_limit", "12G"),
@@ -208,12 +166,14 @@ rule align_intervals_mmseqs2:
         "../envs/mmseqs2.yaml"
     shell:
         """
-        mkdir -p {params.tmp_dir}
+        TMP=$(mktemp -d -t mmseqs2_{wildcards.name}_{wildcards.g}_XXXX)
+        trap 'rm -rf "$TMP"' EXIT
+
+        mmseqs createdb {input.target} $TMP/targetDB --mask-lower-case 1
+        mmseqs createdb {input.query}  $TMP/queryDB  --mask-lower-case 1
+
         mmseqs search \
-            {params.query_prefix} \
-            {params.target_prefix} \
-            {params.result_prefix} \
-            {params.tmp_dir} \
+            $TMP/queryDB $TMP/targetDB $TMP/resultDB $TMP/search_tmp \
             --search-type 3 \
             --strand 2 \
             --mask-lower-case 1 \
@@ -221,34 +181,9 @@ rule align_intervals_mmseqs2:
             -s {params.sensitivity} \
             --max-accept {params.max_accept} \
             --threads {threads}
-        rm -rf {params.tmp_dir}
-        """
 
-
-rule convertalis_mmseqs2:
-    """Convert the mmseqs2 resultDB to a TSV of per-hit alignments."""
-    input:
-        query_dbtype="results/interval_alignment/{name}/queryDB/{g}/queryDB.dbtype",
-        target_dbtype="results/interval_alignment/mmseqs2_target_db/{g}/targetDB.dbtype",
-        result_index="results/interval_alignment/{name}/{g}.resultDB.index",
-    output:
-        tsv=temp("results/interval_alignment/{name}/{g}.hits.tsv"),
-    params:
-        query_prefix="results/interval_alignment/{name}/queryDB/{g}/queryDB",
-        target_prefix="results/interval_alignment/mmseqs2_target_db/{g}/targetDB",
-        result_prefix="results/interval_alignment/{name}/{g}.resultDB",
-    wildcard_constraints:
-        name=_MAPPING_NAMES,
-    threads: 1
-    conda:
-        "../envs/mmseqs2.yaml"
-    shell:
-        """
         mmseqs convertalis \
-            {params.query_prefix} \
-            {params.target_prefix} \
-            {params.result_prefix} \
-            {output.tsv} \
+            $TMP/queryDB $TMP/targetDB $TMP/resultDB {output.tsv} \
             --format-output "query,target,tstart,tend,bits,evalue,fident,qcov,tcov"
         """
 
