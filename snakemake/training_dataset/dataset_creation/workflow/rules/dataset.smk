@@ -184,7 +184,7 @@ rule hf_upload_training:
             )
         ),
     output:
-        touch("results/upload.done/{genome_set}/training/{intervals}.uploaded"),
+        "results/upload.done/{genome_set}/training/{intervals}.uploaded",
     wildcard_constraints:
         genome_set="|".join(genome_sets_list),
         intervals=r"[^/]+/\d+/\d+",
@@ -204,6 +204,7 @@ rule hf_upload_training:
         """
         mkdir -p $(dirname {output})
         hf upload-large-folder {params.name} --repo-type dataset {params.data_dir}
+        touch {output}
         """
 
 
@@ -212,7 +213,7 @@ rule hf_upload_validation:
     input:
         "results/validation/{intervals}/validation.parquet",
     output:
-        touch("results/upload.done/validation/{intervals}.uploaded"),
+        "results/upload.done/validation/{intervals}.uploaded",
     wildcard_constraints:
         intervals=r"[^/]+/\d+/\d+",
     params:
@@ -226,4 +227,5 @@ rule hf_upload_validation:
         """
         mkdir -p $(dirname {output})
         hf upload {params.name} {input} validation.parquet --repo-type dataset
+        touch {output}
         """
