@@ -1,0 +1,66 @@
+name: training-dataset-mmseqs2-mouse
+
+# One-shot run of the ELS_conserved_20_mmseqs2_s75 interval projection
+# from hg38 onto mouse (GCF_000001635.27), on a big-memory instance so
+# mmseqs2 nucleotide search at -s 7.5 fits against the whole target
+# genome (~50-80 GB resident). See issue #120 for why mmseqs2 + why -s 7.5,
+# and PR #125 for the pipeline design.
+
+resources:
+    # us-east-2: project convention + same-region S3 for the pipeline's
+    # `s3://oa-bolinas/...` storage backend.
+    infra: aws/us-east-2
+    instance_type: r6i.8xlarge   # 32 vCPU, 256 GB RAM
+    disk_size: 300               # genome 2bits + mmseqs DBs + conda envs
+    labels:
+        project: dna             # cost-attribution tag on the AWS EC2 instance
+
+workdir: .
+
+setup: |
+    set -euxo pipefail
+
+    # Miniforge3 provides conda + mamba, required by `snakemake --use-conda`.
+    if [ ! -d "$HOME/miniforge3" ]; then
+        curl -fsSL -o /tmp/miniforge.sh https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
+        bash /tmp/miniforge.sh -b -p "$HOME/miniforge3"
+        rm /tmp/miniforge.sh
+    fi
+
+    # uv manages the project's Python deps.
+    if ! command -v uv >/dev/null 2>&1; then
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+    fi
+
+    # Persist PATH for future non-login shells (rsync pulls, ad-hoc ssh).
+    grep -q 'miniforge3/bin' "$HOME/.bashrc" || \
+        echo 'export PATH="$HOME/miniforge3/bin:$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+
+    export PATH="$HOME/.local/bin:$PATH"
+    uv sync
+
+run: |
+    set -euxo pipefail
+
+    # Source miniforge's conda.sh explicitly so snakemake's conda backend
+    # picks up conda 26.x (the AWS AMI ships a stale miniconda3).
+    source "$HOME/miniforge3/etc/profile.d/conda.sh"
+    export PATH="$HOME/miniforge3/bin:$HOME/.local/bin:$PATH"
+    export CONDA_EXE="$HOME/miniforge3/bin/conda"
+    conda --version
+    which conda uv
+
+    cd snakemake/training_dataset/dataset_creation
+
+    # Target only the hg38 → mm39 projection (avoids triggering the full
+    # `rule all` end-to-end dataset build). Positional target comes before
+    # `--configfile` because snakemake's argument parser otherwise absorbs
+    # it as an additional configfile path.
+    uv run --project ../../.. snakemake \
+        results/intervals/ELS_conserved_20_mmseqs2_s75/GCF_000001635.27.parquet \
+        --cores 32 \
+        --use-conda \
+        --resources mem_mb=220000 \
+        --configfile config/config.yaml config/config.cloud.yaml \
+        --printshellcmds \
+        --rerun-incomplete
