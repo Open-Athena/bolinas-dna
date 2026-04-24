@@ -2,21 +2,38 @@
 
 Entry for issue #131. Per-variant LLR only, 8192-bp context, one model per run.
 
-Always launch this with plain ``python``. Do NOT use ``torchrun`` / HF DDP —
-Evo2's Vortex backend handles its own multi-GPU sharding internally, and
-layering HF's data parallelism on top fights Vortex's device placement. For
-small models (1B, 7B) on a multi-GPU node, the extra GPUs sit idle. That's
-intended.
+Two launch modes:
+
+1. Plain ``python`` — single-GPU inference. Evo2's Vortex backend uses only
+   whatever's visible via ``CUDA_VISIBLE_DEVICES``. For small models (1B, 7B)
+   this runs on one GPU; other GPUs idle.
+
+2. ``torchrun --nproc_per_node=N`` — data-parallel across N GPUs. Each rank
+   pins to one GPU via the ``LOCAL_RANK`` header below (copied verbatim from
+   biofoundation/examples/evo2_llr.py), so Evo2/Vortex inside each rank only
+   sees that one GPU and HF Trainer's DDP wraps cleanly. Model must fit on a
+   single GPU in this mode.
 """
 
-import argparse
-from pathlib import Path
+# --- header guard: must run before importing torch / evo2 / biofoundation ---
+# From biofoundation/examples/evo2_llr.py. When launched via torchrun, each
+# rank pins to its assigned GPU so HF Trainer sees only one device per rank
+# (preventing DP wrapping) and Evo2/Vortex on that rank only uses that GPU.
+import os
 
-import numpy as np
-import pandas as pd
-from datasets import load_dataset
+_local_rank = os.environ.get("LOCAL_RANK")
+if _local_rank is not None:
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(int(_local_rank))
+# ---------------------------------------------------------------------------
 
-from bolinas.evals.evo2 import compute_evo2_llr, scores_dataframe
+import argparse  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
+from datasets import load_dataset  # noqa: E402
+
+from bolinas.evals.evo2 import compute_evo2_llr, scores_dataframe  # noqa: E402
 
 
 DATASET_HF_PATH = "bolinas-dna/evals-traitgym_mendelian_v2"
@@ -64,8 +81,10 @@ def main() -> None:
         ds = ds.head(args.limit).reset_index(drop=True)
         print(f"[evo2] --limit {args.limit} applied, scoring {len(ds)} variants")
 
-    print(f"[evo2] model={args.model} split={args.split} n={len(ds)}")
-    print(f"[evo2] subsets:\n{ds['subset'].value_counts().to_string()}")
+    rank = int(os.environ.get("RANK", 0))
+    if rank == 0:
+        print(f"[evo2] model={args.model} split={args.split} n={len(ds)}")
+        print(f"[evo2] subsets:\n{ds['subset'].value_counts().to_string()}")
 
     llr = compute_evo2_llr(
         model_name=args.model,
@@ -76,6 +95,11 @@ def main() -> None:
         tune_start=args.tune_start,
         num_workers=args.num_workers,
     )
+
+    # When launched via torchrun with DDP, HF Trainer gathers predictions on
+    # every rank. Only rank 0 needs to write the parquet.
+    if rank != 0:
+        return
 
     scores = scores_dataframe(llr)
     out = pd.concat(

@@ -22,14 +22,16 @@ workdir: .
 
 envs:
   MODEL: evo2_1b_base
-  # Number of GPUs to expose to the container (and thus to Vortex). 1B and 7B
-  # fit on one H100, and Vortex auto-sharding across 2 GPUs breaks HF Trainer
-  # input placement — so pin to 1 for those and use 2 only for 40B.
+  # Number of GPUs to expose to the container. With LAUNCHER=python this is
+  # how many GPUs Vortex sees (and auto-shards across, for 40B). With
+  # LAUNCHER=torchrun, N_GPUS must equal NPROC — each rank gets one GPU.
   N_GPUS: "1"
-  LIMIT: ""  # if non-empty, pass --limit N to the script for smoke-tests
-  BATCH_SIZE: ""  # if non-empty, pass --batch-size N; otherwise auto-tune
-  SKIP_SELF_TEST: ""  # if non-empty, skip evo2's forward-pass self-test
-  HF_TOKEN: ""  # pass via `sky launch --env HF_TOKEN=...` if evo2 weights or dataset are gated
+  LAUNCHER: python  # "python" (single process) or "torchrun" (data-parallel)
+  NPROC: "1"        # --nproc_per_node when LAUNCHER=torchrun; ignored for python
+  LIMIT: ""
+  BATCH_SIZE: ""
+  SKIP_SELF_TEST: ""
+  HF_TOKEN: ""
 
 setup: |
   set -euxo pipefail
@@ -85,7 +87,9 @@ run: |
     -e MODEL="$MODEL" -e HF_TOKEN="${HF_TOKEN:-}" \
     -e LIMIT="${LIMIT:-}" -e BATCH_SIZE="${BATCH_SIZE:-}" \
     -e SKIP_SELF_TEST="${SKIP_SELF_TEST:-}" \
+    -e LAUNCHER="${LAUNCHER:-python}" -e NPROC="${NPROC:-1}" \
     -e CUDA_VISIBLE_DEVICES="$CUDA_DEVS" \
+    -e PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
     -e OMP_NUM_THREADS=8 \
     -e PYTHONPATH=/workspace/src \
     evo2-eval:latest \
@@ -103,9 +107,20 @@ run: |
       if [ -n "${LIMIT:-}" ]; then LIMIT_ARG="--limit ${LIMIT}"; fi
       BS_ARG=""
       if [ -n "${BATCH_SIZE:-}" ]; then BS_ARG="--batch-size ${BATCH_SIZE}"; fi
-      python scripts/evo2_traitgym_v2.py \
-        --model "$MODEL" \
-        --split train \
-        --genome-path results/genome.fa.gz \
-        ${LIMIT_ARG} ${BS_ARG}
+      if [ "$LAUNCHER" = "torchrun" ]; then
+        # Data-parallel: each rank sees exactly one GPU via the header guard
+        # in scripts/evo2_traitgym_v2.py (LOCAL_RANK -> CUDA_VISIBLE_DEVICES).
+        OMP_NUM_THREADS=8 torchrun --nproc_per_node="${NPROC}" \
+          scripts/evo2_traitgym_v2.py \
+          --model "$MODEL" \
+          --split train \
+          --genome-path results/genome.fa.gz \
+          ${LIMIT_ARG} ${BS_ARG}
+      else
+        python scripts/evo2_traitgym_v2.py \
+          --model "$MODEL" \
+          --split train \
+          --genome-path results/genome.fa.gz \
+          ${LIMIT_ARG} ${BS_ARG}
+      fi
     '
