@@ -18,7 +18,7 @@ import pandas as pd
 from bolinas.evals.metrics import compute_metrics
 
 
-MODELS = ["evo2_1b_base", "evo2_7b", "evo2_40b"]
+MODELS = ["evo2_1b_base", "evo2_7b", "evo2_7b_base", "evo2_40b"]
 SCORE_TYPES = ["minus_llr", "abs_llr"]
 
 
