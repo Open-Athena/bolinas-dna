@@ -64,7 +64,14 @@ def main() -> None:
         default=None,
         help="Per-device eval batch size. If omitted, OOM-descent tune.",
     )
-    p.add_argument("--tune-start", type=int, default=64)
+    p.add_argument(
+        "--tune-start",
+        type=int,
+        default=512,
+        help="Starting batch size for OOM-descent tuning. Default 512 "
+        "because context here is short (255 tokens); seeding lower "
+        "would settle at a wastefully small batch.",
+    )
     p.add_argument("--num-workers", type=int, default=4)
     p.add_argument(
         "--output",
