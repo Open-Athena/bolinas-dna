@@ -25,6 +25,13 @@ for gs in training_per_genome_set:
         f"training_per_genome_set references unknown genome_set {gs!r}"
     )
 
+interval_mappings = config.get("interval_mappings", [])
+mapping_names = [m["name"] for m in interval_mappings]
+assert len(mapping_names) == len(set(mapping_names)), (
+    f"duplicate names in interval_mappings: {mapping_names}"
+)
+MAPPINGS = {m["name"]: m for m in interval_mappings}
+
 
 wildcard_constraints:
     genome_set="|".join(genome_sets_list),
@@ -34,6 +41,7 @@ wildcard_constraints:
     recipe=r"v\d+",
     w=r"\d+",
     s=r"\d+",
+    name="|".join(MAPPINGS.keys()) if MAPPINGS else r"(?!)",
 
 
 include: "rules/download.smk"
@@ -43,6 +51,7 @@ include: "rules/stats.smk"
 include: "rules/dataset.smk"
 include: "rules/eda.smk"
 include: "rules/enhancer_prediction.smk"
+include: "rules/interval_alignment.smk"
 
 
 rule all:

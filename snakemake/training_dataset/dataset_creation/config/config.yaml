@@ -24,10 +24,13 @@ intervals:
     training_per_genome_set:
         enhancer_seg_mammals_v1:
             - v20/255/128
+        mammals_seg20:
+            - v30/255/128 # mmseqs2-projected ELS_conserved_20 minus functional exons
     validation: # step = window for max diversity
         - v5/255/255
         - v1/255/255
         - v15/255/255
+        - v30/255/255
 
 genome_sets:
     - name: animals
@@ -70,6 +73,65 @@ genome_sets:
           - GCF_000001405.40  # Homo sapiens (Primates)
           - GCF_024166365.1   # Elephas maximus indicus (Proboscidea)
           - GCF_000001635.27  # Mus musculus (Rodentia)
+    - name: human_mouse
+      accessions:
+          - GCF_000001405.40 # Human
+          - GCF_000001635.27 # Mouse
+    # One species per mammalian order (Chromosome-level assemblies only),
+    # matching the #118 segmentation benchmark subset so v30 is directly
+    # comparable to the whole-genome segmentation model's outputs on the
+    # same species. 20 species total. Source / selection criteria are
+    # documented on `enhancer_prediction_segmentation.genomes` below; this
+    # set duplicates the accession list so `load_genome_sets` can consume
+    # it and downstream rules iterate over the same per-species set.
+    - name: mammals_seg20
+      accessions:
+          - GCF_050624435.1  # Tenrec ecaudatus (Afrosoricida)
+          - GCF_009834535.1  # Camelus ferus (Artiodactyla)
+          - GCF_018350215.1  # Panthera leo (Carnivora)
+          - GCF_027574615.1  # Eptesicus fuscus (Chiroptera)
+          - GCF_030445035.2  # Dasypus novemcinctus (Cingulata)
+          - GCF_902635505.1  # Sarcophilus harrisii (Dasyuromorphia)
+          - GCF_027409185.1  # Cynocephalus volans (Dermoptera)
+          - GCF_027887165.1  # Monodelphis domestica (Didelphimorphia)
+          - GCF_011100635.1  # Trichosurus vulpecula (Diprotodontia)
+          - GCF_027595985.1  # Sorex araneus (Eulipotyphla)
+          - GCF_030435755.1  # Ochotona princeps (Lagomorpha)
+          - GCF_019393635.1  # Dromiciops gliroides (Microbiotheria)
+          - GCF_004115215.2  # Ornithorhynchus anatinus (Monotremata)
+          - GCF_037893015.1  # Macrotis lagotis (Peramelemorphia)
+          - GCF_037783145.1  # Equus przewalskii (Perissodactyla)
+          - GCF_040802235.1  # Manis javanica (Pholidota)
+          - GCF_023851605.1  # Tamandua tetradactyla (Pilosa)
+          - GCF_000001405.40 # Homo sapiens (Primates)
+          - GCF_024166365.1  # Elephas maximus indicus (Proboscidea)
+          - GCF_000001635.27 # Mus musculus (Rodentia)
+
+# Interval sets defined on one source genome and projected onto others via
+# local pairwise alignment. Each entry produces intervals at
+# results/intervals/{name}/{g}.parquet for every configured genome — the
+# source-genome file is a chrom-normalized copy of `source_parquet`; other
+# genomes come from the `mapper` alignment. Downstream (fasta extraction,
+# windowing, HF upload) consumes these alongside annotation-derived interval
+# sets; the origin is not visible past this rule.
+interval_mappings:
+    - name: ELS_conserved_20_mmseqs2_s75
+      source_parquet: results/cre/ELS_conserved_20.parquet
+      source_chrom_style: ucsc_stripped
+      source_genome: GCF_000001405.40
+      mapper: mmseqs2
+      # -s 7.5 / --max-accept 1 is the Pareto-optimal low-cost point from
+      # issue #120 (hg38↔mm10 cCRE orthologs: ~70% R@1 at ~97% P@1).
+      # max-accept 1 enforces the "one best target interval per source
+      # interval" contract downstream.
+      sensitivity: 7.5
+      max_accept: 1
+      # Whole-mammal nucleotide search needs ~50-80 GB resident. Defaults
+      # here fit the 15 GB dev box (slow — large targets really need the
+      # cloud profile); override on skypilot / big-mem runs.
+      split_memory_limit: "12G"
+      mem_mb: 14000
+      flank_bp: 0
 
 output_hf_prefix: bolinas-dna/genomes-v5
 

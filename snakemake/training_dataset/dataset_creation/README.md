@@ -418,6 +418,36 @@ Recipe v20 is the segmentation analogue of v19: it converts the per-bin segmenta
 
 **Threshold calibration on chr7 with held-out PR curves is deferred** — that would replace the quantile threshold with a precision-targeted one. Tracked under #96.
 
+## Interval projection across genomes (`interval_mappings`)
+
+The pipeline supports defining an interval set on one source genome and projecting it onto other genomes via local pairwise alignment. This makes it possible to train on regions — like ENCODE cCRE enhancers — that only exist as a native annotation in a small number of species, while still getting per-species sequences.
+
+Each configured mapping produces `results/intervals/{name}/{g}.parquet` for every genome. On the source genome the file is a chrom-normalized copy of the configured source parquet; on other genomes it is the result of alignment + best-hit-per-query projection. Downstream rules (windowing, FASTA extraction, sharding, HF upload) treat these the same as annotation-derived interval sets — origin is not visible past the projection step.
+
+**Configuration** (`interval_mappings` block in `config.yaml`):
+
+```yaml
+interval_mappings:
+    - name: ELS_conserved_20_mmseqs2_s75
+      source_parquet: results/cre/ELS_conserved_20.parquet
+      source_chrom_style: ucsc_stripped # bare-digit chroms; remap to RefSeq NC_*
+      source_genome: GCF_000001405.40
+      mapper: mmseqs2
+      sensitivity: 7.5
+      max_accept: 1
+      split_memory_limit: "12G"  # override on big-mem cloud instances
+      mem_mb: 14000
+      flank_bp: 0
+```
+
+Naming convention: underscored, semantic `{source_name}_{mapper}_{preset}` (no dots — they're fragile in HF dataset IDs and Snakemake wildcards). Name a variant with different flags as its own entry, e.g. `ELS_conserved_20_mmseqs2_s75_flank100`.
+
+**Referencing a mapping in the dataset config:** add its name wherever you would list a legacy recipe, e.g. `intervals.training: ["ELS_conserved_20_mmseqs2_s75/255/128"]`, pair with the `human_mouse` (or any suitable) genome_set, and the full windows → fasta → shards → HF upload flow runs unchanged.
+
+**Resources:** mmseqs2 nucleotide search against a whole mammalian target genome needs ~50-80 GB resident at the full index, so real runs use a big-memory cloud instance (r6i.8xlarge, 256 GB). `split_memory_limit` lets a smaller box fit at the cost of wall time; the defaults shown above target the 15 GB dev box.
+
+**Status:** v1 (issue [#123](https://github.com/Open-Athena/bolinas-dna/issues/123)): mmseqs2 only, flank 0, `-s 7.5 --max-accept 1`. On hg38→mm39 this projects 375,932 `ELS_conserved_20` enhancers to **229,288 mouse intervals (61.0% recall)**, vs. minimap2 `-cx map-ont`'s 20.7% (prior PR #125 baseline) — consistent with the ~3× recall advantage reported in [#120](https://github.com/Open-Athena/bolinas-dna/issues/120) at comparable precision. Run time: ~2 min wall (createdb 7 s, search 110 s, convertalis 0.3 s) on r6i.8xlarge (32 vCPU, 256 GB RAM), ~26 GB peak RSS. Sensitivity sweep, flank sweep, soft-mask filtering, and alternative aligners (e.g. lastz for the high-recall end of the frontier) are left for future iterations.
+
 ## Output
 
 Datasets are uploaded to HuggingFace Hub at the specified `output_hf_prefix`.
