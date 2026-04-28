@@ -34,6 +34,12 @@ for gs in genome_sets_list:
 
 wildcard_constraints:
     genome_set="|".join(genome_sets_list),
+    # Recipe / window / step components of the {recipe}/{w}/{s} interval triple.
+    # Bounding each to a single path segment prevents slashes from leaking
+    # across wildcards (the bug that motivated splitting {intervals} in #134).
+    recipe=r"v\d+",
+    w=r"\d+",
+    s=r"\d+",
 
 
 include: "rules/download.smk"
