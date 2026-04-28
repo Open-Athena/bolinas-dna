@@ -23,11 +23,12 @@ if _local_rank is not None:
 # ---------------------------------------------------------------------------
 
 import argparse  # noqa: E402
+import itertools  # noqa: E402
 from pathlib import Path  # noqa: E402
 
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
-from datasets import load_dataset  # noqa: E402
+from datasets import Dataset, load_dataset  # noqa: E402
 
 from bolinas.evals.evo2 import aggregate_ll_gap, compute_evo2_ll  # noqa: E402
 
@@ -59,6 +60,13 @@ def main() -> None:
         help="Score only the first N rows (fast-iteration default).",
     )
     p.add_argument(
+        "--streaming",
+        action="store_true",
+        help="Load the dataset in streaming mode and take the first --limit "
+        "rows. Use for sharded datasets where downloading the full set "
+        "is expensive (e.g. genome-set-animals-* JSONL shards).",
+    )
+    p.add_argument(
         "--batch-size",
         type=int,
         default=None,
@@ -81,14 +89,28 @@ def main() -> None:
     args = p.parse_args()
 
     if args.output is None:
-        args.output = f"results/evo2_ll_gap/{args.model}_n{args.limit}.parquet"
+        # Sanitize dataset name for filename (slashes -> underscores).
+        ds_tag = args.dataset.split("/")[-1]
+        args.output = (
+            f"results/evo2_ll_gap/{args.model}__{ds_tag}__n{args.limit}.parquet"
+        )
 
-    ds = load_dataset(args.dataset, split=args.split)
-    assert "seq" in ds.column_names, (
-        f"dataset missing 'seq' column; got {ds.column_names}"
-    )
-    if args.limit is not None and args.limit < len(ds):
-        ds = ds.select(range(args.limit))
+    if args.streaming:
+        assert args.limit is not None, "--streaming requires --limit"
+        stream = load_dataset(args.dataset, split=args.split, streaming=True)
+        rows = list(itertools.islice(stream, args.limit))
+        assert rows, "empty stream"
+        assert "seq" in rows[0], (
+            f"dataset missing 'seq' column; got {list(rows[0].keys())}"
+        )
+        ds = Dataset.from_list(rows)
+    else:
+        ds = load_dataset(args.dataset, split=args.split)
+        assert "seq" in ds.column_names, (
+            f"dataset missing 'seq' column; got {ds.column_names}"
+        )
+        if args.limit is not None and args.limit < len(ds):
+            ds = ds.select(range(args.limit))
     n = len(ds)
     assert n > 0, "empty dataset after --limit"
 
