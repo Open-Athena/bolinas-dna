@@ -188,10 +188,10 @@ def scores_dataframe(llr: np.ndarray) -> pd.DataFrame:
 def compute_evo2_ll(
     model_name: str,
     dataset,
-    window_size: int = 257,
+    window_size: int = 255,
     batch_size: int | None = None,
     num_workers: int = 4,
-    tune_start: int = 64,
+    tune_start: int = 512,
 ) -> np.ndarray:
     """Compute per-sequence log-likelihood (with case-based breakdown) using
     an Evo2 checkpoint.
@@ -209,13 +209,18 @@ def compute_evo2_ll(
           row order of this input.
         window_size: Used only by the OOM-descent batch-size tuner. The
           actual sequence length is whatever ``transform_ll_clm`` produces
-          (body length + optional BOS/EOS). Default 257 = 255 body + BOS +
-          EOS, matching the ``genomes-v5-validation-intervals-v5_255_255``
-          dataset.
+          — body length plus a BOS/EOS *only if the tokenizer defines
+          them*. Evo2's vortex CharLevelTokenizer does not, so for our CDS
+          dataset (255-bp ``seq``) the input_ids land at length 255. After
+          the causal shift, that's 254 target tokens per row. Default 255
+          matches that.
         batch_size: Per-device eval batch size. ``None`` triggers
           OOM-descent tuning starting from ``tune_start``.
         num_workers: Dataloader workers.
-        tune_start: Initial batch size for the tuner.
+        tune_start: Initial batch size for the tuner. Default 512 because
+          this eval uses a short context (257 tokens) — the OOM-descent
+          tuner only halves, never grows, so seeding it low here would
+          settle at a wastefully small batch.
 
     Returns:
         ``[N, 4]`` float numpy array of per-row
