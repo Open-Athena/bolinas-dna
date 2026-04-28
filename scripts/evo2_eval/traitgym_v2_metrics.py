@@ -1,6 +1,6 @@
 """Aggregate Evo2 TraitGym v2 predictions into a single metrics table + markdown.
 
-Reads predictions parquets written by scripts/evo2_traitgym_v2.py, reuses
+Reads predictions parquets written by scripts/evo2_eval/traitgym_v2.py, reuses
 src/bolinas/evals/metrics.py:compute_metrics (same function as the rest of
 the pipeline), and emits:
 

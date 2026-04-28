@@ -4,7 +4,7 @@
 #   - evo2_1b_base, evo2_7b: 1×H100, data-parallel via torchrun --nproc_per_node=1
 #   - evo2_40b:              8×H100, plain python so Vortex can shard the model
 #
-# See skypilot/README.md for launch recipes.
+# See scripts/evo2_eval/README.md for launch recipes.
 
 name: evo2-traitgym
 
@@ -109,15 +109,15 @@ run: |
       if [ -n "${BATCH_SIZE:-}" ]; then BS_ARG="--batch-size ${BATCH_SIZE}"; fi
       if [ "$LAUNCHER" = "torchrun" ]; then
         # Data-parallel: each rank sees exactly one GPU via the header guard
-        # in scripts/evo2_traitgym_v2.py (LOCAL_RANK -> CUDA_VISIBLE_DEVICES).
+        # in scripts/evo2_eval/traitgym_v2.py (LOCAL_RANK -> CUDA_VISIBLE_DEVICES).
         OMP_NUM_THREADS=8 torchrun --nproc_per_node="${NPROC}" \
-          scripts/evo2_traitgym_v2.py \
+          scripts/evo2_eval/traitgym_v2.py \
           --model "$MODEL" \
           --split train \
           --genome-path results/genome.fa.gz \
           ${LIMIT_ARG} ${BS_ARG}
       else
-        python scripts/evo2_traitgym_v2.py \
+        python scripts/evo2_eval/traitgym_v2.py \
           --model "$MODEL" \
           --split train \
           --genome-path results/genome.fa.gz \

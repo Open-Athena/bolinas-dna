@@ -6,8 +6,8 @@
 # header so a torchrun scale-out is possible later without code changes.
 #
 # Reuse the cluster across iterations:
-#   sky launch -c evo2-llgap skypilot/evo2_ll_gap.sky.yaml --env MODEL=evo2_1b_base
-#   sky exec   evo2-llgap skypilot/evo2_ll_gap.sky.yaml     --env MODEL=evo2_7b_base
+#   sky launch -c evo2-llgap scripts/evo2_eval/sky/ll_gap.yaml --env MODEL=evo2_1b_base
+#   sky exec   evo2-llgap scripts/evo2_eval/sky/ll_gap.yaml     --env MODEL=evo2_7b_base
 #   sky down   evo2-llgap   # only at session end
 
 name: evo2-llgap
@@ -37,7 +37,7 @@ envs:
 
 setup: |
   set -euxo pipefail
-  # Same Docker base as evo2_traitgym.sky.yaml — TE + flash-attn + CUDA 12.8
+  # Same Docker base as traitgym.yaml — TE + flash-attn + CUDA 12.8
   # baked in. Pin biofoundation to main: PR #18 (compute_ll_clm) is merged.
   sudo docker pull nvcr.io/nvidia/pytorch:25.04-py3
   cat > /tmp/evo2.Dockerfile <<'EOF'
@@ -82,7 +82,7 @@ run: |
       if [ -n "${SPLIT:-}" ]; then SPLIT_ARG="--split ${SPLIT}"; fi
       STREAM_ARG=""
       if [ -n "${STREAMING:-}" ]; then STREAM_ARG="--streaming"; fi
-      python scripts/evo2_ll_gap.py \
+      python scripts/evo2_eval/ll_gap.py \
         --model "$MODEL" \
         ${LIMIT_ARG} ${BS_ARG} ${DS_ARG} ${SPLIT_ARG} ${STREAM_ARG}
     '

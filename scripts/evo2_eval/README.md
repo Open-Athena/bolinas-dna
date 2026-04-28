@@ -1,8 +1,8 @@
-# SkyPilot tasks
+# Evo 2 baseline (issue #131)
 
-Ad-hoc SkyPilot jobs that don't belong in a snakemake pipeline. Docker-based Evo2 inference is the first one.
+SkyPilot tasks for Evo 2 inference. Project sky conventions apply: `us-east-2`, `project=dna` label, reuse the cluster across iterations with `sky exec`.
 
-## `evo2_traitgym.sky.yaml` — Evo2 baseline on TraitGym v2 (issue #131)
+## `sky/traitgym.yaml` — Evo2 baseline on TraitGym Mendelian v2
 
 Produces per-variant LLR parquets for `evo2_1b_base`, `evo2_7b`, `evo2_40b` on `bolinas-dna/evals-traitgym_mendelian_v2` (train split), at 8192-bp context.
 
@@ -12,16 +12,16 @@ Because of that, the 40B model (which requires multiple GPUs) and the smaller on
 
 ```bash
 # Launch + first run (1B).
-sky launch -c evo2 skypilot/evo2_traitgym.sky.yaml \
+sky launch -c evo2 scripts/evo2_eval/sky/traitgym.yaml \
   --gpus H100:8 \
   --env MODEL=evo2_1b_base
 
 # 7B on the same cluster (skips setup + genome download).
-sky exec evo2 skypilot/evo2_traitgym.sky.yaml \
+sky exec evo2 scripts/evo2_eval/sky/traitgym.yaml \
   --env MODEL=evo2_7b
 
 # 40B on the same cluster — Vortex shards pipeline-wise across all 8 GPUs.
-sky exec evo2 skypilot/evo2_traitgym.sky.yaml \
+sky exec evo2 scripts/evo2_eval/sky/traitgym.yaml \
   --env MODEL=evo2_40b
 
 # Pull results back to the launching host
@@ -33,7 +33,7 @@ rsync -avz sky-evo2:/workspace/results/evo2_traitgym_v2/ results/evo2_traitgym_v
 After all three parquets are back locally:
 
 ```bash
-uv run python scripts/evo2_traitgym_v2_metrics.py
+uv run python scripts/evo2_eval/traitgym_v2_metrics.py
 # writes results/evo2_traitgym_v2/metrics.parquet and results_table.md
 ```
 
@@ -42,12 +42,6 @@ uv run python scripts/evo2_traitgym_v2_metrics.py
 ```bash
 sky down evo2
 ```
-
-## Conventions
-
-- Region: `us-east-2` (AWS default per project memory).
-- Label: `project=dna` on every instance.
-- Reuse clusters across iterations with `sky exec`; only `sky down` at session end.
 
 ## Insights from running issue #131 baselines (Apr 2026)
 
@@ -94,4 +88,4 @@ sky down evo2
 
 ### Sanity check
 
-`scripts/evo2_sanity_check.py` validates our `compute_llr_clm` path against `evo2.Evo2.score_sequences(ref) - score_sequences(alt)` (the canonical single-process path from `biofoundation/examples/test_evo2.py`). On the first 10 variants of TraitGym v2 with `evo2_1b_base`, the max |diff| is **0.001 LLR units** — within fp8 noise. Sign convention and sequence construction confirmed correct.
+`scripts/evo2_eval/sanity_check.py` validates our `compute_llr_clm` path against `evo2.Evo2.score_sequences(ref) - score_sequences(alt)` (the canonical single-process path from `biofoundation/examples/test_evo2.py`). On the first 10 variants of TraitGym v2 with `evo2_1b_base`, the max |diff| is **0.001 LLR units** — within fp8 noise. Sign convention and sequence construction confirmed correct.
