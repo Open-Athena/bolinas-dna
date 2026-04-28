@@ -40,6 +40,7 @@ def top_quantile_bins_to_windows(
     required = {"chrom", "bin_start", "bin_end", "logit"}
     missing = required - set(bin_logits.columns)
     assert not missing, f"bin_logits missing required columns: {missing}"
+    assert bin_logits.height > 0, "bin_logits is empty"
 
     threshold = bin_logits["logit"].quantile(1.0 - top_quantile)
     selected = bin_logits.filter(pl.col("logit") >= threshold)
