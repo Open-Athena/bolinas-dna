@@ -24,6 +24,11 @@ envs:
   MODEL: evo2_1b_base
   LIMIT: "1000"
   BATCH_SIZE: ""
+  # Override to score a different mixed-case CDS-style dataset. Empty
+  # falls back to the script's default (genomes-v5-validation-intervals-v5_255_255).
+  DATASET: ""
+  SPLIT: ""
+  STREAMING: ""
   HF_TOKEN: ""
 
 setup: |
@@ -54,6 +59,7 @@ run: |
     -v "$PWD":/workspace -w /workspace \
     -e MODEL="$MODEL" -e HF_TOKEN="${HF_TOKEN:-}" \
     -e LIMIT="${LIMIT:-1000}" -e BATCH_SIZE="${BATCH_SIZE:-}" \
+    -e DATASET="${DATASET:-}" -e SPLIT="${SPLIT:-}" -e STREAMING="${STREAMING:-}" \
     -e CUDA_VISIBLE_DEVICES=0 \
     -e PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
     -e OMP_NUM_THREADS=8 \
@@ -66,7 +72,13 @@ run: |
       if [ -n "${LIMIT:-}" ]; then LIMIT_ARG="--limit ${LIMIT}"; fi
       BS_ARG=""
       if [ -n "${BATCH_SIZE:-}" ]; then BS_ARG="--batch-size ${BATCH_SIZE}"; fi
+      DS_ARG=""
+      if [ -n "${DATASET:-}" ]; then DS_ARG="--dataset ${DATASET}"; fi
+      SPLIT_ARG=""
+      if [ -n "${SPLIT:-}" ]; then SPLIT_ARG="--split ${SPLIT}"; fi
+      STREAM_ARG=""
+      if [ -n "${STREAMING:-}" ]; then STREAM_ARG="--streaming"; fi
       python scripts/evo2_ll_gap.py \
         --model "$MODEL" \
-        ${LIMIT_ARG} ${BS_ARG}
+        ${LIMIT_ARG} ${BS_ARG} ${DS_ARG} ${SPLIT_ARG} ${STREAM_ARG}
     '
