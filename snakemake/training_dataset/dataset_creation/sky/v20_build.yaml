@@ -7,7 +7,7 @@
 #     handles this automatically once running on AWS).
 #
 # Launch:
-#   sky launch -c bolinas-v20 snakemake/training_dataset/dataset_creation/v20_build.sky.yaml
+#   sky launch -c bolinas-v20 snakemake/training_dataset/dataset_creation/sky/v20_build.yaml
 #
 # After launch, run actual snakemake targets via `sky exec` with an inline
 # YAML — the AMI's bashrc resurrects an old conda that snakemake rejects, so
