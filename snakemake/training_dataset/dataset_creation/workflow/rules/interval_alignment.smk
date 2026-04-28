@@ -16,10 +16,6 @@ frontier for hg38↔mm10 cCRE orthologs (~70% R@1 at ~97% P@1 on the
 phyloP_241m-conserved subset, vs. minimap2's ~40% R@1).
 """
 
-MAPPINGS = {m["name"]: m for m in config.get("interval_mappings", [])}
-_MAPPING_NAMES = "|".join(MAPPINGS.keys()) if MAPPINGS else "__never_matches__"
-
-
 rule genome_fa:
     """Whole-genome FASTA; required as the mmseqs2 target input."""
     input:
@@ -45,12 +41,14 @@ rule intervals_source_unified:
         chrom_mapping=local("config/human_chrom_mapping.tsv"),
     output:
         f"results/intervals/{{name}}/{HUMAN_GENOME}.parquet",
-    wildcard_constraints:
-        name=_MAPPING_NAMES,
     run:
         cfg = MAPPINGS[wildcards.name]
+        style = cfg.get("source_chrom_style")
+        assert style in (None, "ucsc_stripped"), (
+            f"unsupported source_chrom_style {style!r}; expected None or 'ucsc_stripped'"
+        )
         df = pl.read_parquet(input.source_parquet)
-        if cfg.get("source_chrom_style") == "ucsc_stripped":
+        if style == "ucsc_stripped":
             chrom_map = pl.read_csv(input.chrom_mapping, separator="\t")
             simple_to_refseq = dict(
                 zip(chrom_map["ucsc"].str.replace("chr", ""), chrom_map["refseq"])
@@ -79,8 +77,6 @@ rule make_alignment_query_bed:
         ),
     output:
         temp("results/interval_alignment/{name}/{g}.query.bed"),
-    wildcard_constraints:
-        name=_MAPPING_NAMES,
     run:
         cfg = MAPPINGS[wildcards.name]
         flank = int(cfg.get("flank_bp", 0))
@@ -116,8 +112,6 @@ rule extract_alignment_query_fasta:
         bed="results/interval_alignment/{name}/{g}.query.bed",
     output:
         temp("results/interval_alignment/{name}/{g}.query.fa"),
-    wildcard_constraints:
-        name=_MAPPING_NAMES,
     conda:
         "../envs/bioinformatics.yaml"
     shell:
@@ -157,8 +151,6 @@ rule align_intervals_mmseqs2:
         sensitivity=lambda w: MAPPINGS[w.name].get("sensitivity", 7.5),
         max_accept=lambda w: MAPPINGS[w.name].get("max_accept", 1),
         split_memory_limit=lambda w: MAPPINGS[w.name].get("split_memory_limit", "12G"),
-    wildcard_constraints:
-        name=_MAPPING_NAMES,
     threads: workflow.cores
     resources:
         mem_mb=lambda w: MAPPINGS[w.name].get("mem_mb", 14000),
@@ -195,7 +187,6 @@ rule project_intervals_mmseqs2:
     output:
         "results/intervals/{name}/{g}.parquet",
     wildcard_constraints:
-        name=_MAPPING_NAMES,
         g=f"(?!{HUMAN_GENOME}).*",
     run:
         from bolinas.alignment.mmseqs2 import (
@@ -245,7 +236,5 @@ rule mapped_intervals_parquet_to_recipe_bed:
         "results/intervals/{name}/{g}.parquet",
     output:
         "results/intervals/recipe/{name}/{g}.bed.gz",
-    wildcard_constraints:
-        name=_MAPPING_NAMES,
     run:
         GenomicSet.read_parquet(input[0]).write_bed(output[0])
