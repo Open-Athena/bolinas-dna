@@ -16,7 +16,11 @@ resources:
   accelerators: H100:1
   labels:
     project: dna
-  disk_size: 128  # 7B weights are ~14 GB FP8; plenty of headroom
+  # 256 GB to fit 40B weights (~80 GB FP8) plus the nvcr Docker base image.
+  # Override --gpus GH200:1 at launch time to use a 96 GB GH200 (the
+  # 80 GB H100 OOMs on 40B during model construction — confirmed empirically
+  # 2026-04-28: 78.64 GB used, 553 MB free, even with expandable_segments).
+  disk_size: 256
 
 workdir: .
 
