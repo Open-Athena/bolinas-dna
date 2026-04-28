@@ -251,6 +251,13 @@ def compute_evo2_ll(
     )
 
     pred = np.asarray(pred)
+    # On some HF Trainer / device combinations (observed on GH200 / aarch64
+    # with evo2_40b) ``run_ll_clm`` returns a flat ``[N*4]`` array instead
+    # of ``[N, 4]`` — likely a per-batch ``[1, 4]`` output that gets
+    # squeezed to ``[4]`` somewhere along the gather path. Reshape if
+    # flat; row-major reshape preserves the per-row order.
+    if pred.ndim == 1 and pred.shape[0] == len(dataset) * 4:
+        pred = pred.reshape(len(dataset), 4)
     assert pred.ndim == 2 and pred.shape == (len(dataset), 4), (
         f"LL pred shape mismatch: got {pred.shape}, expected ({len(dataset)}, 4)"
     )
