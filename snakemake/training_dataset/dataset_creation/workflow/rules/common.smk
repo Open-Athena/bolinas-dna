@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 # Bolinas module imports
+from bolinas.data.bin_predictions import top_quantile_bins_to_windows
 from bolinas.data.intervals import GenomicSet
 from bolinas.data.utils import (
     ENHANCER_CRE_CLASSES,
@@ -65,23 +66,31 @@ def load_genome_sets(
     genomes: pd.DataFrame, genome_sets_config: list[dict]
 ) -> dict[str, list[str]]:
     """
-    Load genome sets based on taxonomic filtering criteria.
+    Load genome sets based on taxonomic filtering or an explicit accession list.
 
-    Args:
-        genomes: DataFrame with genomes indexed by Assembly Accession
-        genome_sets_config: List of dicts with 'name', 'rank_key', and 'rank_value' keys
+    Each entry in ``genome_sets_config`` must have a ``name``, plus either:
+      - ``rank_key`` + ``rank_value`` to select all genomes with
+        ``genomes[rank_key] == rank_value`` (e.g., all Mammalia), or
+      - ``accessions``: an explicit list of Assembly Accessions
+        (e.g., the 20 genomes covered by segmentation prediction).
 
     Returns:
-        Dictionary mapping subset names to lists of genome Assembly Accessions
+        Dictionary mapping subset names to lists of genome Assembly Accessions.
     """
     genome_sets = {}
     for genome_set in genome_sets_config:
         name = genome_set["name"]
-        rank_key = genome_set["rank_key"]
-        rank_value = genome_set["rank_value"]
-
-        # Filter genomes based on the rank criteria
-        filtered = genomes[genomes[rank_key] == rank_value]
-        genome_sets[name] = filtered.index.tolist()
+        if "accessions" in genome_set:
+            accessions = list(genome_set["accessions"])
+            unknown = [a for a in accessions if a not in genomes.index]
+            assert not unknown, (
+                f"genome_set {name!r} references unknown accessions: {unknown}"
+            )
+            genome_sets[name] = accessions
+        else:
+            rank_key = genome_set["rank_key"]
+            rank_value = genome_set["rank_value"]
+            filtered = genomes[genomes[rank_key] == rank_value]
+            genome_sets[name] = filtered.index.tolist()
 
     return genome_sets

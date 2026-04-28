@@ -108,16 +108,22 @@ rule create_functional_validation:
 
 rule merge_datasets:
     """Merge per-genome training parquets, shuffle, and shard into JSONL."""
+    # Use explicit {recipe}/{w}/{s} wildcards (each bounded by '/' in the
+    # path template) instead of a single {intervals} wildcard whose slashes
+    # would race with the genome_set wildcard for greedy matching, producing
+    # bogus splits like `genome_set=enhancer_seg_mammals_v1/v20/255, intervals=128`.
     input:
         lambda wildcards: expand(
-            "results/dataset_genome/{intervals}/{g}.parquet",
-            intervals=wildcards.intervals,
+            "results/dataset_genome/{recipe}/{w}/{s}/{g}.parquet",
+            recipe=wildcards.recipe,
+            w=wildcards.w,
+            s=wildcards.s,
             g=genome_sets[wildcards.genome_set],
         ),
     output:
         temp(local(
             expand(
-                "results/dataset/{{genome_set}}/{{intervals}}/data/train/{shard}.jsonl",
+                "results/dataset/{{genome_set}}/{{recipe}}/{{w}}/{{s}}/data/train/{shard}.jsonl",
                 shard=SHARDS,
             )
         )),
@@ -150,23 +156,31 @@ rule hf_upload_training:
     """Upload training dataset shards to HuggingFace."""
     input:
         local(expand(
-            "results/dataset/{{genome_set}}/{{intervals}}/data/train/{shard}.jsonl.zst",
+            "results/dataset/{{genome_set}}/{{recipe}}/{{w}}/{{s}}/data/train/{shard}.jsonl.zst",
             shard=SHARDS,
         )),
     output:
-        touch("results/upload.done/training/{genome_set}/{intervals}"),
+        # Explicit `touch {output}` in shell instead of snakemake's `touch()`
+        # wrapper -- with default-storage-provider=s3 the wrapper doesn't
+        # auto-create the marker, leaving snakemake to declare the output
+        # missing even though the upload succeeded.
+        "results/upload.done/training/{genome_set}/{recipe}/{w}/{s}",
     params:
         name=lambda wildcards: (
             config["output_hf_prefix"]
             + "-genome_set-" + wildcards.genome_set
-            + "-intervals-" + wildcards.intervals.replace("/", "_")
+            + "-intervals-" + f"{wildcards.recipe}_{wildcards.w}_{wildcards.s}"
         ),
         data_dir=lambda wildcards: (
-            f"results/dataset/{wildcards.genome_set}/{wildcards.intervals}"
+            f"results/dataset/{wildcards.genome_set}/{wildcards.recipe}/{wildcards.w}/{wildcards.s}"
         ),
     threads: workflow.cores
     shell:
-        "hf upload-large-folder {params.name} --repo-type dataset {params.data_dir}"
+        """
+        hf upload-large-folder {params.name} --repo-type dataset {params.data_dir}
+        mkdir -p $(dirname {output})
+        touch {output}
+        """
 
 
 rule hf_upload_validation:

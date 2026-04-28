@@ -14,11 +14,26 @@ genomes = load_genome_info(config["genomes_path"])
 genome_sets = load_genome_sets(genomes, config["genome_sets"])
 genome_sets_list = list(genome_sets.keys())
 training_intervals = config["intervals"]["training"]
+training_per_genome_set = config["intervals"].get("training_per_genome_set", {})
 validation_intervals = config["intervals"]["validation"]
+
+# Genome sets listed in training_per_genome_set use ONLY the recipes given
+# there (replace, not extend) — keeps specialised sets like
+# enhancer_seg_mammals_v1 from also pulling in the default v5/v1/v15.
+for gs in training_per_genome_set:
+    assert gs in genome_sets, (
+        f"training_per_genome_set references unknown genome_set {gs!r}"
+    )
 
 
 wildcard_constraints:
     genome_set="|".join(genome_sets_list),
+    # Recipe / window / step components of the {recipe}/{w}/{s} interval triple.
+    # Bounding each to a single path segment prevents slashes from leaking
+    # across wildcards (the bug that motivated splitting {intervals} in #134).
+    recipe=r"v\d+",
+    w=r"\d+",
+    s=r"\d+",
 
 
 include: "rules/download.smk"
@@ -32,11 +47,11 @@ include: "rules/enhancer_prediction.smk"
 
 rule all:
     input:
-        expand(
-            "results/upload.done/training/{genome_set}/{intervals}",
-            genome_set=genome_sets_list,
-            intervals=training_intervals,
-        ),
+        [
+            f"results/upload.done/training/{gs}/{iv}"
+            for gs in genome_sets_list
+            for iv in training_per_genome_set.get(gs, training_intervals)
+        ],
         expand(
             "results/upload.done/validation/{intervals}",
             intervals=validation_intervals,
