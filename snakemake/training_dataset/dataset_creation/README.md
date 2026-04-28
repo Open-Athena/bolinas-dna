@@ -304,7 +304,7 @@ Edit `config/config.yaml` to customize the pipeline:
 
 - **`intervals`** - Interval types to generate
   - `intervals.training`: list of `{recipe}/{window_size}/{overlap}` strings; built across the cartesian product of *every* `genome_set`.
-  - `intervals.training_per_genome_set` (optional): mapping `{genome_set: [recipes...]}` for recipes that only apply to a specific genome_set (e.g., `v20` segmentation-predicted enhancers only exist for the 20 mammals scored in PR #126, exposed as `enhancer_seg_mammals_v1`).
+  - `intervals.training_per_genome_set` (optional): mapping `{genome_set: [recipes...]}` for recipes that only apply to a specific genome_set (e.g., `v20` segmentation-predicted enhancers only exist for the 20 mammals scored in PR #126, exposed as `enhancer_seg_mammals_v1`). For any genome_set listed here, the given recipes **replace** (not extend) the cartesian-product training recipes — so the listed set won't also get the default `intervals.training` recipes built.
   - `intervals.validation`: list of recipes used to build the conservation-aware human validation parquet.
   - Format: `{recipe}/{window_size}/{overlap}`
   - Examples:
