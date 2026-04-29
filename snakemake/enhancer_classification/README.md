@@ -32,7 +32,7 @@ logit per 128 bp bin inside a 16384 bp window.
 | `end` | int | Window end (= start + 16384) |
 | `strand` | str | `"+"` or `"-"` (RC augmentation reverses `labels`) |
 | `seq` | str | DNA sequence (16384 bp) |
-| `labels` | list[uint8] | Per-bin label (length 128); 1 if ≥50 % of the bin overlaps a conserved enhancer |
+| `labels` | list[int8] | Per-bin label (length 128); `1` if ≥50 % of the bin overlaps a conserved-enhancer positive interval, `0` otherwise. Gray-zone-aware datasets (see below) also use `-1` for bins that overlap an *intermediate*-conservation CRE — masked out of loss + AUPRC. |
 
 ## Code layout
 
@@ -81,3 +81,23 @@ Add your own alias (e.g. `PLS_only: [PLS]`) to `cre_class_groups` and reference 
 ### Positive-set exploration (sub-issue of #96)
 
 `seg_datasets` entries `seg_pos_all_64k`, `seg_pos_cons30_64k`, `seg_pos_cons50_64k`, `seg_pos_withexon_64k` — five-run serial sweep varying the positive-set definition one axis at a time, sharing the `xfmr2_w64k_s42` model (2 transformer layers, 64k window, step-capped at 811). Launched via `skypilot/seg_positive_set.sky.yaml`.
+
+### Gray-zone exclusion (3-tier labels)
+
+`seg_pos_grayzone_64k` extends the binary labeler with a third "ignore"
+tier. The dataset's per-species `intervals` field encodes both a positive
+CRE path and an ignore CRE path separated by the literal `__ignore__`:
+
+```yaml
+seg_pos_grayzone_64k:
+    intervals:
+        homo_sapiens: noexon/conserved/phastCons_43p/50/ELS__ignore__noexon/grayzone/phastCons_43p/10_50/ELS
+```
+
+The `cre_filter_gray_zone` rule produces the ignore-set parquet (CREs with
+`n_low ≤ conserved < n_high`). The `label_segmentation_windows` rule
+reads both, calls `label_windows_by_bin_overlap` with `ignore_intervals`,
+and emits `int8` labels in `{-1, 0, 1}`. Downstream the model's BCE
+loss and AUPRC mask out `-1` bins; the `val_grayzone_prob` metric
+tracks the model's mean predicted probability on those bins as a
+calibration check.

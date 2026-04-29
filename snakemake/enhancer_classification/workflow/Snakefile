@@ -19,12 +19,15 @@ ruleorder: filter_no_exon_overlap > process_cre
 ruleorder: cre_filter_conserved > filter_cre_class
 ruleorder: filter_no_exon_overlap > filter_cre_class
 ruleorder: filter_no_exon_overlap > cre_filter_conserved
+ruleorder: filter_no_exon_overlap > cre_filter_gray_zone
+ruleorder: cre_filter_gray_zone > filter_cre_class
 # Needed after generalizing to the `{cre_class}` wildcard: without this,
 # `process_cre` (output: {species}/all.parquet) matches whenever the species
 # wildcard is under-constrained, including bogus paths like
 # `{species}/{cre_class}_conservation/{conservation}.parquet`.
 ruleorder: cre_conservation > process_cre
 ruleorder: cre_conservation > filter_cre_class
+ruleorder: cre_conservation > cre_filter_gray_zone
 ruleorder: process_cre > filter_cre_class
 ruleorder: build_segmentation_fullcov_validation > build_segmentation_dataset
 
@@ -100,6 +103,11 @@ SEG_POS_EXPLORATION_DATASETS = [
     "seg_pos_cons30_64k",
     "seg_pos_cons50_64k",
     "seg_pos_withexon_64k",
+    # Gray-zone exclusion follow-up (#132 comment 8). Same 64k window, v4b
+    # split, xfmr2_w64k_s42 model as the rest. Positives at n=50 (matches
+    # seg_pos_cons50_64k); intermediate-conservation CREs (10 <= n < 50) are
+    # masked out of loss + AUPRC via three-tier labels {-1, 0, 1}.
+    "seg_pos_grayzone_64k",
 ]
 SEG_POS_EXPLORATION_MODEL = "xfmr2_w64k_s42"
 

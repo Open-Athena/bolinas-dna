@@ -230,6 +230,38 @@ rule cre_filter_conserved:
         )
 
 
+rule cre_filter_gray_zone:
+    """CREs whose central-window conserved bp falls in [n_low, n_high) — the
+    "gray zone" between cleanly-conserved positives (>= n_high) and clearly
+    non-conserved negatives (< n_low). Used by gray-zone-aware seg datasets
+    to mask intermediate-conservation CREs out of training (#132 comment 8).
+    Reuses the same per-CRE conservation parquet as cre_filter_conserved
+    (no recomputation)."""
+    input:
+        "results/cre/{species}/{cre_class}_conservation/{conservation}.parquet",
+    output:
+        "results/cre/{species}/grayzone/{conservation}/{n_low}_{n_high}/{cre_class}.parquet",
+    wildcard_constraints:
+        cre_class=r"[A-Za-z0-9_]+",
+        n_low=r"\d+",
+        n_high=r"\d+",
+    run:
+        n_low = int(wildcards.n_low)
+        n_high = int(wildcards.n_high)
+        assert n_low < n_high, (
+            f"cre_filter_gray_zone: n_low ({n_low}) must be < n_high ({n_high})"
+        )
+        (
+            pl.read_parquet(input[0])
+            .filter(
+                (pl.col("conserved_bases") >= n_low)
+                & (pl.col("conserved_bases") < n_high)
+            )
+            .select(["chrom", "start", "end"])
+            .write_parquet(output[0])
+        )
+
+
 rule download_annotation:
     output:
         "results/annotation/{species}.gtf.gz",

@@ -56,11 +56,45 @@ rule tile_genome_segmentation:
         windows.write_bed(output[0])
 
 
+# Gray-zone-aware {intervals} wildcards encode positive and ignore CRE
+# paths separated by `__ignore__`. e.g. for the seg_pos_grayzone_64k run:
+#   noexon/conserved/phastCons_43p/50/ELS__ignore__noexon/grayzone/phastCons_43p/10_50/ELS
+# Binary datasets (R0-R4) keep the original single-path form. The literal
+# separator is path-safe (no spaces, no regex meta) and unique enough that
+# it can't collide with a real CRE-class group alias.
+SEG_IGNORE_SEP = "__ignore__"
+
+
+def _split_intervals_wildcard(intervals: str) -> tuple[str, str | None]:
+    """Return (positive_path, ignore_path_or_None) from an {intervals}
+    wildcard value. Used by `label_segmentation_windows` to know whether
+    the dataset is binary or gray-zone-aware."""
+    if SEG_IGNORE_SEP in intervals:
+        pos, ignore = intervals.split(SEG_IGNORE_SEP, 1)
+        return pos, ignore
+    return intervals, None
+
+
+def _label_segmentation_inputs(wildcards):
+    pos_path, ignore_path = _split_intervals_wildcard(wildcards.intervals)
+    inputs = {
+        "windows": (
+            f"results/segmentation/w{wildcards.window_size}/"
+            f"intervals/{wildcards.species}/windows.bed"
+        ),
+        "enhancers": f"results/cre/{wildcards.species}/{pos_path}.parquet",
+    }
+    if ignore_path is not None:
+        inputs["ignore"] = (
+            f"results/cre/{wildcards.species}/{ignore_path}.parquet"
+        )
+    return inputs
+
+
 rule label_segmentation_windows:
     threads: workflow.cores
     input:
-        windows="results/segmentation/w{window_size}/intervals/{species}/windows.bed",
-        enhancers="results/cre/{species}/{intervals}.parquet",
+        unpack(_label_segmentation_inputs),
     output:
         "results/segmentation/w{window_size}/intervals/{intervals}/{species}/labeled_windows.parquet",
     run:
@@ -74,6 +108,10 @@ rule label_segmentation_windows:
             dtype={"chrom": str},
         )
         enhancers = pl.read_parquet(input.enhancers).to_pandas()
+        ignore_path = input.get("ignore")
+        ignore_intervals = (
+            pl.read_parquet(ignore_path).to_pandas() if ignore_path else None
+        )
 
         label_matrix = label_windows_by_bin_overlap(
             windows,
@@ -81,16 +119,26 @@ rule label_segmentation_windows:
             bin_size=SEG_BIN_SIZE,
             num_bins=num_bins,
             threshold=SEG_THRESHOLD,
+            ignore_intervals=ignore_intervals,
         )
+        # n_positive_bins counts only label=1; -1 (gray zone) and 0 are
+        # excluded so the existing `n_positive_bins >= 1` subsampling
+        # filter keeps the same semantics on three-tier datasets.
+        n_pos = (label_matrix == 1).sum(axis=1).astype(np.int32)
         labels_list = label_matrix.tolist()
-        n_pos = label_matrix.sum(axis=1).astype(np.int32)
+        # Preserve the dtype the labeler chose: uint8 for binary {0, 1},
+        # int8 for three-tier {-1, 0, 1} (so the negative sign survives
+        # the round-trip through parquet).
+        labels_dtype = (
+            pl.List(pl.Int8) if label_matrix.dtype == np.int8 else pl.List(pl.UInt8)
+        )
 
         out = pl.DataFrame(
             {
                 "chrom": pl.Series(windows["chrom"].tolist(), dtype=pl.Utf8),
                 "start": pl.Series(windows["start"].to_numpy(), dtype=pl.Int64),
                 "end": pl.Series(windows["end"].to_numpy(), dtype=pl.Int64),
-                "labels": pl.Series(labels_list, dtype=pl.List(pl.UInt8)),
+                "labels": pl.Series(labels_list, dtype=labels_dtype),
                 "n_positive_bins": pl.Series(n_pos, dtype=pl.Int32),
             }
         )
@@ -207,9 +255,13 @@ rule make_segmentation_species_parquet:
         merged["genome"] = wildcards.species
         merged["labels"] = labeled["labels"].to_list()
 
+        # Preserve labels dtype: UInt8 for binary {0, 1} parquets (R0-R4),
+        # Int8 for three-tier {-1, 0, 1} (gray-zone-aware datasets). Casting
+        # the latter to UInt8 would silently flip -1 to 255.
+        labels_dtype = labeled.schema["labels"]
         out = merged[["genome", "chrom", "start", "end", "strand", "seq", "labels"]]
         pl.from_pandas(out).with_columns(
-            pl.col("labels").cast(pl.List(pl.UInt8))
+            pl.col("labels").cast(labels_dtype)
         ).write_parquet(output[0])
 
 
@@ -442,7 +494,9 @@ rule segmentation_precision_recall:
     output:
         parquet="results/segmentation/model/{model}/{dataset}/precision_recall.parquet",
     run:
-        df = pl.read_parquet(input.val_predictions)
+        # Drop gray-zone bins (label=-1) before sklearn — precision_recall_curve
+        # requires labels in {0, 1}. No-op on binary datasets.
+        df = pl.read_parquet(input.val_predictions).filter(pl.col("label") != -1)
         labels = df["label"].to_numpy()
         probabilities = expit(df["logit"].to_numpy())
 
