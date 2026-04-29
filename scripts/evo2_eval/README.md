@@ -43,6 +43,29 @@ uv run python scripts/evo2_eval/traitgym_v2_metrics.py
 sky down evo2
 ```
 
+## `sky/ll_gap.yaml` — LL-gap eval on functional vs non-functional tokens
+
+Mean log-likelihood on phyloP-functional (uppercase) target tokens minus mean LL on non-functional (lowercase) target tokens. Positive gap = the model finds functional bases easier to predict — a self-supervised proxy for "captures functional/non-functional sequence structure" (biofoundation PR #18; issue #131 follow-ups #1-#6).
+
+Default dataset: `bolinas-dna/genomes-v5-validation-intervals-v5_255_255` (16,384 × 255-bp CDS). Override `--env DATASET=...` to score the same gap on promoter (`v1_255_255`), 3'-UTR (`v15_255_255`), or enhancer (`v30_255_255`) regions — those are the variants surveyed in the issue follow-ups.
+
+```bash
+# Launch + first model on H100 (1B/7B fit).
+sky launch -c evo2-llgap scripts/evo2_eval/sky/ll_gap.yaml \
+  --env MODEL=evo2_1b_base
+
+# Subsequent models on the same H100 cluster.
+sky exec evo2-llgap scripts/evo2_eval/sky/ll_gap.yaml --env MODEL=evo2_7b_base
+
+# 40B OOMs on 80 GB H100 at model construction. Use a GH200 cluster (96 GB).
+sky launch -c evo2-llgap-big scripts/evo2_eval/sky/ll_gap.yaml \
+  --gpus GH200:1 --env MODEL=evo2_40b
+
+sky down evo2-llgap evo2-llgap-big
+```
+
+Per-row LL sums + token counts (not means — means break for all-upper or all-lower rows) written to `results/evo2_ll_gap/{model}__{dataset_tag}__n{limit}.parquet`.
+
 ## Insights from running issue #131 baselines (Apr 2026)
 
 ### Hardware that worked
