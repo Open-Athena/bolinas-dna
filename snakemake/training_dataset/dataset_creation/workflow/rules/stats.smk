@@ -8,6 +8,17 @@ rule download_phylop_conservation:
         "wget -O {output} https://hgdownload.soe.ucsc.edu/goldenPath/hg38/cactus241way/cactus241way.phyloP.bw"
 
 
+# Zoonomia/Cactus 43-primate phastCons. The remote filename says "phyloP" but
+# this is the phastCons track (0-1 score, threshold 0.961 calibrated to a ~3.5%
+# conserved-base fraction matching phyloP-241way 2.27).
+# See snakemake/enhancer_classification/config/config.yaml:329-331.
+rule download_phastcons_43p_conservation:
+    output:
+        "results/conservation/phastCons_43p.bw",
+    shell:
+        "wget -O {output} https://cgl.gi.ucsc.edu/data/cactus/zoonomia-2021-track-hub/hg38/phyloPPrimates.bigWig"
+
+
 rule all_functional_region_stats:
     input:
         expand(

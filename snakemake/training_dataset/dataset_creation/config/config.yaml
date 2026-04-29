@@ -26,6 +26,9 @@ intervals:
             - v20/255/128
         mammals_seg20:
             - v30/255/128 # mmseqs2-projected ELS_conserved_20 minus functional exons
+            - v31/255/128 # v30 with phyloP-241way per-cCRE filter raised to ≥50 bp
+            - v32/255/128 # v30 with phastCons-43p track at ≥0.961, ≥20 bp
+            - v33/255/128 # v30 with phastCons-43p track at ≥0.961, ≥50 bp
     validation: # step = window for max diversity
         - v5/255/255
         - v1/255/255
@@ -132,6 +135,38 @@ interval_mappings:
       split_memory_limit: "12G"
       mem_mb: 14000
       flank_bp: 0
+    # Source-curation sweep around the v30 baseline above: same projection
+    # parameters, only the upstream cCRE conservation filter changes.
+    - name: ELS_conserved_50_mmseqs2_s75
+      source_parquet: results/cre/ELS_conserved_50.parquet
+      source_chrom_style: ucsc_stripped
+      source_genome: GCF_000001405.40
+      mapper: mmseqs2
+      sensitivity: 7.5
+      max_accept: 1
+      split_memory_limit: "12G"
+      mem_mb: 14000
+      flank_bp: 0
+    - name: ELS_phastCons_43p_conserved_20_mmseqs2_s75
+      source_parquet: results/cre/ELS_phastCons_43p_conserved_20.parquet
+      source_chrom_style: ucsc_stripped
+      source_genome: GCF_000001405.40
+      mapper: mmseqs2
+      sensitivity: 7.5
+      max_accept: 1
+      split_memory_limit: "12G"
+      mem_mb: 14000
+      flank_bp: 0
+    - name: ELS_phastCons_43p_conserved_50_mmseqs2_s75
+      source_parquet: results/cre/ELS_phastCons_43p_conserved_50.parquet
+      source_chrom_style: ucsc_stripped
+      source_genome: GCF_000001405.40
+      mapper: mmseqs2
+      sensitivity: 7.5
+      max_accept: 1
+      split_memory_limit: "12G"
+      mem_mb: 14000
+      flank_bp: 0
 
 output_hf_prefix: bolinas-dna/genomes-v5
 
@@ -204,6 +239,10 @@ region_labels:
 # innovation across hundreds of placental mammals." Science 380.6643 (2023): eabn3943.
 conservation:
     phylop_cutoff: 2.27 # bases with phyloP >= this value are considered conserved
+    # Zoonomia 43-primate phastCons. 0.961 is calibrated to a ~3.46% conserved
+    # base fraction matching phyloP-241way 2.27 (~3.48%); see
+    # snakemake/enhancer_classification/config/config.yaml:329-331.
+    phastcons_43p_cutoff: 0.961
 
 # Promoter variants for comparison plot
 promoter_comparison_regions:
