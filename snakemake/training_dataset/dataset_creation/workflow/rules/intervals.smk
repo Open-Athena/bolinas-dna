@@ -569,3 +569,63 @@ rule all_intervals_recipe_v30_mammals_seg20:
             "results/intervals/recipe/v30/{g}.bed.gz",
             g=genome_sets.get("mammals_seg20", []),
         ),
+
+
+# Source-curation sweep around v30 (issue: phyloP/phastCons × 20/50 bp).
+# Each recipe wraps a different ELS_*_mmseqs2_s75 mapping with the same
+# resize(255) + scannable intersect as v30, so the four datasets differ
+# only in the upstream cCRE conservation filter.
+rule intervals_recipe_v31:
+    input:
+        projected="results/intervals/ELS_conserved_50_mmseqs2_s75/{g}.parquet",
+        scannable="results/intervals/scannable/{g}.bed.gz",
+    output:
+        "results/intervals/recipe/v31/{g}.bed.gz",
+    run:
+        intervals = GenomicSet.read_parquet(input.projected)
+        intervals = intervals.resize(255)
+        scannable = GenomicSet.read_bed(input.scannable)
+        intervals = intervals & scannable
+        intervals.write_bed(output[0])
+
+
+rule intervals_recipe_v32:
+    input:
+        projected="results/intervals/ELS_phastCons_43p_conserved_20_mmseqs2_s75/{g}.parquet",
+        scannable="results/intervals/scannable/{g}.bed.gz",
+    output:
+        "results/intervals/recipe/v32/{g}.bed.gz",
+    run:
+        intervals = GenomicSet.read_parquet(input.projected)
+        intervals = intervals.resize(255)
+        scannable = GenomicSet.read_bed(input.scannable)
+        intervals = intervals & scannable
+        intervals.write_bed(output[0])
+
+
+rule intervals_recipe_v33:
+    input:
+        projected="results/intervals/ELS_phastCons_43p_conserved_50_mmseqs2_s75/{g}.parquet",
+        scannable="results/intervals/scannable/{g}.bed.gz",
+    output:
+        "results/intervals/recipe/v33/{g}.bed.gz",
+    run:
+        intervals = GenomicSet.read_parquet(input.projected)
+        intervals = intervals.resize(255)
+        scannable = GenomicSet.read_bed(input.scannable)
+        intervals = intervals & scannable
+        intervals.write_bed(output[0])
+
+
+rule all_intervals_recipe_curation_sweep_mammals_seg20:
+    """Convenience target for the v31/v32/v33 curation sweep on mammals_seg20:
+    every per-species recipe bed.gz across the three new mappings. Excludes
+    v30 (already built) and the HF upload step. Used by
+    sky/run_mmseqs2_mammals_seg20_curation_sweep.yaml.
+    """
+    input:
+        expand(
+            "results/intervals/recipe/{recipe}/{g}.bed.gz",
+            recipe=["v31", "v32", "v33"],
+            g=genome_sets.get("mammals_seg20", []),
+        ),

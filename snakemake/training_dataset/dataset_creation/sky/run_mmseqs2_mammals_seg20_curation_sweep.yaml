@@ -1,0 +1,65 @@
+name: training-dataset-mmseqs2-mammals-seg20-curation-sweep
+
+# Source-curation sweep around v30 (PR #141, follow-up to #136). Builds the
+# per-species v31/v32/v33 recipe bed.gz for the mammals_seg20 set, in
+# addition to the existing v30 baseline. Each recipe runs the same mmseqs2
+# projection + exon-masked recipe step as v30 over a different upstream
+# cCRE conservation filter:
+#   v31 — phyloP-241way >= 2.27, per-cCRE >= 50 bp conserved
+#   v32 — phastCons-43p >= 0.961, per-cCRE >= 20 bp conserved
+#   v33 — phastCons-43p >= 0.961, per-cCRE >= 50 bp conserved
+#
+# Serial on one r6i.8xlarge: ~2 min/species × 20 × 3 ≈ 2 h wall mmseqs2,
+# plus per-cCRE phastCons calculation (~3 min for 1.7M cCREs) one-time.
+
+resources:
+    infra: aws/us-east-2
+    instance_type: r6i.8xlarge   # 32 vCPU, 256 GB RAM
+    disk_size: 300               # genome 2bits + mmseqs DBs + 6.5 GB phastCons-43p bigWig + conda envs
+    labels:
+        project: dna
+
+workdir: .
+
+setup: |
+    set -euxo pipefail
+
+    if [ ! -d "$HOME/miniforge3" ]; then
+        curl -fsSL -o /tmp/miniforge.sh https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
+        bash /tmp/miniforge.sh -b -p "$HOME/miniforge3"
+        rm /tmp/miniforge.sh
+    fi
+
+    if ! command -v uv >/dev/null 2>&1; then
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+    fi
+
+    grep -q 'miniforge3/bin' "$HOME/.bashrc" || \
+        echo 'export PATH="$HOME/miniforge3/bin:$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+
+    export PATH="$HOME/.local/bin:$PATH"
+    uv sync --group enhancer-classification
+
+run: |
+    set -euxo pipefail
+
+    source "$HOME/miniforge3/etc/profile.d/conda.sh"
+    export PATH="$HOME/miniforge3/bin:$HOME/.local/bin:$PATH"
+    export CONDA_EXE="$HOME/miniforge3/bin/conda"
+    conda --version
+
+    cd snakemake/training_dataset/dataset_creation
+
+    # Build the v31/v32/v33 recipe bed.gz outputs for all 20 species. The
+    # combined convenience rule chains: phastCons-43p bigWig download +
+    # cre_conservation_phastcons_43p + cre_filter_* + mmseqs2 projection
+    # (×3 mappings × 20 species) + recipe wrapper. Excludes the downstream
+    # HF upload — see run_hf_upload_curation_sweep.yaml.
+    uv run --project ../../.. --group enhancer-classification snakemake \
+        all_intervals_recipe_curation_sweep_mammals_seg20 \
+        --cores 32 \
+        --use-conda \
+        --resources mem_mb=220000 \
+        --configfile config/config.yaml config/config.cloud.yaml \
+        --printshellcmds \
+        --rerun-incomplete

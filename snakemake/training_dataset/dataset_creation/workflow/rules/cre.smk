@@ -81,3 +81,50 @@ rule cre_filter_conserved_enhancers:
             .select(["chrom", "start", "end"])
             .write_parquet(output[0])
         )
+
+
+# Parallel of cre_conservation but using the Zoonomia 43-primate phastCons
+# track. Threshold (0.961) is calibrated to ~3.5% conserved-base fraction,
+# matching phyloP-241way 2.27 for cross-track comparability.
+rule cre_conservation_phastcons_43p:
+    input:
+        cre="results/cre/ELS.parquet",
+        conservation="results/conservation/phastCons_43p.bw",
+    output:
+        "results/cre/ELS_phastCons_43p.parquet",
+    run:
+        cutoff = config["conservation"]["phastcons_43p_cutoff"]
+        df = pl.read_parquet(input.cre)
+
+        bw = pyBigWig.open(input.conservation)
+        pct_conserved = df.select(
+            pl.struct(["chrom", "start", "end"])
+            .map_elements(
+                lambda x: np.mean(
+                    bw.values("chr" + x["chrom"], x["start"], x["end"], numpy=True)
+                    >= cutoff
+                ),
+                return_dtype=pl.Float64,
+            )
+            .cast(pl.Float32)
+            .alias("pct_conserved")
+        )
+        bw.close()
+
+        df.hstack(pct_conserved).write_parquet(output[0])
+
+
+rule cre_filter_phastcons_43p_conserved_enhancers:
+    input:
+        "results/cre/ELS_phastCons_43p.parquet",
+    output:
+        "results/cre/ELS_phastCons_43p_conserved_{n}.parquet",
+    run:
+        min_conserved = int(wildcards.n)
+        df = pl.read_parquet(input[0])
+        size = df["end"] - df["start"]
+        (
+            df.filter((df["pct_conserved"] * size) >= min_conserved)
+            .select(["chrom", "start", "end"])
+            .write_parquet(output[0])
+        )

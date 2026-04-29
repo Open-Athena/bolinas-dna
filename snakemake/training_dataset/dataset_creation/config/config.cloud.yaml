@@ -17,3 +17,33 @@ interval_mappings:
       split_memory_limit: "220G"
       mem_mb: 220000
       flank_bp: 0
+    - name: ELS_conserved_50_mmseqs2_s75
+      source_parquet: results/cre/ELS_conserved_50.parquet
+      source_chrom_style: ucsc_stripped
+      source_genome: GCF_000001405.40
+      mapper: mmseqs2
+      sensitivity: 7.5
+      max_accept: 1
+      split_memory_limit: "220G"
+      mem_mb: 220000
+      flank_bp: 0
+    - name: ELS_phastCons_43p_conserved_20_mmseqs2_s75
+      source_parquet: results/cre/ELS_phastCons_43p_conserved_20.parquet
+      source_chrom_style: ucsc_stripped
+      source_genome: GCF_000001405.40
+      mapper: mmseqs2
+      sensitivity: 7.5
+      max_accept: 1
+      split_memory_limit: "220G"
+      mem_mb: 220000
+      flank_bp: 0
+    - name: ELS_phastCons_43p_conserved_50_mmseqs2_s75
+      source_parquet: results/cre/ELS_phastCons_43p_conserved_50.parquet
+      source_chrom_style: ucsc_stripped
+      source_genome: GCF_000001405.40
+      mapper: mmseqs2
+      sensitivity: 7.5
+      max_accept: 1
+      split_memory_limit: "220G"
+      mem_mb: 220000
+      flank_bp: 0

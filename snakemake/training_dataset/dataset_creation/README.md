@@ -448,6 +448,19 @@ Naming convention: underscored, semantic `{source_name}_{mapper}_{preset}` (no d
 
 **Status:** v1 (issue [#123](https://github.com/Open-Athena/bolinas-dna/issues/123)): mmseqs2 only, flank 0, `-s 7.5 --max-accept 1`. On hg38→mm39 this projects 375,932 `ELS_conserved_20` enhancers to **229,288 mouse intervals (61.0% recall)**, vs. minimap2 `-cx map-ont`'s 20.7% (prior PR #125 baseline) — consistent with the ~3× recall advantage reported in [#120](https://github.com/Open-Athena/bolinas-dna/issues/120) at comparable precision. Run time: ~2 min wall (createdb 7 s, search 110 s, convertalis 0.3 s) on r6i.8xlarge (32 vCPU, 256 GB RAM), ~26 GB peak RSS. Sensitivity sweep, flank sweep, soft-mask filtering, and alternative aligners (e.g. lastz for the high-recall end of the frontier) are left for future iterations.
 
+### Source-curation sweep around v30 (recipes v31/v32/v33)
+
+Following [#136](https://github.com/Open-Athena/bolinas-dna/issues/136), where projection-based curation (v30) outperformed segmentation-based curation, three sibling recipes vary the upstream cCRE conservation filter while keeping the projection method (mmseqs2 `-s 7.5`), target genome set (`mammals_seg20`), and downstream windowing/exon-masking identical to v30. Each is just a thin wrapper over a different `interval_mappings` entry.
+
+| Recipe | Conservation track | Per-base cutoff | Per-cCRE filter | Source mapping |
+|---|---|---|---|---|
+| v30 (baseline) | phyloP-241way | ≥2.27 | ≥20 bp | `ELS_conserved_20_mmseqs2_s75` |
+| v31 | phyloP-241way | ≥2.27 | ≥50 bp | `ELS_conserved_50_mmseqs2_s75` |
+| v32 | phastCons-43p | ≥0.961 | ≥20 bp | `ELS_phastCons_43p_conserved_20_mmseqs2_s75` |
+| v33 | phastCons-43p | ≥0.961 | ≥50 bp | `ELS_phastCons_43p_conserved_50_mmseqs2_s75` |
+
+phastCons-43p is the Zoonomia 43-primate phastCons track (URL in `enhancer_classification/config/config.yaml:329-331`); 0.961 is calibrated to a ~3.46% conserved-base fraction matching phyloP-241way 2.27 at the per-base level. The per-cCRE filter is absolute conserved bp (`pct_conserved × size ≥ N`); 20 bp is ~7% of the median ELS length (272 bp), 50 bp ~18%. Caveat: phastCons-43p selects primate-conserved cCREs by construction, so v32/v33 may project worse to non-primate mammals than v30/v31.
+
 ## Output
 
 Datasets are uploaded to HuggingFace Hub at the specified `output_hf_prefix`.
