@@ -515,3 +515,125 @@ def compute_seg_quantile_sweep(
         _emit_metrics("v30_reference", v30)
 
     return pd.DataFrame(rows)
+
+
+def compute_disjoint_subsets_summary(
+    *,
+    v20_bed: str,
+    v30_bed: str,
+    twobit: str,
+    promoters_parquet: str,
+    cre_all_parquet: str | None = None,
+    ccre_chrom_map: dict[str, str] | None = None,
+    conservation_tracks: dict[str, tuple[str, float]] | None = None,
+    chrom_map: dict[str, str] | None = None,
+) -> pd.DataFrame:
+    """Partition v20 and v30 into shared / unique subsets at the interval
+    level and compute the same metric battery for each.
+
+    Subsets emitted (at the interval level — whole v20/v30 intervals are
+    kept-or-dropped, never split):
+
+      * v20_total, v30_total: full sets (sanity reference)
+      * v20_only:    v20 intervals overlapping no v30 interval
+      * v20_shared:  v20 intervals overlapping ≥1 v30 interval
+      * v30_only:    v30 intervals overlapping no v20 interval
+      * v30_shared:  v30 intervals overlapping ≥1 v20 interval
+
+    Per subset: n_intervals, total_bp, frac_distal, mean_softmask_frac,
+    conservation (mean + frac ≥ threshold per track), and — if
+    `cre_all_parquet` is set — per-cCRE-class overlap fractions
+    (`frac_overlap_cre_<class>`), where each value is the fraction of subset
+    intervals overlapping ≥1 cCRE of that class.
+    """
+    rows: list[dict] = []
+
+    v20 = GenomicSet.read_bed(v20_bed)
+    v30 = GenomicSet.read_bed(v30_bed)
+    promoters = GenomicSet.read_parquet(promoters_parquet)
+
+    v20_df = v20.to_pandas()
+    v30_df = v30.to_pandas()
+    counts_v20_in_v30 = bf.count_overlaps(v20_df, v30_df)["count"].to_numpy()
+    counts_v30_in_v20 = bf.count_overlaps(v30_df, v20_df)["count"].to_numpy()
+
+    subsets: dict[str, GenomicSet] = {
+        "v20_total": v20,
+        "v20_only": GenomicSet(v20_df.loc[counts_v20_in_v30 == 0]),
+        "v20_shared": GenomicSet(v20_df.loc[counts_v20_in_v30 > 0]),
+        "v30_total": v30,
+        "v30_only": GenomicSet(v30_df.loc[counts_v30_in_v20 == 0]),
+        "v30_shared": GenomicSet(v30_df.loc[counts_v30_in_v20 > 0]),
+    }
+
+    cre_class_sets: dict[str, GenomicSet] = {}
+    if cre_all_parquet:
+        cre_df = pd.read_parquet(cre_all_parquet)
+        if ccre_chrom_map is not None:
+            mapped = cre_df["chrom"].astype(str).map(ccre_chrom_map)
+            cre_df = cre_df.loc[mapped.notna()].assign(chrom=mapped.dropna().values)
+        for cls, cls_df in cre_df.groupby("cre_class", sort=False):
+            cre_class_sets[str(cls)] = GenomicSet(cls_df[["chrom", "start", "end"]])
+        cre_class_sets["any"] = GenomicSet(cre_df[["chrom", "start", "end"]])
+
+    def _emit(name: str, subset: GenomicSet) -> None:
+        rows.append(
+            {
+                "subset": name,
+                "metric": "n_intervals",
+                "value": float(subset.n_intervals()),
+            }
+        )
+        rows.append(
+            {"subset": name, "metric": "total_bp", "value": float(subset.total_size())}
+        )
+        is_distal = classify_distal_vs_proximal(subset, promoters)
+        rows.append(
+            {
+                "subset": name,
+                "metric": "frac_distal",
+                "value": float(is_distal.mean())
+                if len(is_distal) > 0
+                else float("nan"),
+            }
+        )
+        sm = softmask_fraction(subset, twobit)
+        rows.append(
+            {
+                "subset": name,
+                "metric": "mean_softmask_frac",
+                "value": float(sm.mean()) if len(sm) > 0 else float("nan"),
+            }
+        )
+        if conservation_tracks:
+            for cons_label, (bw_path, threshold) in conservation_tracks.items():
+                stats = per_interval_bigwig_aggregates(
+                    subset, bw_path, threshold=threshold, chrom_map=chrom_map
+                )
+                rows.append(
+                    {
+                        "subset": name,
+                        "metric": f"mean_{cons_label}",
+                        "value": stats["mean"],
+                    }
+                )
+                rows.append(
+                    {
+                        "subset": name,
+                        "metric": f"frac_{cons_label}_ge_threshold",
+                        "value": stats["frac_ge_threshold"],
+                    }
+                )
+        for cls_label, cre_cls in cre_class_sets.items():
+            rows.append(
+                {
+                    "subset": name,
+                    "metric": f"frac_overlap_cre_{cls_label}",
+                    "value": interval_recall(query=cre_cls, reference=subset),
+                }
+            )
+
+    for name, subset in subsets.items():
+        _emit(name, subset)
+
+    return pd.DataFrame(rows)

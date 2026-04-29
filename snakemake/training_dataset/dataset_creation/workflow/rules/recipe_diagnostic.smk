@@ -3,6 +3,7 @@
 # issue #136. See src/bolinas/diagnostics/recipe_compare.py for the metrics.
 
 from bolinas.diagnostics.recipe_compare import (
+    compute_disjoint_subsets_summary,
     compute_recipe_summary,
     compute_seg_quantile_sweep,
 )
@@ -149,6 +150,48 @@ rule seg_quantile_sweep_human:
         df["species"] = "homo_sapiens"
         df["genome"] = HUMAN_GENOME
         df = df[["species", "genome", "recipe", "metric", "value"]]
+        df.to_parquet(output[0], index=False)
+
+
+rule disjoint_subsets_human:
+    """Partition v20 and v30 into shared / unique subsets and characterize each
+    (cCRE class composition, conservation, distal frac, repeat frac). Issue
+    #143 follow-up: tests whether v20-only intervals are biologically
+    meaningful regions v30 missed (→ union recipe worth pursuing) or just
+    noise around the same biology v30 already captures."""
+    input:
+        v20=f"results/intervals/recipe/v20/{HUMAN_GENOME}.bed.gz",
+        v30=f"results/intervals/recipe/v30/{HUMAN_GENOME}.bed.gz",
+        cre_all="results/cre/all.parquet",
+        promoters=f"results/intervals/promoters/2048/2048/{HUMAN_GENOME}.parquet",
+        twobit=f"results/genome/{HUMAN_GENOME}.2bit",
+        phylop="results/conservation/cactus241way.phyloP.bw",
+        phastcons="results/conservation/phastCons_43p.bw",
+        chrom_map=local("config/human_chrom_mapping.tsv"),
+    output:
+        f"results/diagnostics/disjoint_subsets/{HUMAN_GENOME}.parquet",
+    run:
+        chrom_map_df = pl.read_csv(input.chrom_map, separator="\t")
+        refseq_to_ucsc = dict(zip(chrom_map_df["refseq"], chrom_map_df["ucsc"]))
+        bare_to_refseq = {
+            ucsc.removeprefix("chr"): refseq for refseq, ucsc in refseq_to_ucsc.items()
+        }
+        df = compute_disjoint_subsets_summary(
+            v20_bed=input.v20,
+            v30_bed=input.v30,
+            twobit=input.twobit,
+            promoters_parquet=input.promoters,
+            cre_all_parquet=input.cre_all,
+            ccre_chrom_map=bare_to_refseq,
+            conservation_tracks={
+                "phylop_241m": (input.phylop, 2.27),
+                "phastcons_43p": (input.phastcons, 0.961),
+            },
+            chrom_map=refseq_to_ucsc,
+        )
+        df["species"] = "homo_sapiens"
+        df["genome"] = HUMAN_GENOME
+        df = df[["species", "genome", "subset", "metric", "value"]]
         df.to_parquet(output[0], index=False)
 
 
