@@ -615,3 +615,17 @@ rule intervals_recipe_v33:
         scannable = GenomicSet.read_bed(input.scannable)
         intervals = intervals & scannable
         intervals.write_bed(output[0])
+
+
+rule all_intervals_recipe_curation_sweep_mammals_seg20:
+    """Convenience target for the v31/v32/v33 curation sweep on mammals_seg20:
+    every per-species recipe bed.gz across the three new mappings. Excludes
+    v30 (already built) and the HF upload step. Used by
+    sky/run_mmseqs2_mammals_seg20_curation_sweep.yaml.
+    """
+    input:
+        expand(
+            "results/intervals/recipe/{recipe}/{g}.bed.gz",
+            recipe=["v31", "v32", "v33"],
+            g=genome_sets.get("mammals_seg20", []),
+        ),
