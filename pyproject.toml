@@ -18,6 +18,7 @@ dependencies = [
     "pandas",
     "polars",
     "pyarrow>=21.0.0",
+    "py2bit",
     "pyBigWig",
     "scikit-learn",
     "scipy",
