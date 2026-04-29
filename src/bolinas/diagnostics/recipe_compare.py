@@ -7,9 +7,11 @@ projection-based v30 on TraitGym Mendelian v2 distal AUPRC (issue #136).
 import bioframe as bf
 import numpy as np
 import pandas as pd
+import polars as pl
 import py2bit
 import pyBigWig
 
+from bolinas.data.bin_predictions import top_quantile_bins_to_windows
 from bolinas.data.intervals import GenomicSet
 
 
@@ -349,5 +351,167 @@ def compute_recipe_summary(
             "value": interval_recall(query=v30, reference=v20),
         }
     )
+
+    return pd.DataFrame(rows)
+
+
+def compute_seg_quantile_sweep(
+    *,
+    predictions_parquet: str,
+    exons_parquet: str,
+    defined_bed: str,
+    quantiles: list[float],
+    target_size: int,
+    ccre_paths: dict[str, str] | None = None,
+    ccre_chrom_map: dict[str, str] | None = None,
+    scannable_bed: str | None = None,
+    promoters_parquet: str | None = None,
+    twobit: str | None = None,
+    conservation_tracks: dict[str, tuple[str, float]] | None = None,
+    chrom_map: dict[str, str] | None = None,
+    v30_bed: str | None = None,
+) -> pd.DataFrame:
+    """Sweep top-quantile segmentation thresholds; for each, compute the same
+    metric battery as `compute_recipe_summary`.
+
+    Mirrors the recipe-v20 transformation
+    (`(top_quantile_bins_to_windows(predictions, q, target_size) - exons) & defined`)
+    at multiple quantiles to characterize the threshold's impact on cCRE
+    recall, precision, conservation, etc.
+
+    Args:
+        predictions_parquet: Per-bin segmentation logits (output of
+            `predict_enhancers_segmentation`).
+        exons_parquet: Exons to subtract (matches v20 rule input).
+        defined_bed: Defined-regions BED to clip to (matches v20 rule input).
+        quantiles: List of top-quantile values in (0, 1] to sweep.
+        target_size: Output window size in bp (255 in v20).
+        ccre_paths, ccre_chrom_map, scannable_bed, promoters_parquet, twobit,
+            conservation_tracks, chrom_map: see `compute_recipe_summary`.
+        v30_bed: Optional path to recipe v30 BED. When set, the same metric
+            battery is also computed against v30 with `recipe="v30_reference"`,
+            for direct comparison.
+
+    Returns:
+        Tidy DataFrame with columns ['recipe', 'metric', 'value']. Per-quantile
+        recipes are named e.g. 'v20_q1pct', 'v20_q5pct'.
+    """
+    rows: list[dict] = []
+
+    bin_logits = pl.read_parquet(predictions_parquet)
+    exons = GenomicSet.read_parquet(exons_parquet)
+    defined = GenomicSet.read_bed(defined_bed)
+    promoters = (
+        GenomicSet.read_parquet(promoters_parquet) if promoters_parquet else None
+    )
+    scannable = GenomicSet.read_bed(scannable_bed) if scannable_bed else None
+
+    ccre_sets: dict[str, GenomicSet] = {}
+    ccre_in_scannable_sets: dict[str, GenomicSet] = {}
+    if ccre_paths:
+        for label, path in ccre_paths.items():
+            ccre_df = pd.read_parquet(path)
+            if ccre_chrom_map is not None:
+                mapped = ccre_df["chrom"].astype(str).map(ccre_chrom_map)
+                ccre_df = ccre_df.loc[mapped.notna()].assign(
+                    chrom=mapped.dropna().values
+                )
+            ccre = GenomicSet(ccre_df)
+            ccre_sets[label] = ccre
+            if scannable is not None:
+                ccre_in_scannable_sets[label] = ccre & scannable
+
+    def _emit_metrics(name: str, recipe: GenomicSet) -> None:
+        rows.append(
+            {
+                "recipe": name,
+                "metric": "n_intervals",
+                "value": float(recipe.n_intervals()),
+            }
+        )
+        rows.append(
+            {"recipe": name, "metric": "total_bp", "value": float(recipe.total_size())}
+        )
+        for label, ccre in ccre_sets.items():
+            rows.append(
+                {
+                    "recipe": name,
+                    "metric": f"cre_recall_{label}",
+                    "value": interval_recall(query=recipe, reference=ccre),
+                }
+            )
+            rows.append(
+                {
+                    "recipe": name,
+                    "metric": f"cre_precision_{label}",
+                    "value": interval_recall(query=ccre, reference=recipe),
+                }
+            )
+            if label in ccre_in_scannable_sets:
+                rows.append(
+                    {
+                        "recipe": name,
+                        "metric": f"cre_recall_{label}_in_scannable",
+                        "value": interval_recall(
+                            query=recipe, reference=ccre_in_scannable_sets[label]
+                        ),
+                    }
+                )
+        if promoters is not None:
+            is_distal = classify_distal_vs_proximal(recipe, promoters)
+            rows.append(
+                {
+                    "recipe": name,
+                    "metric": "frac_distal",
+                    "value": float(is_distal.mean())
+                    if len(is_distal) > 0
+                    else float("nan"),
+                }
+            )
+        if twobit is not None:
+            sm = softmask_fraction(recipe, twobit)
+            rows.append(
+                {
+                    "recipe": name,
+                    "metric": "mean_softmask_frac",
+                    "value": float(sm.mean()) if len(sm) > 0 else float("nan"),
+                }
+            )
+        if conservation_tracks:
+            for cons_label, (bw_path, threshold) in conservation_tracks.items():
+                stats = per_interval_bigwig_aggregates(
+                    recipe, bw_path, threshold=threshold, chrom_map=chrom_map
+                )
+                rows.append(
+                    {
+                        "recipe": name,
+                        "metric": f"mean_{cons_label}",
+                        "value": stats["mean"],
+                    }
+                )
+                rows.append(
+                    {
+                        "recipe": name,
+                        "metric": f"frac_{cons_label}_ge_threshold",
+                        "value": stats["frac_ge_threshold"],
+                    }
+                )
+
+    for q in quantiles:
+        windows = top_quantile_bins_to_windows(
+            bin_logits, top_quantile=q, target_size=target_size
+        )
+        windows = (windows - exons) & defined
+        # 0.01 -> "1pct", 0.025 -> "2p5pct"
+        pct = q * 100
+        if pct == int(pct):
+            label = f"{int(pct)}pct"
+        else:
+            label = f"{pct:g}".replace(".", "p") + "pct"
+        _emit_metrics(f"v20_q{label}", windows)
+
+    if v30_bed:
+        v30 = GenomicSet.read_bed(v30_bed)
+        _emit_metrics("v30_reference", v30)
 
     return pd.DataFrame(rows)

@@ -2,7 +2,10 @@
 # in human and mouse, to investigate the 2.3× distal-AUPRC gap reported in
 # issue #136. See src/bolinas/diagnostics/recipe_compare.py for the metrics.
 
-from bolinas.diagnostics.recipe_compare import compute_recipe_summary
+from bolinas.diagnostics.recipe_compare import (
+    compute_recipe_summary,
+    compute_seg_quantile_sweep,
+)
 
 HUMAN_GENOME = "GCF_000001405.40"
 MOUSE_GENOME = "GCF_000001635.27"
@@ -97,6 +100,55 @@ rule recipe_diagnostic_mouse:
         )
         df["species"] = "mus_musculus"
         df["genome"] = MOUSE_GENOME
+        df.to_parquet(output[0], index=False)
+
+
+rule seg_quantile_sweep_human:
+    """Sweep the segmentation top-quantile threshold (1%, 2%, 3%, 4%, 5%)
+    and characterize each resulting interval set the same way as
+    recipe_diagnostic_human, plus a v30 reference row. Issue #143 follow-up."""
+    input:
+        predictions=f"results/enhancer_predictions_segmentation/{HUMAN_GENOME}.parquet",
+        exons=f"results/intervals/exons/{HUMAN_GENOME}.parquet",
+        defined=f"results/intervals/defined/{HUMAN_GENOME}.bed.gz",
+        scannable=f"results/intervals/scannable/{HUMAN_GENOME}.bed.gz",
+        v30=f"results/intervals/recipe/v30/{HUMAN_GENOME}.bed.gz",
+        ELS="results/cre/ELS.parquet",
+        ELS_conserved="results/cre/ELS_conserved_20.parquet",
+        promoters=f"results/intervals/promoters/2048/2048/{HUMAN_GENOME}.parquet",
+        twobit=f"results/genome/{HUMAN_GENOME}.2bit",
+        phylop="results/conservation/cactus241way.phyloP.bw",
+        phastcons="results/conservation/phastCons_43p.bw",
+        chrom_map=local("config/human_chrom_mapping.tsv"),
+    output:
+        f"results/diagnostics/seg_quantile_sweep/{HUMAN_GENOME}.parquet",
+    run:
+        chrom_map_df = pl.read_csv(input.chrom_map, separator="\t")
+        refseq_to_ucsc = dict(zip(chrom_map_df["refseq"], chrom_map_df["ucsc"]))
+        bare_to_refseq = {
+            ucsc.removeprefix("chr"): refseq for refseq, ucsc in refseq_to_ucsc.items()
+        }
+        df = compute_seg_quantile_sweep(
+            predictions_parquet=input.predictions,
+            exons_parquet=input.exons,
+            defined_bed=input.defined,
+            quantiles=[0.01, 0.02, 0.03, 0.04, 0.05],
+            target_size=255,
+            ccre_paths={"ELS": input.ELS, "ELS_conserved_20": input.ELS_conserved},
+            ccre_chrom_map=bare_to_refseq,
+            scannable_bed=input.scannable,
+            promoters_parquet=input.promoters,
+            twobit=input.twobit,
+            conservation_tracks={
+                "phylop_241m": (input.phylop, 2.27),
+                "phastcons_43p": (input.phastcons, 0.961),
+            },
+            chrom_map=refseq_to_ucsc,
+            v30_bed=input.v30,
+        )
+        df["species"] = "homo_sapiens"
+        df["genome"] = HUMAN_GENOME
+        df = df[["species", "genome", "recipe", "metric", "value"]]
         df.to_parquet(output[0], index=False)
 
 
