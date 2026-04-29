@@ -21,6 +21,13 @@ ruleorder: filter_no_exon_overlap > filter_cre_class
 ruleorder: filter_no_exon_overlap > cre_filter_conserved
 ruleorder: filter_no_exon_overlap > cre_filter_gray_zone
 ruleorder: cre_filter_gray_zone > filter_cre_class
+# filter_exon_overlap is the inverse of filter_no_exon_overlap (different
+# literal output prefix `exononly/` vs `noexon/`); same ambiguity pattern
+# vs the upstream rules.
+ruleorder: filter_exon_overlap > process_cre
+ruleorder: filter_exon_overlap > filter_cre_class
+ruleorder: filter_exon_overlap > cre_filter_conserved
+ruleorder: filter_exon_overlap > cre_filter_gray_zone
 # Needed after generalizing to the `{cre_class}` wildcard: without this,
 # `process_cre` (output: {species}/all.parquet) matches whenever the species
 # wildcard is under-constrained, including bogus paths like
@@ -108,6 +115,10 @@ SEG_POS_EXPLORATION_DATASETS = [
     # seg_pos_cons50_64k); intermediate-conservation CREs (10 <= n < 50) are
     # masked out of loss + AUPRC via three-tier labels {-1, 0, 1}.
     "seg_pos_grayzone_64k",
+    # Same positive set; gray zone is the union of intermediate-conservation
+    # noexon ELS AND all exon-overlapping ELS CREs (motivated by exonic
+    # enhancers being a real category — bioRxiv 2025.03.27.645641).
+    "seg_pos_grayzone_with_exons_64k",
 ]
 SEG_POS_EXPLORATION_MODEL = "xfmr2_w64k_s42"
 

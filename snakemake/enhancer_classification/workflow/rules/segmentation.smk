@@ -59,24 +59,26 @@ rule tile_genome_segmentation:
 # Gray-zone-aware {intervals} wildcards encode positive and ignore CRE
 # paths separated by `__ignore__`. e.g. for the seg_pos_grayzone_64k run:
 #   noexon/conserved/phastCons_43p/50/ELS__ignore__noexon/grayzone/phastCons_43p/10_50/ELS
+# Multiple ignore sources can be chained — the labeler unions them. e.g.
+# the gray-zone-with-exons run encodes three paths:
+#   <pos>__ignore__<conservation_grayzone>__ignore__<exonic_ELS>
 # Binary datasets (R0-R4) keep the original single-path form. The literal
 # separator is path-safe (no spaces, no regex meta) and unique enough that
 # it can't collide with a real CRE-class group alias.
 SEG_IGNORE_SEP = "__ignore__"
 
 
-def _split_intervals_wildcard(intervals: str) -> tuple[str, str | None]:
-    """Return (positive_path, ignore_path_or_None) from an {intervals}
-    wildcard value. Used by `label_segmentation_windows` to know whether
-    the dataset is binary or gray-zone-aware."""
-    if SEG_IGNORE_SEP in intervals:
-        pos, ignore = intervals.split(SEG_IGNORE_SEP, 1)
-        return pos, ignore
-    return intervals, None
+def _split_intervals_wildcard(intervals: str) -> tuple[str, list[str]]:
+    """Return (positive_path, list_of_ignore_paths) from an {intervals}
+    wildcard value. Empty list means binary dataset (no gray-zone bins);
+    one or more entries means gray-zone-aware with the union of those
+    intervals masked from loss + AUPRC."""
+    parts = intervals.split(SEG_IGNORE_SEP)
+    return parts[0], parts[1:]
 
 
 def _label_segmentation_inputs(wildcards):
-    pos_path, ignore_path = _split_intervals_wildcard(wildcards.intervals)
+    pos_path, ignore_paths = _split_intervals_wildcard(wildcards.intervals)
     inputs = {
         "windows": (
             f"results/segmentation/w{wildcards.window_size}/"
@@ -84,10 +86,10 @@ def _label_segmentation_inputs(wildcards):
         ),
         "enhancers": f"results/cre/{wildcards.species}/{pos_path}.parquet",
     }
-    if ignore_path is not None:
-        inputs["ignore"] = (
-            f"results/cre/{wildcards.species}/{ignore_path}.parquet"
-        )
+    if ignore_paths:
+        inputs["ignore"] = [
+            f"results/cre/{wildcards.species}/{p}.parquet" for p in ignore_paths
+        ]
     return inputs
 
 
@@ -108,10 +110,22 @@ rule label_segmentation_windows:
             dtype={"chrom": str},
         )
         enhancers = pl.read_parquet(input.enhancers).to_pandas()
-        ignore_path = input.get("ignore")
-        ignore_intervals = (
-            pl.read_parquet(ignore_path).to_pandas() if ignore_path else None
-        )
+        # `input.ignore` is a list of one or more parquet paths when the
+        # {intervals} wildcard contained `__ignore__` separators (one per
+        # gray-zone source), absent for binary datasets. Union all sources
+        # before passing to the labeler — the library function takes a
+        # single ignore_intervals DataFrame.
+        ignore_inputs: list[str] = []
+        if hasattr(input, "ignore"):
+            ig = input.ignore
+            ignore_inputs = [ig] if isinstance(ig, str) else list(ig)
+        if ignore_inputs:
+            ignore_intervals = pd.concat(
+                [pl.read_parquet(p).to_pandas() for p in ignore_inputs],
+                ignore_index=True,
+            )
+        else:
+            ignore_intervals = None
 
         label_matrix = label_windows_by_bin_overlap(
             windows,

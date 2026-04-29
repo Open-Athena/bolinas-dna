@@ -465,6 +465,20 @@ seg_datasets:
         intervals:
             homo_sapiens: noexon/conserved/phastCons_43p/50/ELS__ignore__noexon/grayzone/phastCons_43p/10_50/ELS
             mus_musculus: noexon/conserved/phastCons_euarchontoglires/50/ELS__ignore__noexon/grayzone/phastCons_euarchontoglires/10_50/ELS
+    # Gray-zone with exonic ELS (#132 follow-up). Same positive set as
+    # seg_pos_grayzone_64k. Gray-zone is the union of two sources:
+    #   1. intermediate-conservation noexon ELS (10 <= n < 50)
+    #   2. all exon-overlapping ELS CREs (any conservation)
+    # Motivated by the bioRxiv preprint that exonic enhancers are a real
+    # category, so the binary "exon-overlapping = negative" labeling that
+    # R0-R5 use risks the same kind of label noise the conservation
+    # gray-zone fixed. R5 -> R6 isolates the exonic effect.
+    seg_pos_grayzone_with_exons_64k:
+        window_size: 65536
+        split: v4b
+        intervals:
+            homo_sapiens: noexon/conserved/phastCons_43p/50/ELS__ignore__noexon/grayzone/phastCons_43p/10_50/ELS__ignore__exononly/ELS
+            mus_musculus: noexon/conserved/phastCons_euarchontoglires/50/ELS__ignore__noexon/grayzone/phastCons_euarchontoglires/10_50/ELS__ignore__exononly/ELS
 
 seg_models:
     default:

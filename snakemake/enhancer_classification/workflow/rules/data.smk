@@ -302,6 +302,31 @@ rule filter_no_exon_overlap:
         df.filter(pl.Series(mask)).write_parquet(output[0])
 
 
+rule filter_exon_overlap:
+    """Inverse of filter_no_exon_overlap: keep CREs whose center overlaps an
+    exon. Used by gray-zone-with-exons datasets (#132 follow-up) to mask
+    exonic ELS CREs out of training rather than treat them as definitive
+    negatives — exonic enhancers are a thing
+    (https://www.biorxiv.org/content/10.1101/2025.03.27.645641v1.full),
+    so the binary "noexon" labeling that R0-R5 uses risks the same kind
+    of label noise the conservation gray-zone fixed."""
+    input:
+        intervals="results/cre/{species}/{base}.parquet",
+        exons="results/annotation/{species}/exons.parquet",
+    output:
+        "results/cre/{species}/exononly/{base}.parquet",
+    run:
+        conservation_window = config["conservation_window"]
+        df = pl.read_parquet(input.intervals)
+        exons = GenomicSet.read_parquet(input.exons)
+
+        center = GenomicList(df).resize(conservation_window)
+        n_overlap = bf.count_overlaps(center._data, exons._data)
+        mask = (n_overlap["count"] > 0).to_numpy()
+
+        df.filter(pl.Series(mask)).write_parquet(output[0])
+
+
 rule make_positives:
     input:
         intervals="results/cre/{species}/{intervals}.parquet",
