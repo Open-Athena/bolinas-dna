@@ -37,14 +37,17 @@ envs:
 
 setup: |
   set -euxo pipefail
-  # Same Docker base as traitgym.yaml — TE + flash-attn + CUDA 12.8
-  # baked in. Pin biofoundation to main: PR #18 (compute_ll_clm) is merged.
+  # Same Docker base as traitgym.yaml — TE + flash-attn + CUDA 12.8 baked in.
   sudo docker pull nvcr.io/nvidia/pytorch:25.04-py3
   cat > /tmp/evo2.Dockerfile <<'EOF'
   FROM nvcr.io/nvidia/pytorch:25.04-py3
   RUN pip install --break-system-packages evo2
+  # Pin biofoundation to the SHA the issue #131 baselines were run against
+  # (= merge commit of biofoundation PR #18, compute_ll_clm). Bump
+  # deliberately when biofoundation has a fix you need; otherwise leaving
+  # this floating defeats the purpose of running on a reproducible cluster.
   RUN pip install --break-system-packages \
-      git+https://github.com/Open-Athena/biofoundation.git@main \
+      git+https://github.com/Open-Athena/biofoundation.git@96981e6dff81b2d8153b024ea57f34449fb67745 \
       --use-deprecated=legacy-resolver
   RUN PIP_CONSTRAINT= pip install --break-system-packages -U "regex>=2025.10.22"
   WORKDIR /workspace

@@ -14,21 +14,28 @@ biofoundation. Do it at the top of the entry script, not here.
 """
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
 
+if TYPE_CHECKING:
+    from biofoundation.model.adapters.evo2 import Evo2CausalLM, Evo2Tokenizer
+    from datasets import Dataset
+
 
 def find_max_batch_size(
-    model,
+    model: "Evo2CausalLM",
     window_size: int = 8192,
     start: int = 64,
     vocab_size: int = 512,
     seq_factor: int = 2,
 ) -> int:
-    """OOM-descent: start at ``start``, halve on CUDA OOM until a forward
-    pass through ``model`` survives. HF Trainer's ``auto_find_batch_size`` is
-    a no-op for ``predict()``, so we tune explicitly.
+    """Largest batch size in ``{start, start//2, start//4, ...}`` that
+    survives a probe forward pass — *not* a true maximum. We halve from
+    ``start`` on each CUDA OOM, so the result can be up to 2× smaller
+    than the true maximum. HF Trainer's ``auto_find_batch_size`` is a
+    no-op for ``predict()``, so we tune explicitly.
 
     ``seq_factor`` is the number of sequences per logical "row" the
     downstream pipeline pushes through the model in one batch:
@@ -69,7 +76,9 @@ def find_max_batch_size(
     raise RuntimeError("Even batch_size=1 doesn't fit — check model/GPU.")
 
 
-def _load_evo2_for_inference(model_name: str):
+def _load_evo2_for_inference(
+    model_name: str,
+) -> tuple["Evo2CausalLM", "Evo2Tokenizer"]:
     """Construct ``(model, tokenizer)`` ready for biofoundation inference.
 
     Wraps the Evo2CausalLM ``forward`` so input_ids are routed to the
@@ -187,7 +196,7 @@ def scores_dataframe(llr: np.ndarray) -> pd.DataFrame:
 
 def compute_evo2_ll(
     model_name: str,
-    dataset,
+    dataset: "Dataset",
     window_size: int = 255,
     batch_size: int | None = None,
     num_workers: int = 4,
@@ -255,8 +264,14 @@ def compute_evo2_ll(
     # with evo2_40b) ``run_ll_clm`` returns a flat ``[N*4]`` array instead
     # of ``[N, 4]`` — likely a per-batch ``[1, 4]`` output that gets
     # squeezed to ``[4]`` somewhere along the gather path. Reshape if
-    # flat; row-major reshape preserves the per-row order.
+    # flat; row-major reshape preserves the per-row order. Warn so the
+    # underlying upstream issue can be tracked if it recurs.
     if pred.ndim == 1 and pred.shape[0] == len(dataset) * 4:
+        print(
+            f"[evo2] WARNING: run_ll_clm returned flat shape {pred.shape}, "
+            f"reshaping to ({len(dataset)}, 4). If this recurs, file an "
+            f"issue against biofoundation."
+        )
         pred = pred.reshape(len(dataset), 4)
     assert pred.ndim == 2 and pred.shape == (len(dataset), 4), (
         f"LL pred shape mismatch: got {pred.shape}, expected ({len(dataset)}, 4)"

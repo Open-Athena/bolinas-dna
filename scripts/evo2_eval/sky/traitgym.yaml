@@ -44,8 +44,12 @@ setup: |
   cat > /tmp/evo2.Dockerfile <<'EOF'
   FROM nvcr.io/nvidia/pytorch:25.04-py3
   RUN pip install --break-system-packages evo2
+  # Pin biofoundation to the SHA the issue #131 baselines were run against
+  # (= merge commit of biofoundation PR #18, compute_ll_clm). Bump
+  # deliberately when biofoundation has a fix you need; otherwise leaving
+  # this floating defeats the purpose of running on a reproducible cluster.
   RUN pip install --break-system-packages \
-      git+https://github.com/Open-Athena/biofoundation.git@main \
+      git+https://github.com/Open-Athena/biofoundation.git@96981e6dff81b2d8153b024ea57f34449fb67745 \
       --use-deprecated=legacy-resolver
   # nvcr image's transformers wants regex>=2025.10.22 but ships an older one
   # pinned via a pip constraint file (/etc/pip/constraint.txt). Unset
