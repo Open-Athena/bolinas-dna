@@ -158,3 +158,118 @@ def test_wrong_window_size_raises():
     except ValueError:
         return
     raise AssertionError("Expected ValueError for mis-sized window")
+
+
+def test_no_ignore_returns_uint8_back_compat():
+    """When ignore_intervals=None the function returns the original uint8."""
+    windows = _single_window()
+    positives = pd.DataFrame({"chrom": ["1"], "start": [1024], "end": [1279]})
+    labels = label_windows_by_bin_overlap(
+        windows, positives, bin_size=BIN_SIZE, num_bins=NUM_BINS, threshold=0.5
+    )
+    assert labels.dtype == np.uint8
+
+
+def test_ignore_intervals_returns_int8_with_negative_ones():
+    """Bins overlapping ignore_intervals (and not positives) become -1."""
+    windows = _single_window()
+    positives = pd.DataFrame({"chrom": ["1"], "start": [1024], "end": [1279]})
+    # Gray-zone interval at [5000, 5256) — covers bins 39, 40 (each by ~128 bp).
+    ignore = pd.DataFrame({"chrom": ["1"], "start": [5000], "end": [5256]})
+    labels = label_windows_by_bin_overlap(
+        windows,
+        positives,
+        bin_size=BIN_SIZE,
+        num_bins=NUM_BINS,
+        threshold=0.5,
+        ignore_intervals=ignore,
+    )
+    assert labels.dtype == np.int8
+    # Bins 8, 9 are positive (1); bins 39, 40 are gray-zone (-1); rest 0.
+    assert np.flatnonzero(labels[0] == 1).tolist() == [8, 9]
+    assert np.flatnonzero(labels[0] == -1).tolist() == [39, 40]
+    # All other bins are 0.
+    assert (labels[0] == 0).sum() == NUM_BINS - 4
+
+
+def test_ignore_does_not_override_positive():
+    """When a bin overlaps both positive and ignore intervals, positive wins."""
+    windows = _single_window()
+    positives = pd.DataFrame({"chrom": ["1"], "start": [1024], "end": [1279]})
+    # Gray-zone interval covers the same span as the positive — bins 8, 9
+    # should remain 1 (positive precedence), not -1.
+    ignore = pd.DataFrame({"chrom": ["1"], "start": [1024], "end": [1279]})
+    labels = label_windows_by_bin_overlap(
+        windows,
+        positives,
+        bin_size=BIN_SIZE,
+        num_bins=NUM_BINS,
+        threshold=0.5,
+        ignore_intervals=ignore,
+    )
+    assert labels.dtype == np.int8
+    assert np.flatnonzero(labels[0] == 1).tolist() == [8, 9]
+    assert (labels[0] == -1).sum() == 0
+
+
+def test_empty_ignore_returns_int8_zeros_only():
+    """ignore_intervals supplied but empty → still int8, no -1s present."""
+    windows = _single_window()
+    positives = pd.DataFrame({"chrom": ["1"], "start": [1024], "end": [1279]})
+    empty_ignore = pd.DataFrame(columns=["chrom", "start", "end"]).astype(
+        {"chrom": str, "start": int, "end": int}
+    )
+    labels = label_windows_by_bin_overlap(
+        windows,
+        positives,
+        bin_size=BIN_SIZE,
+        num_bins=NUM_BINS,
+        threshold=0.5,
+        ignore_intervals=empty_ignore,
+    )
+    assert labels.dtype == np.int8
+    assert np.flatnonzero(labels[0] == 1).tolist() == [8, 9]
+    assert (labels[0] == -1).sum() == 0
+
+
+def test_ignore_below_threshold_does_not_mark_minus_one():
+    """A gray-zone interval with <50% overlap (< 64 bp) leaves the bin at 0."""
+    windows = _single_window()
+    positives = pd.DataFrame(columns=["chrom", "start", "end"]).astype(
+        {"chrom": str, "start": int, "end": int}
+    )
+    # 30 bp ignore interval inside bin 0 [0, 128) — below threshold.
+    ignore = pd.DataFrame({"chrom": ["1"], "start": [0], "end": [30]})
+    labels = label_windows_by_bin_overlap(
+        windows,
+        positives,
+        bin_size=BIN_SIZE,
+        num_bins=NUM_BINS,
+        threshold=0.5,
+        ignore_intervals=ignore,
+    )
+    assert labels.dtype == np.int8
+    assert (labels[0] == -1).sum() == 0
+
+
+def test_three_tier_with_no_windows_returns_int8_empty():
+    """Empty window set with ignore supplied still yields int8 dtype."""
+    windows = pd.DataFrame(columns=["chrom", "start", "end"]).astype(
+        {"chrom": str, "start": int, "end": int}
+    )
+    positives = pd.DataFrame(columns=["chrom", "start", "end"]).astype(
+        {"chrom": str, "start": int, "end": int}
+    )
+    ignore = pd.DataFrame(columns=["chrom", "start", "end"]).astype(
+        {"chrom": str, "start": int, "end": int}
+    )
+    labels = label_windows_by_bin_overlap(
+        windows,
+        positives,
+        bin_size=BIN_SIZE,
+        num_bins=NUM_BINS,
+        threshold=0.5,
+        ignore_intervals=ignore,
+    )
+    assert labels.shape == (0, NUM_BINS)
+    assert labels.dtype == np.int8
