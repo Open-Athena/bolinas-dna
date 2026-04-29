@@ -29,12 +29,50 @@ def test_forward_output_shape():
 
 
 def test_loss_computation():
+    """Masked BCE returns a scalar loss; per-bin shape comes from
+    reduction='none' which is then masked + averaged in _masked_bce."""
     model = EnhancerSegmenter(weights_path=None, freeze_backbone=False, pos_weight=10.0)
     x, y = _random_batch()
     logits = model(x)
-    loss = model.loss_fn(logits, y)
+    # Per-bin BCE has shape (B, num_bins) when reduction='none'.
+    per_bin = model.loss_fn(logits, y)
+    assert per_bin.shape == (BATCH, NUM_BINS)
+    # _masked_bce reduces to a scalar over the labeled bins.
+    loss = model._masked_bce(logits, y)
     assert loss.shape == ()
     assert loss.item() > 0
+
+
+def test_masked_bce_matches_mean_on_binary_labels():
+    """On binary {0, 1} labels (no -1s), _masked_bce should match the
+    original reduction='mean' BCE bit-for-bit."""
+    model = EnhancerSegmenter(weights_path=None, freeze_backbone=False, pos_weight=10.0)
+    x, y = _random_batch()
+    logits = model(x)
+    masked = model._masked_bce(logits, y)
+    mean_bce = torch.nn.BCEWithLogitsLoss(
+        pos_weight=torch.tensor(10.0), reduction="mean"
+    )
+    expected = mean_bce(logits, y)
+    assert torch.allclose(masked, expected, atol=1e-7)
+
+
+def test_masked_bce_excludes_minus_one_bins():
+    """Bins with label=-1 must drop out of the loss; the result must equal
+    the loss computed only over the labeled subset."""
+    model = EnhancerSegmenter(weights_path=None, freeze_backbone=False, pos_weight=10.0)
+    x, y = _random_batch()
+    # Mark a span of bins as gray-zone (-1) on both samples.
+    y[:, 20:40] = -1.0
+    logits = model(x)
+    masked = model._masked_bce(logits, y)
+    # Compute the same thing manually over only labeled bins.
+    flat_mask = (y >= 0).bool()
+    mean_bce = torch.nn.BCEWithLogitsLoss(
+        pos_weight=torch.tensor(10.0), reduction="mean"
+    )
+    expected = mean_bce(logits[flat_mask], y.clamp(min=0)[flat_mask])
+    assert torch.allclose(masked, expected, atol=1e-7)
 
 
 def test_freeze_backbone():

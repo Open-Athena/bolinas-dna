@@ -9,11 +9,13 @@ def build_bin_predictions(val_meta: pl.DataFrame, logits: np.ndarray) -> pl.Data
 
     `val_meta` has one row per window with columns
     ``genome, chrom, start, end, strand, labels`` (labels = list of per-bin
-    uint8). `logits` is a (n_windows, num_bins) array (or 1D of length
+    int8 — {0, 1} for binary datasets, {-1, 0, 1} for gray-zone datasets).
+    `logits` is a (n_windows, num_bins) array (or 1D of length
     n_windows * num_bins). The returned dataframe has columns
     ``genome, chrom, start, end, strand, bin_idx, bin_start, bin_end,
     label, logit`` and `n_windows * num_bins` rows, suitable for the AUPRC /
-    precision-recall tooling.
+    precision-recall tooling. Downstream consumers (precision-recall curve,
+    misclassified analysis) filter by ``label`` to drop -1s.
     """
     num_bins = len(val_meta["labels"][0])
     expected = len(val_meta) * num_bins
@@ -27,7 +29,9 @@ def build_bin_predictions(val_meta: pl.DataFrame, logits: np.ndarray) -> pl.Data
     window_size = int(val_meta["end"][0] - val_meta["start"][0])
     bin_size = window_size // num_bins
 
-    labels_flat = np.asarray(val_meta["labels"].to_list(), dtype=np.uint8).reshape(-1)
+    # int8 carries both binary {0, 1} (R0-R4) and three-tier {-1, 0, 1}
+    # (gray-zone datasets) without losing the negative sign.
+    labels_flat = np.asarray(val_meta["labels"].to_list(), dtype=np.int8).reshape(-1)
     bin_idx = np.tile(np.arange(num_bins, dtype=np.int32), len(val_meta))
     window_starts = np.repeat(val_meta["start"].to_numpy(), num_bins)
     return pl.DataFrame(

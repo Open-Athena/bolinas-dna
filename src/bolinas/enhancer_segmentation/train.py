@@ -112,11 +112,16 @@ def compute_pos_weight(train_parquet: str) -> float:
     """Compute BCE pos_weight = (# negative bins) / (# positive bins) from the
     training parquet. Derives the value from the exact dataset the model sees
     so it cannot drift from the data (subsampling, splits, RC augmentation).
+
+    For three-tier label sets {-1, 0, 1} (gray-zone-aware datasets) the
+    -1 bins are excluded from both the numerator and denominator since they
+    are masked out of the BCE loss in the model. On binary {0, 1} datasets
+    this is identical to the original counts.
     """
     labels = pl.read_parquet(train_parquet, columns=["labels"])["labels"]
-    arr = np.asarray(labels.to_list(), dtype=np.uint8)
-    n_pos = int(arr.sum())
-    n_neg = int(arr.size - n_pos)
+    arr = np.asarray(labels.to_list(), dtype=np.int8)
+    n_pos = int((arr == 1).sum())
+    n_neg = int((arr == 0).sum())
     if n_pos == 0:
         raise ValueError("Training set has no positive bins; cannot set pos_weight")
     return n_neg / n_pos
