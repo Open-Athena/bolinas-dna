@@ -26,7 +26,11 @@ class SegmentationDataset(Dataset):
 
     Args:
         parquet_path: Path to a parquet file with columns ``seq`` (str),
-            ``labels`` (list[int] / list[uint8]), and ``genome`` (str).
+            ``labels`` (list[int8 or uint8]), and ``genome`` (str). Labels
+            are stored as int8 internally so three-tier label sets (-1, 0,
+            1) — used by gray-zone-masked datasets — round-trip without
+            losing the negative sign. Binary parquets (uint8) cast to int8
+            without changing values.
         augment_rc: If True (train split), double virtual length with RC
             samples. Default False (val split).
         genome_to_idx: Optional mapping from genome name to integer index.
@@ -43,8 +47,11 @@ class SegmentationDataset(Dataset):
     ) -> None:
         df = pl.read_parquet(parquet_path, columns=["seq", "labels", "genome"])
         self.sequences: list[str] = df["seq"].to_list()
-        # Store labels as a single (N, num_bins) uint8 array for fast indexing.
-        self.labels: np.ndarray = np.asarray(df["labels"].to_list(), dtype=np.uint8)
+        # Store labels as a single (N, num_bins) int8 array. int8 handles
+        # both binary {0, 1} (R0-R4) and three-tier {-1, 0, 1} (gray-zone
+        # runs) without conversion: a uint8 list-of-int column from polars
+        # promotes to int8 here at no memory cost relative to uint8.
+        self.labels: np.ndarray = np.asarray(df["labels"].to_list(), dtype=np.int8)
 
         genomes_col = df["genome"].to_list()
         if genome_to_idx is None:

@@ -145,8 +145,12 @@ class EnhancerSegmenter(L.LightningModule):
             nn.Conv1d(ENCODER_OUTPUT_DIM, 1, kernel_size=1),
         )
 
+        # reduction='none' so we can mask out gray-zone bins (label=-1) and
+        # then average only over labeled bins. With binary {0, 1} labels the
+        # mask is all-ones and this is equivalent to reduction='mean'.
         self.loss_fn = nn.BCEWithLogitsLoss(
-            pos_weight=torch.tensor(pos_weight, dtype=torch.float32)
+            pos_weight=torch.tensor(pos_weight, dtype=torch.float32),
+            reduction="none",
         )
         # Overall AUPRC plus a per-species AUPRC metric per genome.
         self.val_auprc = torchmetrics.AveragePrecision(task="binary")
@@ -155,6 +159,12 @@ class EnhancerSegmenter(L.LightningModule):
         )
         # Accumulate flat logits so train.py can write val_predictions.parquet.
         self.val_logits = torchmetrics.CatMetric()
+        # Gray-zone calibration: mean predicted probability on bins with
+        # label=-1 (intermediate-conservation CREs masked out of loss/AUPRC).
+        # Logged at val end as val_grayzone_prob; if the model behaves
+        # sensibly this should sit between the negative- and positive-bin
+        # mean probabilities. No-ops on binary {0, 1} datasets.
+        self.val_grayzone_prob = torchmetrics.MeanMetric()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         trunk, _intermediates = self.encoder(x)
@@ -170,10 +180,23 @@ class EnhancerSegmenter(L.LightningModule):
     ) -> torch.Tensor:
         x, y, _g = batch
         logits = self(x)
-        loss = self.loss_fn(logits, y)
+        loss = self._masked_bce(logits, y)
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
         self.log("lr", self.optimizers().param_groups[0]["lr"], prog_bar=True)
         return loss
+
+    def _masked_bce(self, logits: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        """BCE-with-logits averaged over only the labeled bins (label != -1).
+
+        Bins with y == -1 (gray-zone) are clamped to 0 to keep BCE numerically
+        well-defined, then masked out of the mean. With binary {0, 1} labels
+        the mask is all-ones and this matches the original reduction='mean'
+        behavior bit-for-bit (modulo the explicit divide-by-mask-sum, which
+        equals the bin count when no -1s are present).
+        """
+        mask = (y >= 0).float()
+        loss_per_bin = self.loss_fn(logits, y.clamp(min=0))
+        return (loss_per_bin * mask).sum() / mask.sum().clamp(min=1.0)
 
     def on_before_optimizer_step(self, optimizer: torch.optim.Optimizer) -> None:
         grad_norm = torch.nn.utils.clip_grad_norm_(
@@ -191,11 +214,16 @@ class EnhancerSegmenter(L.LightningModule):
     ) -> None:
         x, y, g = batch
         logits = self(x)
-        loss = self.loss_fn(logits, y)
+        loss = self._masked_bce(logits, y)
         flat_logits = logits.reshape(-1)
         flat_labels = y.reshape(-1).int()
         preds = torch.sigmoid(flat_logits)
-        self.val_auprc.update(preds, flat_labels)
+        # Mask out gray-zone bins (label=-1) before AUPRC. torchmetrics'
+        # binary AUPRC requires labels in {0, 1}.
+        labeled = flat_labels >= 0
+        self.val_auprc.update(preds[labeled], flat_labels[labeled])
+        # val_logits is the raw flat logits (no mask) so train.py's
+        # val_predictions.parquet round-trips every bin including -1s.
         self.val_logits.update(flat_logits)
 
         # Per-species AUPRC: each row of y belongs to genome g[row]; expand g
@@ -203,9 +231,14 @@ class EnhancerSegmenter(L.LightningModule):
         num_bins = y.shape[1]
         g_flat = g.repeat_interleave(num_bins)
         for i, name in enumerate(self.genomes):
-            mask = g_flat == i
+            mask = (g_flat == i) & labeled
             if mask.any():
                 self.val_auprc_per_species[name].update(preds[mask], flat_labels[mask])
+
+        # Gray-zone calibration: mean predicted probability on label=-1 bins.
+        gz = flat_labels == -1
+        if gz.any():
+            self.val_grayzone_prob.update(preds[gz])
 
         self.log("val_loss", loss, prog_bar=True, sync_dist=True)
 
@@ -221,6 +254,16 @@ class EnhancerSegmenter(L.LightningModule):
                 f"val_auprc/{name}", metric.compute(), prog_bar=False, sync_dist=True
             )
             metric.reset()
+        # Gray-zone calibration is only defined when at least one -1 bin
+        # was seen during the val epoch (i.e. the dataset is masked).
+        if self.val_grayzone_prob.update_count > 0:
+            self.log(
+                "val_grayzone_prob",
+                self.val_grayzone_prob.compute(),
+                prog_bar=False,
+                sync_dist=True,
+            )
+        self.val_grayzone_prob.reset()
 
     def configure_optimizers(self) -> dict:
         optimizer = torch.optim.AdamW(
