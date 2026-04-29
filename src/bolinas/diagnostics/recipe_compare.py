@@ -171,6 +171,7 @@ def compute_recipe_summary(
     twobit: str,
     promoters_parquet: str,
     ccre_paths: dict[str, str] | None = None,
+    ccre_chrom_map: dict[str, str] | None = None,
     conservation_tracks: dict[str, tuple[str, float]] | None = None,
     chrom_map: dict[str, str] | None = None,
 ) -> pd.DataFrame:
@@ -186,6 +187,10 @@ def compute_recipe_summary(
             interval-recall (cCREs hit by recipe) and interval-precision (recipe
             intervals hitting cCREs) are computed. If None, cCRE metrics are
             skipped (e.g. no mouse cCRE source available locally).
+        ccre_chrom_map: Optional dict mapping cCRE chrom names to recipe chrom
+            names (e.g. bare digit '1' → RefSeq 'NC_000001.11'). Required when
+            cCRE and recipe BEDs use different chrom naming conventions; cCREs
+            on chroms missing from the map are dropped.
         conservation_tracks: Optional dict {label: (bigwig_path, threshold)}.
             For each track, mean and frac-≥-threshold are computed for each
             recipe. If None, conservation metrics are skipped.
@@ -201,6 +206,26 @@ def compute_recipe_summary(
     v30 = GenomicSet.read_bed(v30_bed)
     promoters = GenomicSet.read_parquet(promoters_parquet)
 
+    ccre_sets: dict[str, GenomicSet] = {}
+    if ccre_paths:
+        for ccre_label, ccre_path in ccre_paths.items():
+            ccre_df = pd.read_parquet(ccre_path)
+            if ccre_chrom_map is not None:
+                mapped = ccre_df["chrom"].astype(str).map(ccre_chrom_map)
+                n_dropped = int(mapped.isna().sum())
+                ccre_df = ccre_df.loc[mapped.notna()].assign(
+                    chrom=mapped.dropna().values
+                )
+                if n_dropped > 0:
+                    rows.append(
+                        {
+                            "recipe": "info",
+                            "metric": f"cre_n_dropped_{ccre_label}_unmapped_chrom",
+                            "value": float(n_dropped),
+                        }
+                    )
+            ccre_sets[ccre_label] = GenomicSet(ccre_df)
+
     for name, recipe in [("v20", v20), ("v30", v30)]:
         rows.append(
             {
@@ -213,9 +238,8 @@ def compute_recipe_summary(
             {"recipe": name, "metric": "total_bp", "value": float(recipe.total_size())}
         )
 
-        if ccre_paths:
-            for ccre_label, ccre_path in ccre_paths.items():
-                ccre = GenomicSet.read_parquet(ccre_path)
+        if ccre_sets:
+            for ccre_label, ccre in ccre_sets.items():
                 rows.append(
                     {
                         "recipe": name,

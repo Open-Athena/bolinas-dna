@@ -34,12 +34,18 @@ rule recipe_diagnostic_human:
     run:
         chrom_map_df = pl.read_csv(input.chrom_map, separator="\t")
         refseq_to_ucsc = dict(zip(chrom_map_df["refseq"], chrom_map_df["ucsc"]))
+        # cCRE parquet uses bare chrom names ('1', 'X'); recipe BEDs use RefSeq.
+        # Build bare → RefSeq from the canonical mapping by stripping 'chr'.
+        bare_to_refseq = {
+            ucsc.removeprefix("chr"): refseq for refseq, ucsc in refseq_to_ucsc.items()
+        }
         df = compute_recipe_summary(
             v20_bed=input.v20,
             v30_bed=input.v30,
             twobit=input.twobit,
             promoters_parquet=input.promoters,
             ccre_paths={"ELS": input.ELS, "ELS_conserved_20": input.ELS_conserved},
+            ccre_chrom_map=bare_to_refseq,
             conservation_tracks={
                 "phylop_241m": (input.phylop, 2.27),
                 "phastcons_43p": (input.phastcons, 0.961),
