@@ -26,6 +26,8 @@ rule recipe_diagnostic_human:
         ELS_conserved="results/cre/ELS_conserved_20.parquet",
         promoters=f"results/intervals/promoters/2048/2048/{HUMAN_GENOME}.parquet",
         twobit=f"results/genome/{HUMAN_GENOME}.2bit",
+        scannable=f"results/intervals/scannable/{HUMAN_GENOME}.bed.gz",
+        exons=f"results/intervals/exons/{HUMAN_GENOME}.parquet",
         phylop="results/conservation/cactus241way.phyloP.bw",
         phastcons="results/conservation/phastCons_43p.bw",
         chrom_map=local("config/human_chrom_mapping.tsv"),
@@ -46,6 +48,8 @@ rule recipe_diagnostic_human:
             promoters_parquet=input.promoters,
             ccre_paths={"ELS": input.ELS, "ELS_conserved_20": input.ELS_conserved},
             ccre_chrom_map=bare_to_refseq,
+            scannable_bed=input.scannable,
+            exons_parquet=input.exons,
             conservation_tracks={
                 "phylop_241m": (input.phylop, 2.27),
                 "phastcons_43p": (input.phastcons, 0.961),
@@ -78,6 +82,7 @@ rule recipe_diagnostic_mouse:
         v30=f"results/intervals/recipe/v30/{MOUSE_GENOME}.bed.gz",
         promoters=f"results/intervals/promoters/2048/2048/{MOUSE_GENOME}.parquet",
         twobit=f"results/genome/{MOUSE_GENOME}.2bit",
+        exons=f"results/intervals/exons/{MOUSE_GENOME}.parquet",
     output:
         f"results/diagnostics/recipe_v20_v30/{MOUSE_GENOME}.parquet",
     run:
@@ -86,6 +91,7 @@ rule recipe_diagnostic_mouse:
             v30_bed=input.v30,
             twobit=input.twobit,
             promoters_parquet=input.promoters,
+            exons_parquet=input.exons,
             ccre_paths=None,  # mouse cCRE is mm10 + needs liftover; skip in v1
             conservation_tracks=None,  # phyloP/phastCons are hg38-only or need liftover
         )

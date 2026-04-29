@@ -46,7 +46,7 @@ def softmask_fraction(intervals: GenomicSet, twobit_path: str) -> pd.Series:
     df = intervals.to_pandas()
     if len(df) == 0:
         return pd.Series([], dtype=float)
-    tb = py2bit.open(twobit_path)
+    tb = py2bit.open(twobit_path, storeMasked=True)
     try:
         fracs = np.empty(len(df), dtype=float)
         for i, (_, row) in enumerate(df.iterrows()):
@@ -172,6 +172,8 @@ def compute_recipe_summary(
     promoters_parquet: str,
     ccre_paths: dict[str, str] | None = None,
     ccre_chrom_map: dict[str, str] | None = None,
+    scannable_bed: str | None = None,
+    exons_parquet: str | None = None,
     conservation_tracks: dict[str, tuple[str, float]] | None = None,
     chrom_map: dict[str, str] | None = None,
 ) -> pd.DataFrame:
@@ -191,6 +193,13 @@ def compute_recipe_summary(
             names (e.g. bare digit '1' → RefSeq 'NC_000001.11'). Required when
             cCRE and recipe BEDs use different chrom naming conventions; cCREs
             on chroms missing from the map are dropped.
+        scannable_bed: Optional path to scannable regions BED. When set together
+            with ccre_paths, additionally compute cre_recall_{label}_in_scannable
+            against (cCRE ∩ scannable) — the actual upper bound recipes can
+            achieve, since both subtract / clip exons via the same scannable mask.
+        exons_parquet: Optional path to exons parquet. When set, compute
+            frac_bp_overlap_exons per recipe — should be ~0 by construction
+            since both recipes subtract the same exon set.
         conservation_tracks: Optional dict {label: (bigwig_path, threshold)}.
             For each track, mean and frac-≥-threshold are computed for each
             recipe. If None, conservation metrics are skipped.
@@ -205,8 +214,11 @@ def compute_recipe_summary(
     v20 = GenomicSet.read_bed(v20_bed)
     v30 = GenomicSet.read_bed(v30_bed)
     promoters = GenomicSet.read_parquet(promoters_parquet)
+    scannable = GenomicSet.read_bed(scannable_bed) if scannable_bed else None
+    exons = GenomicSet.read_parquet(exons_parquet) if exons_parquet else None
 
     ccre_sets: dict[str, GenomicSet] = {}
+    ccre_in_scannable_sets: dict[str, GenomicSet] = {}
     if ccre_paths:
         for ccre_label, ccre_path in ccre_paths.items():
             ccre_df = pd.read_parquet(ccre_path)
@@ -224,7 +236,10 @@ def compute_recipe_summary(
                             "value": float(n_dropped),
                         }
                     )
-            ccre_sets[ccre_label] = GenomicSet(ccre_df)
+            ccre = GenomicSet(ccre_df)
+            ccre_sets[ccre_label] = ccre
+            if scannable is not None:
+                ccre_in_scannable_sets[ccre_label] = ccre & scannable
 
     for name, recipe in [("v20", v20), ("v30", v30)]:
         rows.append(
@@ -254,6 +269,28 @@ def compute_recipe_summary(
                         "value": interval_recall(query=ccre, reference=recipe),
                     }
                 )
+                if ccre_label in ccre_in_scannable_sets:
+                    ccre_scn = ccre_in_scannable_sets[ccre_label]
+                    rows.append(
+                        {
+                            "recipe": name,
+                            "metric": f"cre_recall_{ccre_label}_in_scannable",
+                            "value": interval_recall(query=recipe, reference=ccre_scn),
+                        }
+                    )
+
+        if exons is not None:
+            recipe_total = recipe.total_size()
+            recipe_in_exons = (recipe & exons).total_size()
+            rows.append(
+                {
+                    "recipe": name,
+                    "metric": "frac_bp_overlap_exons",
+                    "value": (recipe_in_exons / recipe_total)
+                    if recipe_total > 0
+                    else float("nan"),
+                }
+            )
 
         is_distal = classify_distal_vs_proximal(recipe, promoters)
         rows.append(
