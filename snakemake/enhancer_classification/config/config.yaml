@@ -479,6 +479,20 @@ seg_datasets:
         intervals:
             homo_sapiens: noexon/conserved/phastCons_43p/50/ELS__ignore__noexon/grayzone/phastCons_43p/10_50/ELS__ignore__exononly/ELS
             mus_musculus: noexon/conserved/phastCons_euarchontoglires/50/ELS__ignore__noexon/grayzone/phastCons_euarchontoglires/10_50/ELS__ignore__exononly/ELS
+    # R7: combine R1's all-SCREEN-classes positive set with R6's two-axis
+    # gray zone. Positives are conserved (n>=50) noexon CREs of any of the
+    # 8 SCREEN v4 classes (PLS, pELS, dELS, CA, CA-CTCF, CA-H3K4me3,
+    # CA-TF, TF). Gray zone unions intermediate-conservation noexon ALL
+    # CREs (10 <= n < 50) AND all exon-overlapping ALL CREs. Tests whether
+    # broadening to ALL captures mouse enhancers labeled CA in the
+    # registry (e.g. ZRS, see #122) without re-introducing the lift loss
+    # R1 saw at cons=20.
+    seg_pos_grayzone_with_exons_all_64k:
+        window_size: 65536
+        split: v4b
+        intervals:
+            homo_sapiens: noexon/conserved/phastCons_43p/50/ALL__ignore__noexon/grayzone/phastCons_43p/10_50/ALL__ignore__exononly/ALL
+            mus_musculus: noexon/conserved/phastCons_euarchontoglires/50/ALL__ignore__noexon/grayzone/phastCons_euarchontoglires/10_50/ALL__ignore__exononly/ALL
 
 seg_models:
     default:

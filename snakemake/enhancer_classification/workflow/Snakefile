@@ -119,6 +119,11 @@ SEG_POS_EXPLORATION_DATASETS = [
     # noexon ELS AND all exon-overlapping ELS CREs (motivated by exonic
     # enhancers being a real category — bioRxiv 2025.03.27.645641).
     "seg_pos_grayzone_with_exons_64k",
+    # R7: R6's two-axis gray-zone applied to the ALL-SCREEN-classes
+    # positive set. Tests whether broadening from ELS to all 8 classes
+    # at cons=50 captures mouse cCREs labeled CA in the registry without
+    # re-introducing the lift loss R1 saw at cons=20.
+    "seg_pos_grayzone_with_exons_all_64k",
 ]
 SEG_POS_EXPLORATION_MODEL = "xfmr2_w64k_s42"
 
