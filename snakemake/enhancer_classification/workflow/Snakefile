@@ -149,3 +149,23 @@ rule all_seg_pos_exploration:
                 "regions", []
             )
         ],
+
+
+# Full-epoch follow-up to R7: train R7's positive-set definition through
+# one complete epoch (no max_steps cap) using xfmr2_w64k_s42_full. Same
+# dataset, same eval/misclassified/bedgraph outputs.
+SEG_FULL_EPOCH_MODEL = "xfmr2_w64k_s42_full"
+SEG_FULL_EPOCH_DATASET = "seg_pos_grayzone_with_exons_all_64k"
+
+
+rule all_seg_pos_grayzone_all_full_epoch:
+    input:
+        f"results/segmentation/model/{SEG_FULL_EPOCH_MODEL}/{SEG_FULL_EPOCH_DATASET}/metrics.json",
+        f"results/segmentation/model/{SEG_FULL_EPOCH_MODEL}/{SEG_FULL_EPOCH_DATASET}/precision_recall.parquet",
+        f"results/segmentation/model/{SEG_FULL_EPOCH_MODEL}/{SEG_FULL_EPOCH_DATASET}/misclassified.parquet",
+        [
+            f"results/segmentation/visualization/{SEG_FULL_EPOCH_MODEL}/{SEG_FULL_EPOCH_DATASET}/{region['name']}.bedgraph"
+            for region in config.get("segmentation_visualization", {}).get(
+                "regions", []
+            )
+        ],
