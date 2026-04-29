@@ -33,7 +33,11 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 from datasets import load_dataset  # noqa: E402
 
-from bolinas.evals.evo2 import compute_evo2_llr, scores_dataframe  # noqa: E402
+from bolinas.evals.evo2 import (  # noqa: E402
+    EVO2_MODEL_CHOICES,
+    compute_evo2_llr,
+    scores_dataframe,
+)
 
 
 DATASET_HF_PATH = "bolinas-dna/evals-traitgym_mendelian_v2"
@@ -42,18 +46,7 @@ REQUIRED_COLS = ["chrom", "pos", "ref", "alt", "label", "subset", "consequence_g
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument(
-        "--model",
-        required=True,
-        choices=[
-            "evo2_1b_base",
-            "evo2_7b",
-            "evo2_7b_base",
-            "evo2_40b",
-            "evo2_40b_base",
-            "evo2_20b",
-        ],
-    )
+    p.add_argument("--model", required=True, choices=EVO2_MODEL_CHOICES)
     p.add_argument("--split", default="train")
     p.add_argument(
         "--genome-path",

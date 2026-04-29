@@ -30,7 +30,11 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 from datasets import Dataset, load_dataset  # noqa: E402
 
-from bolinas.evals.evo2 import aggregate_ll_gap, compute_evo2_ll  # noqa: E402
+from bolinas.evals.evo2 import (  # noqa: E402
+    EVO2_MODEL_CHOICES,
+    aggregate_ll_gap,
+    compute_evo2_ll,
+)
 
 
 DEFAULT_DATASET = "bolinas-dna/genomes-v5-validation-intervals-v5_255_255"
@@ -39,18 +43,7 @@ DEFAULT_SPLIT = "validation"
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument(
-        "--model",
-        required=True,
-        choices=[
-            "evo2_1b_base",
-            "evo2_7b",
-            "evo2_7b_base",
-            "evo2_40b",
-            "evo2_40b_base",
-            "evo2_20b",
-        ],
-    )
+    p.add_argument("--model", required=True, choices=EVO2_MODEL_CHOICES)
     p.add_argument("--dataset", default=DEFAULT_DATASET)
     p.add_argument("--split", default=DEFAULT_SPLIT)
     p.add_argument(

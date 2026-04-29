@@ -112,11 +112,9 @@ def main() -> None:
         f"no predictions parquets found in {pred_dir} matching *_{args.split}.parquet"
     )
 
-    discovered: list[str] = []
+    discovered = [p.stem.removesuffix(f"_{args.split}") for p in parquets]
     all_metrics: list[pd.DataFrame] = []
-    for path in parquets:
-        model = path.stem.removesuffix(f"_{args.split}")
-        discovered.append(model)
+    for path, model in zip(parquets, discovered):
         print(f"[metrics] reading {path}  (model={model})")
         all_metrics.append(_metrics_for_model(path, model))
 

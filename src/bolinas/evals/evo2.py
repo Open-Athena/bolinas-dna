@@ -24,6 +24,19 @@ if TYPE_CHECKING:
     from datasets import Dataset
 
 
+# Single source of truth for argparse `choices` in scripts/evo2_eval/. Display
+# ordering for the metrics aggregator (size-sorted) is a separate concern;
+# see scripts/evo2_eval/traitgym_v2_metrics.py:MODELS.
+EVO2_MODEL_CHOICES: tuple[str, ...] = (
+    "evo2_1b_base",
+    "evo2_7b",
+    "evo2_7b_base",
+    "evo2_40b",
+    "evo2_40b_base",
+    "evo2_20b",
+)
+
+
 def find_max_batch_size(
     model: "Evo2CausalLM",
     window_size: int = 8192,
@@ -263,9 +276,8 @@ def compute_evo2_ll(
     # On some HF Trainer / device combinations (observed on GH200 / aarch64
     # with evo2_40b) ``run_ll_clm`` returns a flat ``[N*4]`` array instead
     # of ``[N, 4]`` — likely a per-batch ``[1, 4]`` output that gets
-    # squeezed to ``[4]`` somewhere along the gather path. Reshape if
-    # flat; row-major reshape preserves the per-row order. Warn so the
-    # underlying upstream issue can be tracked if it recurs.
+    # squeezed to ``[4]`` somewhere along the gather path. Row-major
+    # reshape preserves per-row order.
     if pred.ndim == 1 and pred.shape[0] == len(dataset) * 4:
         print(
             f"[evo2] WARNING: run_ll_clm returned flat shape {pred.shape}, "
