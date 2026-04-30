@@ -206,6 +206,60 @@ def test_aggregate_traitgym_metrics_multi_score_column_order(tmp_path):
     assert 0 < pos_100v < pos_241m < pos_43p
 
 
+def test_aggregate_traitgym_metrics_mean_row_replaces_global(tmp_path):
+    """AUPRC table has a 'mean' row (unweighted across subsets) at the top
+    and *no* 'global' row. The NaN-counts table still includes global."""
+    # 8 variants, two subsets of size 4. The two subsets' AUPRCs differ,
+    # so unweighted mean ≠ global AUPRC and we can tell them apart.
+    # subset A: perfectly separable -> AUPRC = 1.0
+    # subset B: anti-correlated     -> AUPRC ≈ 0.4
+    scores = [0.9, 0.8, 0.2, 0.1, 0.1, 0.2, 0.8, 0.9]
+    labels = [1, 1, 0, 0, 1, 1, 0, 0]
+    subsets = ["A", "A", "A", "A", "B", "B", "B", "B"]
+    p = _scored_parquet(tmp_path, "score1", scores, labels, subsets)
+
+    metrics, md = aggregate_traitgym_metrics({"score1": p})
+
+    # Split markdown into the two tables.
+    auprc_section, nan_section = md.split("### NaN counts")
+    assert "AUPRC" in auprc_section
+
+    # AUPRC table: must have a 'mean' row, must NOT have a 'global' row.
+    auprc_rows = [
+        ln
+        for ln in auprc_section.splitlines()
+        if ln.startswith("| ") and "---" not in ln
+    ]
+    # First row is the header; data rows follow.
+    data_rows = auprc_rows[1:]
+    row_labels = [r.split("|")[1].strip() for r in data_rows]
+    assert "mean" in row_labels
+    assert "global" not in row_labels
+    assert row_labels[0] == "mean", "mean row must be at the top of the AUPRC table"
+
+    # NaN-counts table: still has global.
+    nan_rows = [
+        ln for ln in nan_section.splitlines() if ln.startswith("| ") and "---" not in ln
+    ]
+    nan_data = nan_rows[1:]
+    nan_labels = [r.split("|")[1].strip() for r in nan_data]
+    assert "global" in nan_labels
+
+    # Mean value matches the unweighted mean of per-subset AUPRCs in metrics_df.
+    per_subset_auprc = metrics[
+        (metrics["metric"] == "AUPRC")
+        & (metrics["score_name"] == "score1")
+        & (metrics["subset"].isin(["A", "B"]))
+    ]["value"]
+    expected_mean = float(per_subset_auprc.mean())
+
+    mean_row_str = next(r for r in data_rows if r.split("|")[1].strip() == "mean")
+    # Cells: ['', 'mean', 'n_pos', 'n_neg', 'score1', '']
+    cells = [c.strip() for c in mean_row_str.split("|")]
+    rendered_mean = float(cells[4])
+    assert rendered_mean == pytest.approx(expected_mean, abs=1e-3)
+
+
 def test_score_variants_preserves_input_order(tmp_path):
     """Output is row-aligned with input — important since the pipeline
     concats it back as a column."""

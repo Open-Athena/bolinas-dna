@@ -8,7 +8,7 @@ For each split in `config["splits"]` (default `train` and `test`) and each track
 
 1. **Download** the bigWig from UCSC / Zoonomia (`results/conservation/{score}.bw`).
 2. **Score** each variant by single-base lookup at its 1-based `pos` (converted to pyBigWig's 0-based half-open `[pos-1, pos)`). NaN is preserved where the bigWig has no aligned data.
-3. **Aggregate** the scored parquets into one AUPRC table per split (`results/conservation_traitgym_v2/results_table_{split}.md`) plus a long-form `metrics_{split}.parquet`.
+3. **Aggregate** the scored parquets into one AUPRC table per split (`results/conservation_traitgym_v2/results_table_{split}.md`) plus a long-form `metrics_{split}.parquet`. The AUPRC table reports per-subset values plus an unweighted mean across subsets (macro-AUPRC) at the top — global AUPRC isn't shown because it's dominated by the largest subset (missense).
 
 ## Tracks
 
