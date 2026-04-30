@@ -7,8 +7,8 @@ Mendelian v2 variants with classical conservation tracks:
 - ``phastCons_100v`` — UCSC 100-vertebrate phastCons (multiz alignment)
 - ``phyloP_241m``    — Zoonomia 241-mammal Cactus phyloP
 - ``phyloP_447m``    — UCSC 447-way phyloP (Zoonomia + densely-sampled primates, Cactus)
-- ``phyloP_470m``    — UCSC 470-way phyloP (newest mammal Cactus)
-- ``phastCons_470m`` — UCSC 470-way phastCons (newest mammal Cactus)
+- ``phyloP_470m``    — UCSC 470-way phyloP (multiz; parallel work to the 447-way Cactus, not a successor)
+- ``phastCons_470m`` — UCSC 470-way phastCons (multiz; parallel work to the 447-way Cactus, not a successor)
 - ``phastCons_43p``  — Zoonomia 43-primate track (TraitGym name; underlying file is phyloP-over-primates)
 
 The first three tracks (``phyloP_100v``, ``phyloP_241m``, ``phastCons_43p``)
@@ -40,7 +40,9 @@ CONSERVATION_TRACKS: dict[str, str] = {
     "phyloP_241m": "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/cactus241way/cactus241way.phyloP.bw",
     # UCSC 447-way Cactus (Zoonomia + densely-sampled primates, Kuderna et al. 2023).
     "phyloP_447m": "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/phyloP447way/hg38.phyloP447way.bw",
-    # UCSC 470-way Cactus (newest mammal alignment).
+    # UCSC 470-way: multiz alignment (per UCSC track description), parallel
+    # work to the 447-way Cactus rather than a successor. Distinct aligner,
+    # different coverage characteristics — not "newer/better mammal alignment".
     "phyloP_470m": "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/phyloP470way/hg38.phyloP470way.bw",
     "phastCons_470m": "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/phastCons470way/hg38.phastCons470way.bw",
     # phastCons_43p name is a TraitGym convention; the underlying file is

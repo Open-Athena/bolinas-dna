@@ -18,8 +18,8 @@ For each split in `config["splits"]` (default `train` and `test`) and each track
 | `phastCons_100v` | `hgdownload.soe.ucsc.edu/.../hg38.phastCons100way.bw` | 100-vertebrate phastCons (UCSC multiz) |
 | `phyloP_241m` | `hgdownload.soe.ucsc.edu/.../cactus241way.phyloP.bw` | Zoonomia 241-mammal Cactus phyloP |
 | `phyloP_447m` | `hgdownload.soe.ucsc.edu/.../hg38.phyloP447way.bw` | UCSC 447-way phyloP (Zoonomia + densely-sampled primates, Kuderna et al. 2023) |
-| `phyloP_470m` | `hgdownload.soe.ucsc.edu/.../hg38.phyloP470way.bw` | UCSC 470-way phyloP (newest mammal Cactus) |
-| `phastCons_470m` | `hgdownload.soe.ucsc.edu/.../hg38.phastCons470way.bw` | UCSC 470-way phastCons (newest mammal Cactus) |
+| `phyloP_470m` | `hgdownload.soe.ucsc.edu/.../hg38.phyloP470way.bw` | UCSC 470-way phyloP (multiz; parallel work to 447-way Cactus, not a successor) |
+| `phastCons_470m` | `hgdownload.soe.ucsc.edu/.../hg38.phastCons470way.bw` | UCSC 470-way phastCons (multiz; parallel work to 447-way Cactus, not a successor) |
 | `phastCons_43p` | `cgl.gi.ucsc.edu/.../phyloPPrimates.bigWig` | Zoonomia 43-primate. Name follows TraitGym; underlying file is phyloP-over-primates. |
 
 URLs are owned by `bolinas.evals.conservation.CONSERVATION_TRACKS` (single source of truth).
