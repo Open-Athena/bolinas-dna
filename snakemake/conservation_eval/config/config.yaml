@@ -1,0 +1,15 @@
+# TraitGym Mendelian v2 dataset on HuggingFace (produced by snakemake/evals/).
+dataset_hf_path: bolinas-dna/evals-traitgym_mendelian_v2
+
+# Splits to score independently. Each produces its own markdown table.
+splits:
+  - train
+  - test
+
+# Conservation tracks. URLs are the single source of truth in
+# bolinas.evals.conservation.CONSERVATION_TRACKS — listing names here just
+# selects which tracks the pipeline runs.
+scores:
+  - phyloP_100v
+  - phyloP_241m
+  - phastCons_43p
