@@ -40,10 +40,10 @@ rule aggregate_metrics:
         from bolinas.evals.conservation import aggregate_traitgym_metrics
         from pathlib import Path
 
-        parquet_paths = {
-            score: f"results/conservation_traitgym_v2/{score}_{wildcards.split}.parquet"
-            for score in SCORES
-        }
+        # Use input.parquets (locally-fetched paths under S3 storage), not
+        # reconstructed strings — snakemake replaces them with temp paths.
+        # Order matches the expand() above, which iterates SCORES in order.
+        parquet_paths = dict(zip(SCORES, input.parquets))
         metrics, md = aggregate_traitgym_metrics(parquet_paths)
         metrics["split"] = wildcards.split
         metrics.to_parquet(output.metrics, index=False)
