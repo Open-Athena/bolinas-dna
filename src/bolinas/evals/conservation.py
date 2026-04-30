@@ -36,6 +36,18 @@ CONSERVATION_TRACKS: dict[str, str] = {
 }
 
 
+# TraitGym variant columns the pipeline preserves end-to-end. Asserted by
+# the score and aggregate stages so a schema drift fails fast.
+REQUIRED_VARIANT_COLUMNS: tuple[str, ...] = (
+    "chrom",
+    "pos",
+    "ref",
+    "alt",
+    "label",
+    "subset",
+)
+
+
 def score_variants_at_positions(
     df: pd.DataFrame,
     bw_path: str | Path,
@@ -112,37 +124,34 @@ def aggregate_traitgym_metrics(
     assert parquet_paths, "parquet_paths must be non-empty"
 
     score_names = list(parquet_paths)
+    required = (*REQUIRED_VARIANT_COLUMNS, "score")
     all_metrics: list[pd.DataFrame] = []
-    nan_counts: dict[str, pd.Series] = {}  # score_name -> Series indexed by subset
-    total_counts: dict[str, pd.Series] = {}
 
     for score_name in score_names:
         df = pd.read_parquet(parquet_paths[score_name])
-        for col in ("chrom", "pos", "ref", "alt", "label", "subset", "score"):
+        for col in required:
             assert col in df.columns, (
                 f"{parquet_paths[score_name]}: missing column {col!r}"
             )
 
-        # Count NaN per (subset) and globally before filling.
-        per_subset_nan = df.groupby("subset")["score"].apply(lambda s: s.isna().sum())
-        per_subset_total = df.groupby("subset").size()
-        nan_counts[score_name] = pd.concat(
-            [pd.Series({"global": int(df["score"].isna().sum())}), per_subset_nan]
-        ).astype(int)
-        total_counts[score_name] = pd.concat(
-            [pd.Series({"global": int(len(df))}), per_subset_total]
-        ).astype(int)
+        # Count NaN per subset before filling; "global" matches compute_metrics'
+        # convention for the all-rows row.
+        nan_per_subset = df.groupby("subset")["score"].apply(
+            lambda s: int(s.isna().sum())
+        )
+        nan_per_subset["global"] = int(df["score"].isna().sum())
+        total_per_subset = df.groupby("subset").size().astype(int)
+        total_per_subset["global"] = len(df)
 
-        scores = df[["score"]].fillna(0)
         m = compute_metrics(
-            dataset=df[["chrom", "pos", "ref", "alt", "label", "subset"]],
-            scores=scores,
+            dataset=df[list(REQUIRED_VARIANT_COLUMNS)],
+            scores=df[["score"]].fillna(0),
             metrics=["AUPRC"],
             score_columns=["score"],
         )
         m["score_name"] = score_name
-        m["n_nan"] = m["subset"].map(nan_counts[score_name]).astype(int)
-        m["n_total"] = m["subset"].map(total_counts[score_name]).astype(int)
+        m["n_nan"] = m["subset"].map(nan_per_subset).astype(int)
+        m["n_total"] = m["subset"].map(total_per_subset).astype(int)
         all_metrics.append(m)
 
     metrics = pd.concat(all_metrics, ignore_index=True)
@@ -154,6 +163,14 @@ def _build_markdown(metrics: pd.DataFrame, score_names: list[str]) -> str:
     """Render the metrics DataFrame as a two-table markdown report."""
     auprc = metrics[metrics["metric"] == "AUPRC"].copy()
 
+    def _pivot(values_col: str) -> pd.DataFrame:
+        return auprc.pivot_table(
+            index="subset",
+            columns="score_name",
+            values=values_col,
+            aggfunc="first",
+        )
+
     # Per-subset n_pos/n_neg from the first score (subset coverage is
     # score-independent).
     coverage = (
@@ -162,25 +179,17 @@ def _build_markdown(metrics: pd.DataFrame, score_names: list[str]) -> str:
         .set_index("subset")
     )
 
-    pivot = auprc.pivot_table(
-        index="subset",
-        columns="score_name",
-        values="value",
-        aggfunc="first",
-    )
+    pivot = _pivot("value")
+    nan_pivot = _pivot("n_nan")
+
     # Order: global first, then subsets sorted by n_pos descending.
     rest = [
         s for s in coverage.sort_values("n_pos", ascending=False).index if s != "global"
     ]
-    order = ([s for s in ["global"] if s in pivot.index]) + rest
+    order = (["global"] if "global" in pivot.index else []) + rest
     pivot = pivot.reindex(order)
+    nan_pivot = nan_pivot.reindex(order)
 
-    nan_pivot = auprc.pivot_table(
-        index="subset",
-        columns="score_name",
-        values="n_nan",
-        aggfunc="first",
-    ).reindex(order)
     total_by_subset = (
         auprc[auprc["score_name"] == score_names[0]][["subset", "n_total"]]
         .drop_duplicates(subset="subset")

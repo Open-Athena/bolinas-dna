@@ -8,13 +8,13 @@ rule score_variants:
         split="|".join(SPLITS),
     run:
         ds = load_dataset(DATASET_HF_PATH, split=wildcards.split).to_pandas()
-        for col in ("chrom", "pos", "ref", "alt", "label", "subset"):
+        for col in REQUIRED_VARIANT_COLUMNS:
             assert col in ds.columns, f"dataset missing column {col!r}"
 
         scores = score_variants_at_positions(ds, input.bw)
         assert len(scores) == len(ds)
 
-        out = ds[["chrom", "pos", "ref", "alt", "label", "subset"]].copy()
+        out = ds[list(REQUIRED_VARIANT_COLUMNS)].copy()
         out["score"] = scores
         n_nan = int(out["score"].isna().sum())
         print(
@@ -37,12 +37,7 @@ rule aggregate_metrics:
     wildcard_constraints:
         split="|".join(SPLITS),
     run:
-        from bolinas.evals.conservation import aggregate_traitgym_metrics
-        from pathlib import Path
-
-        # Use input.parquets (locally-fetched paths under S3 storage), not
-        # reconstructed strings — snakemake replaces them with temp paths.
-        # Order matches the expand() above, which iterates SCORES in order.
+        # input.parquets are S3-fetched local temp paths, in expand() order (= SCORES).
         parquet_paths = dict(zip(SCORES, input.parquets))
         metrics, md = aggregate_traitgym_metrics(parquet_paths)
         metrics["split"] = wildcards.split
