@@ -1,16 +1,22 @@
 """Per-variant conservation scoring via UCSC bigWig tracks.
 
 Used by ``snakemake/conservation_eval/`` (issue #146) to score TraitGym
-Mendelian v2 variants with three classical conservation tracks:
+Mendelian v2 variants with classical conservation tracks:
 
-- ``phyloP_100v``  — UCSC 100-vertebrate phyloP
-- ``phyloP_241m``  — Zoonomia 241-mammal Cactus phyloP
-- ``phastCons_43p`` — Zoonomia 43-primate track
+- ``phyloP_100v``    — UCSC 100-vertebrate phyloP (multiz alignment)
+- ``phastCons_100v`` — UCSC 100-vertebrate phastCons (multiz alignment)
+- ``phyloP_241m``    — Zoonomia 241-mammal Cactus phyloP
+- ``phyloP_447m``    — UCSC 447-way phyloP (Zoonomia + densely-sampled primates, Cactus)
+- ``phyloP_470m``    — UCSC 470-way phyloP (newest mammal Cactus)
+- ``phastCons_470m`` — UCSC 470-way phastCons (newest mammal Cactus)
+- ``phastCons_43p``  — Zoonomia 43-primate track (TraitGym name; underlying file is phyloP-over-primates)
 
-URLs are copied verbatim from TraitGym's ``eval/workflow/rules/conservation.smk``;
-the same bigWigs are also used elsewhere in this repo (enhancer_classification,
-training_dataset/dataset_creation) but each pipeline manages its own download to
-avoid coupling.
+The first three tracks (``phyloP_100v``, ``phyloP_241m``, ``phastCons_43p``)
+are the original TraitGym set; their URLs are copied verbatim from
+TraitGym's ``eval/workflow/rules/conservation.smk``. The same bigWigs are
+also used elsewhere in this repo (enhancer_classification,
+training_dataset/dataset_creation) but each pipeline manages its own
+download to avoid coupling.
 
 NaN policy: this module preserves NaNs from the bigWig (no alignment at that
 locus). Callers decide how to fill them — the ``conservation_eval`` pipeline
@@ -27,8 +33,16 @@ from bolinas.evals.metrics import compute_metrics
 
 
 CONSERVATION_TRACKS: dict[str, str] = {
+    # 100-vertebrate UCSC multiz alignment.
     "phyloP_100v": "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/phyloP100way/hg38.phyloP100way.bw",
+    "phastCons_100v": "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/phastCons100way/hg38.phastCons100way.bw",
+    # Zoonomia 241-mammal Cactus alignment.
     "phyloP_241m": "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/cactus241way/cactus241way.phyloP.bw",
+    # UCSC 447-way Cactus (Zoonomia + densely-sampled primates, Kuderna et al. 2023).
+    "phyloP_447m": "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/phyloP447way/hg38.phyloP447way.bw",
+    # UCSC 470-way Cactus (newest mammal alignment).
+    "phyloP_470m": "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/phyloP470way/hg38.phyloP470way.bw",
+    "phastCons_470m": "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/phastCons470way/hg38.phastCons470way.bw",
     # phastCons_43p name is a TraitGym convention; the underlying file is
     # actually phyloP over 43 primates from the Zoonomia track hub. We keep
     # the name to stay consistent with TraitGym + existing config in this repo.

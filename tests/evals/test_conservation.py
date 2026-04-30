@@ -13,10 +13,14 @@ from bolinas.evals.conservation import (
 
 
 def test_conservation_tracks_keys():
-    """The three expected tracks are present and URLs look like bigWigs."""
+    """The expected tracks are present and URLs look like bigWigs."""
     assert set(CONSERVATION_TRACKS.keys()) == {
         "phyloP_100v",
+        "phastCons_100v",
         "phyloP_241m",
+        "phyloP_447m",
+        "phyloP_470m",
+        "phastCons_470m",
         "phastCons_43p",
     }
     for name, url in CONSERVATION_TRACKS.items():
