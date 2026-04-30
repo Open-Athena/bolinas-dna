@@ -8,14 +8,18 @@ For each split in `config["splits"]` (default `train` and `test`) and each track
 
 1. **Download** the bigWig from UCSC / Zoonomia (`results/conservation/{score}.bw`).
 2. **Score** each variant by single-base lookup at its 1-based `pos` (converted to pyBigWig's 0-based half-open `[pos-1, pos)`). NaN is preserved where the bigWig has no aligned data.
-3. **Aggregate** the three scored parquets into one AUPRC table per split (`results/conservation_traitgym_v2/results_table_{split}.md`) plus a long-form `metrics_{split}.parquet`.
+3. **Aggregate** the scored parquets into one AUPRC table per split (`results/conservation_traitgym_v2/results_table_{split}.md`) plus a long-form `metrics_{split}.parquet`. The AUPRC table reports per-subset values plus an unweighted mean across subsets (macro-AUPRC) at the top — global AUPRC isn't shown because it's dominated by the largest subset (missense).
 
 ## Tracks
 
 | Name | Source URL | Notes |
 | --- | --- | --- |
-| `phyloP_100v` | `hgdownload.soe.ucsc.edu/.../hg38.phyloP100way.bw` | 100-vertebrate phyloP |
+| `phyloP_100v` | `hgdownload.soe.ucsc.edu/.../hg38.phyloP100way.bw` | 100-vertebrate phyloP (UCSC multiz) |
+| `phastCons_100v` | `hgdownload.soe.ucsc.edu/.../hg38.phastCons100way.bw` | 100-vertebrate phastCons (UCSC multiz) |
 | `phyloP_241m` | `hgdownload.soe.ucsc.edu/.../cactus241way.phyloP.bw` | Zoonomia 241-mammal Cactus phyloP |
+| `phyloP_447m` | `hgdownload.soe.ucsc.edu/.../hg38.phyloP447way.bw` | UCSC 447-way phyloP (Zoonomia + densely-sampled primates, Kuderna et al. 2023) |
+| `phyloP_470m` | `hgdownload.soe.ucsc.edu/.../hg38.phyloP470way.bw` | UCSC 470-way phyloP (multiz; parallel work to 447-way Cactus, not a successor) |
+| `phastCons_470m` | `hgdownload.soe.ucsc.edu/.../hg38.phastCons470way.bw` | UCSC 470-way phastCons (multiz; parallel work to 447-way Cactus, not a successor) |
 | `phastCons_43p` | `cgl.gi.ucsc.edu/.../phyloPPrimates.bigWig` | Zoonomia 43-primate. Name follows TraitGym; underlying file is phyloP-over-primates. |
 
 URLs are owned by `bolinas.evals.conservation.CONSERVATION_TRACKS` (single source of truth).
@@ -41,7 +45,8 @@ cd snakemake/conservation_eval
 # Dry-run to inspect the DAG
 uv run snakemake -n
 
-# Run locally (CPU-only; ~5-10 min total — bigWig downloads dominate)
+# Run locally (CPU-only — wall time is dominated by bigWig downloads;
+# the full 7-track set is ~50 GB total)
 uv run snakemake
 ```
 
@@ -52,20 +57,11 @@ The default profile (`workflow/profiles/default/config.yaml`) uses S3 storage at
 ```
 results/
 ├── conservation/
-│   ├── phyloP_100v.bw
-│   ├── phyloP_241m.bw
-│   └── phastCons_43p.bw
+│   └── {score}.bw                         # one per track in config["scores"]
 └── conservation_traitgym_v2/
-    ├── phyloP_100v_train.parquet         # per-variant score (NaN preserved)
-    ├── phyloP_100v_test.parquet
-    ├── phyloP_241m_train.parquet
-    ├── phyloP_241m_test.parquet
-    ├── phastCons_43p_train.parquet
-    ├── phastCons_43p_test.parquet
-    ├── metrics_train.parquet              # long-form metrics table
-    ├── metrics_test.parquet
-    ├── results_table_train.md             # markdown for issue follow-up
-    └── results_table_test.md
+    ├── {score}_{split}.parquet            # per-variant score (NaN preserved)
+    ├── metrics_{split}.parquet            # long-form metrics table
+    └── results_table_{split}.md           # markdown for issue follow-up
 ```
 
 ## Library
