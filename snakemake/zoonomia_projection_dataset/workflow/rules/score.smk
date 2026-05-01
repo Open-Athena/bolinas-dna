@@ -27,7 +27,7 @@ from bolinas.conservation.scoring import score_windows as _score_windows
 rule score_windows_chrom:
     """Score 255 bp windows on a single chromosome against phyloP_447m."""
     input:
-        windows="results/windows/{species}.bed.gz",
+        windows="results/windows/{species}/{chrom}.bed.gz",
         bw="results/bigwig/phyloP_447m.bw",
     output:
         "results/scored/{species}/per_chrom/phyloP_447m_{chrom}.parquet",
@@ -35,6 +35,8 @@ rule score_windows_chrom:
         threshold=PHYLOP_447M_THRESHOLD,
     wildcard_constraints:
         chrom="|".join(STANDARD_CHROMS),
+    resources:
+        mem_mb=1500,
     run:
         windows_df = pl.read_csv(
             input.windows,
@@ -47,10 +49,10 @@ rule score_windows_chrom:
                 "end": pl.Int64,
                 "name": pl.Utf8,
             },
-        ).filter(pl.col("chrom") == wildcards.chrom)
-        assert len(windows_df) > 0, (
-            f"no windows on chrom {wildcards.chrom!r}; standard_chroms in config"
-            f" must match what's in the windows BED"
+        )
+        assert len(windows_df) > 0, f"no windows in {input.windows}"
+        assert (windows_df["chrom"] == wildcards.chrom).all(), (
+            f"per-chrom BED has rows on other chroms: {windows_df['chrom'].unique()}"
         )
         assert (windows_df["end"] - windows_df["start"] == WINDOW_SIZE).all()
 
