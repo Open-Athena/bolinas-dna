@@ -39,17 +39,21 @@ rule mendelian_traits_positives:
             .filter(pl.col("AF") < config["mendelian_traits"]["AF_threshold"])
             .sort(COORDINATES)
         )
+        # Per-chrom consequences attach via predicate pushdown (same trick as
+        # the AF lookup above). Polars 1.40's streaming left-join materializes
+        # the right side; pos.is_in() lets parquet skip non-matching row groups
+        # so each chrom's join touches only a few thousand rows.
         results = []
         for path, chrom in zip(input.consequences, CHROMS):
-            chrom_variants = V.filter(pl.col("chrom") == chrom).lazy()
-            consequences_lf = pl.scan_parquet(path)
-            joined = chrom_variants.join(
-                consequences_lf,
-                on=COORDINATES,
-                how="left",
-                maintain_order="left",
-            ).collect(engine="streaming")
-            results.append(joined)
+            pos_chrom = V.filter(pl.col("chrom") == chrom)
+            if pos_chrom.height == 0:
+                continue
+            cons_subset = (
+                pl.scan_parquet(path)
+                .filter(pl.col("pos").is_in(pos_chrom["pos"].unique().to_list()))
+                .collect()
+            )
+            results.append(pos_chrom.join(cons_subset, on=COORDINATES, how="left"))
         pl.concat(results).write_parquet(output[0])
 
 

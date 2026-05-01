@@ -150,17 +150,20 @@ rule complex_traits_annotate:
             .pipe(check_ref_alt, genome)
             .sort(COORDINATES)
         )
+        # Per-chrom consequences attach via predicate pushdown (Polars 1.40's
+        # streaming left-join materializes the right side; pos.is_in() lets
+        # the parquet reader skip non-matching row groups instead).
         results = []
         for path, chrom in zip(input.consequences, CHROMS):
-            chrom_variants = V.filter(pl.col("chrom") == chrom).lazy()
-            consequences_lf = pl.scan_parquet(path)
-            joined = chrom_variants.join(
-                consequences_lf,
-                on=COORDINATES,
-                how="left",
-                maintain_order="left",
-            ).collect(engine="streaming")
-            results.append(joined)
+            pos_chrom = V.filter(pl.col("chrom") == chrom)
+            if pos_chrom.height == 0:
+                continue
+            cons_subset = (
+                pl.scan_parquet(path)
+                .filter(pl.col("pos").is_in(pos_chrom["pos"].unique().to_list()))
+                .collect()
+            )
+            results.append(pos_chrom.join(cons_subset, on=COORDINATES, how="left"))
         pl.concat(results).write_parquet(output[0])
 
 
