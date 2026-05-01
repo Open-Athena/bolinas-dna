@@ -1,11 +1,12 @@
-"""One-off: calibrate ``phyloP_447m`` threshold to match ``phyloP_241m`` count.
+"""One-off: calibrate ``phyloP_447m`` threshold to match the *proportion* of
+non-NaN bases passing in ``phyloP_241m``.
 
 Run once on a SkyPilot box (or anywhere with both bigWigs reachable). Builds
 per-base histograms over defined ACGT regions of both ``phyloP_241m`` and
-``phyloP_447m``, then finds the ``phyloP_447m`` threshold whose genome-wide
-passing count matches ``phyloP_241m >= 2.27``. Prints the threshold and
-writes a JSON file with the full calibration record (counts, totals,
-relative error, hist meta).
+``phyloP_447m``, then finds the ``phyloP_447m`` threshold whose
+proportion-of-non-NaN-bases passing matches ``phyloP_241m >= 2.27``.
+Prints the threshold and writes a JSON file with the full calibration
+record (counts, proportions, totals, relative error, hist meta).
 
 After running, paste the printed threshold into ``config/config.yaml``
 under ``phyloP_447m_threshold`` and commit.
@@ -28,7 +29,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from bolinas.conservation.calibration import calibrate_to_match_count
+from bolinas.conservation.calibration import calibrate_to_match_proportion
 from bolinas.conservation.histogram import (
     PhylopHistogram,
     build_histogram_for_chrom,
@@ -226,11 +227,12 @@ def main() -> None:
     tgt_hist = _build_genome_histogram(tgt_bw, defined_per_chrom, edges)
     print(f"  {TARGET_TRACK}: {tgt_hist.total():,} non-NaN, {tgt_hist.n_nan:,} NaN")
 
-    # 4) Calibrate
+    # 4) Calibrate (match proportion of non-NaN bases passing, not raw count)
     print(
-        f"\ncalibrating {TARGET_TRACK} to match {REFERENCE_TRACK} >= {REFERENCE_THRESHOLD}..."
+        f"\ncalibrating {TARGET_TRACK} to match {REFERENCE_TRACK} >= {REFERENCE_THRESHOLD} "
+        f"(proportion of non-NaN bases passing)..."
     )
-    out = calibrate_to_match_count(
+    out = calibrate_to_match_proportion(
         tgt_hist,
         ref_hist,
         ref_threshold=REFERENCE_THRESHOLD,
