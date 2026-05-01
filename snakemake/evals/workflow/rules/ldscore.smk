@@ -17,13 +17,17 @@ rule ldscore_convert:
         INPUT_ABS=$(readlink -f {input})
         OUTPUT_DIR_ABS=$(readlink -f $(dirname {output}))
         OUTPUT_NAME=$(basename {output})
+        HOST_UID=$(id -u)
+        HOST_GID=$(id -g)
+        # Run Hail as root inside the container (Spark/Ivy needs a real $HOME
+        # with a /etc/passwd entry; --user $(id -u):$(id -g) breaks that and
+        # crashes with "basedir must be absolute: ?/.ivy2/local"). Chown the
+        # output back to the host user so snakemake can manage it afterwards.
         docker run --rm \
-            --user $(id -u):$(id -g) \
-            -e HOME=/tmp \
             -v "$INPUT_ABS":/data/input:ro \
             -v "$OUTPUT_DIR_ABS":/data/out \
             hailgenetics/hail:0.2.130.post1-py3.11 \
-            python3 -c "import hail as hl; ht = hl.read_table('/data/input'); print(ht.describe()); ht.export('/data/out/$OUTPUT_NAME')"
+            bash -c "python3 -c \"import hail as hl; ht = hl.read_table('/data/input'); print(ht.describe()); ht.export('/data/out/$OUTPUT_NAME')\" && chown -R $HOST_UID:$HOST_GID /data/out"
         """
 
 
