@@ -87,13 +87,16 @@ rule complex_traits_aggregate_traits:
     output:
         "results/complex_traits/finemapping/aggregated.parquet",
     run:
+        # Streaming: scan_parquet + sink_parquet so polars can chunk through the
+        # 119-trait concat + group_by without materializing all ~50 GB of
+        # per-trait fine-mapping data at once.
         high = config["complex_traits"]["pip_pos_threshold"]
         low = config["complex_traits"]["pip_neg_threshold"]
         any_null_pip = pl.col("pip").is_null().any()
         (
             pl.concat(
                 [
-                    pl.read_parquet(path).with_columns(trait=pl.lit(trait))
+                    pl.scan_parquet(path).with_columns(trait=pl.lit(trait))
                     for path, trait in zip(input, COMPLEX_TRAITS)
                 ]
             )
@@ -122,7 +125,7 @@ rule complex_traits_aggregate_traits:
             .filter(pl.col("label").is_not_null())
             .drop(["trait", "any_null_pip"])
             .sort(COORDINATES)
-            .write_parquet(output[0])
+            .sink_parquet(output[0])
         )
 
 
