@@ -80,7 +80,10 @@ def check_ref_alt(V: pl.DataFrame, genome) -> pl.DataFrame:
     """
 
     def get_ref_nuc(row: dict) -> str:
-        return genome.get_nuc(row["chrom"], row["pos"]).upper()
+        # biofoundation.data.Genome is callable with 0-based half-open
+        # [start, end) coords; pos is 1-based, so the single base at pos is
+        # the half-open interval [pos-1, pos).
+        return genome(row["chrom"], row["pos"] - 1, row["pos"]).upper()
 
     original_columns = V.columns
 

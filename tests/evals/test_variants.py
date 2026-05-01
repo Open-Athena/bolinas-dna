@@ -173,11 +173,19 @@ class TestLiftHg19ToHg38:
 
 class TestCheckRefAlt:
     class FakeGenome:
+        """Mimics biofoundation.data.Genome's __call__(chrom, start, end) API.
+
+        Stores (chrom, 1-based-pos) → nucleotide; the callable interprets
+        the 0-based half-open [start, end) and returns the single base at
+        end (i.e. 1-based-pos = end).
+        """
+
         def __init__(self, table: dict[tuple[str, int], str]) -> None:
             self._table = table
 
-        def get_nuc(self, chrom: str, pos: int) -> str:
-            return self._table[(chrom, pos)]
+        def __call__(self, chrom: str, start: int, end: int, strand: str = "+") -> str:
+            assert end == start + 1, "fake genome only supports single-base lookups"
+            return self._table[(chrom, end)]
 
     def test_keeps_matching_ref(self) -> None:
         genome = self.FakeGenome({("1", 100): "A", ("1", 200): "G"})
