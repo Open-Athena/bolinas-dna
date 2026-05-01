@@ -8,6 +8,9 @@ rule mendelian_traits_positives:
     output:
         "results/mendelian_traits/positives.parquet",
     run:
+        import pyarrow.compute as pc
+        import pyarrow.dataset as pads
+
         # Concatenation order encodes priority: omim > smedley > hgmd
         positives = pl.concat(
             [
@@ -17,25 +20,44 @@ rule mendelian_traits_positives:
             ],
             how="diagonal_relaxed",
         ).unique(COORDINATES, keep="first", maintain_order=True)
-        # Per-chrom + streaming AF lookup: predicate pushdown narrows the
-        # parquet scan to one chrom at a time, and the streaming engine
-        # incrementally hash-joins against the few positives for that chrom.
-        # Peak memory is bounded well below the full gnomAD AF column
-        # (which would be ~30 GB raw / 50+ GB after Polars/Arrow overhead).
-        gnomad_lf = pl.scan_parquet(input[3]).select(COORDINATES + ["AF"])
+        # AF lookup via pyarrow.dataset: predicate pushdown on (chrom, pos)
+        # skips parquet row groups whose ranges don't intersect the few
+        # thousand positive coordinates, so peak memory is bounded by the
+        # matched rows + a few row groups, not the full ~700M-row gnomAD.
+        # (Polars 1.40's streaming engine quietly fell back to eager reads
+        # for this query — pyarrow's predicate pushdown is more reliable.)
+        gnomad_ds = pads.dataset(input[3], format="parquet")
         af_pieces = []
-        for chrom in positives["chrom"].unique().to_list():
-            pos_chrom = positives.filter(pl.col("chrom") == chrom).select(COORDINATES)
-            af_pieces.append(
-                pos_chrom.lazy()
-                .join(
-                    gnomad_lf.filter(pl.col("chrom") == chrom),
-                    on=COORDINATES,
-                    how="inner",
-                )
-                .collect(engine="streaming")
+        for chrom, pos_chrom in positives.group_by("chrom"):
+            chrom_value = chrom[0] if isinstance(chrom, tuple) else chrom
+            filter_expr = (pc.field("chrom") == chrom_value) & pc.field("pos").isin(
+                pos_chrom["pos"].to_list()
             )
-        af_for_positives = pl.concat(af_pieces)
+            table = gnomad_ds.to_table(
+                columns=COORDINATES + ["AF"],
+                filter=filter_expr,
+            )
+            if table.num_rows == 0:
+                continue
+            gnomad_chunk = pl.from_arrow(table)
+            af_pieces.append(
+                pos_chrom.select(COORDINATES).join(
+                    gnomad_chunk, on=COORDINATES, how="inner"
+                )
+            )
+        af_for_positives = (
+            pl.concat(af_pieces)
+            if af_pieces
+            else pl.DataFrame(
+                schema={
+                    "chrom": pl.Utf8,
+                    "pos": pl.Int64,
+                    "ref": pl.Utf8,
+                    "alt": pl.Utf8,
+                    "AF": pl.Float64,
+                }
+            )
+        )
         V = (
             positives.join(af_for_positives, on=COORDINATES, how="left")
             # Variants not in gnomAD get AF = 0
