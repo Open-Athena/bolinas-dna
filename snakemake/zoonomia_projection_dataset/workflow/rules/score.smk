@@ -19,11 +19,17 @@ from a conda env, but Snakemake only activates ``conda:`` for ``shell:`` /
 rule binarize_447m:
     """Binarize phyloP_447m: 1 where value >= threshold, gap elsewhere.
 
-    Wiggletools' ``gte T x`` propagates gaps, which is the desired
-    behaviour: NaN-bases in the input are absent from the binary track.
-    Combined with ``bigWigAverageOverBed``'s ``mean0`` column (denominator
-    = window size, not covered length), NaN ends up counted as
-    non-conserved.
+    kentUtils chain: bigWigToBedGraph | awk threshold | bedGraphToBigWig.
+    NaN positions in the input bigWig are absent from the bigWigToBedGraph
+    output (no row emitted), so they remain absent from the binary bigWig
+    too. Combined with ``bigWigAverageOverBed``'s ``mean0`` column
+    (denominator = window size, not covered length), NaN ends up counted
+    as non-conserved.
+
+    The ``bigWigInfo -chroms`` step extracts chrom sizes from the input
+    bigWig itself (matching its UCSC ``chr1``-style naming), avoiding any
+    chrom-name mismatch between the Ensembl-named chrom_sizes.filtered
+    artifact and the UCSC-named bigWig.
     """
     input:
         "results/bigwig/phyloP_447m.bw",
@@ -35,7 +41,12 @@ rule binarize_447m:
         threshold=PHYLOP_447M_THRESHOLD,
     shell:
         r"""
-        wiggletools write_bw {output} gte {params.threshold} {input}
+        TMPSIZES=$(mktemp)
+        trap "rm -f $TMPSIZES" EXIT
+        bigWigInfo -chroms {input} | awk '/^\t/ {{ print $1"\t"$3 }}' > $TMPSIZES
+        bigWigToBedGraph {input} stdout \
+          | awk -v t={params.threshold} 'BEGIN {{OFS="\t"}} {{ print $1, $2, $3, ($4 >= t) ? 1 : 0 }}' \
+          | bedGraphToBigWig stdin $TMPSIZES {output}
         """
 
 

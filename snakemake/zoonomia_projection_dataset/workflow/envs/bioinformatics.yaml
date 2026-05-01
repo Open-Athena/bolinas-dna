@@ -7,4 +7,6 @@ dependencies:
   - ucsc-twobitinfo
   - ucsc-twobittofa
   - ucsc-bigwigaverageoverbed
-  - wiggletools
+  - ucsc-bigwigtobedgraph
+  - ucsc-bedgraphtobigwig
+  - ucsc-bigwiginfo
