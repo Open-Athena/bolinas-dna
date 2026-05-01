@@ -17,14 +17,24 @@ rule mendelian_traits_positives:
             ],
             how="diagonal_relaxed",
         ).unique(COORDINATES, keep="first", maintain_order=True)
-        # Chrom-by-chrom AF lookup: bounds memory to one chrom of gnomAD
-        # (~3 GB for chr1) instead of materializing the full ~700M-row file.
+        # Per-chrom + streaming AF lookup: predicate pushdown narrows the
+        # parquet scan to one chrom at a time, and the streaming engine
+        # incrementally hash-joins against the few positives for that chrom.
+        # Peak memory is bounded well below the full gnomAD AF column
+        # (which would be ~30 GB raw / 50+ GB after Polars/Arrow overhead).
         gnomad_lf = pl.scan_parquet(input[3]).select(COORDINATES + ["AF"])
         af_pieces = []
         for chrom in positives["chrom"].unique().to_list():
-            gnomad_chrom = gnomad_lf.filter(pl.col("chrom") == chrom).collect()
             pos_chrom = positives.filter(pl.col("chrom") == chrom).select(COORDINATES)
-            af_pieces.append(pos_chrom.join(gnomad_chrom, on=COORDINATES, how="inner"))
+            af_pieces.append(
+                pos_chrom.lazy()
+                .join(
+                    gnomad_lf.filter(pl.col("chrom") == chrom),
+                    on=COORDINATES,
+                    how="inner",
+                )
+                .collect(engine="streaming")
+            )
         af_for_positives = pl.concat(af_pieces)
         V = (
             positives.join(af_for_positives, on=COORDINATES, how="left")
