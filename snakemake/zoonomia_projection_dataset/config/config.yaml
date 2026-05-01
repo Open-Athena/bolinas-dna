@@ -1,17 +1,11 @@
-species: homo_sapiens
-
-genome_urls:
-  homo_sapiens: "https://ftp.ensembl.org/pub/release-115/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa.gz"
+genome_url: "https://ftp.ensembl.org/pub/release-115/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa.gz"
 
 # Bare Ensembl chrom names (1, 2, ..., X, Y). Bigwig queries internally
 # prepend "chr" because UCSC tracks use "chr1"-style names.
 standard_chroms:
-  homo_sapiens:
-    [
-      "1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
-      "11", "12", "13", "14", "15", "16", "17", "18", "19", "20",
-      "21", "22", "X", "Y",
-    ]
+  ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
+   "11", "12", "13", "14", "15", "16", "17", "18", "19", "20",
+   "21", "22", "X", "Y"]
 
 window_size: 255
 step_size: 128
@@ -24,8 +18,7 @@ step_size: 128
 # error and ~10x faster wall than all 24 chroms.
 phyloP_447m_threshold: 2.2162
 
-# Filter on proportion of valid bases passing threshold
-# (= bigWigAverageOverBed `mean0` of the binarized bigWig, NaN counted as 0).
+# Filter cutoffs on `proportion_conserved` per window (one BED output per cutoff).
 filters:
   - { min_proportion_conserved: 0.10 }
   - { min_proportion_conserved: 0.20 }

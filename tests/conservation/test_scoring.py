@@ -1,7 +1,5 @@
 """Tests for ``bolinas.conservation.scoring``."""
 
-from __future__ import annotations
-
 import math
 
 import numpy as np

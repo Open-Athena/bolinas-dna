@@ -9,8 +9,6 @@ proportions controls for that and is more semantically faithful to "the
 top X% of conserved bases".
 """
 
-from __future__ import annotations
-
 from .histogram import PhylopHistogram
 
 

@@ -4,8 +4,6 @@ Performance: pyBigWig handles ~10K windows/sec/core on 255 bp windows;
 parallelise across chroms in the calling pipeline.
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import numpy as np

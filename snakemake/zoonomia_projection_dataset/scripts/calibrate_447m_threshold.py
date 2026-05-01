@@ -19,8 +19,6 @@ Usage::
         --genome-2bit /path/to/hg38.2bit
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import subprocess

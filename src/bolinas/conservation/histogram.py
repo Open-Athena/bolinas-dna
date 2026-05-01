@@ -12,8 +12,6 @@ clipping is negligible. For phyloP-mammal tracks ``[-20, 20]`` covers the
 distribution with margin.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from pathlib import Path
 

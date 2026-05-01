@@ -12,7 +12,6 @@ include: "rules/filter.smk"
 rule all:
     input:
         expand(
-            "results/bed/{species}/min{min_p}.bed.gz",
-            species=[config["species"]],
+            "results/bed/min{min_p}.bed.gz",
             min_p=[f"{f['min_proportion_conserved']:.2f}" for f in config["filters"]],
         ),

@@ -4,6 +4,10 @@ URLs come from ``CONSERVATION_TRACKS`` — single source of truth in
 ``src/bolinas/evals/conservation.py``. Only ``phyloP_447m`` is downloaded
 at pipeline runtime; ``phyloP_241m`` is fetched only by the one-off
 calibration script.
+
+Pipeline is hg38-only by design — the phyloP bigWigs are human-anchored
+and the downstream cross-mammal projection is human-anchored too. No
+``{species}`` wildcard.
 """
 
 import gzip
@@ -15,11 +19,10 @@ import polars as pl
 from bolinas.evals.conservation import CONSERVATION_TRACKS
 
 
-SPECIES = config["species"]
 WINDOW_SIZE = int(config["window_size"])
 STEP_SIZE = int(config["step_size"])
 PHYLOP_447M_THRESHOLD = float(config["phyloP_447m_threshold"])
-STANDARD_CHROMS = list(config["standard_chroms"][SPECIES])
+STANDARD_CHROMS = list(config["standard_chroms"])
 
 # Sanity-check: track must be in the registry.
 assert "phyloP_447m" in CONSERVATION_TRACKS, (

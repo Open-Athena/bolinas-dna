@@ -112,21 +112,13 @@ proportion = conserved / (end - start)                   # full window denom
 
 Sanity-checked in `tests/conservation/test_scoring.py::test_score_windows_nan_counted_as_zero`.
 
-Using `bigWigAverageOverBed`'s `sum` and `mean0` columns (not `mean`):
-
-- `sum` = number of conserved bases. NaN positions contribute 0 either because they're absent from the binary bigWig or because they were filled to 0 — same answer.
-- `mean0 = sum / size` = proportion conserved over the **full** 255 bp denominator. NaN remains in the denominator and contributes 0 to the numerator → counted as non-conserved.
-- `mean = sum / covered` is the column we *don't* want — that one excludes NaN.
-
-Sanity-checked in `tests/conservation/test_scoring.py`.
-
 ## Layout
 
 ```
 config/config.yaml                  # genome URL, window/step, threshold (placeholder), filters
 workflow/Snakefile                  # rule orchestration
 workflow/profiles/default/          # cores, S3 storage, conda
-workflow/envs/bioinformatics.yaml   # bedtools, kentUtils, wiggletools
+workflow/envs/bioinformatics.yaml   # bedtools, kentUtils (faToTwoBit, twoBitInfo)
 workflow/rules/
   common.smk                        # imports + sanity checks
   genome.smk                        # download_genome → 2bit → chrom_sizes → N-regions
