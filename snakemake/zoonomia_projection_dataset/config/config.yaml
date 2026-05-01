@@ -16,12 +16,13 @@ standard_chroms:
 window_size: 255
 step_size: 128
 
-# phyloP_447m threshold calibrated to match phyloP_241m's chr1 passing
-# nucleotide count at threshold 2.27 (exact match: 9,179,695 bases on chr1
-# pass either threshold). Computed by sky/calibrate.yaml -> scripts/calibrate_447m_threshold.py
+# phyloP_447m threshold calibrated to match phyloP_241m's *proportion* of
+# non-NaN bases passing at threshold 2.27 (chr1: both tracks pass 4.0656%
+# of their non-NaN bases — controls for different coverage on the two
+# tracks). Computed by sky/calibrate.yaml -> scripts/calibrate_447m_threshold.py
 # on hg38 chr1 only — single-chrom calibration gives well below 1% relative
 # error and ~10x faster wall than all 24 chroms.
-phyloP_447m_threshold: 2.2240
+phyloP_447m_threshold: 2.2162
 
 # Filter on proportion of valid bases passing threshold
 # (= bigWigAverageOverBed `mean0` of the binarized bigWig, NaN counted as 0).
