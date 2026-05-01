@@ -12,10 +12,19 @@ rule ldscore_convert:
         "results/ldscore/UKBB.EUR.ldscore.ht",
     output:
         "results/ldscore/UKBB.EUR.ldscore.tsv.bgz",
-    singularity:
-        "docker://hailgenetics/hail:0.2.130.post1-py3.11"
     shell:
-        "python3 -c \"import hail as hl; ht = hl.read_table('{input}'); print(ht.describe()); ht.export('{output}')\""
+        r"""
+        INPUT_ABS=$(readlink -f {input})
+        OUTPUT_DIR_ABS=$(readlink -f $(dirname {output}))
+        OUTPUT_NAME=$(basename {output})
+        docker run --rm \
+            --user $(id -u):$(id -g) \
+            -e HOME=/tmp \
+            -v "$INPUT_ABS":/data/input:ro \
+            -v "$OUTPUT_DIR_ABS":/data/out \
+            hailgenetics/hail:0.2.130.post1-py3.11 \
+            python3 -c "import hail as hl; ht = hl.read_table('/data/input'); print(ht.describe()); ht.export('/data/out/$OUTPUT_NAME')"
+        """
 
 
 rule ldscore_process:
