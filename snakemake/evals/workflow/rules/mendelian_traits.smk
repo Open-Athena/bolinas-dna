@@ -17,18 +17,15 @@ rule mendelian_traits_positives:
             ],
             how="diagonal_relaxed",
         ).unique(COORDINATES, keep="first", maintain_order=True)
-        # Streaming inner-join: only pull AF for the few thousand positive
-        # coordinates. Avoids materializing all of gnomAD's AF column (~700M rows).
-        af_for_positives = (
-            positives.lazy()
-            .join(
-                pl.scan_parquet(input[3]).select(COORDINATES + ["AF"]),
-                on=COORDINATES,
-                how="inner",
-            )
-            .select(COORDINATES + ["AF"])
-            .collect(engine="streaming")
-        )
+        # Chrom-by-chrom AF lookup: bounds memory to one chrom of gnomAD
+        # (~3 GB for chr1) instead of materializing the full ~700M-row file.
+        gnomad_lf = pl.scan_parquet(input[3]).select(COORDINATES + ["AF"])
+        af_pieces = []
+        for chrom in positives["chrom"].unique().to_list():
+            gnomad_chrom = gnomad_lf.filter(pl.col("chrom") == chrom).collect()
+            pos_chrom = positives.filter(pl.col("chrom") == chrom).select(COORDINATES)
+            af_pieces.append(pos_chrom.join(gnomad_chrom, on=COORDINATES, how="inner"))
+        af_for_positives = pl.concat(af_pieces)
         V = (
             positives.join(af_for_positives, on=COORDINATES, how="left")
             # Variants not in gnomAD get AF = 0
