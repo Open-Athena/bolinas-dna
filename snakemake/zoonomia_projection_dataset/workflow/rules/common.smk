@@ -19,6 +19,7 @@ SPECIES = config["species"]
 WINDOW_SIZE = int(config["window_size"])
 STEP_SIZE = int(config["step_size"])
 PHYLOP_447M_THRESHOLD = float(config["phyloP_447m_threshold"])
+STANDARD_CHROMS = list(config["standard_chroms"][SPECIES])
 
 # Sanity-check: track must be in the registry.
 assert "phyloP_447m" in CONSERVATION_TRACKS, (

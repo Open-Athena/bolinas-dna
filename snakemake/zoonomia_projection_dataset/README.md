@@ -69,7 +69,7 @@ For each 255 bp window, `bolinas.conservation.scoring.score_windows`:
 - computes `np.nanmean(values)` → `mean_phylop`,
 - emits `proportion_conserved = conserved_bases / window_size` (NaN counted as 0 in the denominator-of-window-size sense).
 
-Single-threaded, ~40 min for the human autosomes + X + Y (~24M windows). If this becomes a bottleneck, split by chrom (24× speedup with chrom-wildcarded fan-out).
+Parallelised by chromosome via Snakemake's ``{chrom}`` wildcard fan-out (24 workers on autosomes + X + Y), then a small ``merge_scored`` rule concatenates the per-chrom Parquets. ~5 min wall on an 8-vCPU box.
 
 ## Run
 

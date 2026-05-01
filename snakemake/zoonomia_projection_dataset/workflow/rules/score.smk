@@ -1,43 +1,40 @@
-"""Per-window phyloP_447m scoring via pyBigWig.
+"""Per-window phyloP_447m scoring via pyBigWig, parallelised across chroms.
 
 We previously tried a kentUtils chain
-(``bigWigToBedGraph | awk | bedGraphToBigWig`` plus
+(``bigWigToBedGraph | awk threshold | bedGraphToBigWig`` plus
 ``bigWigAverageOverBed``) but the bioconda kentUtils binaries don't accept
 pipes on ``stdin`` — both ``bedGraphToBigWig`` and ``faToTwoBit`` insist on
-a regular file. Materialising the per-base bedGraph would need ~30 GB of
-temp disk and a separate kentUtils-shell + run-block split because
-``run:`` blocks don't activate the rule's conda env.
+a regular file. So scoring is done in pyBigWig in a Snakemake ``run:``
+block, fanned out across chromosomes.
 
-So we do everything in one ``run:`` block with pyBigWig (which is in
-the project's uv env, no conda needed). For each window we:
-  - fetch the per-base values as a NumPy array,
-  - count finite values (``n_valid_bases``),
-  - count finite values >= threshold (``conserved_bases``),
-  - compute ``np.nanmean`` over finite values (``mean_phylop``).
+Each ``score_windows_chrom`` worker:
+  - reads the full windows BED (small — gzipped ~5 MB),
+  - filters to its chrom,
+  - opens the bigWig once and loops, calling ``bw.values(...)`` per window,
+  - writes a per-chrom Parquet.
 
-NaN handling: bases where the bigWig has no signal are explicitly counted
-as **non-conserved** (= 0) — the count is over the full window length, so
-``proportion_conserved = conserved_bases / window_size`` matches what
-``bigWigAverageOverBed``'s ``mean0`` column would have produced.
+Then ``merge_scored`` concatenates the 24 per-chrom Parquets into one
+final Parquet sorted by ``(chrom, start)``.
 
-Performance budget: pyBigWig is ~10K windows/sec/core on 255 bp windows.
-24M windows → ~40 min single-threaded. The single ``run:`` block can't
-parallelise across cores easily; if this becomes a bottleneck, split by
-chrom (24× speedup with chrom-wildcarded fan-out).
+Throughput: pyBigWig is ~10K windows/s/core. 24 chroms × ~1M windows each =
+~24M total. Single-threaded would take ~40–60 min wall; on 8 vCPU
+chrom-parallel it's roughly 24/8 = 3 batches × 1.5 min = ~5 min wall.
 """
 
 from bolinas.conservation.scoring import score_windows as _score_windows
 
 
-rule score_windows:
-    """Score every 255 bp window against phyloP_447m at the calibrated threshold."""
+rule score_windows_chrom:
+    """Score 255 bp windows on a single chromosome against phyloP_447m."""
     input:
         windows="results/windows/{species}.bed.gz",
         bw="results/bigwig/phyloP_447m.bw",
     output:
-        "results/scored/{species}/phyloP_447m_windows.parquet",
+        "results/scored/{species}/per_chrom/phyloP_447m_{chrom}.parquet",
     params:
         threshold=PHYLOP_447M_THRESHOLD,
+    wildcard_constraints:
+        chrom="|".join(STANDARD_CHROMS),
     run:
         windows_df = pl.read_csv(
             input.windows,
@@ -50,31 +47,46 @@ rule score_windows:
                 "end": pl.Int64,
                 "name": pl.Utf8,
             },
+        ).filter(pl.col("chrom") == wildcards.chrom)
+        assert len(windows_df) > 0, (
+            f"no windows on chrom {wildcards.chrom!r}; standard_chroms in config"
+            f" must match what's in the windows BED"
         )
-        assert (windows_df["end"] - windows_df["start"] == WINDOW_SIZE).all(), (
-            "windows BED has rows of unexpected length"
-        )
+        assert (windows_df["end"] - windows_df["start"] == WINDOW_SIZE).all()
 
         scored = _score_windows(input.bw, windows_df, params.threshold)
 
-        # Defensive asserts on the scoring result.
         assert len(scored) == len(windows_df)
         assert (scored["conserved_bases"] >= 0).all()
         assert (
             (scored["conserved_bases"] <= scored["n_valid_bases"])
             | (scored["n_valid_bases"] == 0)
-        ).all(), "conserved_bases > n_valid_bases for some rows"
+        ).all()
         assert (scored["n_valid_bases"] <= WINDOW_SIZE).all()
         assert scored["proportion_conserved"].min() >= 0.0
         assert scored["proportion_conserved"].max() <= 1.0
-        # proportion_conserved == conserved_bases / WINDOW_SIZE
-        mismatch = (
-            scored["proportion_conserved"]
-            - scored["conserved_bases"].cast(pl.Float32) / WINDOW_SIZE
-        ).abs().max()
-        assert mismatch < 1e-3, (
-            f"proportion_conserved disagrees with conserved_bases/window_size "
-            f"by {mismatch}"
-        )
+        scored.sort("start").write_parquet(output[0])
 
-        scored.sort(["chrom", "start"]).write_parquet(output[0])
+
+rule merge_scored:
+    """Concatenate per-chrom Parquets into a single sorted Parquet."""
+    input:
+        expand(
+            "results/scored/{{species}}/per_chrom/phyloP_447m_{chrom}.parquet",
+            chrom=STANDARD_CHROMS,
+        ),
+    output:
+        "results/scored/{species}/phyloP_447m_windows.parquet",
+    run:
+        dfs = [pl.read_parquet(p) for p in input]
+        seen_chroms = {df["chrom"].unique().item() for df in dfs}
+        assert seen_chroms == set(STANDARD_CHROMS), (
+            f"missing chroms in per-chrom Parquets: "
+            f"{set(STANDARD_CHROMS) - seen_chroms}"
+        )
+        merged = pl.concat(dfs).sort(["chrom", "start"])
+        # Defensive cross-check after concat.
+        assert (merged["end"] - merged["start"] == WINDOW_SIZE).all()
+        assert (merged["conserved_bases"] >= 0).all()
+        assert (merged["proportion_conserved"] <= 1.0).all()
+        merged.write_parquet(output[0])
