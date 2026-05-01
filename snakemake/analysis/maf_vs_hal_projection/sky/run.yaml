@@ -56,7 +56,8 @@ run: |
     export LD_LIBRARY_PATH="$HOME/cactus-bin-v3.1.4/lib:${LD_LIBRARY_PATH:-}"
 
     # Verify Cactus binaries are reachable.
-    halLiftover --help 2>&1 | head -5 || (echo "halLiftover not on PATH"; exit 1)
+    command -v halLiftover >/dev/null || (echo "halLiftover not on PATH"; exit 1)
+    command -v halStats >/dev/null || (echo "halStats not on PATH"; exit 1)
 
     # Local NVMe paths.
     if [ -d /opt/dlami/nvme ]; then
