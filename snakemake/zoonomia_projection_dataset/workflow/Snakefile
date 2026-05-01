@@ -1,0 +1,17 @@
+configfile: "config/config.yaml"
+
+
+include: "rules/common.smk"
+include: "rules/genome.smk"
+include: "rules/download.smk"
+include: "rules/windows.smk"
+include: "rules/score.smk"
+include: "rules/filter.smk"
+
+
+rule all:
+    input:
+        expand(
+            "results/bed/min{min_p}.bed.gz",
+            min_p=[f"{f['min_proportion_conserved']:.2f}" for f in config["filters"]],
+        ),
