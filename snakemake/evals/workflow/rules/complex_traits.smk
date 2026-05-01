@@ -190,15 +190,19 @@ rule complex_traits_dataset:
         "results/dataset_unsplit/complex_traits.parquet",
     run:
         V = pl.read_parquet(input[0])
-        match_features(
-            V.filter(pl.col("label")),
-            V.filter(~pl.col("label")),
-            ["tss_dist", "exon_dist", "MAF", "ld_score"],
-            [
-                "chrom",
-                "consequence_final",
-                "tss_closest_gene_id",
-                "exon_closest_gene_id",
-            ],
-            k=1,
-        ).write_parquet(output[0])
+        (
+            match_features(
+                V.filter(pl.col("label")),
+                V.filter(~pl.col("label")),
+                ["tss_dist", "exon_dist", "MAF", "ld_score"],
+                [
+                    "chrom",
+                    "consequence_final",
+                    "tss_closest_gene_id",
+                    "exon_closest_gene_id",
+                ],
+                k=1,
+            )
+            .with_columns(subset=pl.col("consequence_group"))
+            .write_parquet(output[0])
+        )
