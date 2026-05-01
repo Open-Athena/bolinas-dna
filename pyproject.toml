@@ -11,6 +11,7 @@ dependencies = [
     "bioframe",
     "biofoundation @ git+https://github.com/Open-Athena/biofoundation.git",
     "biopython>=1.85",
+    "bx-python",
     "datasets",
     "huggingface_hub",
     "matplotlib",

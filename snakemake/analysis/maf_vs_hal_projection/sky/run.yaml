@@ -1,0 +1,156 @@
+name: maf-vs-hal-projection
+
+# One-off benchmark: project 10k human BED windows onto 3 mammals via
+# MAF stream and halLiftover, compare wall + recall + coordinate
+# agreement. Issue #149 follow-up. ~6 h on first launch (HAL+MAF
+# downloads dominate), ~3 h on reruns once S3 mirrors are warm.
+
+resources:
+    infra: aws/us-east-2
+    instance_type: c6id.12xlarge      # 48 vCPU, 96 GB RAM, 2x1425 GB NVMe
+    disk_size: 100                     # gp3 root vol
+    labels:
+        project: dna
+
+workdir: .
+
+setup: |
+    set -euxo pipefail
+
+    if [ ! -d "$HOME/miniforge3" ]; then
+        curl -fsSL -o /tmp/miniforge.sh https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
+        bash /tmp/miniforge.sh -b -p "$HOME/miniforge3"
+        rm /tmp/miniforge.sh
+    fi
+    if ! command -v uv >/dev/null 2>&1; then
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+    fi
+    grep -q 'miniforge3/bin' "$HOME/.bashrc" || \
+        echo 'export PATH="$HOME/miniforge3/bin:$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+    export PATH="$HOME/miniforge3/bin:$HOME/.local/bin:$PATH"
+
+    # Cactus pre-built binaries — bundles halLiftover, hal2fasta, halStats.
+    # No bioconda or conda-forge package exists; binaries are the upstream-
+    # recommended path (see https://github.com/ComparativeGenomicsToolkit/cactus
+    # BIN-INSTALL.md). We don't use Cactus's bundled python venv — only the
+    # native binaries.
+    CACTUS_VERSION=3.1.4
+    CACTUS_DIR="$HOME/cactus-bin-v${CACTUS_VERSION}"
+    if [ ! -d "$CACTUS_DIR" ]; then
+        curl -fsSL -o /tmp/cactus.tar.gz \
+            "https://github.com/ComparativeGenomicsToolkit/cactus/releases/download/v${CACTUS_VERSION}/cactus-bin-v${CACTUS_VERSION}.tar.gz"
+        tar -xzf /tmp/cactus.tar.gz -C "$HOME"
+        rm /tmp/cactus.tar.gz
+    fi
+    grep -q 'cactus-bin' "$HOME/.bashrc" || cat >> "$HOME/.bashrc" <<EOF
+export PATH="$CACTUS_DIR/bin:\$PATH"
+export LD_LIBRARY_PATH="$CACTUS_DIR/lib:\${LD_LIBRARY_PATH:-}"
+EOF
+
+    uv sync
+
+run: |
+    set -euxo pipefail
+    source "$HOME/miniforge3/etc/profile.d/conda.sh" 2>/dev/null || true
+    export PATH="$HOME/miniforge3/bin:$HOME/.local/bin:$HOME/cactus-bin-v3.1.4/bin:$PATH"
+    export LD_LIBRARY_PATH="$HOME/cactus-bin-v3.1.4/lib:${LD_LIBRARY_PATH:-}"
+
+    # Verify Cactus binaries are reachable.
+    halLiftover --help 2>&1 | head -5 || (echo "halLiftover not on PATH"; exit 1)
+
+    # Local NVMe paths.
+    if [ -d /opt/dlami/nvme ]; then
+        WORK=/opt/dlami/nvme/maf-vs-hal
+    else
+        WORK=/tmp/maf-vs-hal
+    fi
+    DATA="$WORK/data"
+    OUT="$WORK/work"
+    mkdir -p "$DATA" "$OUT"
+    df -h "$WORK"
+
+    HAL_NAME=447-mammalian-2022v1.hal
+    MAF_NAME=447-mammalian-2022v1.fix2.single.maf.gz
+    UCSC_BASE="https://cgl.gi.ucsc.edu/data/cactus"
+    S3_STAGING="s3://oa-bolinas/staging"
+    S3_RESULTS="s3://oa-bolinas/snakemake/analysis/maf_vs_hal_projection"
+    S3_INPUT="s3://oa-bolinas/snakemake/zoonomia_projection_dataset/results/bed/min0.20.bed.gz"
+
+    # ----- 1. Stage HAL (S3 mirror; fall back to UCSC + upload) -----
+    if [ ! -f "$DATA/$HAL_NAME" ]; then
+        if aws s3 ls "$S3_STAGING/$HAL_NAME" >/dev/null 2>&1; then
+            echo "[hal] pulling from S3 mirror"
+            aws s3 cp "$S3_STAGING/$HAL_NAME" "$DATA/$HAL_NAME"
+        else
+            echo "[hal] not in S3; pulling from UCSC and mirroring"
+            curl -fL --retry 3 -o "$DATA/$HAL_NAME" "$UCSC_BASE/$HAL_NAME"
+            aws s3 cp "$DATA/$HAL_NAME" "$S3_STAGING/$HAL_NAME"
+            curl -fsSL "$UCSC_BASE/$HAL_NAME.md5" -o "$DATA/$HAL_NAME.md5"
+            aws s3 cp "$DATA/$HAL_NAME.md5" "$S3_STAGING/$HAL_NAME.md5"
+        fi
+    fi
+    ls -la "$DATA/$HAL_NAME"
+
+    # ----- 2. Stage MAF + .tai index -----
+    if [ ! -f "$DATA/$MAF_NAME" ]; then
+        if aws s3 ls "$S3_STAGING/$MAF_NAME" >/dev/null 2>&1; then
+            echo "[maf] pulling from S3 mirror"
+            aws s3 cp "$S3_STAGING/$MAF_NAME" "$DATA/$MAF_NAME"
+            aws s3 cp "$S3_STAGING/$MAF_NAME.tai" "$DATA/$MAF_NAME.tai" || true
+        else
+            echo "[maf] not in S3; pulling from UCSC and mirroring"
+            curl -fL --retry 3 -o "$DATA/$MAF_NAME" "$UCSC_BASE/$MAF_NAME"
+            curl -fL --retry 3 -o "$DATA/$MAF_NAME.tai" "$UCSC_BASE/$MAF_NAME.tai"
+            aws s3 cp "$DATA/$MAF_NAME" "$S3_STAGING/$MAF_NAME"
+            aws s3 cp "$DATA/$MAF_NAME.tai" "$S3_STAGING/$MAF_NAME.tai"
+            curl -fsSL "$UCSC_BASE/$MAF_NAME.md5" -o "$DATA/$MAF_NAME.md5"
+            aws s3 cp "$DATA/$MAF_NAME.md5" "$S3_STAGING/$MAF_NAME.md5"
+        fi
+    fi
+    ls -la "$DATA/$MAF_NAME"
+
+    # ----- 3. Stage benchmark input BED -----
+    if [ ! -f "$DATA/min0.20.bed.gz" ]; then
+        aws s3 cp "$S3_INPUT" "$DATA/min0.20.bed.gz"
+    fi
+
+    # ----- 4. Sample 10k chr1 windows (Ensembl '1' -> UCSC 'chr1') -----
+    uv run python snakemake/analysis/maf_vs_hal_projection/scripts/sample_windows.py \
+        --input "$DATA/min0.20.bed.gz" \
+        --chrom 1 --n 10000 --seed 42 \
+        --output "$OUT/bench_windows.bed"
+
+    SPECIES="Mus_musculus Bos_taurus Tenrec_ecaudatus"
+
+    # ----- 5. MAF backend -----
+    time uv run python snakemake/analysis/maf_vs_hal_projection/scripts/run_maf.py \
+        --maf "$DATA/$MAF_NAME" \
+        --windows "$OUT/bench_windows.bed" \
+        --species $SPECIES \
+        --anchor-chrom chr1 \
+        --out-dir "$OUT/out_maf"
+
+    # ----- 6. HAL backend -----
+    time uv run python snakemake/analysis/maf_vs_hal_projection/scripts/run_hal.py \
+        --hal "$DATA/$HAL_NAME" \
+        --windows "$OUT/bench_windows.bed" \
+        --species $SPECIES \
+        --out-dir "$OUT/out_hal" \
+        --work-dir "$OUT/hal_work"
+
+    # ----- 7. Compare -----
+    uv run python snakemake/analysis/maf_vs_hal_projection/scripts/compare.py \
+        --maf-dir "$OUT/out_maf" \
+        --hal-dir "$OUT/out_hal" \
+        --species $SPECIES \
+        --n-windows 10000 \
+        --output "$OUT/comparison.md"
+
+    # ----- 8. Push everything to S3 -----
+    aws s3 cp --recursive "$OUT/out_maf" "$S3_RESULTS/out_maf/"
+    aws s3 cp --recursive "$OUT/out_hal" "$S3_RESULTS/out_hal/"
+    aws s3 cp "$OUT/comparison.md" "$S3_RESULTS/comparison.md"
+    aws s3 cp "$OUT/bench_windows.bed" "$S3_RESULTS/bench_windows.bed"
+
+    echo "==== comparison.md ===="
+    cat "$OUT/comparison.md"
