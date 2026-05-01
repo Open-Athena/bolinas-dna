@@ -35,6 +35,16 @@ SPLIT_CHROMS = {
 SPLITS = list(SPLIT_CHROMS.keys())
 COORDS = ["chrom", "pos", "ref", "alt"]
 
+# Column order for HF: coordinates, label, subset, match_group, then everything
+# else. Datasets missing any of these columns just skip them.
+PRIMARY_COLS = COORDS + ["label", "subset", "match_group"]
+
+
+def _reorder_columns(df):
+    primary = [c for c in PRIMARY_COLS if c in df.columns]
+    rest = [c for c in df.columns if c not in primary]
+    return df[primary + rest]
+
 
 rule download_genome:
     output:
@@ -51,7 +61,7 @@ rule split_dataset_by_chrom:
     output:
         expand("results/dataset/{{dataset}}/{split}.parquet", split=SPLITS),
     run:
-        V = pd.read_parquet(input[0])
+        V = _reorder_columns(pd.read_parquet(input[0]))
         for split, path in zip(SPLITS, output):
             V[V.chrom.isin(SPLIT_CHROMS[split])].to_parquet(path, index=False)
 
