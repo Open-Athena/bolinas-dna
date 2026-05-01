@@ -63,14 +63,34 @@ def match_features(
     else:
         match_cols = continuous_features
 
-    pos_pd = pos_pd.set_index(categorical_features)
-    neg_pd = neg_pd.set_index(categorical_features)
+    # Use polars partition_by for fast group splitting. Pandas multi-index
+    # .loc on millions of negatives is the per-call hot spot otherwise.
+    pos_groups = pl.from_pandas(pos_pd).partition_by(
+        categorical_features, as_dict=True
+    )
+    neg_groups = pl.from_pandas(neg_pd).partition_by(
+        categorical_features, as_dict=True
+    )
 
     pos_list: list[pd.DataFrame] = []
     neg_list: list[pd.DataFrame] = []
 
-    for group_key in pos_pd.index.drop_duplicates():
-        result = _match_single_group(pos_pd, neg_pd, group_key, match_cols, k, seed)
+    for group_key, pos_group_pl in pos_groups.items():
+        # partition_by returns single-element tuples even for one-column keys;
+        # strip when match_single_group expects the unwrapped scalar in messages.
+        display_key = group_key[0] if len(group_key) == 1 else group_key
+        neg_group_pl = neg_groups.get(group_key)
+        if neg_group_pl is None:
+            warnings.warn(f"No negatives found for category: {display_key}")
+            continue
+        result = _match_single_group(
+            pos_group_pl.to_pandas(),
+            neg_group_pl.to_pandas(),
+            display_key,
+            match_cols,
+            k,
+            seed,
+        )
         if result is not None:
             pos_group, neg_group = result
             pos_list.append(pos_group)
@@ -125,21 +145,13 @@ def _scale_features(
 
 
 def _match_single_group(
-    pos_indexed: pd.DataFrame,
-    neg_indexed: pd.DataFrame,
+    pos_group: pd.DataFrame,
+    neg_group: pd.DataFrame,
     group_key: tuple | str,
     match_cols: list[str],
     k: int,
     seed: int | None,
 ) -> tuple[pd.DataFrame, pd.DataFrame] | None:
-    pos_group = pos_indexed.loc[[group_key]].reset_index()
-
-    try:
-        neg_group = neg_indexed.loc[[group_key]].reset_index()
-    except KeyError:
-        warnings.warn(f"No negatives found for category: {group_key}")
-        return None
-
     n_pos_needed = len(pos_group)
     n_neg_available = len(neg_group)
     n_neg_needed = n_pos_needed * k

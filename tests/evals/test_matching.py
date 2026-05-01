@@ -139,15 +139,6 @@ class TestMatchSingleGroup:
         assert len(pos_out) == 1
         assert len(neg_out) == 1
 
-    def test_returns_none_for_missing_category(self) -> None:
-        pos = pd.DataFrame({"cat": ["A"], "feat": [1.0]}).set_index("cat")
-        neg = pd.DataFrame({"cat": ["B"], "feat": [1.0]}).set_index("cat")
-
-        with pytest.warns(UserWarning, match="No negatives found"):
-            result = _match_single_group(pos, neg, "A", ["feat"], k=1, seed=42)
-
-        assert result is None
-
     def test_warns_and_subsamples_on_insufficient_negatives(self) -> None:
         pos = pd.DataFrame({"cat": ["A"] * 5, "feat": [1.0] * 5}).set_index("cat")
         neg = pd.DataFrame({"cat": ["A"] * 3, "feat": [1.0, 2.0, 3.0]}).set_index("cat")
