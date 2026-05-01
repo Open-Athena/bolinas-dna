@@ -16,7 +16,7 @@ rule smedley_download:
 
 rule smedley_process:
     input:
-        "results/smedley/variants.xlsx",
+        local("results/smedley/variants.xlsx"),
     output:
         "results/smedley/variants.parquet",
     run:

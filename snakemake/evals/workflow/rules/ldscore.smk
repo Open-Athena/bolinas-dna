@@ -9,7 +9,7 @@ rule ldscore_download:
 
 rule ldscore_convert:
     input:
-        "results/ldscore/UKBB.EUR.ldscore.ht",
+        local("results/ldscore/UKBB.EUR.ldscore.ht"),
     output:
         local(temp("results/ldscore/UKBB.EUR.ldscore.tsv.bgz")),
     shell:
@@ -33,7 +33,7 @@ rule ldscore_convert:
 
 rule ldscore_process:
     input:
-        "results/ldscore/UKBB.EUR.ldscore.tsv.bgz",
+        local("results/ldscore/UKBB.EUR.ldscore.tsv.bgz"),
     output:
         "results/ldscore/UKBB.EUR.ldscore.parquet",
     run:

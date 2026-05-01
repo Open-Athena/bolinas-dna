@@ -10,8 +10,8 @@ rule clinvar_download:
 
 rule clinvar_process:
     input:
-        "results/clinvar/all.vcf.gz",
-        "results/clinvar/all.vcf.gz.tbi",
+        local("results/clinvar/all.vcf.gz"),
+        local("results/clinvar/all.vcf.gz.tbi"),
     output:
         local(temp("results/clinvar/all.parquet")),
     run:
@@ -50,7 +50,7 @@ rule clinvar_submission_summary_download:
 
 rule clinvar_submission_summary_process:
     input:
-        "results/clinvar/submission_summary.txt.gz",
+        local("results/clinvar/submission_summary.txt.gz"),
     output:
         local(temp("results/clinvar/submission_summary.parquet")),
     run:
@@ -60,7 +60,7 @@ rule clinvar_submission_summary_process:
 
 rule clinvar_submission_summary_omim:
     input:
-        "results/clinvar/submission_summary.parquet",
+        local("results/clinvar/submission_summary.parquet"),
     output:
         local(temp("results/clinvar/submission_summary_omim.parquet")),
     run:
@@ -104,8 +104,8 @@ rule clinvar_submission_summary_omim:
 
 rule clinvar_omim:
     input:
-        "results/clinvar/all.parquet",
-        "results/clinvar/submission_summary_omim.parquet",
+        local("results/clinvar/all.parquet"),
+        local("results/clinvar/submission_summary_omim.parquet"),
     output:
         "results/omim/variants.parquet",
     run:

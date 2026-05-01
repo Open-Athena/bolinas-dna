@@ -17,7 +17,7 @@ rule hgmd_download:
 
 rule hgmd_process:
     input:
-        "results/hgmd/variants.csv",
+        local("results/hgmd/variants.csv"),
     output:
         "results/hgmd/variants.parquet",
     run:
