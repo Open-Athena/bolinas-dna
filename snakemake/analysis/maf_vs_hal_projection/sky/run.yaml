@@ -59,8 +59,39 @@ run: |
     command -v halLiftover >/dev/null || (echo "halLiftover not on PATH"; exit 1)
     command -v halStats >/dev/null || (echo "halStats not on PATH"; exit 1)
 
-    # Local NVMe paths.
-    if [ -d /opt/dlami/nvme ]; then
+    # Mount instance-store NVMe if not already mounted. The SkyPilot AWS AMI
+    # leaves c6id NVMes at /dev/nvme1n1, /dev/nvme2n1 (one per drive)
+    # unmounted; root vol is gp3, only ~100 GB. Combine NVMes via mdadm
+    # RAID0 → single ~2.6 TB volume at /mnt/nvme.
+    if ! mountpoint -q /mnt/nvme; then
+        sudo apt-get install -y mdadm
+        # Find unmounted NVMe instance-store drives.
+        # nvme0 is the root vol; nvme1+ are instance store.
+        NVMES=$(lsblk -dn -o NAME,TYPE,MOUNTPOINT | awk '$2=="disk" && $3=="" && $1 ~ /^nvme[1-9]/ {print "/dev/"$1}')
+        echo "Instance-store NVMes detected: $NVMES"
+        N_NVME=$(echo "$NVMES" | wc -w)
+        if [ "$N_NVME" -ge 2 ]; then
+            sudo mdadm --create /dev/md0 --level=0 --raid-devices="$N_NVME" $NVMES --force --run
+            DEV=/dev/md0
+        elif [ "$N_NVME" -eq 1 ]; then
+            DEV=$NVMES
+        else
+            echo "no instance-store NVMe found; falling back to root volume (likely too small)"
+            DEV=""
+        fi
+        if [ -n "$DEV" ]; then
+            sudo mkfs.ext4 -F -E nodiscard "$DEV"
+            sudo mkdir -p /mnt/nvme
+            sudo mount -o noatime "$DEV" /mnt/nvme
+            sudo chown ubuntu:ubuntu /mnt/nvme
+        fi
+    fi
+
+    # Pick working dir: prefer /mnt/nvme (we just mounted), then DLAMI
+    # convention path, else /tmp (root vol; small).
+    if mountpoint -q /mnt/nvme; then
+        WORK=/mnt/nvme/maf-vs-hal
+    elif [ -d /opt/dlami/nvme ]; then
         WORK=/opt/dlami/nvme/maf-vs-hal
     else
         WORK=/tmp/maf-vs-hal
