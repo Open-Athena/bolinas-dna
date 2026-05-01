@@ -16,13 +16,12 @@ standard_chroms:
 window_size: 255
 step_size: 128
 
-# phyloP_447m threshold calibrated to match phyloP_241m's genome-wide passing
-# nucleotide count at threshold 2.27.
-# Computed by snakemake/zoonomia_projection_dataset/scripts/calibrate_447m_threshold.py
-# (one-off; result also written to results/calibration/calibration.json on the
-# branch that committed this value).
-# TODO: replace placeholder with calibrated value after running the script.
-phyloP_447m_threshold: 2.27
+# phyloP_447m threshold calibrated to match phyloP_241m's chr1 passing
+# nucleotide count at threshold 2.27 (exact match: 9,179,695 bases on chr1
+# pass either threshold). Computed by sky/calibrate.yaml -> scripts/calibrate_447m_threshold.py
+# on hg38 chr1 only — single-chrom calibration gives well below 1% relative
+# error and ~10x faster wall than all 24 chroms.
+phyloP_447m_threshold: 2.2240
 
 # Filter on proportion of valid bases passing threshold
 # (= bigWigAverageOverBed `mean0` of the binarized bigWig, NaN counted as 0).
