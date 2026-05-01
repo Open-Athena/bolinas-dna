@@ -62,10 +62,15 @@ run: |
 
     df -h "$WORK"
 
+    # chr1 alone (~230 Mbp defined, ~3% passing at phyloP_241m >= 2.27 →
+    # ~7M passing bases) gives well below 1% relative error in the
+    # calibrated threshold. Iterating all 24 chroms is overkill for
+    # statistical precision and would add ~30 min wall.
     uv run python snakemake/zoonomia_projection_dataset/scripts/calibrate_447m_threshold.py \
         --output snakemake/zoonomia_projection_dataset/results/calibration/calibration.json \
         --bigwig-dir "$WORK/bigwig" \
-        --genome-2bit "$WORK/homo_sapiens.2bit"
+        --genome-2bit "$WORK/homo_sapiens.2bit" \
+        --chroms 1
 
     # Sanity-print the result so it shows up at the end of `sky logs`.
     cat snakemake/zoonomia_projection_dataset/results/calibration/calibration.json

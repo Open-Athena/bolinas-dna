@@ -146,7 +146,19 @@ def main() -> None:
     parser.add_argument("--hist-min", type=float, default=-20.0)
     parser.add_argument("--hist-max", type=float, default=20.0)
     parser.add_argument("--hist-bins", type=int, default=1000)
+    parser.add_argument(
+        "--chroms",
+        nargs="+",
+        default=STANDARD_CHROMS_HUMAN,
+        help="Chromosomes to histogram (Ensembl bare names). Defaults to all "
+        "autosomes + X + Y. Pass a smaller subset (e.g. `--chroms 1`) to "
+        "speed up calibration: a single large autosome already gives "
+        "well below 1% relative error in the calibrated threshold.",
+    )
     args = parser.parse_args()
+    chroms = list(args.chroms)
+    unknown = set(chroms) - set(STANDARD_CHROMS_HUMAN)
+    assert not unknown, f"unknown chrom names: {unknown}"
 
     edges = np.linspace(args.hist_min, args.hist_max, args.hist_bins + 1)
 
@@ -183,19 +195,20 @@ def main() -> None:
         names=["chrom", "size"],
         dtype={"chrom": str},
     )
-    chrom_sizes = chrom_sizes[chrom_sizes["chrom"].isin(STANDARD_CHROMS_HUMAN)]
-    assert len(chrom_sizes) == len(STANDARD_CHROMS_HUMAN), (
-        f"missing chroms in 2bit: {set(STANDARD_CHROMS_HUMAN) - set(chrom_sizes['chrom'])}"
+    chrom_sizes = chrom_sizes[chrom_sizes["chrom"].isin(chroms)]
+    assert len(chrom_sizes) == len(chroms), (
+        f"missing chroms in 2bit: {set(chroms) - set(chrom_sizes['chrom'])}"
     )
     undefined = _read_undefined_bed(undefined_path)
 
     defined_per_chrom = _build_defined_intervals_per_chrom(
-        chrom_sizes, undefined, STANDARD_CHROMS_HUMAN
+        chrom_sizes, undefined, chroms
     )
     total_defined = sum(
         int((d["end"] - d["start"]).sum()) for d in defined_per_chrom.values()
     )
-    print(f"defined bases (autosomes + X + Y): {total_defined:,}")
+    print(f"chroms used for calibration: {chroms}")
+    print(f"defined bases (over selected chroms): {total_defined:,}")
 
     # 2) Stage both bigWigs
     args.bigwig_dir.mkdir(parents=True, exist_ok=True)
