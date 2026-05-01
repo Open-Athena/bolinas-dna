@@ -28,14 +28,22 @@ The model adds a BOS token. A 255 bp BED becomes a 256-token context after token
 
 `phyloP_447m` doesn't have an established threshold like `phyloP_241m` (which we use at 2.27 throughout the repo). We pick the `phyloP_447m` threshold so the genome-wide count of bases passing it equals the count of bases passing `phyloP_241m >= 2.27` — same passing-nucleotide count, different track.
 
-This calibration is a **one-off analysis**, not a pipeline rule. To run it:
+This calibration is a **one-off analysis**, not a pipeline rule. To run it on SkyPilot:
+
+```bash
+sky launch -c zoonomia-calibration -y sky/calibrate.yaml
+sky logs zoonomia-calibration   # last lines print the threshold
+sky down  zoonomia-calibration
+```
+
+Or locally, if you have kentUtils on PATH and the bigWigs reachable:
 
 ```bash
 uv run python scripts/calibrate_447m_threshold.py \
     --output results/calibration/calibration.json
-# Prints the calibrated threshold; paste it into config.yaml under
-# phyloP_447m_threshold and commit.
 ```
+
+Either way: paste the printed threshold into `config.yaml` under `phyloP_447m_threshold` and commit.
 
 The script downloads both bigWigs and builds per-base histograms over defined (ACGT) regions of autosomes + X + Y, then linearly interpolates the threshold within the bracketing histogram bin. Asserts `abs_relative_error < 0.01`.
 
