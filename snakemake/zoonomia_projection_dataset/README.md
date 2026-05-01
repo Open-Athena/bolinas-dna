@@ -54,18 +54,22 @@ download_genome → genome_to_2bit → chrom_sizes_filtered → undefined_region
                                                               ↓
                                           make_windows (tile + N-filter)
                                                               ↓
-download_bigwig (phyloP_447m)  →  binarize_447m  ─┐
-                                  download_bigwig │
-                                  (phyloP_447m)   ├→ score_windows → filter_bed
-                                                  ┘
+                          download_bigwig (phyloP_447m)
+                                                              ↓
+                                                 score_windows → filter_bed
 ```
 
-Two `bigWigAverageOverBed` passes per scoring run:
+Scoring uses **pyBigWig directly** in a Snakemake `run:` block — no kentUtils binary chain. We tried `bigWigToBedGraph | awk threshold | bedGraphToBigWig` and `bigWigAverageOverBed`, but the bioconda kentUtils binaries refuse to read from stdin pipes (they need a regular file because they seek). Materialising the per-base bedGraph would cost ~30 GB temp disk for marginal speed.
 
-- binary track → `sum` (= `conserved_bases`), `mean0` (= `proportion_conserved`)
-- raw track → `mean` (= `mean_phylop`), `covered` (= `n_valid_bases`)
+For each 255 bp window, `bolinas.conservation.scoring.score_windows`:
 
-NaN handling falls out from using `sum` and `mean0` (see [NaN semantics](#nan-semantics) below).
+- fetches per-base values via `pyBigWig.values(...)` (returns NaN at gaps),
+- counts finite values → `n_valid_bases`,
+- counts `values >= threshold` → `conserved_bases` (NaN compares as False, so NaN positions are naturally non-conserved without explicit zero-filling),
+- computes `np.nanmean(values)` → `mean_phylop`,
+- emits `proportion_conserved = conserved_bases / window_size` (NaN counted as 0 in the denominator-of-window-size sense).
+
+Single-threaded, ~40 min for the human autosomes + X + Y (~24M windows). If this becomes a bottleneck, split by chrom (24× speedup with chrom-wildcarded fan-out).
 
 ## Run
 
@@ -96,6 +100,17 @@ Tag instances with `project=dna` (cluster lifecycle: launch once, reuse via `sky
 ## NaN semantics
 
 `phyloP_447m` has NaN at positions with no alignment. We want NaN counted as **non-conserved** (0).
+
+Implemented in `bolinas.conservation.scoring.score_windows`:
+
+```python
+values = bw.values(chrom, start, end, numpy=True)        # NaN at gaps
+n_valid = int(np.isfinite(values).sum())                 # excludes NaN
+conserved = int((values >= threshold).sum())             # NaN >= t is False
+proportion = conserved / (end - start)                   # full window denom
+```
+
+Sanity-checked in `tests/conservation/test_scoring.py::test_score_windows_nan_counted_as_zero`.
 
 Using `bigWigAverageOverBed`'s `sum` and `mean0` columns (not `mean`):
 
