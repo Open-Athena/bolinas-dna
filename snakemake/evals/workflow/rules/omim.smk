@@ -1,7 +1,7 @@
 rule clinvar_download:
     output:
-        temp("results/clinvar/all.vcf.gz"),
-        temp("results/clinvar/all.vcf.gz.tbi"),
+        local(temp("results/clinvar/all.vcf.gz")),
+        local(temp("results/clinvar/all.vcf.gz.tbi")),
     params:
         vcf_url=lambda wc: f"https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/weekly/clinvar_{config['mendelian_traits']['clinvar_release']}.vcf.gz",
     shell:
@@ -13,7 +13,7 @@ rule clinvar_process:
         "results/clinvar/all.vcf.gz",
         "results/clinvar/all.vcf.gz.tbi",
     output:
-        temp("results/clinvar/all.parquet"),
+        local(temp("results/clinvar/all.parquet")),
     run:
         rows = []
         for variant in VCF(input[0]):
@@ -41,7 +41,7 @@ rule clinvar_process:
 
 rule clinvar_submission_summary_download:
     output:
-        temp("results/clinvar/submission_summary.txt.gz"),
+        local(temp("results/clinvar/submission_summary.txt.gz")),
     params:
         url=lambda wc: f"https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/archive/submission_summary_{config['mendelian_traits']['submission_summary_date']}.txt.gz",
     shell:
@@ -52,7 +52,7 @@ rule clinvar_submission_summary_process:
     input:
         "results/clinvar/submission_summary.txt.gz",
     output:
-        temp("results/clinvar/submission_summary.parquet"),
+        local(temp("results/clinvar/submission_summary.parquet")),
     run:
         # Using pandas due to malformed rows in this file
         pd.read_csv(input[0], sep="\t", skiprows=18).to_parquet(output[0], index=False)
@@ -62,7 +62,7 @@ rule clinvar_submission_summary_omim:
     input:
         "results/clinvar/submission_summary.parquet",
     output:
-        temp("results/clinvar/submission_summary_omim.parquet"),
+        local(temp("results/clinvar/submission_summary_omim.parquet")),
     run:
         df = (
             pl.read_parquet(

@@ -1,6 +1,6 @@
 rule ldscore_download:
     output:
-        temp(directory("results/ldscore/UKBB.EUR.ldscore.ht")),
+        local(temp(directory("results/ldscore/UKBB.EUR.ldscore.ht"))),
     params:
         s3=config["complex_traits"]["ldscore_s3"],
     shell:
@@ -11,7 +11,7 @@ rule ldscore_convert:
     input:
         "results/ldscore/UKBB.EUR.ldscore.ht",
     output:
-        "results/ldscore/UKBB.EUR.ldscore.tsv.bgz",
+        local(temp("results/ldscore/UKBB.EUR.ldscore.tsv.bgz")),
     shell:
         r"""
         INPUT_ABS=$(readlink -f {input})

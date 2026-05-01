@@ -1,6 +1,6 @@
 rule hgmd_download:
     output:
-        temp("results/hgmd/variants.csv"),
+        local(temp("results/hgmd/variants.csv")),
     params:
         url=config["mendelian_traits"]["hgmd_url"],
     shell:

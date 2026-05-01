@@ -7,7 +7,7 @@
 
 rule smedley_download:
     output:
-        temp("results/smedley/variants.xlsx"),
+        local(temp("results/smedley/variants.xlsx")),
     params:
         url=config["mendelian_traits"]["smedley_url"],
     shell:
