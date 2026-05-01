@@ -5,10 +5,12 @@ rule hgmd_download:
         url=config["mendelian_traits"]["hgmd_url"],
     shell:
         """
-        mkdir -p results/hgmd && cd results/hgmd && \
+        TARGET_DIR=$(dirname {output})
+        TARGET_BASE=$(basename {output})
+        mkdir -p $TARGET_DIR && cd $TARGET_DIR && \
         wget {params.url} && \
-        tar -xzvf pathogenic_mutations.tar.gz && \
-        mv pathogenic_mutations/sei_data/hgmd.raw.matrix.csv variants.csv && \
+        tar -xzf pathogenic_mutations.tar.gz && \
+        mv pathogenic_mutations/sei_data/hgmd.raw.matrix.csv $TARGET_BASE && \
         rm -rf pathogenic_mutations pathogenic_mutations.tar.gz
         """
 
