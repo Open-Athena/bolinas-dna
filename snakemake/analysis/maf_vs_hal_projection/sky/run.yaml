@@ -42,10 +42,10 @@ setup: |
         tar -xzf /tmp/cactus.tar.gz -C "$HOME"
         rm /tmp/cactus.tar.gz
     fi
-    grep -q 'cactus-bin' "$HOME/.bashrc" || cat >> "$HOME/.bashrc" <<EOF
-export PATH="$CACTUS_DIR/bin:\$PATH"
-export LD_LIBRARY_PATH="$CACTUS_DIR/lib:\${LD_LIBRARY_PATH:-}"
-EOF
+    if ! grep -q 'cactus-bin' "$HOME/.bashrc"; then
+        echo "export PATH=\"$CACTUS_DIR/bin:\$PATH\"" >> "$HOME/.bashrc"
+        echo "export LD_LIBRARY_PATH=\"$CACTUS_DIR/lib:\${LD_LIBRARY_PATH:-}\"" >> "$HOME/.bashrc"
+    fi
 
     uv sync
 
