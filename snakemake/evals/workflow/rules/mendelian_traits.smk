@@ -8,19 +8,29 @@ rule mendelian_traits_positives:
     output:
         "results/mendelian_traits/positives.parquet",
     run:
-        gnomad = pl.read_parquet(input[3], columns=COORDINATES + ["AF"])
-        V = (
-            pl.concat(
-                [
-                    pl.read_parquet(input[0]).with_columns(source=pl.lit("omim")),
-                    pl.read_parquet(input[1]).with_columns(source=pl.lit("smedley_et_al")),
-                    pl.read_parquet(input[2]).with_columns(source=pl.lit("hgmd")),
-                ],
-                how="diagonal_relaxed",
+        # Concatenation order encodes priority: omim > smedley > hgmd
+        positives = pl.concat(
+            [
+                pl.read_parquet(input[0]).with_columns(source=pl.lit("omim")),
+                pl.read_parquet(input[1]).with_columns(source=pl.lit("smedley_et_al")),
+                pl.read_parquet(input[2]).with_columns(source=pl.lit("hgmd")),
+            ],
+            how="diagonal_relaxed",
+        ).unique(COORDINATES, keep="first", maintain_order=True)
+        # Streaming inner-join: only pull AF for the few thousand positive
+        # coordinates. Avoids materializing all of gnomAD's AF column (~700M rows).
+        af_for_positives = (
+            positives.lazy()
+            .join(
+                pl.scan_parquet(input[3]).select(COORDINATES + ["AF"]),
+                on=COORDINATES,
+                how="inner",
             )
-            # Concatenation order encodes priority: omim > smedley > hgmd
-            .unique(COORDINATES, keep="first", maintain_order=True)
-            .join(gnomad, on=COORDINATES, how="left")
+            .select(COORDINATES + ["AF"])
+            .collect(engine="streaming")
+        )
+        V = (
+            positives.join(af_for_positives, on=COORDINATES, how="left")
             # Variants not in gnomAD get AF = 0
             .with_columns(pl.col("AF").fill_null(0))
             .filter(pl.col("AF") < config["mendelian_traits"]["AF_threshold"])
