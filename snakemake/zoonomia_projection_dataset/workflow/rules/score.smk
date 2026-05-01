@@ -1,106 +1,44 @@
-"""Binarize phyloP_447m at the calibrated threshold, then score windows.
+"""Per-window phyloP_447m scoring via pyBigWig.
 
-Two passes of ``bigWigAverageOverBed`` per window set:
+We previously tried a kentUtils chain
+(``bigWigToBedGraph | awk | bedGraphToBigWig`` plus
+``bigWigAverageOverBed``) but the bioconda kentUtils binaries don't accept
+pipes on ``stdin`` — both ``bedGraphToBigWig`` and ``faToTwoBit`` insist on
+a regular file. Materialising the per-base bedGraph would need ~30 GB of
+temp disk and a separate kentUtils-shell + run-block split because
+``run:`` blocks don't activate the rule's conda env.
 
-1. binary track   → ``sum`` (= conserved_bases), ``mean0`` (= proportion conserved)
-2. raw track      → ``mean`` (= mean phyloP), ``covered`` (= n_valid_bases)
+So we do everything in one ``run:`` block with pyBigWig (which is in
+the project's uv env, no conda needed). For each window we:
+  - fetch the per-base values as a NumPy array,
+  - count finite values (``n_valid_bases``),
+  - count finite values >= threshold (``conserved_bases``),
+  - compute ``np.nanmean`` over finite values (``mean_phylop``).
 
-UCSC bigWig tracks use ``chr1``-style chrom names; the windows BED uses
-Ensembl bare names. The ``bigwig_average_over_bed`` rule rewrites chrom
-names on-the-fly with awk before each ``bigWigAverageOverBed`` call.
+NaN handling: bases where the bigWig has no signal are explicitly counted
+as **non-conserved** (= 0) — the count is over the full window length, so
+``proportion_conserved = conserved_bases / window_size`` matches what
+``bigWigAverageOverBed``'s ``mean0`` column would have produced.
 
-Note on rule splitting: ``bigWigAverageOverBed`` and ``wiggletools`` come
-from a conda env, but Snakemake only activates ``conda:`` for ``shell:`` /
-``script:`` rules — not ``run:``. So the kentUtils invocations live in
-``shell:`` rules and the join/assertion logic lives in a ``run:`` rule.
+Performance budget: pyBigWig is ~10K windows/sec/core on 255 bp windows.
+24M windows → ~40 min single-threaded. The single ``run:`` block can't
+parallelise across cores easily; if this becomes a bottleneck, split by
+chrom (24× speedup with chrom-wildcarded fan-out).
 """
 
-
-rule binarize_447m:
-    """Binarize phyloP_447m: 1 where value >= threshold, gap elsewhere.
-
-    kentUtils chain: bigWigToBedGraph | awk threshold | bedGraphToBigWig.
-    NaN positions in the input bigWig are absent from the bigWigToBedGraph
-    output (no row emitted), so they remain absent from the binary bigWig
-    too. Combined with ``bigWigAverageOverBed``'s ``mean0`` column
-    (denominator = window size, not covered length), NaN ends up counted
-    as non-conserved.
-
-    The ``bigWigInfo -chroms`` step extracts chrom sizes from the input
-    bigWig itself (matching its UCSC ``chr1``-style naming), avoiding any
-    chrom-name mismatch between the Ensembl-named chrom_sizes.filtered
-    artifact and the UCSC-named bigWig.
-    """
-    input:
-        "results/bigwig/phyloP_447m.bw",
-    output:
-        "results/bigwig/phyloP_447m.binary.bw",
-    conda:
-        "../envs/bioinformatics.yaml"
-    params:
-        threshold=PHYLOP_447M_THRESHOLD,
-    shell:
-        r"""
-        TMPSIZES=$(mktemp)
-        trap "rm -f $TMPSIZES" EXIT
-        bigWigInfo -chroms {input} | awk '/^\t/ {{ print $1"\t"$3 }}' > $TMPSIZES
-        bigWigToBedGraph {input} stdout \
-          | awk -v t={params.threshold} 'BEGIN {{OFS="\t"}} {{ print $1, $2, $3, ($4 >= t) ? 1 : 0 }}' \
-          | bedGraphToBigWig stdin $TMPSIZES {output}
-        """
-
-
-rule bigwig_average_over_bed:
-    """Two bigWigAverageOverBed passes against the chr-prefixed windows BED.
-
-    Emits ``binary.tsv`` (= conserved_bases / proportion_conserved) and
-    ``raw.tsv`` (= mean_phylop / n_valid_bases). Joining + Parquet writing
-    happens in the next rule.
-    """
-    input:
-        windows="results/windows/{species}.bed.gz",
-        binary_bw="results/bigwig/phyloP_447m.binary.bw",
-        raw_bw="results/bigwig/phyloP_447m.bw",
-    output:
-        binary_tsv=temp("results/scored/{species}/phyloP_447m.binary.tsv"),
-        raw_tsv=temp("results/scored/{species}/phyloP_447m.raw.tsv"),
-    conda:
-        "../envs/bioinformatics.yaml"
-    shell:
-        r"""
-        TMPBED=$(mktemp --suffix=.bed)
-        trap "rm -f $TMPBED" EXIT
-        zcat {input.windows} \
-          | awk 'BEGIN{{OFS="\t"}} {{ if ($1 !~ /^chr/) $1="chr"$1; print }}' \
-          > $TMPBED
-        bigWigAverageOverBed {input.binary_bw} $TMPBED {output.binary_tsv}
-        bigWigAverageOverBed {input.raw_bw}    $TMPBED {output.raw_tsv}
-        """
+from bolinas.conservation.scoring import score_windows as _score_windows
 
 
 rule score_windows:
-    """Join the two bigWigAverageOverBed TSVs back to the windows BED → Parquet.
-
-    Columns:
-      chrom, start, end, name (from windows.bed.gz, bare Ensembl chrom names)
-      conserved_bases (Int32) = `sum`  from binary track
-      proportion_conserved (Float32) = `mean0` from binary track (= sum / size,
-                                       NaN counted as 0 → desired semantics)
-      mean_phylop (Float32) = `mean` from raw track (over covered bases only)
-      n_valid_bases (Int32) = `covered` from raw track
-    """
+    """Score every 255 bp window against phyloP_447m at the calibrated threshold."""
     input:
         windows="results/windows/{species}.bed.gz",
-        binary_tsv="results/scored/{species}/phyloP_447m.binary.tsv",
-        raw_tsv="results/scored/{species}/phyloP_447m.raw.tsv",
+        bw="results/bigwig/phyloP_447m.bw",
     output:
         "results/scored/{species}/phyloP_447m_windows.parquet",
+    params:
+        threshold=PHYLOP_447M_THRESHOLD,
     run:
-        binary = parse_bigwig_average_over_bed(input.binary_tsv)
-        raw = parse_bigwig_average_over_bed(input.raw_tsv)
-        assert binary.shape == raw.shape, "binary/raw row counts must match"
-
-        # Rejoin with original (non-chr-prefixed) windows BED on `name`.
         windows_df = pl.read_csv(
             input.windows,
             separator="\t",
@@ -117,48 +55,26 @@ rule score_windows:
             "windows BED has rows of unexpected length"
         )
 
-        merged = (
-            windows_df.join(
-                binary.select(
-                    pl.col("name"),
-                    pl.col("sum").cast(pl.Int32).alias("conserved_bases"),
-                    pl.col("mean0").cast(pl.Float32).alias("proportion_conserved"),
-                ),
-                on="name",
-                how="inner",
-            )
-            .join(
-                raw.select(
-                    pl.col("name"),
-                    pl.col("mean").cast(pl.Float32).alias("mean_phylop"),
-                    pl.col("covered").cast(pl.Int32).alias("n_valid_bases"),
-                ),
-                on="name",
-                how="inner",
-            )
-            .sort(["chrom", "start"])
-        )
+        scored = _score_windows(input.bw, windows_df, params.threshold)
 
-        assert len(merged) == len(windows_df), (
-            f"join shrunk row count: {len(windows_df)} → {len(merged)}; "
-            f"some window names did not match bigWigAverageOverBed output"
-        )
-        assert (merged["conserved_bases"] >= 0).all()
+        # Defensive asserts on the scoring result.
+        assert len(scored) == len(windows_df)
+        assert (scored["conserved_bases"] >= 0).all()
         assert (
-            (merged["conserved_bases"] <= merged["n_valid_bases"])
-            | (merged["n_valid_bases"] == 0)
+            (scored["conserved_bases"] <= scored["n_valid_bases"])
+            | (scored["n_valid_bases"] == 0)
         ).all(), "conserved_bases > n_valid_bases for some rows"
-        assert (merged["n_valid_bases"] <= WINDOW_SIZE).all()
-        assert merged["proportion_conserved"].min() >= 0.0
-        assert merged["proportion_conserved"].max() <= 1.0
-        # mean0 = sum / size: cross-check
+        assert (scored["n_valid_bases"] <= WINDOW_SIZE).all()
+        assert scored["proportion_conserved"].min() >= 0.0
+        assert scored["proportion_conserved"].max() <= 1.0
+        # proportion_conserved == conserved_bases / WINDOW_SIZE
         mismatch = (
-            merged["proportion_conserved"]
-            - merged["conserved_bases"].cast(pl.Float32) / WINDOW_SIZE
+            scored["proportion_conserved"]
+            - scored["conserved_bases"].cast(pl.Float32) / WINDOW_SIZE
         ).abs().max()
         assert mismatch < 1e-3, (
             f"proportion_conserved disagrees with conserved_bases/window_size "
             f"by {mismatch}"
         )
 
-        merged.write_parquet(output[0])
+        scored.sort(["chrom", "start"]).write_parquet(output[0])

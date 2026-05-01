@@ -13,7 +13,6 @@ import pandas as pd
 import polars as pl
 
 from bolinas.evals.conservation import CONSERVATION_TRACKS
-from bolinas.conservation.scoring import parse_bigwig_average_over_bed
 
 
 SPECIES = config["species"]

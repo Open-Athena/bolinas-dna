@@ -6,7 +6,3 @@ dependencies:
   - ucsc-fatotwobit
   - ucsc-twobitinfo
   - ucsc-twobittofa
-  - ucsc-bigwigaverageoverbed
-  - ucsc-bigwigtobedgraph
-  - ucsc-bedgraphtobigwig
-  - ucsc-bigwiginfo
