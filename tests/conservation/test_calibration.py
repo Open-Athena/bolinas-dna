@@ -56,7 +56,9 @@ def test_calibrate_proportion_invariant_to_total_size(edges: np.ndarray) -> None
     tgt_hist_small = _hist(tgt_vals_small, edges)
     tgt_hist_big = _hist(tgt_vals_big, edges)
 
-    out_small = calibrate_to_match_proportion(tgt_hist_small, ref_hist, ref_threshold=2.27)
+    out_small = calibrate_to_match_proportion(
+        tgt_hist_small, ref_hist, ref_threshold=2.27
+    )
     out_big = calibrate_to_match_proportion(tgt_hist_big, ref_hist, ref_threshold=2.27)
     # Same distribution → same threshold within sampling noise
     assert abs(out_small["target"]["threshold"] - out_big["target"]["threshold"]) < 0.1

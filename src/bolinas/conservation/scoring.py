@@ -1,20 +1,7 @@
 """Per-window phyloP scoring via pyBigWig.
 
-Two reasons we use pyBigWig directly instead of the kentUtils
-``bigWigAverageOverBed`` route:
-
-1. The bioconda kentUtils binaries (``bedGraphToBigWig``, ``faToTwoBit``)
-   don't accept pipes on ``stdin`` — they need a regular file. The
-   ``binarize via bigWigToBedGraph | awk | bedGraphToBigWig`` chain we
-   tried fails on the ``stdin`` step. Materialising the per-base bedGraph
-   to a temp file would cost ~30 GB and another full I/O pass.
-2. ``run:`` blocks don't activate the rule's conda env, so calling
-   ``bigWigAverageOverBed`` via ``subprocess`` from a ``run:`` block needs
-   a separate shell rule and TSV-parsing step. Doing the math directly
-   in Python keeps it to one rule and one library function.
-
-Performance: pyBigWig handles ~10K windows/sec/core on 255 bp windows.
-24M windows → ~40 min single-threaded; parallelisable across windows.
+Performance: pyBigWig handles ~10K windows/sec/core on 255 bp windows;
+parallelise across chroms in the calling pipeline.
 """
 
 from __future__ import annotations
@@ -24,6 +11,16 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 import pyBigWig
+
+
+def _bw_chrom(chrom: str, prefix: str = "chr") -> str:
+    """Add ``prefix`` to ``chrom`` unless it's already there.
+
+    Bridges Ensembl bare chrom names (``"1"``) to the ``"chr1"`` style
+    that UCSC bigWigs use.
+    """
+    return chrom if chrom.startswith(prefix) else f"{prefix}{chrom}"
+
 
 def score_windows(
     bw_path: str | Path,
@@ -74,9 +71,7 @@ def score_windows(
             end = int(end)
             size = end - start
             assert size > 0, f"empty window at index {i}: {chrom}:{start}-{end}"
-            bw_chrom = (
-                chrom if chrom.startswith(chrom_prefix) else f"{chrom_prefix}{chrom}"
-            )
+            bw_chrom = _bw_chrom(chrom, chrom_prefix)
             if bw_chrom not in bw_chroms:
                 conserved_bases[i] = 0
                 proportion_conserved[i] = 0.0
@@ -109,46 +104,3 @@ def score_windows(
             pl.Series("n_valid_bases", n_valid_bases, dtype=pl.Int32),
         ]
     )
-
-
-_COLUMNS: tuple[str, ...] = ("name", "size", "covered", "sum", "mean0", "mean")
-
-
-def parse_bigwig_average_over_bed(tsv_path: str | Path) -> pl.DataFrame:
-    """Read a ``bigWigAverageOverBed`` TSV into a Polars frame.
-
-    Output schema:
-      name (str), size (i64), covered (i64), sum (f64), mean0 (f64), mean (f64)
-
-    The ``mean`` column is NaN where ``covered == 0`` (no bigWig signal in
-    the interval). All asserts are run after parsing: invariants that
-    should hold for every row are checked here so a malformed TSV fails
-    fast at the parsing boundary.
-    """
-    df = pl.read_csv(
-        tsv_path,
-        separator="\t",
-        has_header=False,
-        new_columns=list(_COLUMNS),
-        schema_overrides={
-            "name": pl.Utf8,
-            "size": pl.Int64,
-            "covered": pl.Int64,
-            "sum": pl.Float64,
-            "mean0": pl.Float64,
-            "mean": pl.Float64,
-        },
-        null_values=["n/a"],
-    )
-
-    assert set(df.columns) == set(_COLUMNS), (
-        f"unexpected columns from bigWigAverageOverBed: {df.columns}"
-    )
-    assert (df["size"] > 0).all(), "non-positive size in bigWigAverageOverBed output"
-    assert (df["covered"] >= 0).all(), (
-        "negative `covered` in bigWigAverageOverBed output"
-    )
-    assert (df["covered"] <= df["size"]).all(), (
-        "`covered` > `size` in bigWigAverageOverBed output"
-    )
-    return df

@@ -9,18 +9,15 @@ import polars as pl
 import pyBigWig
 import pytest
 
-from bolinas.conservation.scoring import (
-    parse_bigwig_average_over_bed,
-    score_windows,
-)
+from bolinas.conservation.scoring import score_windows
 
 
 @pytest.fixture
 def synthetic_bigwig(tmp_path):
     """Build a tiny ``chr1`` bigWig with three regions:
-      - [0, 30):    value 2.0   (above any threshold below 2.0)
-      - [30, 60):   no value    (NaN — gap in bigWig)
-      - [60, 100):  value -1.0  (below any threshold above -1.0)
+    - [0, 30):    value 2.0   (above any threshold below 2.0)
+    - [30, 60):   no value    (NaN — gap in bigWig)
+    - [60, 100):  value -1.0  (below any threshold above -1.0)
     """
     bw_path = tmp_path / "test.bw"
     bw = pyBigWig.open(str(bw_path), "w")
@@ -43,9 +40,7 @@ def synthetic_bigwig(tmp_path):
 
 def test_score_windows_basic(synthetic_bigwig) -> None:
     """Single 100 bp window covering the whole synthetic chromosome."""
-    windows = pl.DataFrame(
-        {"chrom": ["1"], "start": [0], "end": [100], "name": ["w1"]}
-    )
+    windows = pl.DataFrame({"chrom": ["1"], "start": [0], "end": [100], "name": ["w1"]})
     result = score_windows(synthetic_bigwig, windows, threshold=1.0)
     row = result.row(0, named=True)
     assert row["conserved_bases"] == 30
@@ -108,9 +103,7 @@ def test_score_windows_unknown_chrom(synthetic_bigwig) -> None:
 
 def test_score_windows_dtypes(synthetic_bigwig) -> None:
     """Schema is the contract used by downstream Parquet / filter rules."""
-    windows = pl.DataFrame(
-        {"chrom": ["1"], "start": [0], "end": [100], "name": ["w1"]}
-    )
+    windows = pl.DataFrame({"chrom": ["1"], "start": [0], "end": [100], "name": ["w1"]})
     result = score_windows(synthetic_bigwig, windows, threshold=1.0)
     assert result.schema["conserved_bases"] == pl.Int32
     assert result.schema["proportion_conserved"] == pl.Float32
@@ -137,45 +130,3 @@ def test_score_windows_proportion_consistent_with_count(synthetic_bigwig) -> Non
         assert math.isclose(
             row["proportion_conserved"], row["conserved_bases"] / size, abs_tol=1e-5
         )
-
-
-def test_parse_bigwig_average_over_bed_dtypes(tmp_path) -> None:
-    """Schema, dtypes, and columns match the bigWigAverageOverBed contract."""
-    p = tmp_path / "out.tsv"
-    p.write_text(
-        "win_001\t255\t255\t100.5\t0.394\t0.394\n"
-        "win_002\t255\t250\t40.0\t0.157\t0.160\n"
-    )
-    df = parse_bigwig_average_over_bed(p)
-    assert df.columns == ["name", "size", "covered", "sum", "mean0", "mean"]
-    assert df.schema["name"] == pl.Utf8
-    assert df.schema["size"] == pl.Int64
-    assert df.schema["covered"] == pl.Int64
-    assert df.schema["sum"] == pl.Float64
-    assert df.schema["mean0"] == pl.Float64
-    assert df.schema["mean"] == pl.Float64
-    assert df.shape == (2, 6)
-
-
-def test_parse_bigwig_average_over_bed_handles_zero_covered(tmp_path) -> None:
-    """When ``covered == 0``, ``mean`` is ``n/a`` in the TSV; we coerce to NaN."""
-    p = tmp_path / "out.tsv"
-    p.write_text("win_001\t255\t0\t0.0\t0.0\tn/a\n")
-    df = parse_bigwig_average_over_bed(p)
-    assert df["covered"][0] == 0
-    assert df["sum"][0] == 0.0
-    assert df["mean0"][0] == 0.0
-    assert df["mean"].is_null().all()
-
-
-def test_parse_bigwig_average_over_bed_binary_track(tmp_path) -> None:
-    """For a binarized bigWig, sum == conserved_bases and mean0 == proportion.
-    Smoke test of the math we depend on downstream."""
-    p = tmp_path / "out.tsv"
-    p.write_text(
-        # window of size 255, all 255 covered, 80 conserved bases
-        "win_001\t255\t255\t80\t0.31373\t0.31373\n"
-    )
-    df = parse_bigwig_average_over_bed(p)
-    assert df["sum"][0] == 80.0
-    assert abs(df["mean0"][0] - 80 / 255) < 1e-3

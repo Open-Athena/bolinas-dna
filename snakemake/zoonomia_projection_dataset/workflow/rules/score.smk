@@ -1,24 +1,11 @@
-"""Per-window phyloP_447m scoring via pyBigWig, parallelised across chroms.
+"""Per-window phyloP_447m scoring, fanned out across chroms.
 
-We previously tried a kentUtils chain
-(``bigWigToBedGraph | awk threshold | bedGraphToBigWig`` plus
-``bigWigAverageOverBed``) but the bioconda kentUtils binaries don't accept
-pipes on ``stdin`` — both ``bedGraphToBigWig`` and ``faToTwoBit`` insist on
-a regular file. So scoring is done in pyBigWig in a Snakemake ``run:``
-block, fanned out across chromosomes.
+Each ``score_windows_chrom`` reads its per-chrom BED, scores via pyBigWig
+(see ``bolinas.conservation.scoring.score_windows``), and writes a
+per-chrom Parquet. ``merge_scored`` concatenates them.
 
-Each ``score_windows_chrom`` worker:
-  - reads the full windows BED (small — gzipped ~5 MB),
-  - filters to its chrom,
-  - opens the bigWig once and loops, calling ``bw.values(...)`` per window,
-  - writes a per-chrom Parquet.
-
-Then ``merge_scored`` concatenates the 24 per-chrom Parquets into one
-final Parquet sorted by ``(chrom, start)``.
-
-Throughput: pyBigWig is ~10K windows/s/core. 24 chroms × ~1M windows each =
-~24M total. Single-threaded would take ~40–60 min wall; on 8 vCPU
-chrom-parallel it's roughly 24/8 = 3 batches × 1.5 min = ~5 min wall.
+Throughput on the 8-vCPU c6id.2xlarge: ~5 min wall for human autosomes +
+X + Y (~22.9M windows).
 """
 
 from bolinas.conservation.scoring import score_windows as _score_windows
@@ -36,6 +23,9 @@ rule score_windows_chrom:
     wildcard_constraints:
         chrom="|".join(STANDARD_CHROMS),
     resources:
+        # ~30 MB BED + polars frame + pyBigWig handle peak around 1 GB; cap
+        # at 1.5 GB so Snakemake's scheduler caps concurrency below the
+        # 16 GB ceiling of c6id.2xlarge (an earlier run OOMed at 8x).
         mem_mb=1500,
     run:
         windows_df = pl.read_csv(

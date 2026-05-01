@@ -1,13 +1,9 @@
 """Tile + N-filter the genome into fixed-length windows, per chromosome.
 
-Per-chrom outputs because score_windows_chrom fans out by ``{chrom}`` and
-having each worker load only its own ~30 MB BED (instead of the full
-700 MB) is the difference between fitting in 16 GB and OOMing on
-``c6id.2xlarge``.
-
-``bedtools makewindows`` is invoked on a single-row chrom_sizes file so it
-emits windows for one chrom only. Window names embed the chrom so they're
-globally unique across per-chrom BEDs (downstream concatenation needs that).
+Per-chrom outputs (rather than one whole-genome BED) so each
+score_windows_chrom worker reads only its ~30 MB BED instead of ~700 MB.
+Window names embed the chrom (``win_<chrom>_<NNNNNNNNN>``) so they stay
+unique after merging across chroms.
 """
 
 

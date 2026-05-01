@@ -21,6 +21,8 @@ import numpy as np
 import pandas as pd
 import pyBigWig
 
+from .scoring import _bw_chrom
+
 
 @dataclass
 class PhylopHistogram:
@@ -175,7 +177,7 @@ def build_histogram_for_chrom(
     n_nan = 0
     expected_total = 0
 
-    bw_chrom = chrom if chrom.startswith(chrom_prefix) else f"{chrom_prefix}{chrom}"
+    bw_chrom = _bw_chrom(chrom, chrom_prefix)
     bw = pyBigWig.open(str(bw_path))
     try:
         chroms_in_bw = bw.chroms()
