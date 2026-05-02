@@ -52,8 +52,14 @@ setup: |
 run: |
     set -euxo pipefail
     source "$HOME/miniforge3/etc/profile.d/conda.sh" 2>/dev/null || true
-    export PATH="$HOME/miniforge3/bin:$HOME/.local/bin:$HOME/cactus-bin-v3.1.4/bin:$PATH"
+    # SkyPilot bundles its own aws CLI at /home/ubuntu/skypilot-runtime/bin
+    # which is not on the default non-interactive PATH; if we don't add it
+    # explicitly here, `aws s3 cp` later in this script silently exits 127
+    # (and `aws s3 ls` in `if` tests false-negatives, taking the UCSC
+    # download branch even when the file IS in S3).
+    export PATH="$HOME/skypilot-runtime/bin:$HOME/miniforge3/bin:$HOME/.local/bin:$HOME/cactus-bin-v3.1.4/bin:$PATH"
     export LD_LIBRARY_PATH="$HOME/cactus-bin-v3.1.4/lib:${LD_LIBRARY_PATH:-}"
+    command -v aws >/dev/null || (echo "aws not on PATH"; exit 1)
 
     # Verify Cactus binaries are reachable.
     command -v halLiftover >/dev/null || (echo "halLiftover not on PATH"; exit 1)
