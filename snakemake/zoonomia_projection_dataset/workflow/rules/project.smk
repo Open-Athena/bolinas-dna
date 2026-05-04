@@ -315,10 +315,20 @@ rule all_projected:
 
 
 rule all_sequences:
-    """v2 target: per-species 2bit (archival) + per-cutoff per-species
-    255 bp FASTA sequences (gLM training input).
+    """v2 target: subsumes v1 (all_projected) and adds per-species 2bit
+    plus per-cutoff per-species 255 bp FASTA sequences (gLM training
+    input).
     """
     input:
+        # v1 outputs: concatenated all-species Parquet (and ZRS sanity
+        # in smoke tier).
+        ([
+            f"results/projection/min{PROJECT_MIN_P}/all_species.parquet",
+            f"results/projection/min{PROJECT_MIN_P}/zrs_sanity.txt",
+        ] if TIER == "smoke" else [
+            f"results/projection/min{PROJECT_MIN_P}/all_species.parquet",
+        ]),
+        # v2 outputs: per-species 2bit (archival) + per-window FASTA.
         expand(
             "results/projection/genomes/{species}.2bit",
             species=SPECIES,

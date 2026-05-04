@@ -25,6 +25,7 @@ workdir: .
 
 envs:
     TIER: smoke                         # override with --env TIER=full
+    TARGET: all_projected               # or all_sequences (v2: hal2fasta + 2bit + per-window FASTA)
 
 setup: |
     set -euxo pipefail
@@ -122,7 +123,7 @@ run: |
 
     # ----- Run Snakemake: project_one_species ║×48 + merge -----
     cd snakemake/zoonomia_projection_dataset
-    uv run --project ../.. snakemake all_projected \
+    uv run --project ../.. snakemake "$TARGET" \
         --profile workflow/profiles/default \
         --use-conda \
         --cores 48 \
