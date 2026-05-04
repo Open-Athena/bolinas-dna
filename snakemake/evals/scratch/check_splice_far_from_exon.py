@@ -84,11 +84,13 @@ sample_intervals = sample.with_columns(
 ).select("chrom", "start", "end", "consequence_final")
 
 near = pb.nearest(
-    sample_intervals.lazy(),
-    all_exons.lazy(),
+    sample_intervals,
+    all_exons,
+    cols1=("chrom", "start", "end"),
+    cols2=("chrom", "start", "end"),
     suffixes=("", "_exon"),
-    on_cols=["chrom"],
-).collect()
+    output_type="polars.DataFrame",
+)
 print(near.select("chrom", "start", "consequence_final",
                   pl.col("distance").alias("exon_dist_all_biotypes"),
                   "biotype",
@@ -102,11 +104,13 @@ suspect_intervals = suspect.with_columns(
 ).select("chrom", "start", "end", "label", "consequence_final", "exon_dist")
 
 all_near = pb.nearest(
-    suspect_intervals.lazy(),
-    all_exons.lazy(),
+    suspect_intervals,
+    all_exons,
+    cols1=("chrom", "start", "end"),
+    cols2=("chrom", "start", "end"),
     suffixes=("", "_exon"),
-    on_cols=["chrom"],
-).collect()
+    output_type="polars.DataFrame",
+)
 
 print(f"\nDistance using all-biotype exons (vs protein-coding-only):")
 summary = (
