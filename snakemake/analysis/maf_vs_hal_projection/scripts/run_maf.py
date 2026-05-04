@@ -172,10 +172,13 @@ def main() -> None:
     # for O(region) random-access reads instead of O(file) sequential
     # scans. Even with sequential scan we keep the early-exit logic below
     # as a defense against missing/broken .tai indexes.
+    #
+    # taffy's --region wants the full row-0 sequence name as in the MAF
+    # `s` line, i.e. `hg38.chr1` (species.chrom), not just `chr1`.
     min_window_start: int = int(windows["start"].min())
     max_window_end: int = int(windows["end"].max())
     region = (
-        f"{args.anchor_chrom}:{min_window_start}-{max_window_end}"
+        f"{ANCHOR_SPECIES}.{args.anchor_chrom}:{min_window_start}-{max_window_end}"
         if args.use_taffy
         else None
     )
