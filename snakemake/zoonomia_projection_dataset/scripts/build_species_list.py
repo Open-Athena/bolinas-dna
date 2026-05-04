@@ -80,7 +80,17 @@ ALT_NAMES: dict[str, str] = {
 
 
 def _to_query(leaf: str) -> str:
-    return ALT_NAMES.get(leaf, leaf.replace("_", " "))
+    """Map a raw HAL leaf name to a binomial query for NCBI / ST2 lookup.
+
+    Strips the ``_a`` / ``_b`` duplicate-disambiguator suffix that the
+    447-mammalian Newick uses for 4 species (per the README's
+    "naming-error fix") so the binomial matches NCBI / ST2. The raw leaf
+    name (with ``_a`` / ``_b``) is what the HAL stores and what
+    ``halStats`` / ``halLiftover`` expect.
+    """
+    if leaf in ALT_NAMES:
+        return ALT_NAMES[leaf]
+    return normalize_zoonomia_leaf(leaf).replace("_", " ")
 
 
 def _http_get_json(url: str, key: str, *, timeout: int = 30) -> dict | None:
@@ -209,17 +219,22 @@ def main() -> None:
     )
     args = p.parse_args()
 
-    # 1. Newick leaves
+    # 1. Newick leaves — keep raw names (incl. `_a`/`_b` suffix). The HAL
+    # stores leaves under these raw names and `halStats` / `halLiftover`
+    # need them literally; collapsing to the binomial breaks the HAL
+    # lookup. Normalization to a binomial happens only inside `_to_query`
+    # for NCBI / ST2 lookups.
     nh_path = CACHE / "447-mammalian-2022v1.nh"
     _http_get_bytes(NEWICK_URL, nh_path)
-    raw_leaves = parse_newick_leaves(nh_path.read_text())
-    leaves = sorted({normalize_zoonomia_leaf(leaf) for leaf in raw_leaves})
+    leaves = sorted(set(parse_newick_leaves(nh_path.read_text())))
+    n_suffixed = sum(1 for leaf in leaves if leaf.endswith(("_a", "_b")))
     print(
-        f"Newick: {len(raw_leaves)} raw leaves, {len(leaves)} after _a/_b collapse",
+        f"Newick: {len(leaves)} leaves ({n_suffixed} with _a/_b suffix kept as-is "
+        f"for HAL compatibility)",
         file=sys.stderr,
     )
 
-    # 2. ST2 accessions
+    # 2. ST2 accessions (indexed by the normalized binomial)
     xlsx_path = CACHE / "Zoonomia-Supplemental-tables.xlsx"
     _http_get_bytes(SUPP_XLSX_URL, xlsx_path)
     st2 = _parse_st2(xlsx_path)
@@ -233,13 +248,15 @@ def main() -> None:
     tax = _resolve_taxonomy(queries)
     print(f"  {len(tax)} resolved", file=sys.stderr)
 
-    # 4. Build LeafMeta records
+    # 4. Build LeafMeta records — leaf is the raw HAL name, st2 lookup
+    # uses the normalized binomial.
     metas: list[LeafMeta] = []
     for leaf in leaves:
         q = _to_query(leaf)
         family, order = _family_order_from_taxonomy(tax.get(q))
-        if leaf in st2:
-            accession: str | None = st2[leaf]
+        st2_key = normalize_zoonomia_leaf(leaf)
+        if st2_key in st2:
+            accession: str | None = st2[st2_key]
             rep = _fetch_assembly_by_accession(accession)
             if rep is not None:
                 level, n50 = _parse_quality(rep)

@@ -76,9 +76,16 @@ def parse_newick_leaves(text: str) -> list[str]:
 def normalize_zoonomia_leaf(name: str) -> str:
     """Strip ``_a`` / ``_b`` duplicate-disambiguator suffixes.
 
-    The 447-mammalian Newick adds ``_a``/``_b`` to four primate species
+    The 447-mammalian Newick adds ``_a`` / ``_b`` to four primate species
     that appeared twice during the alignment merge (per the README's
-    "naming-error fix"). Collapsing them recovers the biological species.
+    "naming-error fix"). Stripping the suffix recovers the biological
+    species — useful for NCBI taxonomy lookups and matching the binomials
+    in Zoonomia ST2.
+
+    Use this **only** for external lookups. The HAL itself stores leaves
+    under their raw ``_a`` / ``_b`` names — pass the un-normalized leaf to
+    ``halStats`` / ``halLiftover`` or those will fail with
+    ``Genome <name> not found``.
     """
     if name.endswith("_a") or name.endswith("_b"):
         return name[:-2]
