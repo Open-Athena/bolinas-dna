@@ -112,7 +112,11 @@ run: |
     UCSC_BASE="https://cgl.gi.ucsc.edu/data/cactus"
     S3_STAGING="s3://oa-bolinas/staging"
     S3_RESULTS="s3://oa-bolinas/snakemake/analysis/maf_vs_hal_projection"
-    S3_INPUT="s3://oa-bolinas/snakemake/zoonomia_projection_dataset/results/bed/min0.20.bed.gz"
+    # The upstream pipeline writes per-species subdirs (homo_sapiens/) even
+    # though it's hg38-only — discovered the hard way in the first relaunch
+    # (404 from `aws s3 cp` without the prefix). Per `aws s3 ls
+    # s3://oa-bolinas/snakemake/zoonomia_projection_dataset/results/bed/`.
+    S3_INPUT="s3://oa-bolinas/snakemake/zoonomia_projection_dataset/results/bed/homo_sapiens/min0.20.bed.gz"
 
     # ----- 1. Stage HAL (S3 mirror; fall back to UCSC + upload) -----
     if [ ! -f "$DATA/$HAL_NAME" ]; then
