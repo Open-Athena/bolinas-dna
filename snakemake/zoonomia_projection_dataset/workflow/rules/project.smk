@@ -35,6 +35,7 @@ from bolinas.projection.hal import (
     run_halliftover,
 )
 from bolinas.projection.resize import resize_to_length
+from bolinas.projection.sequence import parquet_to_bed6
 
 
 # Two cCREs from SCREEN Registry V4 inside the canonical ZRS limb enhancer
@@ -229,6 +230,73 @@ rule zrs_sanity_check:
         "python {input.script} --mus-parquet {input.mus} --output {output}"
 
 
+rule hal_to_fasta:
+    """Per-species multi-chromosome FASTA from HAL via hal2fasta.
+
+    Kept on local NVMe only (``local()`` skips the S3 default-storage
+    upload — see commit 6fbb5b4 for the convention). 320 GB across 108
+    species would be wasteful to mirror; the ``.2bit`` is the archival
+    format (~80 GB total).
+    """
+    output:
+        local("results/projection/_genomes_fa/{species}.fa"),
+    threads: 1
+    resources:
+        mem_mb=2000,
+    shell:
+        "hal2fasta %s {wildcards.species} > {output}" % HAL_PATH
+
+
+rule fasta_to_2bit:
+    """Compact 2bit per species, persisted to S3 (~750 MB/species)."""
+    input:
+        local("results/projection/_genomes_fa/{species}.fa"),
+    output:
+        "results/projection/genomes/{species}.2bit",
+    threads: 1
+    resources:
+        mem_mb=2000,
+    conda:
+        "../envs/bioinformatics.yaml"
+    shell:
+        "faToTwoBit {input} {output}"
+
+
+rule extract_sequences:
+    """Per-species, per-cutoff: strand-aware sequence extraction at projected coords.
+
+    bedtools getfasta -s revcomps strand=- rows natively. -nameOnly puts
+    the BED's name column (``query_name`` = source human window id) in
+    the FASTA header followed by ``(+)`` or ``(-)`` — kept as-is because
+    the strand info is useful provenance.
+    """
+    input:
+        parquet="results/projection/min{min_p}/per_species/{species}.parquet",
+        fasta=local("results/projection/_genomes_fa/{species}.fa"),
+        # Force the 2bit too so it's archived to S3 even though
+        # extraction itself uses the .fa (NVMe-resident).
+        twobit="results/projection/genomes/{species}.2bit",
+    output:
+        "results/projection/min{min_p}/sequences/{species}.fa.gz",
+    threads: 1
+    resources:
+        mem_mb=4000,
+    conda:
+        "../envs/bioinformatics.yaml"
+    run:
+        bed_path = Path(str(output)).with_suffix(".bed.tmp")
+        n = parquet_to_bed6(input.parquet, bed_path)
+        if n == 0:
+            shell("echo -n | gzip > {output}")
+        else:
+            shell(
+                "bedtools getfasta -s -fi {input.fasta} -bed "
+                + str(bed_path)
+                + " -nameOnly | gzip > {output}"
+            )
+        bed_path.unlink(missing_ok=True)
+
+
 rule all_projected:
     """Final target for the cross-mammal projection step.
 
@@ -244,3 +312,19 @@ rule all_projected:
         ] if TIER == "smoke" else [
             f"results/projection/min{PROJECT_MIN_P}/all_species.parquet",
         ]),
+
+
+rule all_sequences:
+    """v2 target: per-species 2bit (archival) + per-cutoff per-species
+    255 bp FASTA sequences (gLM training input).
+    """
+    input:
+        expand(
+            "results/projection/genomes/{species}.2bit",
+            species=SPECIES,
+        ),
+        expand(
+            "results/projection/min{min_p}/sequences/{species}.fa.gz",
+            min_p=[PROJECT_MIN_P],
+            species=SPECIES,
+        ),

@@ -95,6 +95,25 @@ merge_projected → results/projection/min{p}/all_species.parquet
 
 Smoke tier (`tier=smoke`) projects 4 species × ~1000 windows + 2 ZRS cCREs and runs `zrs_sanity_check` (asserts the cCRE pair `EH38E2604086 ↔ EM10E1584494` and `EH38E2604087 ↔ EM10E1584495` lifts to mm10 chr5 with ≥ 50 bp overlap to the published mouse cCRE). Failing the sanity check fails the smoke run and blocks the full launch. Full tier (`tier=full`) projects all 108 species × full BED and skips the sanity check.
 
+`rule all_sequences` — v2 sequence extraction (issue #149 v2):
+
+```
+results/projection/min{p}/per_species/{species}.parquet     (from rule all_projected)
+        +
+        ▼
+hal_to_fasta (per species)        results/projection/_genomes_fa/{species}.fa
+        ↓                                                       ↓
+fasta_to_2bit                                          extract_sequences
+        ↓                                                       ↓
+results/projection/genomes/{species}.2bit       results/projection/min{p}/sequences/{species}.fa.gz
+                                                (one record per cleanly-projected window,
+                                                 strand-aware via `bedtools getfasta -s`)
+```
+
+The 2bit (`results/projection/genomes/{species}.2bit`) is the archival per-species genome (~750 MB / species, ~80 GB total across 108 species). The `.fa` is kept on local NVMe only (`local()` skips S3 upload) — too big to mirror (320 GB across 108) and easy to regenerate from the HAL.
+
+The per-window FASTA (`results/projection/min{p}/sequences/{species}.fa.gz`) is the actual gLM training input: one record per row of `per_species/{species}.parquet`, named by `query_name` (the human source-window id) followed by the lifted strand in parens (e.g. `>win_1_000123456(+)`). Each sequence is exactly 255 bp, strand-aware (revcomped on `t_strand=="-"` rows by `bedtools getfasta -s`).
+
 Scoring uses **pyBigWig directly** in a Snakemake `run:` block — no kentUtils binary chain. We tried `bigWigToBedGraph | awk threshold | bedGraphToBigWig` and `bigWigAverageOverBed`, but the bioconda kentUtils binaries refuse to read from stdin pipes (they need a regular file because they seek). Materialising the per-base bedGraph would cost ~30 GB temp disk for marginal speed.
 
 For each 255 bp window, `bolinas.conservation.scoring.score_windows`:
