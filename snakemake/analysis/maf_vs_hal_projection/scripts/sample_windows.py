@@ -76,9 +76,16 @@ def main() -> None:
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     opener = gzip.open if str(args.output).endswith(".gz") else open
+    # Write BED6: halLiftover preserves the column count from input. If we
+    # write BED4 the output is BED4 (no strand) and parse_halliftover_bed
+    # fails the schema check. With BED6 (score=0, strand=+ on the source),
+    # halLiftover emits BED6 with the strand updated to '-' on reverse-
+    # strand target hits — which is what we need for filter_single_chrom_strand.
     with opener(args.output, "wt") as fout:
         for row in out.iter_rows(named=True):
-            fout.write(f"{row['chrom']}\t{row['start']}\t{row['end']}\t{row['name']}\n")
+            fout.write(
+                f"{row['chrom']}\t{row['start']}\t{row['end']}\t{row['name']}\t0\t+\n"
+            )
     print(f"wrote {out.height} windows to {args.output}")
 
 

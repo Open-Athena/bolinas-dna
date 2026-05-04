@@ -27,7 +27,9 @@ from bolinas.projection.maf import (
 from bolinas.projection.resize import resize_to_length
 
 
-ANCHOR_SPECIES = "hg38"  # Zoonomia 447 MAF uses UCSC assembly name for the anchor row, not binomial
+ANCHOR_SPECIES = (
+    "hg38"  # Zoonomia 447 MAF uses UCSC assembly name for the anchor row, not binomial
+)
 
 PROJECTION_SCHEMA: dict[str, pl.DataType] = {
     "query_name": pl.Utf8,
@@ -118,21 +120,27 @@ def main() -> None:
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
+    # Input is BED6 written by sample_windows.py (score and strand columns
+    # exist for halLiftover compatibility but are unused here — anchor is
+    # always Homo_sapiens forward strand).
     windows = (
         pl.read_csv(
             args.windows,
             separator="\t",
             has_header=False,
-            new_columns=["chrom", "start", "end", "name"],
+            new_columns=["chrom", "start", "end", "name", "score", "strand"],
             schema_overrides={
                 "chrom": pl.Utf8,
                 "start": pl.Int64,
                 "end": pl.Int64,
                 "name": pl.Utf8,
+                "score": pl.Int64,
+                "strand": pl.Utf8,
             },
         )
         .filter(pl.col("chrom") == args.anchor_chrom)
         .sort("start")
+        .select(["chrom", "start", "end", "name"])
     )
     assert windows.height > 0, f"no windows on {args.anchor_chrom}"
     print(f"loaded {windows.height} windows on {args.anchor_chrom}")
