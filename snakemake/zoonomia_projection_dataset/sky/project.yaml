@@ -136,6 +136,21 @@ run: |
     fi
     ls -la "$GENOMES_FA_LINK"
 
+    # ----- Same problem for Snakemake's S3 default-storage cache
+    #       (.snakemake/storage/) — it downloads remote inputs (per-species
+    #       Parquets at ~16 MB and per-species 2bits at ~750 MB) to local
+    #       disk before each rule. 108 species × 750 MB = 80 GB of 2bits
+    #       alone fills the root vol. Redirect the whole .snakemake/ dir
+    #       to NVMe.
+    SNAKEMAKE_NVME=/mnt/nvme/zoonomia/_snakemake_dot
+    mkdir -p "$SNAKEMAKE_NVME"
+    SNAKEMAKE_LINK="snakemake/zoonomia_projection_dataset/.snakemake"
+    if [ ! -L "$SNAKEMAKE_LINK" ]; then
+        rm -rf "$SNAKEMAKE_LINK"
+        ln -sfn "$SNAKEMAKE_NVME" "$SNAKEMAKE_LINK"
+    fi
+    ls -la "$SNAKEMAKE_LINK"
+
     # ----- Run Snakemake: project_one_species ║×48 + merge -----
     cd snakemake/zoonomia_projection_dataset
     uv run --project ../.. snakemake "$TARGET" \
