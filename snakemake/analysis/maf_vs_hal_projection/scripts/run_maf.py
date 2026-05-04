@@ -116,6 +116,19 @@ def main() -> None:
     p.add_argument("--min-pre-resize-len", type=int, default=128)
     p.add_argument("--max-pre-resize-len", type=int, default=512)
     p.add_argument("--out-dir", type=Path, required=True)
+    p.add_argument(
+        "--use-taffy",
+        action="store_true",
+        default=True,
+        help="Use `taffy view -r` for indexed random access (default: True). "
+        "Requires <maf>.tai alongside the MAF and `taffy` on PATH.",
+    )
+    p.add_argument(
+        "--no-taffy",
+        dest="use_taffy",
+        action="store_false",
+        help="Force bx-python sequential scan from byte 0.",
+    )
     args = p.parse_args()
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
@@ -154,27 +167,35 @@ def main() -> None:
     )
     species_set = set(args.species)
 
-    # Auto-derive the maximum anchor.start that could still overlap any
-    # window: once we see an anchor block starting past max(end) of all
-    # windows, no later block can overlap. Combined with the chrom
-    # transition exit below, this gives cheap subset scans (e.g. 10
-    # windows in chr1:0-1Mbp scans only ~30 sec of the 779 GB MAF).
+    # Bound the MAF region to query: minimal span covering all windows on
+    # the anchor chrom. Passed to taffy via parse_maf_blocks(region=...)
+    # for O(region) random-access reads instead of O(file) sequential
+    # scans. Even with sequential scan we keep the early-exit logic below
+    # as a defense against missing/broken .tai indexes.
+    min_window_start: int = int(windows["start"].min())
     max_window_end: int = int(windows["end"].max())
+    region = (
+        f"{args.anchor_chrom}:{min_window_start}-{max_window_end}"
+        if args.use_taffy
+        else None
+    )
+    print(
+        f"MAF parser: {'taffy random access' if region else 'bx-python sequential'} "
+        f"region={region!r}"
+    )
 
     t0 = time.perf_counter()
     n_blocks = 0
     n_blocks_on_chrom = 0
     per_species: dict[str, list[ProjectionRecord]] = defaultdict(list)
 
-    # Early-exit optimization: the Zoonomia 447 MAF is anchored on
-    # Homo_sapiens and sorted by anchor chrom + start. Once we see any
-    # human row whose chrom is NOT our target after we've already seen
-    # blocks on the target chrom, we've moved past it; break out. Without
-    # this the benchmark scan reads the entire 779 GB sequentially even
-    # when only chr1 windows are configured (~30 h vs ~3 h).
+    # Early-exit (sequential mode only): the Zoonomia 447 MAF is anchored
+    # on hg38 and sorted by anchor chrom + start. Once we move past the
+    # target chrom or past max_window_end, break. With taffy random access
+    # the region is already bounded so these only fire on edge cases.
     seen_target_chrom = False
     win_lo = 0
-    for block in parse_maf_blocks(args.maf):
+    for block in parse_maf_blocks(args.maf, region=region):
         n_blocks += 1
         if n_blocks % 200_000 == 0:
             elapsed = time.perf_counter() - t0

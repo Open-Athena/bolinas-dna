@@ -1,23 +1,35 @@
 """MAF block parsing and column-precise projection.
 
 The Zoonomia 447 single-copy MAF (``447-mammalian-2022v1.fix2.single.maf.gz``,
-779 GB, anchored on ``Homo_sapiens``) is a sequence of alignment blocks.
+779 GB, anchored on ``hg38``) is a sequence of alignment blocks.
 Each block has one ``s`` row per species present, with the aligned
 sub-sequence (gap characters ``-`` interspersed). ``parse_maf_blocks``
-streams the file block by block; ``project_window_through_block`` walks
-the alignment column-by-column to map a human-anchored query interval
+yields one block at a time; ``project_window_through_block`` walks the
+alignment column-by-column to map a human-anchored query interval
 onto every non-anchor species in the block, producing a forward-strand
 target coord (with strand recorded separately, matching halLiftover's
 output convention).
 
-We use ``bx-python`` for the MAF tokeniser (sequential only — the
-``.maf.gz`` is gzipped, not bgzipped, so random access via ``.tai``
-requires ``taffy`` which we'd add only if benchmark perf demands it).
+Two parsing modes:
+
+- **Sequential** (``region=None``): ``bx-python`` over the gzipped MAF
+  from byte 0. Works on any MAF (with or without ``.tai``); slow on the
+  full 779 GB file (CPU-bound on gzip+parse, ~7 MB/s).
+- **Indexed random access** (``region="chr1:0-N"``): subprocess to the
+  ``taffy view -r`` CLI, which seeks via the companion ``.tai`` index
+  and emits MAF blocks for the requested region. Bx-python parses
+  taffy's stdout. Dramatically faster for narrow regions (e.g. chr1
+  windows from a whole-genome MAF).
+
+The CLI path is configurable via ``taffy_path``; defaults to ``"taffy"``
+on PATH (the Cactus binary tarball ships ``taffy`` alongside
+``halLiftover``).
 """
 
 from __future__ import annotations
 
 import gzip
+import subprocess
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -83,16 +95,53 @@ def _component_to_row(c) -> MafRow:
     )
 
 
-def parse_maf_blocks(path: str | Path) -> Iterator[list[MafRow]]:
-    """Yield each MAF block as a list of ``MafRow``. Handles ``.gz`` transparently."""
+def parse_maf_blocks(
+    path: str | Path,
+    *,
+    region: str | None = None,
+    taffy_path: str = "taffy",
+) -> Iterator[list[MafRow]]:
+    """Yield each MAF block as a list of ``MafRow``.
+
+    Args:
+        path: ``.maf`` or ``.maf.gz`` file. Handles gzip transparently.
+        region: optional ``"chrom:start-end"`` (0-based half-open, matching
+            ``taffy view -r``). When given, uses ``taffy`` for indexed
+            random access via the companion ``.tai``; ``path.tai`` must
+            exist alongside the MAF. When ``None``, sequentially streams
+            the whole file with ``bx-python``.
+        taffy_path: path to the ``taffy`` CLI; defaults to PATH lookup.
+    """
     path = Path(path)
-    fobj = gzip.open(path, "rt") if str(path).endswith(".gz") else open(path)
+    if region is None:
+        fobj = gzip.open(path, "rt") if str(path).endswith(".gz") else open(path)
+        try:
+            reader = bx_maf.Reader(fobj)
+            for alignment in reader:
+                yield [_component_to_row(c) for c in alignment.components]
+        finally:
+            fobj.close()
+        return
+    # Indexed random access via taffy. Pipe stdout into bx-python.
+    proc = subprocess.Popen(
+        [taffy_path, "view", "--inputFile", str(path), "--maf", "--region", region],
+        stdout=subprocess.PIPE,
+        text=True,
+        bufsize=1 << 20,
+    )
     try:
-        reader = bx_maf.Reader(fobj)
+        assert proc.stdout is not None
+        reader = bx_maf.Reader(proc.stdout)
         for alignment in reader:
             yield [_component_to_row(c) for c in alignment.components]
     finally:
-        fobj.close()
+        if proc.stdout is not None:
+            proc.stdout.close()
+        rc = proc.wait()
+        if rc != 0:
+            raise RuntimeError(
+                f"taffy view exited with code {rc} for region={region!r} on {path}"
+            )
 
 
 def _find_column_range(
