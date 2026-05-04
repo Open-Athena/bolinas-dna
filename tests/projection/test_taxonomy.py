@@ -40,6 +40,29 @@ def test_normalize_zoonomia_leaf_strips_ab_suffix() -> None:
     assert normalize_zoonomia_leaf("Capra_hircus") == "Capra_hircus"
 
 
+def test_parse_newick_leaves_keeps_ab_suffix() -> None:
+    """Regression: _a/_b suffixed leaves must survive parse_newick_leaves.
+
+    The HAL stores these leaves under their raw `Ateles_geoffroyi_a`
+    name; halStats / halLiftover fail with "Genome <X> not found" if we
+    pass them the normalized binomial. parse_newick_leaves returns the
+    raw names; normalize_zoonomia_leaf is only used at NCBI / ST2 lookup
+    time. Caught when the first full-tier run failed on
+    `halStats --chromSizes Ateles_geoffroyi <hal>` after the script
+    collapsed the suffix.
+    """
+    text = (
+        "((Ateles_geoffroyi_a:0.1,Ateles_geoffroyi_b:0.1)PrimatesAnc1:0.05,"
+        "Hylobates_pileatus_a:0.2,Homo_sapiens:0.1);"
+    )
+    leaves = parse_newick_leaves(text)
+    assert "Ateles_geoffroyi_a" in leaves
+    assert "Ateles_geoffroyi_b" in leaves
+    assert "Hylobates_pileatus_a" in leaves
+    # parse_newick_leaves does not collapse — that's the script's job.
+    assert "Ateles_geoffroyi" not in leaves
+
+
 def _meta(
     leaf: str,
     family: str | None,
