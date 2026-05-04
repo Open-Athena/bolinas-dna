@@ -77,7 +77,12 @@ Both backends apply the same downstream:
 - **Windows.** 10,000 random rows from `min0.20.bed.gz`, restricted to
   `chr1`, normalized from Ensembl `1` to UCSC `chr1`.
 - **Species (3, spanning evolutionary distance):**
-  `Mus_musculus`, `Bos_taurus`, `Tenrec_ecaudatus`. All in 447, all in 241.
+  `Mus_musculus` (Rodentia), `Bos_taurus` (Artiodactyla),
+  `Loxodonta_africana` (Proboscidea / afrotherian). All in 447 and 241.
+  Originally chose `Tenrec_ecaudatus` for the afrotherian slot but the
+  alignment uses `Echinops_telfairi` not `Tenrec_ecaudatus` —
+  `Loxodonta_africana` is the cleaner pick anyway (larger, better
+  assembled, equally distant).
 
 ## Metrics
 

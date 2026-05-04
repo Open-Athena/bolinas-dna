@@ -175,7 +175,7 @@ run: |
     uv run python snakemake/analysis/maf_vs_hal_projection/scripts/sample_windows.py \
         "${SAMPLE_ARGS[@]}"
 
-    SPECIES="Mus_musculus Bos_taurus Tenrec_ecaudatus"
+    SPECIES="Mus_musculus Bos_taurus Loxodonta_africana"
 
     # Per-tier output subdirs so reruns don't clobber prior tiers' results.
     TIER_OUT="$OUT/$TIER"
