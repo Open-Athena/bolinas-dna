@@ -151,6 +151,13 @@ def main() -> None:
     n_blocks_on_chrom = 0
     per_species: dict[str, list[ProjectionRecord]] = defaultdict(list)
 
+    # Early-exit optimization: the Zoonomia 447 MAF is anchored on
+    # Homo_sapiens and sorted by anchor chrom + start. Once we see any
+    # human row whose chrom is NOT our target after we've already seen
+    # blocks on the target chrom, we've moved past it; break out. Without
+    # this the benchmark scan reads the entire 779 GB sequentially even
+    # when only chr1 windows are configured (~30 h vs ~3 h).
+    seen_target_chrom = False
     win_lo = 0
     for block in parse_maf_blocks(args.maf):
         n_blocks += 1
@@ -160,16 +167,26 @@ def main() -> None:
                 f"  scanned {n_blocks:,} blocks ({n_blocks_on_chrom:,} on chrom) "
                 f"in {elapsed:,.1f}s"
             )
-        anchor_row = next(
-            (
-                r
-                for r in block
-                if r.species == ANCHOR_SPECIES and r.chrom == args.anchor_chrom
-            ),
+        # Pick any Homo_sapiens row to check the anchor chrom; the MAF has
+        # exactly one Homo_sapiens row per block (single-copy filtered).
+        human_row = next(
+            (r for r in block if r.species == ANCHOR_SPECIES),
             None,
         )
-        if anchor_row is None:
+        if human_row is None:
             continue
+        if human_row.chrom != args.anchor_chrom:
+            if seen_target_chrom:
+                elapsed = time.perf_counter() - t0
+                print(
+                    f"  passed {args.anchor_chrom} (now on "
+                    f"{human_row.chrom}); breaking after {n_blocks:,} blocks "
+                    f"in {elapsed:,.1f}s"
+                )
+                break
+            continue
+        seen_target_chrom = True
+        anchor_row = human_row
         n_blocks_on_chrom += 1
         a_start = anchor_row.start
         a_end = anchor_row.start + anchor_row.size
