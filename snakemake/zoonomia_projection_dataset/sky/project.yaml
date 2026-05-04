@@ -121,6 +121,21 @@ run: |
     fi
     ls -la "$HAL_PATH"
 
+    # ----- Symlink _genomes_fa to NVMe so 320 GB of hal2fasta output lands
+    #       there, not on the 100 GB gp3 root vol. local() in Snakemake
+    #       only skips S3 upload — it does NOT redirect the on-disk path,
+    #       so the working-directory-relative output would otherwise fill
+    #       the root vol and crash the scheduler with "No space left".
+    GENOMES_FA_NVME=/mnt/nvme/zoonomia/_genomes_fa
+    mkdir -p "$GENOMES_FA_NVME"
+    GENOMES_FA_LINK="snakemake/zoonomia_projection_dataset/results/projection/_genomes_fa"
+    mkdir -p "$(dirname "$GENOMES_FA_LINK")"
+    if [ ! -L "$GENOMES_FA_LINK" ]; then
+        rm -rf "$GENOMES_FA_LINK"
+        ln -sfn "$GENOMES_FA_NVME" "$GENOMES_FA_LINK"
+    fi
+    ls -la "$GENOMES_FA_LINK"
+
     # ----- Run Snakemake: project_one_species ║×48 + merge -----
     cd snakemake/zoonomia_projection_dataset
     uv run --project ../.. snakemake "$TARGET" \
