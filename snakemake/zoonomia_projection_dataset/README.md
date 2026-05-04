@@ -105,14 +105,34 @@ hal_to_fasta (per species)        results/projection/_genomes_fa/{species}.fa
         ↓                                                       ↓
 fasta_to_2bit                                          extract_sequences
         ↓                                                       ↓
-results/projection/genomes/{species}.2bit       results/projection/min{p}/sequences/{species}.fa.gz
-                                                (one record per cleanly-projected window,
-                                                 strand-aware via `bedtools getfasta -s`)
+results/projection/genomes/{species}.2bit       results/projection/min{p}/sequences/{species}.parquet
+                                                (per-species, projection schema + sequence column)
+                                                                ↓
+                                                         merge_sequences
+                                                                ↓
+                                                results/projection/min{p}/all_species_with_sequence.parquet
+                                                (canonical concat for HF push and subsetting)
 ```
 
 The 2bit (`results/projection/genomes/{species}.2bit`) is the archival per-species genome (~750 MB / species, ~80 GB total across 108 species). The `.fa` is kept on local NVMe only (`local()` skips S3 upload) — too big to mirror (320 GB across 108) and easy to regenerate from the HAL.
 
-The per-window FASTA (`results/projection/min{p}/sequences/{species}.fa.gz`) is the actual gLM training input: one record per row of `per_species/{species}.parquet`, named by `query_name` (the human source-window id) followed by the lifted strand in parens (e.g. `>win_1_000123456(+)`). Each sequence is exactly 255 bp, strand-aware (revcomped on `t_strand=="-"` rows by `bedtools getfasta -s`).
+The per-species sequence Parquet (`results/projection/min{p}/sequences/{species}.parquet`) extends the projection schema with a `sequence` column (one row per cleanly-projected window, exactly 255 bp). The sequence is **strand-aware**: rows with `t_strand=="-"` already hold the reverse-complemented target string (handled natively by `bedtools getfasta -s`), so downstream consumers don't need to re-revcomp. The merged `all_species_with_sequence.parquet` is the canonical artifact for HuggingFace push and downstream subsetting.
+
+`rule subset_dataset` — v3 subsetting (filter once, project to all species):
+
+The cross-mammal projection (halLiftover) is run **once** on the full conservation-filtered window set; subsets of the resulting cohort are produced by lazy-filtering the all-species sequence Parquet on `query_name`. Each subset is one rule, one Polars streaming sink:
+
+```
+config/subsets/{subset}.query_names.txt            (one query_name per line; comments OK)
+        +
+        ▼
+results/projection/min{p}/all_species_with_sequence.parquet
+        ↓ pl.scan_parquet().filter(query_name.is_in(...)).sink_parquet(...)
+        ▼
+results/projection/min{p}/subsets/{subset}.parquet
+```
+
+Subsets are derived from human-side annotation overlaps (e.g. `bedtools intersect` of `results/bed/min{p}.bed.gz` with SCREEN cCREs, RefSeq CDS, etc.). The derivation step is intentionally out-of-pipeline so subsets can be added incrementally without re-running anything upstream — the projection cohort is canonical, subsets are just views over it.
 
 Scoring uses **pyBigWig directly** in a Snakemake `run:` block — no kentUtils binary chain. We tried `bigWigToBedGraph | awk threshold | bedGraphToBigWig` and `bigWigAverageOverBed`, but the bioconda kentUtils binaries refuse to read from stdin pipes (they need a regular file because they seek). Materialising the per-base bedGraph would cost ~30 GB temp disk for marginal speed.
 

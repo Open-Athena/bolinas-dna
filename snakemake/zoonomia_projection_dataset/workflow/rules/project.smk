@@ -35,7 +35,12 @@ from bolinas.projection.hal import (
     run_halliftover,
 )
 from bolinas.projection.resize import resize_to_length
-from bolinas.projection.sequence import parquet_to_bed6
+from bolinas.projection.sequence import (
+    attach_sequences_to_parquet,
+    parquet_to_bed6,
+    parse_bedtools_getfasta_output,
+)
+from bolinas.projection.subset import filter_to_subset
 
 
 # Two cCREs from SCREEN Registry V4 inside the canonical ZRS limb enhancer
@@ -265,10 +270,12 @@ rule fasta_to_2bit:
 rule extract_sequences:
     """Per-species, per-cutoff: strand-aware sequence extraction at projected coords.
 
-    bedtools getfasta -s revcomps strand=- rows natively. -nameOnly puts
-    the BED's name column (``query_name`` = source human window id) in
-    the FASTA header followed by ``(+)`` or ``(-)`` — kept as-is because
-    the strand info is useful provenance.
+    Output is a Parquet that extends the projection schema with a
+    ``sequence`` column (canonical for downstream Polars filtering and
+    HuggingFace dataset construction). bedtools getfasta -s revcomps
+    strand=- rows natively, so the stored sequence is the
+    transcription-aware target genome string — no further revcomp
+    needed downstream.
     """
     input:
         parquet="results/projection/min{min_p}/per_species/{species}.parquet",
@@ -277,24 +284,81 @@ rule extract_sequences:
         # extraction itself uses the .fa (NVMe-resident).
         twobit="results/projection/genomes/{species}.2bit",
     output:
-        "results/projection/min{min_p}/sequences/{species}.fa.gz",
+        "results/projection/min{min_p}/sequences/{species}.parquet",
     threads: 1
     resources:
         mem_mb=4000,
     conda:
         "../envs/bioinformatics.yaml"
     run:
-        bed_path = Path(str(output)).with_suffix(".bed.tmp")
+        out_path = Path(str(output))
+        bed_path = out_path.with_suffix(".bed.tmp")
+        fa_path = out_path.with_suffix(".fa.tmp")
         n = parquet_to_bed6(input.parquet, bed_path)
         if n == 0:
-            shell("echo -n | gzip > {output}")
+            attach_sequences_to_parquet(
+                input.parquet, [], out_path, target_len=TARGET_LEN
+            )
         else:
             shell(
                 "bedtools getfasta -s -fi {input.fasta} -bed "
                 + str(bed_path)
-                + " -nameOnly | gzip > {output}"
+                + " -nameOnly -fo "
+                + str(fa_path)
             )
+            sequences = parse_bedtools_getfasta_output(fa_path)
+            attach_sequences_to_parquet(
+                input.parquet, sequences, out_path, target_len=TARGET_LEN
+            )
+            fa_path.unlink(missing_ok=True)
         bed_path.unlink(missing_ok=True)
+
+
+rule merge_sequences:
+    """Concatenate per-species sequence Parquets into one all-species file (streaming).
+
+    This is the canonical artifact that subsetting (rule subset_dataset)
+    operates on. Polars sink_parquet keeps peak memory bounded.
+    """
+    input:
+        lambda wc: expand(
+            "results/projection/min{min_p}/sequences/{species}.parquet",
+            min_p=[wc.min_p],
+            species=SPECIES,
+        ),
+    output:
+        "results/projection/min{min_p}/all_species_with_sequence.parquet",
+    threads: 1
+    resources:
+        mem_mb=4000,
+    run:
+        lf = pl.concat([pl.scan_parquet(p) for p in input], how="vertical")
+        lf.sink_parquet(output[0])
+
+
+rule subset_dataset:
+    """Lazy-filter the all-species sequence Parquet to a subset by query_name.
+
+    Subsets are defined by a ``query_names.txt`` file (one name per
+    line, ``#`` comments allowed). Filter pushdown + column pruning
+    mean only the matching rows are decompressed; cost is bounded by
+    NVMe throughput (~30–60 s per subset regardless of count).
+
+    Subset definitions live in
+    ``config/subsets/{subset}.query_names.txt`` and are pre-computed
+    from human annotation overlaps with ``results/bed/min{min_p}.bed.gz``
+    (out of scope here — bring your own query_names list).
+    """
+    input:
+        all_species="results/projection/min{min_p}/all_species_with_sequence.parquet",
+        query_names="config/subsets/{subset}.query_names.txt",
+    output:
+        "results/projection/min{min_p}/subsets/{subset}.parquet",
+    threads: 1
+    resources:
+        mem_mb=4000,
+    run:
+        filter_to_subset(input.all_species, input.query_names, output[0])
 
 
 rule all_projected:
@@ -316,8 +380,11 @@ rule all_projected:
 
 rule all_sequences:
     """v2 target: subsumes v1 (all_projected) and adds per-species 2bit
-    plus per-cutoff per-species 255 bp FASTA sequences (gLM training
-    input).
+    plus the canonical sequence-bearing Parquet (per-species + merged).
+
+    The merged ``all_species_with_sequence.parquet`` is the source for
+    rule ``subset_dataset`` (issue #149 v3 — subsetting; see
+    ``config/subsets/``).
     """
     input:
         # v1 outputs: concatenated all-species Parquet (and ZRS sanity
@@ -328,13 +395,15 @@ rule all_sequences:
         ] if TIER == "smoke" else [
             f"results/projection/min{PROJECT_MIN_P}/all_species.parquet",
         ]),
-        # v2 outputs: per-species 2bit (archival) + per-window FASTA.
+        # v2 outputs: per-species 2bit (archival) + per-species sequence
+        # Parquet + merged all-species sequence Parquet.
         expand(
             "results/projection/genomes/{species}.2bit",
             species=SPECIES,
         ),
         expand(
-            "results/projection/min{min_p}/sequences/{species}.fa.gz",
+            "results/projection/min{min_p}/sequences/{species}.parquet",
             min_p=[PROJECT_MIN_P],
             species=SPECIES,
         ),
+        f"results/projection/min{PROJECT_MIN_P}/all_species_with_sequence.parquet",

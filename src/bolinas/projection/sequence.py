@@ -51,3 +51,65 @@ def parquet_to_bed6(parquet_path: str | Path, out_bed: str | Path) -> int:
                 f"\t{row['query_name']}\t0\t{row['t_strand']}\n"
             )
     return df.height
+
+
+def parse_bedtools_getfasta_output(fasta_path: str | Path) -> list[str]:
+    """Parse a single-line-per-record FASTA from ``bedtools getfasta -nameOnly``.
+
+    bedtools getfasta emits two lines per BED row in BED order:
+    a header ``>{name}({strand})`` and a single line of sequence. We
+    rely on the single-line-per-record convention (no width wrapping
+    at default settings) for fast row-aligned consumption — the
+    returned list of sequences is in BED row order, ready to
+    ``zip(parquet_rows, sequences)``.
+
+    Asserts every other line starts with ``>``; raises on a malformed
+    file.
+    """
+    seqs: list[str] = []
+    with Path(fasta_path).open() as f:
+        for line_no, line in enumerate(f):
+            stripped = line.rstrip("\n")
+            if line_no % 2 == 0:
+                assert stripped.startswith(">"), (
+                    f"expected header at line {line_no + 1}, got: {stripped[:60]!r}"
+                )
+            else:
+                seqs.append(stripped)
+    return seqs
+
+
+def attach_sequences_to_parquet(
+    proj_parquet: str | Path,
+    sequences: list[str],
+    out_parquet: str | Path,
+    *,
+    target_len: int,
+) -> int:
+    """Append a ``sequence`` column to a per-species projection Parquet.
+
+    ``sequences`` must align row-for-row with ``proj_parquet`` (the BED
+    written by :func:`parquet_to_bed6` and consumed by
+    ``bedtools getfasta`` is in the same order). Asserts every sequence
+    is exactly ``target_len`` characters and that the count matches.
+
+    Empty Parquet → empty Parquet with the extended schema.
+    """
+    df = pl.read_parquet(proj_parquet)
+    out = Path(out_parquet)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    extended_schema = {**df.schema, "sequence": pl.Utf8}
+    if df.is_empty():
+        assert len(sequences) == 0
+        pl.DataFrame(schema=extended_schema).write_parquet(out)
+        return 0
+    assert len(sequences) == df.height, (
+        f"sequence count ({len(sequences)}) != Parquet rows ({df.height})"
+    )
+    for s in sequences:
+        assert len(s) == target_len, (
+            f"unexpected sequence length {len(s)}, expected {target_len}"
+        )
+    df_with_seq = df.with_columns(sequence=pl.Series("sequence", sequences))
+    df_with_seq.write_parquet(out)
+    return df.height
