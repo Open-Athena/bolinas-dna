@@ -68,7 +68,7 @@ all_exons = (
     .sort(["chrom", "start"])
 )
 print(f"  {all_exons.height} unique exons (all biotypes)", flush=True)
-print(f"  biotypes: {all_exons['biotype'].value_counts().sort('count', descending=True).head(10)}")
+print(f"  biotypes:\n{all_exons['biotype_exon'].value_counts().sort('count', descending=True).head(10)}")
 
 # Sample check: take 10 of the suspect variants and look up their
 # nearest exon in BOTH protein-coding-only and all-biotype lists.
