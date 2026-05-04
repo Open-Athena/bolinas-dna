@@ -156,13 +156,30 @@ run: |
         aws s3 cp "$S3_INPUT" "$DATA/min0.20.bed.gz"
     fi
 
-    # ----- 4. Sample 10k chr1 windows (Ensembl '1' -> UCSC 'chr1') -----
+    # ----- 4. Sample windows. Tier-style benchmark — start tiny so bugs
+    # surface in seconds, not hours. N + MAX_START + TIER are env-driven so
+    # `sky exec --env TIER=t1` (etc.) picks the level without editing YAML.
+    # Defaults: TIER=t1, N=10, MAX_START=1_000_000 (chr1:0-1Mbp, ~30 sec).
+    TIER="${TIER:-t1}"
+    case "$TIER" in
+        t1) N=${N:-10};      MAX_START=${MAX_START:-1000000} ;;     # chr1:0-1Mbp
+        t2) N=${N:-100};     MAX_START=${MAX_START:-10000000} ;;    # chr1:0-10Mbp
+        t3) N=${N:-10000};   MAX_START=${MAX_START:-} ;;            # full chr1
+        *)  echo "unknown TIER=$TIER (use t1/t2/t3)"; exit 1 ;;
+    esac
+    echo "[tier $TIER] n=$N max_start=${MAX_START:-(none)}"
+
+    SAMPLE_ARGS=( --input "$DATA/min0.20.bed.gz" --chrom 1
+                  --n "$N" --seed 42 --output "$OUT/bench_windows.bed" )
+    [ -n "$MAX_START" ] && SAMPLE_ARGS+=( --max-start "$MAX_START" )
     uv run python snakemake/analysis/maf_vs_hal_projection/scripts/sample_windows.py \
-        --input "$DATA/min0.20.bed.gz" \
-        --chrom 1 --n 10000 --seed 42 \
-        --output "$OUT/bench_windows.bed"
+        "${SAMPLE_ARGS[@]}"
 
     SPECIES="Mus_musculus Bos_taurus Tenrec_ecaudatus"
+
+    # Per-tier output subdirs so reruns don't clobber prior tiers' results.
+    TIER_OUT="$OUT/$TIER"
+    mkdir -p "$TIER_OUT"
 
     # ----- 5. MAF backend -----
     time uv run python snakemake/analysis/maf_vs_hal_projection/scripts/run_maf.py \
@@ -170,29 +187,29 @@ run: |
         --windows "$OUT/bench_windows.bed" \
         --species $SPECIES \
         --anchor-chrom chr1 \
-        --out-dir "$OUT/out_maf"
+        --out-dir "$TIER_OUT/out_maf"
 
     # ----- 6. HAL backend -----
     time uv run python snakemake/analysis/maf_vs_hal_projection/scripts/run_hal.py \
         --hal "$DATA/$HAL_NAME" \
         --windows "$OUT/bench_windows.bed" \
         --species $SPECIES \
-        --out-dir "$OUT/out_hal" \
-        --work-dir "$OUT/hal_work"
+        --out-dir "$TIER_OUT/out_hal" \
+        --work-dir "$TIER_OUT/hal_work"
 
     # ----- 7. Compare -----
     uv run python snakemake/analysis/maf_vs_hal_projection/scripts/compare.py \
-        --maf-dir "$OUT/out_maf" \
-        --hal-dir "$OUT/out_hal" \
+        --maf-dir "$TIER_OUT/out_maf" \
+        --hal-dir "$TIER_OUT/out_hal" \
         --species $SPECIES \
-        --n-windows 10000 \
-        --output "$OUT/comparison.md"
+        --n-windows "$N" \
+        --output "$TIER_OUT/comparison.md"
 
-    # ----- 8. Push everything to S3 -----
-    aws s3 cp --recursive "$OUT/out_maf" "$S3_RESULTS/out_maf/"
-    aws s3 cp --recursive "$OUT/out_hal" "$S3_RESULTS/out_hal/"
-    aws s3 cp "$OUT/comparison.md" "$S3_RESULTS/comparison.md"
-    aws s3 cp "$OUT/bench_windows.bed" "$S3_RESULTS/bench_windows.bed"
+    # ----- 8. Push everything to S3 (tier-namespaced) -----
+    aws s3 cp --recursive "$TIER_OUT/out_maf" "$S3_RESULTS/$TIER/out_maf/"
+    aws s3 cp --recursive "$TIER_OUT/out_hal" "$S3_RESULTS/$TIER/out_hal/"
+    aws s3 cp "$TIER_OUT/comparison.md" "$S3_RESULTS/$TIER/comparison.md"
+    aws s3 cp "$OUT/bench_windows.bed" "$S3_RESULTS/$TIER/bench_windows.bed"
 
-    echo "==== comparison.md ===="
-    cat "$OUT/comparison.md"
+    echo "==== $TIER comparison.md ===="
+    cat "$TIER_OUT/comparison.md"

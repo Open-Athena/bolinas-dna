@@ -146,6 +146,13 @@ def main() -> None:
     )
     species_set = set(args.species)
 
+    # Auto-derive the maximum anchor.start that could still overlap any
+    # window: once we see an anchor block starting past max(end) of all
+    # windows, no later block can overlap. Combined with the chrom
+    # transition exit below, this gives cheap subset scans (e.g. 10
+    # windows in chr1:0-1Mbp scans only ~30 sec of the 779 GB MAF).
+    max_window_end: int = int(windows["end"].max())
+
     t0 = time.perf_counter()
     n_blocks = 0
     n_blocks_on_chrom = 0
@@ -186,6 +193,16 @@ def main() -> None:
                 break
             continue
         seen_target_chrom = True
+        # Positional early-exit: if this block starts past max_window_end,
+        # no future block on the same chrom can overlap any window either.
+        if human_row.start >= max_window_end:
+            elapsed = time.perf_counter() - t0
+            print(
+                f"  past max window end ({max_window_end:,}) at anchor "
+                f"start={human_row.start:,}; breaking after "
+                f"{n_blocks:,} blocks in {elapsed:,.1f}s"
+            )
+            break
         anchor_row = human_row
         n_blocks_on_chrom += 1
         a_start = anchor_row.start

@@ -22,6 +22,15 @@ def main() -> None:
     p.add_argument("--chrom", default="1", help="Ensembl chrom to subset to")
     p.add_argument("--n", type=int, default=10_000)
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument(
+        "--max-start",
+        type=int,
+        default=None,
+        help="Restrict sampling to windows whose start < this value, in bp. "
+        "Lets the MAF backend exit early after a small genomic region (the "
+        "MAF is sorted by anchor start). Useful for tiered experiments: "
+        "e.g. --max-start 1000000 + --n 10 = chr1:0-1Mbp, ~30 sec scan.",
+    )
     p.add_argument("--output", type=Path, required=True, help="output BED4")
     args = p.parse_args()
 
@@ -40,6 +49,15 @@ def main() -> None:
     chr_mask = df["chrom"] == args.chrom
     df = df.filter(chr_mask)
     assert df.height > 0, f"no rows with chrom={args.chrom!r} in {args.input}"
+
+    if args.max_start is not None:
+        before = df.height
+        df = df.filter(pl.col("start") < args.max_start)
+        assert df.height > 0, f"no rows with start < {args.max_start} on {args.chrom}"
+        print(
+            f"restricted to start < {args.max_start:,}: "
+            f"{before:,} → {df.height:,} candidate windows"
+        )
 
     # Sample with a fixed seed.
     sampled = df.sample(n=min(args.n, df.height), seed=args.seed).sort(
