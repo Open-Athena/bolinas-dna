@@ -17,10 +17,8 @@ exon. Let's verify.
 """
 import polars as pl
 import polars_bio as pb
-import pandas as pd
 
 from bolinas.data.utils import load_annotation
-from bolinas.evals.trait_intervals import get_exon
 
 print("Loading dataset_all...", flush=True)
 V = pl.read_parquet(
@@ -54,24 +52,23 @@ print(
 # vs the protein-coding-only one.
 print("\nLoading full GTF annotation...", flush=True)
 annotation_url = "http://ftp.ensembl.org/pub/release-107/gtf/homo_sapiens/Homo_sapiens.GRCh38.107.chr.gtf.gz"
-ann_pd = load_annotation(annotation_url)
-ann = pl.from_pandas(ann_pd)
+ann = load_annotation(annotation_url)
 print(f"  {ann.height} annotation rows", flush=True)
 
-# All-biotype exons
+# All-biotype exons (parsing biotype + gene_id from attribute)
 all_exons = (
-    ann.filter(pl.col("Feature") == "exon")
-    .select(
-        chrom=pl.col("Chromosome"),
-        start=pl.col("Start"),
-        end=pl.col("End"),
-        gene_id=pl.col("gene_id"),
-        biotype=pl.col("transcript_biotype"),
+    ann.filter(pl.col("feature") == "exon")
+    .with_columns(
+        pl.col("attribute").str.extract(r'gene_id "([^;]*)";').alias("gene_id"),
+        pl.col("attribute").str.extract(r'transcript_biotype "([^;]*)";').alias("biotype"),
     )
+    .filter(pl.col("chrom").is_in([f"{i}" for i in range(1, 23)] + ["X", "Y"]))
+    .select(["chrom", "start", "end", "gene_id", "biotype"])
     .unique(subset=["chrom", "start", "end"])
     .sort(["chrom", "start"])
 )
 print(f"  {all_exons.height} unique exons (all biotypes)", flush=True)
+print(f"  biotypes: {all_exons['biotype'].value_counts().sort('count', descending=True).head(10)}")
 
 # Sample check: take 10 of the suspect variants and look up their
 # nearest exon in BOTH protein-coding-only and all-biotype lists.
