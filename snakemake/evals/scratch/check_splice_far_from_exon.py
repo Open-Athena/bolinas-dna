@@ -60,10 +60,10 @@ all_exons = (
     ann.filter(pl.col("feature") == "exon")
     .with_columns(
         pl.col("attribute").str.extract(r'gene_id "([^;]*)";').alias("gene_id"),
-        pl.col("attribute").str.extract(r'transcript_biotype "([^;]*)";').alias("biotype"),
+        pl.col("attribute").str.extract(r'transcript_biotype "([^;]*)";').alias("biotype_exon"),
     )
     .filter(pl.col("chrom").is_in([f"{i}" for i in range(1, 23)] + ["X", "Y"]))
-    .select(["chrom", "start", "end", "gene_id", "biotype"])
+    .select(["chrom", "start", "end", "gene_id", "biotype_exon"])
     .unique(subset=["chrom", "start", "end"])
     .sort(["chrom", "start"])
 )
@@ -93,8 +93,8 @@ near = pb.nearest(
 )
 print(near.select("chrom", "start", "consequence_final",
                   pl.col("distance").alias("exon_dist_all_biotypes"),
-                  "biotype",
-                  "gene_id"))
+                  "biotype_exon",
+                  "gene_id_exon"))
 
 # Aggregate: for ALL suspect variants, recompute exon_dist using all biotypes
 print(f"\nRecomputing exon_dist for ALL {suspect.height} suspect variants using all-biotype exons...")
@@ -124,7 +124,7 @@ summary = (
         median_pc=pl.col("exon_dist").median(),
         median_all=pl.col("all_dist").median(),
         n_within_30_all=(pl.col("all_dist") <= 30).sum(),
-        n_with_biotype=(pl.col("biotype").is_not_null()).sum(),
+        n_with_biotype=(pl.col("biotype_exon").is_not_null()).sum(),
     )
     .sort(["label", "n"], descending=[True, True])
 )
@@ -134,7 +134,7 @@ print(summary)
 print("\nBiotype of nearest exon for variants now within 30 (in all-biotype list):")
 print(
     all_near.filter(pl.col("distance") <= 30)
-    .group_by(["biotype"])
+    .group_by(["biotype_exon"])
     .agg(n=pl.len())
     .sort("n", descending=True)
     .head(15)
