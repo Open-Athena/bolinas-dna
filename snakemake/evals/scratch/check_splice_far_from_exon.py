@@ -60,15 +60,15 @@ all_exons = (
     ann.filter(pl.col("feature") == "exon")
     .with_columns(
         pl.col("attribute").str.extract(r'gene_id "([^;]*)";').alias("gene_id"),
-        pl.col("attribute").str.extract(r'transcript_biotype "([^;]*)";').alias("biotype_exon"),
+        pl.col("attribute").str.extract(r'transcript_biotype "([^;]*)";').alias("biotype"),
     )
     .filter(pl.col("chrom").is_in([f"{i}" for i in range(1, 23)] + ["X", "Y"]))
-    .select(["chrom", "start", "end", "gene_id", "biotype_exon"])
+    .select(["chrom", "start", "end", "gene_id", "biotype"])
     .unique(subset=["chrom", "start", "end"])
     .sort(["chrom", "start"])
 )
 print(f"  {all_exons.height} unique exons (all biotypes)", flush=True)
-print(f"  biotypes:\n{all_exons['biotype_exon'].value_counts().sort('count', descending=True).head(10)}")
+print(f"  biotypes:\n{all_exons['biotype'].value_counts().sort('count', descending=True).head(10)}")
 
 # Sample check: take 10 of the suspect variants and look up their
 # nearest exon in BOTH protein-coding-only and all-biotype lists.
@@ -91,6 +91,7 @@ near = pb.nearest(
     suffixes=("", "_exon"),
     output_type="polars.DataFrame",
 )
+print(f"  near columns: {near.columns}")
 print(near.select("chrom", "start", "consequence_final",
                   pl.col("distance").alias("exon_dist_all_biotypes"),
                   "biotype_exon",
