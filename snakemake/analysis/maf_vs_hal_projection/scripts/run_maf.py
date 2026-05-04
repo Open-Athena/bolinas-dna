@@ -27,7 +27,7 @@ from bolinas.projection.maf import (
 from bolinas.projection.resize import resize_to_length
 
 
-ANCHOR_SPECIES = "Homo_sapiens"
+ANCHOR_SPECIES = "hg38"  # Zoonomia 447 MAF uses UCSC assembly name for the anchor row, not binomial
 
 PROJECTION_SCHEMA: dict[str, pl.DataType] = {
     "query_name": pl.Utf8,
