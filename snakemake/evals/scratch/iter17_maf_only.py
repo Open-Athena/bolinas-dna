@@ -1,18 +1,20 @@
-"""Iter 17 — disentangle MAF vs ld_score matching for complex_traits.
+"""Iter 17 — drop ld_score from matching for complex_traits.
 
-iter 14 / 16 showed both MAF and ld_score residual leaks, with finer bins
-trading off across them. Question: is the issue jointly matching both, or
-does each leak independently?
+iter 14 / 16 showed both MAF and ld_score leaks, with finer bins trading off
+across them. ld_score is the candidate to drop (less frequent in the
+literature; MAF must stay).
 
-Four configurations on complex_traits, each with iter-11 tss/exon bins +
+Two configurations on complex_traits, each with iter-11 tss/exon bins +
 continuous on those features:
 
-  A. Match neither MAF nor ld_score (production-ish baseline)
-  B. Match MAF only      (continuous + bin)
-  C. Match ld_score only (continuous + bin)
-  D. Match both          (iter 14)
+  A. Match MAF only (drop ld_score)   — the candidate
+  B. Match both                       — iter 14 baseline
 
-Reports per (subset, feature) pacc ± SE + significance.
+Reports per (subset, feature) pacc ± SE + significance, focusing on:
+- MAF leak: stays fixed by binning?
+- ld_score leak: how big when no longer constrained?
+- distal/missense/ncRNA tss_dist & exon_dist leaks
+- retention recovery from dropping ld_score binning
 """
 import math
 
@@ -119,19 +121,11 @@ COMMON_CAT = ["chrom", "consequence_final", "tss_closest_gene_id", "exon_closest
               "tss_dist_bin", "exon_dist_bin"]
 
 CONFIGS = {
-    "A. neither (only tss/exon)": {
-        "continuous": ["tss_dist", "exon_dist"],
-        "categorical": COMMON_CAT,
-    },
-    "B. MAF only": {
+    "A. MAF only (no ld_score)": {
         "continuous": ["tss_dist", "exon_dist", "MAF"],
         "categorical": COMMON_CAT + ["MAF_bin"],
     },
-    "C. ld_score only": {
-        "continuous": ["tss_dist", "exon_dist", "ld_score"],
-        "categorical": COMMON_CAT + ["ld_score_bin"],
-    },
-    "D. both (iter14)": {
+    "B. MAF + ld_score (iter 14)": {
         "continuous": ["tss_dist", "exon_dist", "MAF", "ld_score"],
         "categorical": COMMON_CAT + ["MAF_bin", "ld_score_bin"],
     },
