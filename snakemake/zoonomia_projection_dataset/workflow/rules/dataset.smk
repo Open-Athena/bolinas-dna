@@ -1,14 +1,4 @@
-"""Training-shard assembly + HF upload (issue #149).
-
-Per (pipeline_version, intervals_version):
-    source Parquet
-        ↓ prepare_training_shards (RC augment + shuffle + shard, JSONL)
-    results/dataset/zoonomia-{p}-{iv}/data/train/{shard}.jsonl
-        ↓ compress_shard (zstd)
-    results/dataset/zoonomia-{p}-{iv}/data/train/{shard}.jsonl.zst
-        ↓ hf_upload_dataset (hf upload-large-folder, single train split)
-    HF: bolinas-dna/zoonomia-{p}-{iv}
-"""
+"""Training-shard assembly + HF upload."""
 
 PIPELINE_VERSION = config["pipeline_version"]
 INTERVALS_VERSIONS = list(config["intervals_versions"])
@@ -19,7 +9,6 @@ SHUFFLE_SEED = int(config.get("shuffle_seed", 42))
 assert N_SHARDS < 10_000  # zero-padding width below assumes 4 digits.
 SHARDS = [f"shard_{i:04d}" for i in range(N_SHARDS)]
 
-# intervals_version → source Parquet
 INTERVALS_SOURCES = {
     "v1": f"results/projection/min{PROJECT_MIN_P}/all_species_with_sequence.parquet",
     "v2": f"results/projection/min{PROJECT_MIN_P}/subsets/v2.parquet",
@@ -41,7 +30,7 @@ rule prepare_training_shards:
         ),
     threads: workflow.cores
     resources:
-        mem_mb=120000,  # ~36 GB Parquet → ~70 GB after RC; ~2x in RAM.
+        mem_mb=120000,
     run:
         from bolinas.projection.dataset import prepare_shards
 
@@ -73,9 +62,7 @@ rule hf_upload_dataset:
             )
         ),
     output:
-        # Explicit `touch {output}` in shell because S3 default-storage
-        # doesn't auto-create touch() markers — same gotcha as the
-        # training_dataset hf_upload_training rule.
+        # Explicit `touch` in shell: S3 default-storage doesn't auto-create touch() markers.
         "results/upload.done/zoonomia-{pipeline_version}-{intervals_version}",
     params:
         repo=lambda wc: f"{HF_OWNER}/zoonomia-{wc.pipeline_version}-{wc.intervals_version}",

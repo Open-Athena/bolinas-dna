@@ -1,10 +1,4 @@
-"""Subset derivation for the zoonomia projection dataset (issue #149).
-
-v1 = identity (no derivation rule needed; v1 source is the
-all_species_with_sequence.parquet directly).
-v2 = mRNA-TSS proximity (window overlaps [TSS - tss_flank, TSS + tss_flank]
-     for any Ensembl protein_coding transcript).
-"""
+"""Subset derivation for the zoonomia projection dataset."""
 
 TSS_FLANK = int(config.get("tss_flank", 256))
 
@@ -25,8 +19,6 @@ rule derive_subset_v2_tss_mrna:
         from bolinas.projection.tss import write_mrna_tss_band_bed
 
         n_band = write_mrna_tss_band_bed(input.gtf, params.flank, output.band)
-        # Ensembl rel 115 has ~90k protein_coding transcripts; merged bands
-        # collapse closely-spaced TSSes — expect ~50k–80k merged intervals.
         assert n_band > 30_000, f"unexpectedly few mRNA TSS bands: {n_band}"
         shell(
             "bedtools intersect -u -a {input.bed} -b {output.band} "
@@ -37,9 +29,6 @@ rule derive_subset_v2_tss_mrna:
         assert kept > 0, "v2 subset is empty"
 
 
-# Override the existing PR-157 ``subset_dataset`` so derived subset
-# definitions live under ``results/.../subsets_def/`` (Snakemake outputs)
-# rather than ``config/subsets/`` (which is reserved for committed inputs).
 ruleorder: subset_dataset_derived > subset_dataset
 
 

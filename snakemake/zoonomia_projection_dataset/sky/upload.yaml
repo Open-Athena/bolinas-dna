@@ -1,26 +1,17 @@
 name: zoonomia-projection-hf-upload
 
-# HF dataset assembly + upload for the cross-mammal projection corpus
-# (issue #149). Pulls the canonical
-# results/projection/min{p}/all_species_with_sequence.parquet from S3
-# (already produced by sky/project.yaml), derives subset definitions,
-# RC-augments + shuffles + shards into JSONL.zst, and pushes to HF Hub.
+# HF dataset assembly + upload (rule all_hf).
 
 resources:
     infra: aws/us-east-2
-    instance_type: r6i.8xlarge   # 32 vCPU, 256 GB RAM. RC-augmented v1
-                                 # peaks around ~20 GB in pandas/polars
-                                 # memory; 256 GB gives generous margin
-                                 # and matches the existing training_dataset
-                                 # upload YAML.
-    disk_size: 300               # ~12 GB Parquet pull + ~25 GB shards.
+    instance_type: r6i.8xlarge
+    disk_size: 300
     labels:
         project: dna
 
 workdir: .
 
-# The HF CLI reads the token from ~/.cache/huggingface/token. Same
-# pattern as snakemake/training_dataset/dataset_creation/sky/run_hf_upload_v30.yaml.
+# HF CLI reads the token from ~/.cache/huggingface/token.
 file_mounts:
     ~/.cache/huggingface: ~/.cache/huggingface
 

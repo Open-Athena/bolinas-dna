@@ -1,8 +1,4 @@
-"""mRNA-TSS proximity band for the v2 subset (issue #149).
-
-Ensembl-specific: filters transcripts by ``transcript_biotype == "protein_coding"``
-(equivalent to mRNA in NCBI convention, where biotype is spelled ``"mRNA"``).
-"""
+"""mRNA-TSS proximity band for the v2 subset of the zoonomia projection dataset."""
 
 from pathlib import Path
 
