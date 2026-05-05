@@ -1,5 +1,11 @@
-# TraitGym Mendelian v2 dataset on HuggingFace (produced by snakemake/evals/).
-dataset_hf_path: bolinas-dna/evals-traitgym_mendelian_v2
+# Matched-pair eval datasets on HuggingFace (produced by snakemake/evals/).
+# Each dataset is loaded as f"{input_hf_prefix}_{dataset}" — non-harness
+# variants only (the harness '_harness_255' versions are for sequence-based
+# models, not conservation-track lookups).
+input_hf_prefix: bolinas-dna/evals
+datasets:
+  - mendelian_traits
+  - complex_traits
 
 # Splits to score independently. Each produces its own markdown table.
 splits:

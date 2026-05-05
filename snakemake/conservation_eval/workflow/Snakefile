@@ -9,6 +9,7 @@ include: "rules/score.smk"
 rule all:
     input:
         expand(
-            "results/conservation_traitgym_v2/results_table_{split}.md",
+            "results/{dataset}/results_table_{split}.md",
+            dataset=config["datasets"],
             split=config["splits"],
         ),
