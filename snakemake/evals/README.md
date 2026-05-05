@@ -15,10 +15,11 @@ commit `e59d612e9`, so HGMD pathogenic SNVs are included as a positive source.
 | `mendelian_traits` | Mendelian disease pathogenic SNVs | HGMD ∪ OMIM ∪ Smedley et al. 2016 (de-duped, AF<0.001) | gnomAD common (AN≥25k, AF>0.05) |
 | `complex_traits` | UKBB fine-mapped complex-trait variants | SuSiE+FINEMAP PIP > 0.9 across 119 traits | PIP < 0.01 (and not null in any trait) |
 
-Each dataset has a corresponding `*_harness_256` eval-harness variant where the
+Each dataset has a corresponding `*_harness_255` eval-harness variant where a
 255 bp window centered on each variant is materialized into
-`context` / `ref_completion` / `alt_completion` columns (window 256 = 255 bp +
-BOS token).
+`context` / `ref_completion` / `alt_completion` columns. Models that prepend a
+BOS token see 256 tokens of context; the rest of the codebase uses 255 bp
+windows for the same reason.
 
 ## Matching scheme
 
@@ -170,8 +171,8 @@ Examples:
 
 - `bolinas-dna/evals_mendelian_traits`
 - `bolinas-dna/evals_complex_traits`
-- `bolinas-dna/evals_mendelian_traits_harness_256`
-- `bolinas-dna/evals_complex_traits_harness_256`
+- `bolinas-dna/evals_mendelian_traits_harness_255`
+- `bolinas-dna/evals_complex_traits_harness_255`
 
 Locally, files live in `results/dataset/{dataset}/{train,test}.parquet`.
 
