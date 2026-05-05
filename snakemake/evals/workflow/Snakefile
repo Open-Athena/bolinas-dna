@@ -2,13 +2,15 @@ configfile: "config/config.yaml"
 
 
 include: "rules/common.smk"
-include: "rules/clinvar.smk"
-include: "rules/cre.smk"
-include: "rules/gnomad.smk"
-include: "rules/gwas_coding.smk"
-include: "rules/traitgym.smk"
-include: "rules/upload.smk"
-include: "rules/eval_harness.smk"
+include: "rules/intervals.smk"
+include: "rules/consequence.smk"
+include: "rules/gnomad_common.smk"
+include: "rules/hgmd.smk"
+include: "rules/omim.smk"
+include: "rules/smedley.smk"
+include: "rules/ldscore.smk"
+include: "rules/mendelian_traits.smk"
+include: "rules/complex_traits.smk"
 
 
 rule all:
