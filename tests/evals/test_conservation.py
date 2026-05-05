@@ -139,9 +139,7 @@ def test_aggregate_conservation_metrics_nan_accounting(tmp_path):
     labels = [1, 0, 1, 0, 1, 0, 1, 0]
     subsets = ["A", "A", "A", "A", "B", "B", "B", "B"]
     match_groups = [0, 0, 1, 1, 2, 2, 3, 3]
-    p = _scored_parquet(
-        tmp_path, "phyloP_241m", scores, labels, subsets, match_groups
-    )
+    p = _scored_parquet(tmp_path, "phyloP_241m", scores, labels, subsets, match_groups)
 
     metrics, md = aggregate_conservation_metrics({"phyloP_241m": p})
 
@@ -225,9 +223,7 @@ def test_aggregate_conservation_metrics_no_global_or_mean_row(tmp_path):
     labels = [1, 0, 1, 0, 1, 0, 1, 0]
     subsets = ["A", "A", "A", "A", "B", "B", "B", "B"]
     match_groups = [0, 0, 1, 1, 2, 2, 3, 3]
-    p = _scored_parquet(
-        tmp_path, "score1", scores, labels, subsets, match_groups
-    )
+    p = _scored_parquet(tmp_path, "score1", scores, labels, subsets, match_groups)
 
     _, md = aggregate_conservation_metrics({"score1": p})
 
@@ -253,9 +249,7 @@ def test_aggregate_conservation_metrics_value_formatting(tmp_path):
     labels = [1, 0, 1, 0]
     subsets = ["A", "A", "A", "A"]
     match_groups = [0, 0, 1, 1]
-    p = _scored_parquet(
-        tmp_path, "score1", scores, labels, subsets, match_groups
-    )
+    p = _scored_parquet(tmp_path, "score1", scores, labels, subsets, match_groups)
     _, md = aggregate_conservation_metrics({"score1": p})
     assert "1.000 ± 0.000" in md
 

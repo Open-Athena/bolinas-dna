@@ -229,9 +229,7 @@ def _build_markdown(metrics: pd.DataFrame, score_names: list[str]) -> str:
         for s in score_names:
             v = val_pivot.loc[subset, s] if s in val_pivot.columns else float("nan")
             e = se_pivot.loc[subset, s] if s in se_pivot.columns else float("nan")
-            cells.append(
-                f"{v:.3f} ± {e:.3f}" if pd.notna(v) and pd.notna(e) else "—"
-            )
+            cells.append(f"{v:.3f} ± {e:.3f}" if pd.notna(v) and pd.notna(e) else "—")
         lines.append("| " + " | ".join([subset, str(n_pairs), *cells]) + " |")
 
     # NaN counts: per-subset rows ordered the same way as the metric table.
