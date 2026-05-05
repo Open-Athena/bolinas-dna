@@ -8,6 +8,8 @@ include: "rules/windows.smk"
 include: "rules/score.smk"
 include: "rules/filter.smk"
 include: "rules/project.smk"
+include: "rules/subsets.smk"
+include: "rules/dataset.smk"
 
 
 rule all:

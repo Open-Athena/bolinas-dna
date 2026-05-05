@@ -14,3 +14,17 @@ rule download_bigwig:
         track="|".join(CONSERVATION_TRACKS),
     shell:
         "wget -q {params.url} -O {output}"
+
+
+rule download_annotation:
+    """Ensembl release 115 GTF (matches genome_url release).
+
+    Used by ``derive_subset_v2_tss_mrna`` to extract protein_coding TSSes
+    for the v2 subset definition.
+    """
+    output:
+        "results/annotation/Homo_sapiens.GRCh38.115.gtf.gz",
+    params:
+        url="https://ftp.ensembl.org/pub/release-115/gtf/homo_sapiens/Homo_sapiens.GRCh38.115.gtf.gz",
+    shell:
+        "wget -q -O {output} {params.url}"

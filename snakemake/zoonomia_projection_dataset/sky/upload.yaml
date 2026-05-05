@@ -1,0 +1,64 @@
+name: zoonomia-projection-hf-upload
+
+# HF dataset assembly + upload for the cross-mammal projection corpus
+# (issue #149). Pulls the canonical
+# results/projection/min{p}/all_species_with_sequence.parquet from S3
+# (already produced by sky/project.yaml), derives subset definitions,
+# RC-augments + shuffles + shards into JSONL.zst, and pushes to HF Hub.
+
+resources:
+    infra: aws/us-east-2
+    instance_type: r6i.8xlarge   # 32 vCPU, 256 GB RAM. RC-augmented v1
+                                 # peaks around ~20 GB in pandas/polars
+                                 # memory; 256 GB gives generous margin
+                                 # and matches the existing training_dataset
+                                 # upload YAML.
+    disk_size: 300               # ~12 GB Parquet pull + ~25 GB shards.
+    labels:
+        project: dna
+
+workdir: .
+
+# The HF CLI reads the token from ~/.cache/huggingface/token. Same
+# pattern as snakemake/training_dataset/dataset_creation/sky/run_hf_upload_v30.yaml.
+file_mounts:
+    ~/.cache/huggingface: ~/.cache/huggingface
+
+setup: |
+    set -euxo pipefail
+
+    if [ ! -d "$HOME/miniforge3" ]; then
+        curl -fsSL -o /tmp/miniforge.sh https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
+        bash /tmp/miniforge.sh -b -p "$HOME/miniforge3"
+        rm /tmp/miniforge.sh
+    fi
+
+    if ! command -v uv >/dev/null 2>&1; then
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+    fi
+
+    grep -q 'miniforge3/bin' "$HOME/.bashrc" || \
+        echo 'export PATH="$HOME/miniforge3/bin:$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+
+    export PATH="$HOME/.local/bin:$PATH"
+    uv sync
+
+run: |
+    set -euxo pipefail
+
+    source "$HOME/miniforge3/etc/profile.d/conda.sh"
+    export PATH="$HOME/miniforge3/bin:$HOME/.local/bin:$PATH"
+    export CONDA_EXE="$HOME/miniforge3/bin/conda"
+
+    cd snakemake/zoonomia_projection_dataset
+
+    # Dry-run gate first — verify only HF-related rules are scheduled.
+    uv run snakemake --profile workflow/profiles/default \
+        --printshellcmds \
+        -n all_hf
+
+    # Real run.
+    uv run snakemake --profile workflow/profiles/default \
+        --printshellcmds \
+        --rerun-incomplete \
+        all_hf
