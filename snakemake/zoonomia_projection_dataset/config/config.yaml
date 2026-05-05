@@ -1,3 +1,7 @@
+# Ensembl release for the human reference + annotation. Both genome_url and
+# the GTF URL in download.smk are pinned to this release; the genome_url
+# string itself was inherited verbatim from PR #152 and isn't templated yet.
+ensembl_release: 115
 genome_url: "https://ftp.ensembl.org/pub/release-115/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa.gz"
 
 # Bare Ensembl chrom names (1, 2, ..., X, Y). Bigwig queries internally

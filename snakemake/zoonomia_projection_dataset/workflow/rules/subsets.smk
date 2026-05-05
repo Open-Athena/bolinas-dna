@@ -6,7 +6,7 @@ TSS_FLANK = int(config.get("tss_flank", 256))
 rule derive_subset_v2_tss_mrna:
     """Generate v2 query_names: windows overlapping any mRNA TSS ± tss_flank."""
     input:
-        gtf="results/annotation/Homo_sapiens.GRCh38.115.gtf.gz",
+        gtf=f"results/annotation/Homo_sapiens.GRCh38.{config['ensembl_release']}.gtf.gz",
         bed="results/bed/min{min_p}.bed.gz",
     output:
         band="results/projection/min{min_p}/subsets_def/v2_band.bed",
@@ -41,6 +41,8 @@ rule subset_dataset_derived:
         "results/projection/min{min_p}/subsets/{subset}.parquet",
     threads: 1
     resources:
-        mem_mb=4000,
+        # filter_to_subset eagerly decodes the ~10 GB Parquet to ~25 GB in RAM
+        # (lazy sink_parquet path was buggy; see src/bolinas/projection/subset.py).
+        mem_mb=32000,
     run:
         filter_to_subset(input.all_species, input.names, output[0])
