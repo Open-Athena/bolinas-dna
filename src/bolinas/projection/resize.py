@@ -11,6 +11,8 @@ stretch of target genome anchored at the orthologous center.
 
 from __future__ import annotations
 
+import polars as pl
+
 
 def resize_to_length(
     start: int, end: int, target_len: int, chrom_size: int
@@ -59,3 +61,46 @@ def resize_to_length(
     assert new_end - new_start == target_len
     assert 0 <= new_start <= new_end <= chrom_size
     return new_start, new_end
+
+
+def resize_dataframe(df: pl.DataFrame, target_len: int) -> pl.DataFrame:
+    """Vectorised :func:`resize_to_length` over a Polars DataFrame.
+
+    Replaces ``t_start`` / ``t_end`` in-place (one Polars expression, no
+    Python row iteration). Caller must pre-filter rows with
+    ``t_src_size < target_len`` — they would otherwise produce
+    ``new_end > t_src_size``, which the post-condition asserts against.
+
+    Args:
+        df: must contain ``t_start, t_end, t_src_size`` Int64 columns.
+        target_len: desired output length (positive).
+
+    Returns:
+        ``df`` with ``t_start`` and ``t_end`` replaced; all other columns
+        preserved in their original order.
+
+    Asserts (per CLAUDE.md "loud failures over silent corruption"):
+        - every output row has ``t_end - t_start == target_len``
+        - ``0 <= t_start <= t_end <= t_src_size``
+    """
+    assert target_len > 0, f"target_len must be positive: {target_len}"
+    if df.is_empty():
+        return df
+
+    half = target_len // 2
+    midpoint = (pl.col("t_start") + pl.col("t_end")) // 2
+    raw_start = midpoint - half
+    # Clamp into [0, t_src_size - target_len] — equivalent to the
+    # left/right-edge shift in the per-row implementation. Rows with
+    # `t_src_size < target_len` violate the upper bound so are rejected
+    # by the post-condition; caller filters them upstream.
+    new_start = raw_start.clip(0, pl.col("t_src_size") - target_len)
+    out = df.with_columns(
+        t_start=new_start,
+        t_end=new_start + target_len,
+    )
+
+    assert (out["t_end"] - out["t_start"] == target_len).all()
+    assert (out["t_start"] >= 0).all()
+    assert (out["t_end"] <= out["t_src_size"]).all()
+    return out

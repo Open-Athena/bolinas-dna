@@ -92,7 +92,7 @@ def normalize_zoonomia_leaf(name: str) -> str:
     return name
 
 
-def _rank_key(meta: LeafMeta) -> tuple:
+def _rank_key(meta: LeafMeta) -> tuple[int, int, int, str]:
     """Sort key: lower-is-better, so higher quality leafs come first."""
     return (
         -QUALITY_SOURCE_RANK.get(meta.quality_source, 0),

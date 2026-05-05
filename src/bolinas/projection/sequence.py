@@ -3,7 +3,8 @@
 The Snakemake rule converts each per-species projection Parquet into a
 6-column BED, then runs ``bedtools getfasta -s`` against the species
 FASTA (output of ``hal2fasta``) to extract strand-aware sequences. The
-helper here turns a Parquet into a BED — small glue, but tested.
+helpers here are small Polars-backed glue, kept out of the rule for
+testability.
 """
 
 from __future__ import annotations
@@ -11,22 +12,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import polars as pl
-
-
-_REVCOMP_TABLE = str.maketrans("ACGTacgtNn", "TGCAtgcaNn")
-
-
-def revcomp(seq: str) -> str:
-    """Return the reverse-complement of a DNA sequence.
-
-    Preserves case; ``N``/``n`` map to themselves. Non-ACGTN characters
-    pass through unchanged (extraction from a 2bit / FASTA produces
-    only ACGTN, so the pass-through behaviour only matters in tests).
-    Used as a fallback when a tool that doesn't honor strand is the
-    only option; the production rule uses ``bedtools getfasta -s``,
-    which revcomps natively.
-    """
-    return seq.translate(_REVCOMP_TABLE)[::-1]
 
 
 def parquet_to_bed6(parquet_path: str | Path, out_bed: str | Path) -> int:
@@ -42,14 +27,17 @@ def parquet_to_bed6(parquet_path: str | Path, out_bed: str | Path) -> int:
     df = pl.read_parquet(parquet_path)
     out = Path(out_bed)
     out.parent.mkdir(parents=True, exist_ok=True)
-    with out.open("w") as f:
-        if df.is_empty():
-            return 0
-        for row in df.iter_rows(named=True):
-            f.write(
-                f"{row['t_chrom']}\t{row['t_start']}\t{row['t_end']}"
-                f"\t{row['query_name']}\t0\t{row['t_strand']}\n"
-            )
+    if df.is_empty():
+        out.write_text("")
+        return 0
+    df.select(
+        "t_chrom",
+        "t_start",
+        "t_end",
+        "query_name",
+        pl.lit(0).alias("score"),
+        "t_strand",
+    ).write_csv(out, separator="\t", include_header=False)
     return df.height
 
 
@@ -106,10 +94,16 @@ def attach_sequences_to_parquet(
     assert len(sequences) == df.height, (
         f"sequence count ({len(sequences)}) != Parquet rows ({df.height})"
     )
-    for s in sequences:
-        assert len(s) == target_len, (
-            f"unexpected sequence length {len(s)}, expected {target_len}"
+    seq_series = pl.Series("sequence", sequences)
+    # Vectorised length check — one pass in Rust over the column instead
+    # of a Python `for` loop. Keeps the loud-failure invariant.
+    if not (seq_series.str.len_bytes() == target_len).all():
+        bad_idx = (seq_series.str.len_bytes() != target_len).arg_true().to_list()[:3]
+        bad = [(i, len(sequences[i])) for i in bad_idx]
+        raise AssertionError(
+            f"unexpected sequence length(s); expected {target_len} bp, "
+            f"first offenders (row, len): {bad}"
         )
-    df_with_seq = df.with_columns(sequence=pl.Series("sequence", sequences))
+    df_with_seq = df.with_columns(sequence=seq_series)
     df_with_seq.write_parquet(out)
     return df.height

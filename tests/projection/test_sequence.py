@@ -11,25 +11,7 @@ from bolinas.projection.sequence import (
     attach_sequences_to_parquet,
     parquet_to_bed6,
     parse_bedtools_getfasta_output,
-    revcomp,
 )
-
-
-def test_revcomp_basic() -> None:
-    assert revcomp("ACGT") == "ACGT"
-    assert revcomp("AAAA") == "TTTT"
-    assert revcomp("GGCC") == "GGCC"
-    assert revcomp("ACGTN") == "NACGT"
-
-
-def test_revcomp_preserves_case() -> None:
-    assert revcomp("ACGTacgt") == "acgtACGT"
-    assert revcomp("Nn") == "nN"
-
-
-def test_revcomp_iupac_passthrough() -> None:
-    """Non-ACGTN characters are returned unchanged."""
-    assert revcomp("ACGTW") == "WACGT"
 
 
 def _make_parquet(tmp_path: Path, rows: list[dict]) -> Path:
@@ -172,7 +154,7 @@ def test_attach_sequences_to_parquet_length_mismatch_raises(tmp_path: Path) -> N
     )
     out = tmp_path / "out.parquet"
     with pytest.raises(AssertionError, match="unexpected sequence length"):
-        attach_sequences_to_parquet(pq, ["TOO_SHORT"], out, target_len=255)
+        attach_sequences_to_parquet(pq, ["A" * 9], out, target_len=255)
 
 
 def test_attach_sequences_to_parquet_count_mismatch_raises(tmp_path: Path) -> None:

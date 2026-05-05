@@ -34,7 +34,7 @@ from bolinas.projection.hal import (
     parse_halliftover_bed,
     run_halliftover,
 )
-from bolinas.projection.resize import resize_to_length
+from bolinas.projection.resize import resize_dataframe
 from bolinas.projection.sequence import (
     attach_sequences_to_parquet,
     parquet_to_bed6,
@@ -53,6 +53,19 @@ ZRS_BED6_LINES: list[str] = [
 ]
 
 SOURCE_SPECIES = "Homo_sapiens"
+
+
+def projection_targets(min_p: str) -> list[str]:
+    """v1 target list: concat Parquet, plus ZRS sanity check on smoke tier.
+
+    Defined once here so ``rule all_projected`` and ``rule all_sequences``
+    don't duplicate the smoke-tier branching.
+    """
+    out = [f"results/projection/min{min_p}/all_species.parquet"]
+    if TIER == "smoke":
+        out.append(f"results/projection/min{min_p}/zrs_sanity.txt")
+    return out
+
 
 PER_SPECIES_SCHEMA: dict[str, pl.DataType] = {
     "query_name": pl.Utf8,
@@ -95,23 +108,28 @@ rule prepare_input_ucsc:
         )
         # Ensembl bare name → UCSC "chr"+name. Already-prefixed inputs would
         # double-prefix so guard with an assertion.
-        assert (
-            not df["chrom"].str.starts_with("chr").any()
-        ), f"input BED has UCSC-style chroms; expected Ensembl bare: {df['chrom'].unique().to_list()[:5]}"
-
+        assert not df["chrom"].str.starts_with("chr").any(), (
+            f"input BED has UCSC-style chroms; expected Ensembl bare: "
+            f"{df['chrom'].unique().to_list()[:5]}"
+        )
+        if params.tier == "smoke":
+            df = df.filter(pl.col("chrom") == "1").head(1000)
+        bed6 = df.select(
+            chrom=pl.lit("chr") + pl.col("chrom"),
+            start="start",
+            end="end",
+            name="name",
+            score=pl.lit(0),
+            # BED6 strand=+ (no strand info on tile windows).
+            strand=pl.lit("+"),
+        )
         with open(output[0], "w") as fout:
             if params.tier == "smoke":
                 # ZRS cCREs first so they're guaranteed to be in the
                 # head-truncated output regardless of the chr1 row count.
                 for line in ZRS_BED6_LINES:
                     fout.write(line + "\n")
-                df = df.filter(pl.col("chrom") == "1").head(1000)
-            for row in df.iter_rows(named=True):
-                # BED6: strand=+ (no strand info on tile windows), score=0.
-                fout.write(
-                    f"chr{row['chrom']}\t{row['start']}\t{row['end']}"
-                    f"\t{row['name']}\t0\t+\n"
-                )
+            bed6.write_csv(fout, separator="\t", include_header=False)
 
 
 rule hal_chrom_sizes:
@@ -170,34 +188,15 @@ rule project_one_species:
             pl.DataFrame(schema=PER_SPECIES_SCHEMA).write_parquet(output.parquet)
             return
 
-        new_starts: list[int] = []
-        new_ends: list[int] = []
-        for row in df.iter_rows(named=True):
-            ns, ne = resize_to_length(
-                row["t_start"], row["t_end"], TARGET_LEN, row["t_src_size"]
-            )
-            new_starts.append(ns)
-            new_ends.append(ne)
-        resized = pl.DataFrame(
-            {
-                "query_name": df["query_name"].to_list(),
-                "species": df["species"].to_list(),
-                "t_chrom": df["t_chrom"].to_list(),
-                "t_start": new_starts,
-                "t_end": new_ends,
-                "t_strand": df["t_strand"].to_list(),
-                "t_src_size": df["t_src_size"].to_list(),
-            },
-            schema=PER_SPECIES_SCHEMA,
+        # resize_dataframe vectorises the midpoint-clamp; its own asserts
+        # cover the bounds invariants. We add the at-most-one-row-per-query
+        # invariant here since filter_single_chrom_strand promises it.
+        resized = resize_dataframe(df, target_len=TARGET_LEN).select(
+            list(PER_SPECIES_SCHEMA.keys())
         )
-
-        # Loud invariants — reproducibility > silent corruption (CLAUDE.md).
-        assert (resized["t_end"] - resized["t_start"] == TARGET_LEN).all()
-        assert (resized["t_start"] >= 0).all()
-        assert (resized["t_end"] <= resized["t_src_size"]).all()
-        assert (
-            resized["query_name"].n_unique() == resized.height
-        ), "expected at most one row per query_name after filter"
+        assert resized["query_name"].n_unique() == resized.height, (
+            "expected at most one row per query_name after filter"
+        )
 
         resized.write_parquet(output.parquet)
         raw_bed.unlink(missing_ok=True)
@@ -370,12 +369,7 @@ rule all_projected:
     BED — they're only added in smoke).
     """
     input:
-        ([
-            f"results/projection/min{PROJECT_MIN_P}/all_species.parquet",
-            f"results/projection/min{PROJECT_MIN_P}/zrs_sanity.txt",
-        ] if TIER == "smoke" else [
-            f"results/projection/min{PROJECT_MIN_P}/all_species.parquet",
-        ]),
+        projection_targets(PROJECT_MIN_P),
 
 
 rule all_sequences:
@@ -387,14 +381,8 @@ rule all_sequences:
     ``config/subsets/``).
     """
     input:
-        # v1 outputs: concatenated all-species Parquet (and ZRS sanity
-        # in smoke tier).
-        ([
-            f"results/projection/min{PROJECT_MIN_P}/all_species.parquet",
-            f"results/projection/min{PROJECT_MIN_P}/zrs_sanity.txt",
-        ] if TIER == "smoke" else [
-            f"results/projection/min{PROJECT_MIN_P}/all_species.parquet",
-        ]),
+        # v1 outputs: concatenated Parquet (+ ZRS sanity on smoke).
+        projection_targets(PROJECT_MIN_P),
         # v2 outputs: per-species 2bit (archival) + per-species sequence
         # Parquet + merged all-species sequence Parquet.
         expand(
