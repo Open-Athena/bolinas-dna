@@ -15,6 +15,10 @@ from bolinas.evals.variants import COORDINATES
 
 MATCH_GROUP_COL = "match_group"
 
+# Sentinels for bin labels.
+BIN_OOR = "OOR"  # value outside any bin (or null) — emitted by `bin_feature`
+BIN_NA = "NA"  # subset-conditional bin not applicable for this row
+
 # Bin schemes locked in issue #156 (iter 22 mendelian, iter 24 complex).
 # https://github.com/Open-Athena/bolinas-dna/issues/156
 TSS_DIST_BIN_EDGES = [0, 50, 100, 200, 500, 1000]
@@ -44,6 +48,21 @@ MAF_BIN_EDGES = [
 ]
 
 
+def splice_prefilter() -> pl.Expr:
+    """Filter mask for the iter22 splice pre-filter (issue #156).
+
+    Drops splicing variants with ``exon_dist`` beyond the splice window cap
+    (``EXON_DIST_BIN_EDGES[-1]``); their protein-coding-only ``exon_dist`` is
+    misleading at non-coding-transcript splice sites.
+
+    Use as ``V.filter(splice_prefilter())``.
+    """
+    return ~(
+        (pl.col("consequence_group") == "splicing")
+        & (pl.col("exon_dist") > EXON_DIST_BIN_EDGES[-1])
+    )
+
+
 def bin_feature(
     feature: str,
     edges: list[float],
@@ -62,7 +81,7 @@ def bin_feature(
     """
     assert len(edges) >= 2, f"need at least 2 edges, got {edges!r}"
     n = len(edges) - 1
-    expr = pl.lit("OOR")
+    expr = pl.lit(BIN_OOR)
     col = pl.col(feature)
     for i in range(n):
         lo, hi = edges[i], edges[i + 1]

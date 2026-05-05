@@ -10,11 +10,13 @@ from huggingface_hub import HfApi
 
 from bolinas.evals.materialize import materialize_sequences
 from bolinas.evals.matching import (
+    BIN_NA,
     EXON_DIST_BIN_EDGES,
     MAF_BIN_EDGES,
     TSS_DIST_BIN_EDGES,
     bin_feature,
     match_features,
+    splice_prefilter,
 )
 from bolinas.evals.trait_intervals import (
     add_exon,

@@ -9,6 +9,8 @@ import polars as pl
 import pytest
 
 from bolinas.evals.matching import (
+    BIN_NA,
+    BIN_OOR,
     EXON_DIST_BIN_EDGES,
     MAF_BIN_EDGES,
     MATCH_GROUP_COL,
@@ -21,6 +23,7 @@ from bolinas.evals.matching import (
     _validate_columns,
     bin_feature,
     match_features,
+    splice_prefilter,
 )
 
 
@@ -445,7 +448,7 @@ class TestBinFeature:
 
     def test_left_closed_out_of_range(self) -> None:
         edges = [0, 50, 100]
-        assert _apply_bin([-1, 100.1, 1000], edges) == ["OOR", "OOR", "OOR"]
+        assert _apply_bin([-1, 100.1, 1000], edges) == [BIN_OOR, BIN_OOR, BIN_OOR]
 
     def test_right_closed_basic(self) -> None:
         # First bin is [lo, hi]; subsequent bins are (lo, hi].
@@ -456,11 +459,11 @@ class TestBinFeature:
 
     def test_right_closed_out_of_range(self) -> None:
         edges = [0, 0.001, 0.5]
-        assert _apply_bin([-0.1, 0.6], edges, right_closed=True) == ["OOR", "OOR"]
+        assert _apply_bin([-0.1, 0.6], edges, right_closed=True) == [BIN_OOR, BIN_OOR]
 
     def test_null_input_becomes_oor(self) -> None:
         edges = [0, 50, 100]
-        assert _apply_bin([None, 50.0], edges) == ["OOR", "b1"]
+        assert _apply_bin([None, 50.0], edges) == [BIN_OOR, "b1"]
 
     def test_result_dtype_is_string(self) -> None:
         df = pl.DataFrame({"x": [1.0, 2.0]}).with_columns(
@@ -476,13 +479,13 @@ class TestBinFeature:
         # tss_proximal range is [0, 1000], so all valid values must bin in-range.
         values = [0, 49, 50, 99, 100, 199, 200, 499, 500, 999, 1000]
         bins = _apply_bin(values, TSS_DIST_BIN_EDGES)
-        assert "OOR" not in bins
+        assert BIN_OOR not in bins
 
     def test_iter22_exon_dist_edges(self) -> None:
         # splicing exon_dist range after pre-filter is [0, 30].
         values = [0, 4, 5, 19, 20, 29, 30]
         bins = _apply_bin(values, EXON_DIST_BIN_EDGES)
-        assert "OOR" not in bins
+        assert BIN_OOR not in bins
         assert bins == ["b0", "b0", "b1", "b1", "b2", "b2", "b2"]
 
     def test_iter24_maf_edges(self) -> None:
@@ -494,7 +497,7 @@ class TestBinFeature:
             MAF_BIN_EDGES,
             right_closed=True,
         )
-        assert "OOR" not in bins
+        assert BIN_OOR not in bins
         # 0 and 0.0005 share b0 (first bin is [0, 0.0005] inclusive).
         assert bins[0] == "b0"
         assert bins[0] == bins[1]
@@ -579,3 +582,49 @@ class TestMatchFeaturesAcceptsBinColumns:
         result = match_features(pos, neg, ["MAF"], ["cat"], k=1)
         assert "ld_score" in result.columns
         assert result.height == 2
+
+
+class TestSplicePrefilter:
+    def _frame(self, rows: list[tuple[str, float]]) -> pl.DataFrame:
+        return pl.DataFrame(
+            {
+                "consequence_group": [r[0] for r in rows],
+                "exon_dist": [r[1] for r in rows],
+            }
+        )
+
+    def test_drops_splicing_with_exon_dist_above_cap(self) -> None:
+        cap = EXON_DIST_BIN_EDGES[-1]  # 30
+        V = self._frame(
+            [
+                ("splicing", 0.0),
+                ("splicing", float(cap)),
+                ("splicing", float(cap + 1)),
+                ("splicing", 1000.0),
+            ]
+        )
+        kept = V.filter(splice_prefilter())
+        # exon_dist == cap is kept (boundary inclusive); > cap is dropped.
+        assert kept["exon_dist"].to_list() == [0.0, float(cap)]
+
+    def test_keeps_non_splicing_regardless_of_exon_dist(self) -> None:
+        cap = EXON_DIST_BIN_EDGES[-1]
+        V = self._frame(
+            [
+                ("distal", float(cap + 1)),
+                ("missense_variant", 9999.0),
+                ("tss_proximal", 0.0),
+            ]
+        )
+        kept = V.filter(splice_prefilter())
+        assert kept.height == V.height
+
+    def test_returns_polars_expression(self) -> None:
+        assert isinstance(splice_prefilter(), pl.Expr)
+
+
+def test_bin_na_constant_distinct_from_bin_labels() -> None:
+    # BIN_NA must not collide with any "b{i}" label that bin_feature emits, or
+    # with the BIN_OOR sentinel, since both can co-occur in a single column.
+    assert not BIN_NA.startswith("b") or not BIN_NA[1:].isdigit()
+    assert BIN_NA != BIN_OOR

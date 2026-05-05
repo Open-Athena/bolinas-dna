@@ -196,30 +196,22 @@ rule complex_traits_dataset:
         "results/dataset_unsplit/complex_traits.parquet",
     run:
         V = (
-            # Matching design locked in issue #156 (iter 24):
-            # - Same splice pre-filter and subset-conditional tss/exon bins as
-            #   mendelian (iter 22).
-            # - Always-on MAF bin (right-closed, log-spaced toward low MAF) as
-            #   a categorical match key — closes the heavy MAF leak the
-            #   original continuous-only matching had across every subset.
-            # - Drop ld_score from the matching call. It stays in the output
-            #   dataset as a passthrough column for downstream
-            #   eval/diagnostics.
+            # Matching design locked in issue #156 (iter 24): same splice
+            # pre-filter and subset-conditional tss/exon bins as mendelian
+            # (iter 22), plus an always-on right-closed MAF bin (log-spaced
+            # toward low MAF) that closes the heavy MAF leak the basic
+            # continuous-only matching had. ld_score is dropped from the
+            # matching call but kept on the output as a passthrough column.
             pl.read_parquet(input[0])
-            .filter(
-                ~(
-                    (pl.col("consequence_group") == "splicing")
-                    & (pl.col("exon_dist") > 30)
-                )
-            )
+            .filter(splice_prefilter())
             .with_columns(
                 pl.when(pl.col("consequence_group") == "tss_proximal")
                 .then(bin_feature("tss_dist", TSS_DIST_BIN_EDGES))
-                .otherwise(pl.lit("NA"))
+                .otherwise(pl.lit(BIN_NA))
                 .alias("tss_dist_bin"),
                 pl.when(pl.col("consequence_group") == "splicing")
                 .then(bin_feature("exon_dist", EXON_DIST_BIN_EDGES))
-                .otherwise(pl.lit("NA"))
+                .otherwise(pl.lit(BIN_NA))
                 .alias("exon_dist_bin"),
                 bin_feature("MAF", MAF_BIN_EDGES, right_closed=True).alias("MAF_bin"),
             )

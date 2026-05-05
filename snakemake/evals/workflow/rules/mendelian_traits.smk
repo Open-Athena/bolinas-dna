@@ -91,28 +91,20 @@ rule mendelian_traits_dataset:
         "results/dataset_unsplit/mendelian_traits.parquet",
     run:
         V = (
-            # Matching design locked in issue #156 (iter 22):
-            # - Pre-filter splicing variants with exon_dist > 30 (drops the few
-            #   pathogenic splice positives at non-coding-transcript splice
-            #   sites whose protein-coding-only exon_dist is misleading).
-            # - Add subset-conditional distance bins as exact-match
-            #   categoricals; continuous tss_dist / exon_dist still match as a
-            #   within-bin tie-breaker.
+            # Matching design locked in issue #156 (iter 22): splice pre-filter +
+            # subset-conditional distance bins as exact-match categoricals;
+            # continuous tss_dist / exon_dist still match as a within-bin
+            # tie-breaker.
             pl.read_parquet(input[0])
-            .filter(
-                ~(
-                    (pl.col("consequence_group") == "splicing")
-                    & (pl.col("exon_dist") > 30)
-                )
-            )
+            .filter(splice_prefilter())
             .with_columns(
                 pl.when(pl.col("consequence_group") == "tss_proximal")
                 .then(bin_feature("tss_dist", TSS_DIST_BIN_EDGES))
-                .otherwise(pl.lit("NA"))
+                .otherwise(pl.lit(BIN_NA))
                 .alias("tss_dist_bin"),
                 pl.when(pl.col("consequence_group") == "splicing")
                 .then(bin_feature("exon_dist", EXON_DIST_BIN_EDGES))
-                .otherwise(pl.lit("NA"))
+                .otherwise(pl.lit(BIN_NA))
                 .alias("exon_dist_bin"),
             )
         )
