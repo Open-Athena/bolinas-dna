@@ -11,6 +11,7 @@ and the downstream cross-mammal projection is human-anchored too. No
 """
 
 import gzip
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -28,3 +29,29 @@ STANDARD_CHROMS = list(config["standard_chroms"])
 assert "phyloP_447m" in CONSERVATION_TRACKS, (
     "phyloP_447m must be present in bolinas.evals.conservation.CONSERVATION_TRACKS"
 )
+
+
+# ===== Cross-mammal projection knobs (rule all_projected) =====
+
+HAL_PATH = config["hal_path"]
+SPECIES_TSV = config["species_tsv"]
+PROJECT_MIN_P = str(config["project_min_p"])
+TARGET_LEN = int(config["target_len"])
+PRE_RESIZE_MIN = int(config["pre_resize_min_len"])
+PRE_RESIZE_MAX = int(config["pre_resize_max_len"])
+TIER = config.get("tier", "full")
+assert TIER in {"full", "smoke"}, f"tier must be full or smoke, got {TIER!r}"
+assert TARGET_LEN == WINDOW_SIZE, (
+    f"projection target_len ({TARGET_LEN}) must equal source WINDOW_SIZE "
+    f"({WINDOW_SIZE}); the 255+BOS=256 invariant decouples from the input "
+    f"window length only intentionally."
+)
+assert 0 < PRE_RESIZE_MIN <= TARGET_LEN <= PRE_RESIZE_MAX
+
+SPECIES = pl.read_csv(SPECIES_TSV, separator="\t")["species"].to_list()
+assert {"Homo_sapiens", "Mus_musculus", "Bos_taurus"}.issubset(SPECIES), (
+    "species TSV must include Homo_sapiens, Mus_musculus, Bos_taurus "
+    "(force-included by the dedup policy)"
+)
+if TIER == "smoke":
+    SPECIES = ["Homo_sapiens", "Mus_musculus", "Bos_taurus", "Loxodonta_africana"]

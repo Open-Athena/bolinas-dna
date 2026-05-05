@@ -22,3 +22,27 @@ phyloP_447m_threshold: 2.2162
 filters:
   - { min_proportion_conserved: 0.10 }
   - { min_proportion_conserved: 0.20 }
+
+# ===== Cross-mammal projection (rule all_projected; sky/project.yaml) =====
+# Absolute path to the 1.18 TiB Zoonomia 447-mammalian Cactus HAL on local
+# NVMe; staged outside Snakemake by sky/project.yaml. The path is passed
+# via `--config hal_path=...` at launch time. Default is intentionally a
+# placeholder that fails halStats/halLiftover loudly if not overridden.
+hal_path: "/mnt/nvme/zoonomia/447-mammalian-2022v1.hal"
+
+# Family-deduped 447 mammal species set (108 rows). Generated once by
+# scripts/build_species_list.py; committed to the repo.
+species_tsv: "config/species_zoonomia_447_family_dedup.tsv"
+
+# Which conservation cutoff BED to project (suffix of `results/bed/min{p}.bed.gz`).
+project_min_p: "0.20"
+
+# Resize parameters (see src/bolinas/projection/resize.py).
+target_len: 255       # equals window_size; assert in common.smk
+pre_resize_min_len: 128
+pre_resize_max_len: 512
+
+# Smoke vs full tier. "smoke" projects ~1000 windows × 4 species and runs the
+# ZRS sanity check, ~5 min wall after staging. "full" runs all SPECIES × the
+# entire `min{project_min_p}.bed.gz`, ~5 h on c6id.12xlarge.
+tier: "full"
