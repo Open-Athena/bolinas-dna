@@ -15,6 +15,68 @@ from bolinas.evals.variants import COORDINATES
 
 MATCH_GROUP_COL = "match_group"
 
+# Bin schemes locked in issue #156 (iter 22 mendelian, iter 24 complex).
+# https://github.com/Open-Athena/bolinas-dna/issues/156
+TSS_DIST_BIN_EDGES = [0, 50, 100, 200, 500, 1000]
+EXON_DIST_BIN_EDGES = [0, 5, 20, 30]
+MAF_BIN_EDGES = [
+    0.0,
+    0.0005,
+    0.001,
+    0.0015,
+    0.002,
+    0.0025,
+    0.003,
+    0.0035,
+    0.004,
+    0.005,
+    0.007,
+    0.01,
+    0.015,
+    0.02,
+    0.03,
+    0.05,
+    0.07,
+    0.1,
+    0.15,
+    0.2,
+    0.5,
+]
+
+
+def bin_feature(
+    feature: str,
+    edges: list[float],
+    *,
+    right_closed: bool = False,
+) -> pl.Expr:
+    """Polars expression binning ``feature`` into ``len(edges) - 1`` string buckets.
+
+    Returns ``"b0".."b{n-1}"`` for in-range values, ``"OOR"`` for out-of-range
+    or null values.
+
+    With ``right_closed=False`` (default; used for ``tss_dist`` / ``exon_dist``):
+        bins are ``[lo, hi)`` for ``i < n-1``, ``[lo, hi]`` for the last bin.
+    With ``right_closed=True`` (used for ``MAF``):
+        bins are ``(lo, hi]`` for ``i > 0``, ``[lo, hi]`` for the first bin.
+    """
+    assert len(edges) >= 2, f"need at least 2 edges, got {edges!r}"
+    n = len(edges) - 1
+    expr = pl.lit("OOR")
+    col = pl.col(feature)
+    for i in range(n):
+        lo, hi = edges[i], edges[i + 1]
+        if right_closed:
+            cond = ((col >= lo) & (col <= hi)) if i == 0 else ((col > lo) & (col <= hi))
+        else:
+            cond = (
+                ((col >= lo) & (col <= hi))
+                if i == n - 1
+                else ((col >= lo) & (col < hi))
+            )
+        expr = pl.when(cond).then(pl.lit(f"b{i}")).otherwise(expr)
+    return expr
+
 
 def match_features(
     pos: pl.DataFrame,
@@ -65,12 +127,8 @@ def match_features(
 
     # Use polars partition_by for fast group splitting. Pandas multi-index
     # .loc on millions of negatives is the per-call hot spot otherwise.
-    pos_groups = pl.from_pandas(pos_pd).partition_by(
-        categorical_features, as_dict=True
-    )
-    neg_groups = pl.from_pandas(neg_pd).partition_by(
-        categorical_features, as_dict=True
-    )
+    pos_groups = pl.from_pandas(pos_pd).partition_by(categorical_features, as_dict=True)
+    neg_groups = pl.from_pandas(neg_pd).partition_by(categorical_features, as_dict=True)
 
     pos_list: list[pd.DataFrame] = []
     neg_list: list[pd.DataFrame] = []

@@ -23,16 +23,38 @@ BOS token).
 ## Matching scheme
 
 For both datasets, every positive is matched 1:1 to one negative via TraitGym's
-greedy-nearest-neighbor matcher (`bolinas.evals.matching.match_features`):
+greedy-nearest-neighbor matcher (`bolinas.evals.matching.match_features`).
+Matching is exact on every categorical feature, then Euclidean-nearest on the
+(RobustScaler-scaled) continuous features, without replacement within a group.
+See `src/bolinas/evals/matching.py` for the algorithm.
 
-- **mendelian_traits**: continuous = `[tss_dist, exon_dist]`,
-  categorical = `[chrom, consequence_final, tss_closest_gene_id, exon_closest_gene_id]`.
-- **complex_traits**: continuous = `[tss_dist, exon_dist, MAF, ld_score]`,
-  same categorical features.
+The matching design below was locked in [issue #156](https://github.com/Open-Athena/bolinas-dna/issues/156)
+after a 24-iteration sweep. Two refinements close window-edge / MAF leaks the
+basic continuous-only matching exhibited:
 
-The matching is exact on every categorical feature, then Euclidean-nearest on
-the (RobustScaler-scaled) continuous features, without replacement within a
-group. See `src/bolinas/evals/matching.py` for the algorithm.
+- **Splice pre-filter**: variants with `consequence_group == "splicing" AND
+  exon_dist > 30` are dropped before matching (handful of mendelian splicing
+  positives at non-coding-transcript splice sites whose protein-coding-only
+  `exon_dist` is misleading; small loss in complex too — see issue #156 for
+  per-subset retention tables).
+- **Subset-conditional distance bins** added as exact-match categoricals on top
+  of the continuous features (so continuous matching becomes a within-bin
+  tie-breaker): `tss_dist_bin` only meaningful for `tss_proximal`, "NA"
+  otherwise; `exon_dist_bin` only meaningful for `splicing`, "NA" otherwise.
+  Edges in `bolinas.evals.matching` (`TSS_DIST_BIN_EDGES`,
+  `EXON_DIST_BIN_EDGES`).
+
+Per-dataset specifics:
+
+- **mendelian_traits**:
+  - continuous = `[tss_dist, exon_dist]`
+  - categorical = `[chrom, consequence_final, tss_closest_gene_id,
+    exon_closest_gene_id, tss_dist_bin, exon_dist_bin]`
+- **complex_traits**:
+  - continuous = `[tss_dist, exon_dist, MAF]` (`ld_score` is dropped from
+    matching but kept as a passthrough column on the output dataset)
+  - categorical = same as mendelian, plus an always-on `MAF_bin` (right-closed,
+    log-spaced toward low MAF; `MAF_BIN_EDGES` in `bolinas.evals.matching`)
 
 ## Pipeline structure
 

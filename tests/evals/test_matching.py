@@ -9,13 +9,17 @@ import polars as pl
 import pytest
 
 from bolinas.evals.matching import (
+    EXON_DIST_BIN_EDGES,
+    MAF_BIN_EDGES,
     MATCH_GROUP_COL,
+    TSS_DIST_BIN_EDGES,
     _combine_results,
     _find_closest,
     _match_single_group,
     _scale_features,
     _sort_by_coordinates,
     _validate_columns,
+    bin_feature,
     match_features,
 )
 
@@ -418,3 +422,160 @@ class TestMatchFeaturesEdgeCases:
 
         assert len(result) == 2
         assert "_scaled" not in str(result.columns)
+
+
+def _apply_bin(values: list[float | None], edges: list[float], **kwargs) -> list[str]:
+    df = pl.DataFrame({"x": values}, schema={"x": pl.Float64}).with_columns(
+        bin_feature("x", edges, **kwargs).alias("bin")
+    )
+    return df["bin"].to_list()
+
+
+class TestBinFeature:
+    def test_returns_polars_expression(self) -> None:
+        expr = bin_feature("x", [0, 1, 2])
+        assert isinstance(expr, pl.Expr)
+
+    def test_left_closed_basic(self) -> None:
+        # Edges [0, 50, 100, 200, 500, 1000] -> 5 bins (b0..b4); left-closed.
+        edges = [0, 50, 100, 200, 500, 1000]
+        values = [0, 49, 50, 99, 100, 199, 200, 499, 500, 999, 1000]
+        expected = ["b0", "b0", "b1", "b1", "b2", "b2", "b3", "b3", "b4", "b4", "b4"]
+        assert _apply_bin(values, edges) == expected
+
+    def test_left_closed_out_of_range(self) -> None:
+        edges = [0, 50, 100]
+        assert _apply_bin([-1, 100.1, 1000], edges) == ["OOR", "OOR", "OOR"]
+
+    def test_right_closed_basic(self) -> None:
+        # First bin is [lo, hi]; subsequent bins are (lo, hi].
+        edges = [0, 0.001, 0.005, 0.5]
+        values = [0, 0.0005, 0.001, 0.0011, 0.005, 0.0051, 0.5]
+        expected = ["b0", "b0", "b0", "b1", "b1", "b2", "b2"]
+        assert _apply_bin(values, edges, right_closed=True) == expected
+
+    def test_right_closed_out_of_range(self) -> None:
+        edges = [0, 0.001, 0.5]
+        assert _apply_bin([-0.1, 0.6], edges, right_closed=True) == ["OOR", "OOR"]
+
+    def test_null_input_becomes_oor(self) -> None:
+        edges = [0, 50, 100]
+        assert _apply_bin([None, 50.0], edges) == ["OOR", "b1"]
+
+    def test_result_dtype_is_string(self) -> None:
+        df = pl.DataFrame({"x": [1.0, 2.0]}).with_columns(
+            bin_feature("x", [0, 1, 2]).alias("bin")
+        )
+        assert df.schema["bin"] == pl.String
+
+    def test_assertion_on_too_few_edges(self) -> None:
+        with pytest.raises(AssertionError):
+            bin_feature("x", [0])
+
+    def test_iter22_tss_dist_edges(self) -> None:
+        # tss_proximal range is [0, 1000], so all valid values must bin in-range.
+        values = [0, 49, 50, 99, 100, 199, 200, 499, 500, 999, 1000]
+        bins = _apply_bin(values, TSS_DIST_BIN_EDGES)
+        assert "OOR" not in bins
+
+    def test_iter22_exon_dist_edges(self) -> None:
+        # splicing exon_dist range after pre-filter is [0, 30].
+        values = [0, 4, 5, 19, 20, 29, 30]
+        bins = _apply_bin(values, EXON_DIST_BIN_EDGES)
+        assert "OOR" not in bins
+        assert bins == ["b0", "b0", "b1", "b1", "b2", "b2", "b2"]
+
+    def test_iter24_maf_edges(self) -> None:
+        # MAF range is [0, 0.5]. Right-closed convention: 0 and 0.5 must land
+        # in real bins (not OOR), and the standard cutoffs (0.001, 0.005, 0.05)
+        # land at the upper edge of their bin.
+        bins = _apply_bin(
+            [0.0, 0.0005, 0.001, 0.005, 0.05, 0.5],
+            MAF_BIN_EDGES,
+            right_closed=True,
+        )
+        assert "OOR" not in bins
+        # 0 and 0.0005 share b0 (first bin is [0, 0.0005] inclusive).
+        assert bins[0] == "b0"
+        assert bins[0] == bins[1]
+        # Upper edge of a bin lands in that bin (right-closed).
+        # MAF=0.5 is the upper edge of the last bin.
+        assert bins[-1] == "b19"
+
+
+class TestMatchFeaturesAcceptsBinColumns:
+    """End-to-end smoke test: bin columns work as exact-match categoricals."""
+
+    def test_subset_conditional_na_matches_within_label_groups(self) -> None:
+        # 2 positives + 2 negatives, all in chrom 1, two consequence groups.
+        # bin column is "NA" for the non-matching subset, "b0" for the other.
+        # match_features should respect the bin as a categorical.
+        pos = pl.DataFrame(
+            {
+                "chrom": ["1", "1"],
+                "pos": [100, 200],
+                "ref": ["A", "C"],
+                "alt": ["T", "G"],
+                "consequence_group": ["distal", "tss_proximal"],
+                "tss_dist": [10000.0, 50.0],
+                "tss_dist_bin": ["NA", "b1"],
+            }
+        )
+        neg = pl.DataFrame(
+            {
+                "chrom": ["1", "1", "1", "1"],
+                "pos": [110, 210, 310, 410],
+                "ref": ["A", "C", "A", "C"],
+                "alt": ["T", "G", "T", "G"],
+                "consequence_group": [
+                    "distal",
+                    "tss_proximal",
+                    "distal",
+                    "tss_proximal",
+                ],
+                "tss_dist": [11000.0, 60.0, 12000.0, 70.0],
+                "tss_dist_bin": ["NA", "b1", "NA", "b1"],
+            }
+        )
+        result = match_features(
+            pos,
+            neg,
+            ["tss_dist"],
+            ["chrom", "consequence_group", "tss_dist_bin"],
+            k=1,
+        )
+        assert result.height == 4  # 2 positives + 2 matched negatives
+        # Every match group has the same tss_dist_bin in pos and neg.
+        groups = result.group_by(MATCH_GROUP_COL).agg(
+            pl.col("tss_dist_bin").n_unique().alias("n")
+        )
+        assert (groups["n"] == 1).all()
+
+    def test_passthrough_column_survives_matching(self) -> None:
+        # Regression for issue #156: ld_score is dropped from the matching
+        # call but kept in the output dataset as a passthrough column.
+        pos = pl.DataFrame(
+            {
+                "chrom": ["1"],
+                "pos": [100],
+                "ref": ["A"],
+                "alt": ["T"],
+                "cat": ["x"],
+                "MAF": [0.1],
+                "ld_score": [42.0],
+            }
+        )
+        neg = pl.DataFrame(
+            {
+                "chrom": ["1", "1"],
+                "pos": [200, 300],
+                "ref": ["C", "G"],
+                "alt": ["A", "T"],
+                "cat": ["x", "x"],
+                "MAF": [0.11, 0.5],
+                "ld_score": [99.0, 7.0],
+            }
+        )
+        result = match_features(pos, neg, ["MAF"], ["cat"], k=1)
+        assert "ld_score" in result.columns
+        assert result.height == 2

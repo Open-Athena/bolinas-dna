@@ -195,17 +195,48 @@ rule complex_traits_dataset:
     output:
         "results/dataset_unsplit/complex_traits.parquet",
     run:
-        V = pl.read_parquet(input[0])
+        V = (
+            # Matching design locked in issue #156 (iter 24):
+            # - Same splice pre-filter and subset-conditional tss/exon bins as
+            #   mendelian (iter 22).
+            # - Always-on MAF bin (right-closed, log-spaced toward low MAF) as
+            #   a categorical match key — closes the heavy MAF leak the
+            #   original continuous-only matching had across every subset.
+            # - Drop ld_score from the matching call. It stays in the output
+            #   dataset as a passthrough column for downstream
+            #   eval/diagnostics.
+            pl.read_parquet(input[0])
+            .filter(
+                ~(
+                    (pl.col("consequence_group") == "splicing")
+                    & (pl.col("exon_dist") > 30)
+                )
+            )
+            .with_columns(
+                pl.when(pl.col("consequence_group") == "tss_proximal")
+                .then(bin_feature("tss_dist", TSS_DIST_BIN_EDGES))
+                .otherwise(pl.lit("NA"))
+                .alias("tss_dist_bin"),
+                pl.when(pl.col("consequence_group") == "splicing")
+                .then(bin_feature("exon_dist", EXON_DIST_BIN_EDGES))
+                .otherwise(pl.lit("NA"))
+                .alias("exon_dist_bin"),
+                bin_feature("MAF", MAF_BIN_EDGES, right_closed=True).alias("MAF_bin"),
+            )
+        )
         (
             match_features(
                 V.filter(pl.col("label")),
                 V.filter(~pl.col("label")),
-                ["tss_dist", "exon_dist", "MAF", "ld_score"],
+                ["tss_dist", "exon_dist", "MAF"],
                 [
                     "chrom",
                     "consequence_final",
                     "tss_closest_gene_id",
                     "exon_closest_gene_id",
+                    "tss_dist_bin",
+                    "exon_dist_bin",
+                    "MAF_bin",
                 ],
                 k=1,
             )
