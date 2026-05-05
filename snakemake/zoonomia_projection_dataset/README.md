@@ -118,12 +118,12 @@ The 2bit (`results/projection/genomes/{species}.2bit`) is the archival per-speci
 
 The per-species sequence Parquet (`results/projection/min{p}/sequences/{species}.parquet`) extends the projection schema with a `sequence` column (one row per cleanly-projected window, exactly 255 bp). The sequence is **strand-aware**: rows with `t_strand=="-"` already hold the reverse-complemented target string (handled natively by `bedtools getfasta -s`), so downstream consumers don't need to re-revcomp. The merged `all_species_with_sequence.parquet` is the canonical artifact for HuggingFace push and downstream subsetting.
 
-`rule subset_dataset` — v3 subsetting (filter once, project to all species):
+`rule subset_dataset_derived` — v3 subsetting (filter once, project to all species):
 
 The cross-mammal projection (halLiftover) is run **once** on the full conservation-filtered window set; subsets of the resulting cohort are produced by lazy-filtering the all-species sequence Parquet on `query_name`. Each subset is one rule, one Polars streaming sink:
 
 ```
-config/subsets/{subset}.query_names.txt            (one query_name per line; comments OK)
+results/projection/min{p}/subsets_def/{subset}.query_names.txt    (one query_name per line; comments OK)
         +
         ▼
 results/projection/min{p}/all_species_with_sequence.parquet
@@ -132,7 +132,69 @@ results/projection/min{p}/all_species_with_sequence.parquet
 results/projection/min{p}/subsets/{subset}.parquet
 ```
 
-Subsets are derived from human-side annotation overlaps (e.g. `bedtools intersect` of `results/bed/min{p}.bed.gz` with SCREEN cCREs, RefSeq CDS, etc.). The derivation step is intentionally out-of-pipeline so subsets can be added incrementally without re-running anything upstream — the projection cohort is canonical, subsets are just views over it.
+Derived subsets (with a Snakemake rule that produces the `query_names.txt` file) live under `results/.../subsets_def/`. The original PR-157 `subset_dataset` rule (which read from `config/subsets/...`) is preserved for hand-curated subsets that don't have a derivation rule; `subset_dataset_derived` takes precedence when both could match. Subsets pointing at the same `query_name` set are interchangeable; the derivation source is what differs.
+
+The current pipeline ships one derived subset:
+
+- **v2 — mRNA-TSS proximity.** `derive_subset_v2_tss_mrna` extracts protein-coding TSSes from Ensembl rel 115 GTF (via `bolinas.projection.tss.write_mrna_tss_band_bed`, which reuses `bolinas.data.utils.get_promoters_from_exons`), expands each to a `[TSS - tss_flank, TSS + tss_flank]` band (`tss_flank` defaults to 256 bp), and `bedtools intersect -u`s the human anchor BED against the merged band to keep windows touching any protein-coding TSS region.
+
+## HuggingFace datasets
+
+Two HF datasets per (pipeline, intervals) combination:
+
+| HF repo                              | pipeline | intervals | source Parquet                                                  |
+|---|---|---|---|
+| `bolinas-dna/zoonomia-v1-v1`         | v1       | v1        | `results/projection/min0.20/all_species_with_sequence.parquet`  |
+| `bolinas-dna/zoonomia-v1-v2`         | v1       | v2        | `results/projection/min0.20/subsets/v2.parquet`                 |
+
+**Two-axis versioning.** `pipeline_version` (in `config/config.yaml`) snapshots species set, conservation cutoff (`project_min_p`), alignment backend, and resize/length-filter params — bump it and re-run the projection. `intervals_versions` lists the post-projection subset definitions; bumps are cheap (one new derivation rule + cheap re-runs of `subset_dataset_derived` + sharding + upload).
+
+**Pipeline `v1` snapshot:**
+- 108 family-deduped Zoonomia 447 mammals (`config/species_zoonomia_447_family_dedup.tsv`)
+- `phyloP_447m`-conservation, `proportion_conserved >= 0.20`
+- halLiftover --noDupes against the 1.18 TiB Cactus HAL
+- midpoint-centered resize to exactly 255 bp; pre-resize length ∈ [128, 512]
+- source = hg38 Ensembl release 115
+
+**Intervals:**
+- `v1` — identity (every row of `all_species_with_sequence.parquet`)
+- `v2` — window overlaps `[TSS − 256, TSS + 256]` for any Ensembl protein_coding transcript (~5–15% of v1)
+
+**HF dataset schema** (single `train` split per repo; JSONL.zst-sharded at `data/train/shard_NNNN.jsonl.zst`):
+
+| column        | type | source                                              |
+|---|---|---|
+| `query_name`  | str  | human-window id (`win_<chrom>_<NNN>` from `windows.smk`) |
+| `species`     | str  | one of 108 mammals                                  |
+| `t_chrom`     | str  | UCSC `chr1`-style                                   |
+| `t_start`     | int  | 0-based half-open                                   |
+| `t_end`       | int  | 0-based half-open; `t_end - t_start == 255`         |
+| `t_strand`    | str  | `+` or `-`                                          |
+| `t_src_size`  | int  | target chromosome size                              |
+| `sequence`    | str  | exactly 255 bp; **strand-aware** (already RC'd if `t_strand == "-"`) |
+| `augmentation`| str  | `+` (original) or `-` (RC of `sequence`); only present when `add_rc: true` |
+
+**RC augmentation, shuffle, shard.** `prepare_training_shards` → `compress_shard` → `hf_upload_dataset`:
+
+- `add_rc: true` (default) doubles row count: each row gets a partner with the sequence reverse-complemented and `augmentation = "-"`. Vectorised in `bolinas.projection.dataset.reverse_complement_col` via Polars `str.replace_many`. Non-ACGT characters (N or other IUPAC ambiguity codes) are preserved unchanged — strict RC is only applied to ACGT.
+- `df.sample(fraction=1, shuffle=True, seed=42)` interleaves species so a model never sees blocks of 100 k consecutive `Mus_musculus` rows.
+- `n_shards: 64` (default) → 128 JSONL files (64 per dataset), each ~330 MB pre-compression. zstd-compressed in `compress_shard`, uploaded via `hf upload-large-folder`.
+
+**Bumping rules:**
+- Bump `pipeline_version` when ANY of: species TSV, `project_min_p`, alignment backend (rules in `project.smk`), resize / length-filter params changes. This invalidates all per-(pipeline, intervals) HF datasets and the projection itself must be re-run.
+- Bump `intervals_versions` (add a new entry) when you want a new subset definition. Cheap — only `subset_dataset_derived` + shard prep + upload re-run.
+
+**Run:**
+
+```bash
+# Local (dry-run only — actual upload needs the HF token cluster mount):
+uv run snakemake --profile workflow/profiles/default -n all_hf
+
+# Cloud (mounts ~/.cache/huggingface, ~30 min wall):
+sky launch -c zoonomia-upload sky/upload.yaml
+sky logs   zoonomia-upload
+sky down   zoonomia-upload          # at end of session
+```
 
 Scoring uses **pyBigWig directly** in a Snakemake `run:` block — no kentUtils binary chain. We tried `bigWigToBedGraph | awk threshold | bedGraphToBigWig` and `bigWigAverageOverBed`, but the bioconda kentUtils binaries refuse to read from stdin pipes (they need a regular file because they seek). Materialising the per-base bedGraph would cost ~30 GB temp disk for marginal speed.
 
@@ -224,11 +286,13 @@ workflow/envs/bioinformatics.yaml              # bedtools, kentUtils (faToTwoBit
 workflow/rules/
   common.smk                                   # imports + sanity checks
   genome.smk                                   # download_genome → 2bit → chrom_sizes → N-regions
-  download.smk                                 # phyloP bigWig
+  download.smk                                 # phyloP bigWig + Ensembl GTF
   windows.smk                                  # tile + N-filter (one rule)
   score.smk                                    # binarize + score
   filter.smk                                   # filtered BED per cutoff
-  project.smk                                  # cross-mammal halLiftover + filter + resize
+  project.smk                                  # cross-mammal halLiftover + filter + resize + sequence + subset
+  subsets.smk                                  # derive query_names lists for v2 subset; subset_dataset_derived override
+  dataset.smk                                  # RC augment + shuffle + shard + hf upload-large-folder
 scripts/
   calibrate_447m_threshold.py                  # one-off; uses src/bolinas/conservation/
   build_species_list.py                        # one-off; uses src/bolinas/projection/taxonomy
@@ -237,6 +301,7 @@ sky/
   run.yaml                                     # c6id.2xlarge — anchor windows
   calibrate.yaml                               # c6id.2xlarge — phyloP_447m calibration (one-off)
   project.yaml                                 # c6id.12xlarge — cross-mammal projection
+  upload.yaml                                  # r6i.8xlarge — HF dataset assembly + push (rule all_hf)
 ```
 
-Library code lives in `src/bolinas/conservation/` (anchor pipeline) and `src/bolinas/projection/` (projection step) — both testable; reused by their respective rules and one-off scripts. Tests in `tests/conservation/` and `tests/projection/` (40 + 20 = 60 unit tests).
+Library code lives in `src/bolinas/conservation/` (anchor pipeline) and `src/bolinas/projection/` (projection + tss + dataset modules) — both testable; reused by their respective rules and one-off scripts. Tests in `tests/conservation/` and `tests/projection/`.

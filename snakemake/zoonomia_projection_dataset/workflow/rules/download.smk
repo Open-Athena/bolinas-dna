@@ -14,3 +14,16 @@ rule download_bigwig:
         track="|".join(CONSERVATION_TRACKS),
     shell:
         "wget -q {params.url} -O {output}"
+
+
+rule download_annotation:
+    """Ensembl human GTF; release pinned by ``ensembl_release`` in config."""
+    output:
+        f"results/annotation/Homo_sapiens.GRCh38.{config['ensembl_release']}.gtf.gz",
+    params:
+        url=(
+            f"https://ftp.ensembl.org/pub/release-{config['ensembl_release']}/gtf/"
+            f"homo_sapiens/Homo_sapiens.GRCh38.{config['ensembl_release']}.gtf.gz"
+        ),
+    shell:
+        "wget -q -O {output} {params.url}"

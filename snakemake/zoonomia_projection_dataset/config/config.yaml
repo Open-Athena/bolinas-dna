@@ -1,3 +1,7 @@
+# Ensembl release for the human reference + annotation. Both genome_url and
+# the GTF URL in download.smk are pinned to this release; the genome_url
+# string itself was inherited verbatim from PR #152 and isn't templated yet.
+ensembl_release: 115
 genome_url: "https://ftp.ensembl.org/pub/release-115/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa.gz"
 
 # Bare Ensembl chrom names (1, 2, ..., X, Y). Bigwig queries internally
@@ -46,3 +50,26 @@ pre_resize_max_len: 512
 # ZRS sanity check, ~5 min wall after staging. "full" runs all SPECIES × the
 # entire `min{project_min_p}.bed.gz`, ~5 h on c6id.12xlarge.
 tier: "full"
+
+# ===== HF dataset assembly (rule all_hf; sky/upload.yaml) =====
+# Pipeline version snapshot: bumps when species TSV, project_min_p,
+# alignment backend (project.smk), or resize/length params change.
+pipeline_version: "v1"
+
+# Intervals versions to push (one HF repo per entry).
+# v1 = identity (all post-projection windows)
+# v2 = mRNA-TSS proximity (window overlaps [TSS - tss_flank, TSS + tss_flank])
+intervals_versions: ["v1", "v2"]
+
+hf_owner: "bolinas-dna"
+
+# v2 subset: ± bp band around each mRNA TSS (Ensembl protein_coding biotype).
+# 256 bp matches the BOS+255 model context window.
+tss_flank: 256
+
+# Reverse-complement augmentation: doubles row count before shuffle/shard.
+add_rc: true
+
+# Shuffle + shard params (mirror training_dataset/dataset_creation defaults).
+n_shards: 64
+shuffle_seed: 42

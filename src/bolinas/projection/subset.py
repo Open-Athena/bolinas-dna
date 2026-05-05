@@ -59,8 +59,11 @@ def filter_to_subset(
     out = Path(out_parquet)
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    (
-        pl.scan_parquet(str(all_species_parquet))
-        .filter(pl.col("query_name").is_in(keys))
-        .sink_parquet(str(out))
-    )
+    # Eager read+filter+write rather than scan+filter+sink_parquet:
+    # the lazy streaming engine on a ``query_name.is_in(keys)`` filter
+    # segfaults on the ~110 M-row all_species_with_sequence.parquet
+    # (polars 1.x bug); eager fits comfortably in RAM (~25 GB decoded
+    # from ~10 GB on disk) and runs in ~10 s on r6i.8xlarge.
+    df = pl.read_parquet(str(all_species_parquet))
+    df = df.filter(pl.col("query_name").is_in(keys))
+    df.write_parquet(str(out))
