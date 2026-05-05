@@ -13,6 +13,15 @@ name: zoonomia-projection-mammals
 #   the ZRS sanity check; gates the full launch.
 # Full (TIER=full): ~5 h wall on c6id.12xlarge (108 species × 1.13 M
 #   windows; 48-way species parallelism); ~$12 at $2.42/h.
+#
+# CRITICAL — do not drop the two NVMe symlinks ("Symlink _genomes_fa"
+# and "Same problem for Snakemake's S3 default-storage cache" sections
+# below): without them the 100 GB gp3 root vol fills up before the run
+# completes (320 GB of hal2fasta output + 80 GB of Snakemake's S3
+# storage cache for downloaded 2bits). Snakemake's `local()` flag only
+# suppresses S3 upload — it does NOT redirect the on-disk path; the
+# `.snakemake/storage/` cache is the same. Both fixes were forced by
+# real failures during v2 (commits 585f6ab + 6ae069c).
 
 resources:
     infra: aws/us-east-2

@@ -63,6 +63,11 @@ def parse_bedtools_getfasta_output(fasta_path: str | Path) -> list[str]:
                     f"expected header at line {line_no + 1}, got: {stripped[:60]!r}"
                 )
             else:
+                # Empty sequence lines would silently flow through and
+                # only fail downstream in attach_sequences_to_parquet's
+                # length check — fail here instead so the diagnostic
+                # points at the actual malformed FASTA row.
+                assert stripped, f"empty sequence at line {line_no + 1}"
                 seqs.append(stripped)
     return seqs
 

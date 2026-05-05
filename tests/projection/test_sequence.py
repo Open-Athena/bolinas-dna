@@ -99,6 +99,19 @@ def test_parse_bedtools_getfasta_output_rejects_malformed(tmp_path: Path) -> Non
         parse_bedtools_getfasta_output(fa)
 
 
+def test_parse_bedtools_getfasta_output_rejects_empty_sequence(tmp_path: Path) -> None:
+    """Empty sequence line → loud failure pointing at the malformed FASTA row.
+
+    Without this guard, a blank sequence would silently pass through and
+    be detected only by ``attach_sequences_to_parquet``'s length check —
+    which then points at the wrong stage.
+    """
+    fa = tmp_path / "bad.fa"
+    fa.write_text(">name1\n\n")
+    with pytest.raises(AssertionError, match="empty sequence"):
+        parse_bedtools_getfasta_output(fa)
+
+
 def test_attach_sequences_to_parquet_writes_extended_schema(tmp_path: Path) -> None:
     pq = _make_parquet(
         tmp_path,

@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 import urllib.error
@@ -94,8 +95,14 @@ def _to_query(leaf: str) -> str:
 
 
 def _http_get_json(url: str, key: str, *, timeout: int = 30) -> dict | None:
-    """Cached GET returning parsed JSON or None on failure."""
-    p = CACHE / f"{key}.json"
+    """Cached GET returning parsed JSON or None on failure.
+
+    ``key`` is sanitised to a safe filename — URL-encoded characters
+    like ``%20`` and accidental path separators won't escape the cache
+    dir or cause ``OSError`` on case-insensitive filesystems.
+    """
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", key)
+    p = CACHE / f"{safe}.json"
     if p.exists():
         return json.loads(p.read_text())
     req = urllib.request.Request(url, headers={"Accept": "application/json"})
@@ -127,15 +134,25 @@ def _parse_st2(xlsx_path: Path) -> dict[str, str]:
     Prefer Zoonomia-newly-sequenced ("Source = 1. Zoonomia") over existing
     assemblies when both exist, since that's what Cactus actually used for
     the leaf in the 241-way build.
+
+    Column lookup is by header name (row index 2 of the sheet), so an
+    upstream column reorder won't silently corrupt the mapping.
     """
     wb = openpyxl.load_workbook(xlsx_path, read_only=True, data_only=True)
     ws = wb["Supplementary Table 2"]
     rows = list(ws.iter_rows(values_only=True))
+    header = rows[2]
+    cols = {name: i for i, name in enumerate(header) if name}
+    for required in ("Species", "Source", "Accession"):
+        assert required in cols, (
+            f"ST2 header missing {required!r}; got {sorted(cols.keys())}"
+        )
+    sp_i, src_i, acc_i = cols["Species"], cols["Source"], cols["Accession"]
     out: dict[str, str] = {}
     for r in rows[3:]:
-        if r is None or r[2] is None:
+        if r is None or r[sp_i] is None:
             continue
-        species, source, accession = r[2], r[4], r[5]
+        species, source, accession = r[sp_i], r[src_i], r[acc_i]
         if not species or not accession:
             continue
         sp_us = species.replace(" ", "_")
