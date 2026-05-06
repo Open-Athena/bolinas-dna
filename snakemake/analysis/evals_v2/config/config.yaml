@@ -1,0 +1,50 @@
+# HuggingFace prefix for the matched-pair eval datasets. Each dataset is
+# loaded as f"{input_hf_prefix}_{dataset.name}".
+input_hf_prefix: bolinas-dna/evals
+
+# Genome reference for context extraction (GRCh38, Ensembl 113).
+genome_url: http://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz
+
+# Train-only convention — the test split is held out for the final-eval pass.
+# All development / iteration uses train.
+split: train
+
+datasets:
+  - name: mendelian_traits
+    score_column: minus_llr   # pathogenic positives should score higher than gnomAD-common negatives
+  - name: complex_traits
+    score_column: abs_llr     # fine-mapped positives — magnitude regardless of direction
+
+# Model checkpoints. `gcs_path` is the full path to the specific checkpoint
+# directory (i.e. includes /hf/step-{N}). Pipeline copies its contents into
+# results/checkpoints/{name}/.
+#
+# `window_size` is the number of DNA bases extracted per variant context.
+# 256 = old convention (no BOS, e.g. exp55/58/59).
+# 255 = new convention (BOS prepended, e.g. exp136).
+models:
+  - name: exp55-mammals
+    gcs_path: gs://marin-us-central1/checkpoints/exp55-mammals-r01-52f413/hf/step-16999
+    window_size: 256
+
+  - name: exp58-mammals
+    gcs_path: gs://marin-us-central1/checkpoints/exp58-mammals-r01-23d451/hf/step-16999
+    window_size: 256
+
+  - name: exp58-animals
+    gcs_path: gs://marin-us-central1/checkpoints/exp58-animals-r01-1e3682/hf/step-16999
+    window_size: 256
+
+  - name: exp59-mammals
+    gcs_path: gs://marin-us-central1/checkpoints/exp59-mammals-r01-1d9235/hf/step-16999
+    window_size: 256
+
+  - name: exp136-proj_v30
+    gcs_path: gs://marin-us-central1/checkpoints/dna-bolinas-enhancer-curation-v0.1-proj_v30-6692f0/hf/step-9999
+    window_size: 255   # 255 bp DNA + BOS = 256 total tokens
+
+inference:
+  batch_size: 512
+  num_workers: 4
+  data_transform_on_the_fly: true
+  torch_compile: false
