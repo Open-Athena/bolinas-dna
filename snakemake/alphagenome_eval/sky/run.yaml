@@ -1,16 +1,11 @@
 # SkyPilot task: run the alphagenome_eval pipeline on a small CPU node.
 #
-# AlphaGenome scoring is API-bound — no GPU needed, no model checkpoint to
-# pull, no genome reference to download. Runtime is dominated by per-variant
-# HTTPS round-trips to the AlphaGenome API; the pipeline runs ~4 worker
-# threads against the API, well under the rate limit.
-#
-# Auth: ALPHA_GENOME_API_KEY is inherited from the launching shell's
-# environment via the `envs:` block (no default). Export it locally (e.g. in
-# ~/.bashrc) and pass `--env ALPHA_GENOME_API_KEY` to `sky launch`.
+# Auth: ALPHA_GENOME_API_KEY is inherited from the launching shell via the
+# `envs:` block (no default). Export it locally (e.g. ~/.bashrc) and pass
+# `--env ALPHA_GENOME_API_KEY` to `sky launch`.
 #
 # Launch:
-#   export ALPHA_GENOME_API_KEY=<key>      # or have it set in ~/.bashrc
+#   export ALPHA_GENOME_API_KEY=<key>
 #   sky launch snakemake/alphagenome_eval/sky/run.yaml -c alphagenome-eval --env ALPHA_GENOME_API_KEY
 
 name: alphagenome-eval
@@ -18,22 +13,18 @@ name: alphagenome-eval
 resources:
     infra: aws/us-east-2
     cpus: 2+
-    # 64 GB — mendelian_traits (~11K variants) blows past 32 GB even.
-    # The snakemake child accumulates ~3-4 MB per variant across API calls
-    # (root cause not yet pinned down — likely retained references in
-    # alphagenome's score_variant response objects). complex_traits (~1.4K
-    # variants) fits in 8 GB; both datasets fit in 64 GB.
-    memory: 64+
+    # 16 GB covers mendelian_traits (~11K variants) since the
+    # score_variants_alphagenome refactor that streams into a preallocated
+    # numpy buffer (no per-variant DataFrame accumulation). Bump if you see
+    # OOMs on larger datasets.
+    memory: 16+
     disk_size: 50
     labels:
         project: dna
 
 envs:
     ALPHA_GENOME_API_KEY:    # passthrough — no default; --env on launch
-    # Optional extra args appended to the snakemake invocation (e.g. specific
-    # target paths to build only one dataset, or `--config subset_n_pairs=5`
-    # for a smoke run). Default empty = build `rule all`.
-    SNAKEMAKE_ARGS: ""
+    SNAKEMAKE_ARGS: ""       # extra snakemake args (target paths, --config overrides)
 
 workdir: .
 
@@ -45,8 +36,6 @@ setup: |
     fi
     export PATH="$HOME/.local/bin:$PATH"
 
-    # Install with the alphagenome-eval group so the official Google client is
-    # available. Other groups (enhancer-classification etc.) are not needed.
     uv sync --group alphagenome-eval
 
     # Smoke-test the API key — fail fast in setup, not 30 min into a rule.
@@ -63,8 +52,6 @@ run: |
 
     cd snakemake/alphagenome_eval
 
-    # SNAKEMAKE_ARGS may contain target paths and/or `--config x=y` overrides;
-    # leaving it empty falls through to `rule all`.
     uv run --project ../.. snakemake $SNAKEMAKE_ARGS \
         --profile workflow/profiles/default \
         --printshellcmds \

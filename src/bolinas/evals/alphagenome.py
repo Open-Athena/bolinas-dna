@@ -4,10 +4,8 @@ Forward-strand only — no reverse-complement averaging (TraitGym averages with
 RC; we skip it to halve API calls). Returns per-track L2_DIFF_LOG1P scores in a
 wide DataFrame, one row per input variant.
 
-The PyPI ``alphagenome`` package (the official Google client) is required; it's
-gated behind the ``alphagenome-eval`` optional dep group so the rest of the
-repo can install without it. Imports are local-to-function so module import is
-cheap and tests can stub the API.
+The PyPI ``alphagenome`` package is gated behind the ``alphagenome-eval`` dep
+group so the rest of the repo installs without it.
 """
 
 from __future__ import annotations
@@ -16,6 +14,7 @@ import concurrent.futures
 import os
 from typing import TYPE_CHECKING
 
+import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
 
@@ -23,9 +22,8 @@ if TYPE_CHECKING:
     from alphagenome.models import variant_scorers as _vs
 
 
-# 7 assays used by AlphaGenome's variant scorer. Each scorer consumes a
-# requested output type; a single API call returns scores for every track
-# AlphaGenome predicts under that assay (one column per cell type / tissue).
+# Each scorer requests one assay's output; a single API call returns scores for
+# every track AlphaGenome predicts under that assay.
 ALPHAGENOME_TRACKS: tuple[str, ...] = (
     "ATAC",
     "DNASE",
@@ -36,9 +34,8 @@ ALPHAGENOME_TRACKS: tuple[str, ...] = (
     "RNA_SEQ",
 )
 
-# AlphaGenome enum string. Resolved to a numeric length via
+# 1 MB context = 500 kb each side. Resolved via
 # ``dna_client.SUPPORTED_SEQUENCE_LENGTHS[f"SEQUENCE_LENGTH_{SEQUENCE_LENGTH}"]``.
-# 1MB = 500 kb of context on each side of the variant.
 SEQUENCE_LENGTH: str = "1MB"
 
 
@@ -120,10 +117,7 @@ def score_variants_alphagenome(
     -------
     pd.DataFrame
         One row per input variant (same order), columns = ``"{assay}_{idx}"``
-        track names with raw L2_DIFF_LOG1P scores. No NaN under normal
-        operation; if AlphaGenome returns inconsistent tracks across variants
-        the resulting DataFrame will have NaN where a track was missing — we
-        propagate that and let the caller decide policy.
+        track names with raw L2_DIFF_LOG1P scores.
     """
     from alphagenome.data import genome
     from alphagenome.models import dna_client, variant_scorers
@@ -143,7 +137,7 @@ def score_variants_alphagenome(
     organism = dna_client.Organism.HOMO_SAPIENS
     scorers, scorer_repr_to_assay = make_scorers()
 
-    def score_one(row) -> pd.DataFrame:
+    def score_one(row) -> tuple[np.ndarray, list[str]]:
         # AlphaGenome expects a "chr"-prefixed chromosome string.
         chrom = row.chrom if str(row.chrom).startswith("chr") else f"chr{row.chrom}"
         variant = genome.Variant(
@@ -152,10 +146,9 @@ def score_variants_alphagenome(
             reference_bases=row.ref,
             alternate_bases=row.alt,
         )
-        interval = variant.reference_interval.resize(sequence_length)
-        # Default strand is ".", which AlphaGenome treats as unstranded; we
-        # explicitly set "+" to match TraitGym's forward-strand call exactly.
-        interval = interval.copy()
+        interval = variant.reference_interval.resize(sequence_length).copy()
+        # Default strand is "."; AlphaGenome reads it as unstranded and we
+        # specifically want forward-strand to match TraitGym's call.
         interval.strand = "+"
 
         scores = model.score_variant(
@@ -165,12 +158,26 @@ def score_variants_alphagenome(
             variant_scorers=scorers,
         )
         tidy = variant_scorers.tidy_scores([scores])
-        return parse_score_response(tidy, scorer_repr_to_assay)
+        parsed = parse_score_response(tidy, scorer_repr_to_assay)
+        # Detach values from pandas/SDK objects so the per-row footprint is
+        # just a small numpy array; without this the executor accumulates
+        # ~3-4 MB per variant of retained references and OOMs on >10K-variant
+        # datasets.
+        arr = parsed.to_numpy(dtype=np.float32, copy=True).ravel()
+        return arr, list(parsed.columns)
 
-    rows = list(V.itertuples(index=False))
+    buf: np.ndarray | None = None
+    columns: list[str] | None = None
     with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as ex:
-        results = list(tqdm(ex.map(score_one, rows), total=len(rows)))
+        for i, (arr, cols) in enumerate(
+            tqdm(
+                ex.map(score_one, V.itertuples(index=False)),
+                total=len(V),
+            )
+        ):
+            if buf is None:
+                columns = cols
+                buf = np.empty((len(V), len(cols)), dtype=np.float32)
+            buf[i] = arr
 
-    out = pd.concat(results, axis=0, ignore_index=True)
-    assert len(out) == len(V), f"output rows ({len(out)}) != input rows ({len(V)})"
-    return out
+    return pd.DataFrame(buf, columns=columns)

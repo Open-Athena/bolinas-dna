@@ -11,8 +11,3 @@ from bolinas.evals.metrics import compute_pairwise_metrics
 
 
 DATASETS = config["datasets"]
-INPUT_HF_PREFIX = config["input_hf_prefix"]
-SPLIT = config["split"]
-SCORE_COLUMN = config["score_column"]
-NUM_WORKERS = config["num_workers"]
-SUBSET_N_PAIRS = config.get("subset_n_pairs")

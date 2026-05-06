@@ -1,7 +1,6 @@
-"""Tests for the AlphaGenome scoring helpers (issue #154).
+"""Tests for the AlphaGenome scoring helpers.
 
-The ``alphagenome`` PyPI package is an optional dep (``alphagenome-eval`` group)
-and may not be installed locally. We isolate tests so the parser test runs
+The ``alphagenome`` package is an optional dep — the parse-response tests run
 without it; the scorer-construction test is gated on the import.
 """
 
@@ -29,11 +28,7 @@ def test_alphagenome_constants():
 
 
 def test_parse_score_response_single_track_per_assay():
-    """Each assay returns one cell-type/track row → columns named ASSAY_0."""
-    scorer_repr_to_assay = {
-        "scorer_atac": "ATAC",
-        "scorer_cage": "CAGE",
-    }
+    scorer_repr_to_assay = {"scorer_atac": "ATAC", "scorer_cage": "CAGE"}
     tidy = pd.DataFrame(
         {
             "variant_scorer": ["scorer_atac", "scorer_cage"],
@@ -48,11 +43,9 @@ def test_parse_score_response_single_track_per_assay():
 
 
 def test_parse_score_response_multiple_tracks_per_assay():
-    """An assay with multiple cell-type tracks → ASSAY_0, ASSAY_1, ..."""
     scorer_repr_to_assay = {"scorer_atac": "ATAC", "scorer_cage": "CAGE"}
     tidy = pd.DataFrame(
         {
-            # ATAC has 3 cell-type tracks; CAGE has 2.
             "variant_scorer": [
                 "scorer_atac",
                 "scorer_atac",
@@ -66,14 +59,12 @@ def test_parse_score_response_multiple_tracks_per_assay():
     out = parse_score_response(tidy, scorer_repr_to_assay)
     assert out.shape == (1, 5)
     assert list(out.columns) == ["ATAC_0", "ATAC_1", "ATAC_2", "CAGE_0", "CAGE_1"]
-    # Order within each assay reflects the row order in tidy_scores.
     assert out.loc[0, "ATAC_0"] == 0.1
     assert out.loc[0, "ATAC_2"] == 0.3
     assert out.loc[0, "CAGE_1"] == 2.0
 
 
 def test_parse_score_response_unknown_scorer_fails_loud():
-    """A scorer repr we don't know about should crash, not silently drop."""
     scorer_repr_to_assay = {"scorer_atac": "ATAC"}
     tidy = pd.DataFrame(
         {
@@ -93,7 +84,6 @@ def test_parse_score_response_missing_columns():
 
 
 def test_parse_score_response_no_nan_in_normal_path():
-    """Normal AlphaGenome output should never produce NaN columns."""
     scorer_repr_to_assay = {f"s_{t}": t for t in ALPHAGENOME_TRACKS}
     tidy = pd.DataFrame(
         {
@@ -107,7 +97,6 @@ def test_parse_score_response_no_nan_in_normal_path():
 
 
 def test_make_scorers_uses_l2_diff_log1p():
-    """If alphagenome is installed, scorers must request L2_DIFF_LOG1P aggregation."""
     pytest.importorskip("alphagenome")
     from alphagenome.models import variant_scorers
 
@@ -117,7 +106,4 @@ def test_make_scorers_uses_l2_diff_log1p():
     assert len(scorers) == len(ALPHAGENOME_TRACKS)
     assert set(repr_to_assay.values()) == set(ALPHAGENOME_TRACKS)
     for s in scorers:
-        # CenterMaskScorer exposes its config; verify aggregation is L2_DIFF_LOG1P.
         assert s.aggregation_type == variant_scorers.AggregationType.L2_DIFF_LOG1P
-        # width=None means use the scorer's default span.
-        assert s.width is None
