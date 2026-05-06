@@ -13,14 +13,9 @@ rule download_genome:
 rule download_model:
     """Pull a specific checkpoint dir from GCS into results/checkpoints/{model}/.
 
-    `gcloud storage cp -r` insists on (a) the destination directory existing
-    and (b) nesting the source under it — so we mkdir first, then glob the
-    source's contents into {output} via `{gcs_path}/*` to flatten.
-
-    Auth: relies on `gcloud auth application-default login` (user-side) or
-    GCE/EC2 default credentials. We don't add the snakemake-gcs storage
-    plugin — a single shell rule keeps the pipeline simple and matches the
-    explicit-download style of `download_genome`.
+    The `mkdir` + glob is to flatten: `gcloud storage cp -r src dst` nests
+    src under dst, but the inference rule expects HF model files directly
+    under {output}. Auth uses application-default credentials.
     """
     output:
         directory("results/checkpoints/{model}"),

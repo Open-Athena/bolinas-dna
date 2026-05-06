@@ -14,11 +14,8 @@ rule compute_scores:
         model="|".join(MODELS),
         dataset="|".join(DATASETS),
     params:
-        # Number of DNA bases extracted per variant context. The model's
-        # tokenizer (loaded from the checkpoint) handles BOS itself, so this
-        # is 255 for BOS-using runs (e.g. exp136) and 256 for the older runs.
-        # We forward as ``context_size=`` because that's the parameter name
-        # in the existing library function.
+        # 255 for BOS-using checkpoints (e.g. exp136), 256 for older runs;
+        # the tokenizer baked into each checkpoint handles BOS itself.
         window_size=lambda wc: get_model_config(wc.model)["window_size"],
         hf_path=lambda wc: f"{config['input_hf_prefix']}_{wc.dataset}",
     threads: config["inference"]["num_workers"]
