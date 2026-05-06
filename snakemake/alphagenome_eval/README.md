@@ -81,9 +81,15 @@ sky launch snakemake/alphagenome_eval/sky/run.yaml -c alphagenome-eval \
     --env ALPHA_GENOME_API_KEY
 ```
 
-The launch yaml provisions a small CPU EC2 node (`m6i.large`-class,
-us-east-2), runs the full pipeline (~2-3 h end-to-end), and writes outputs to
-S3. Tear down with `sky down alphagenome-eval`.
+The launch yaml provisions a small CPU EC2 node (`m6i.xlarge`-class — 16 GB
+to leave headroom for the per-variant API responses, us-east-2), runs the
+full pipeline (~2-3 h end-to-end), and writes outputs to S3. Tear down with
+`sky down alphagenome-eval`.
+
+> **Re-running an existing dataset:** if the rule code or library changes,
+> Snakemake's provenance check will re-trigger `compute_per_track_l2` and
+> burn the API budget again. If the change is known to produce identical
+> outputs, skip the rerun with `snakemake --cleanup-metadata results/per_track_l2/{dataset}.parquet`.
 
 ### Local (small subsets only)
 

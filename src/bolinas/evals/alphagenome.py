@@ -159,10 +159,10 @@ def score_variants_alphagenome(
         )
         tidy = variant_scorers.tidy_scores([scores])
         parsed = parse_score_response(tidy, scorer_repr_to_assay)
-        # Detach values from pandas/SDK objects so the per-row footprint is
-        # just a small numpy array; without this the executor accumulates
-        # ~3-4 MB per variant of retained references and OOMs on >10K-variant
-        # datasets.
+        # Detach values from the SDK / pandas objects so each iteration's
+        # footprint is just a small numpy array. Without the detachment, the
+        # earlier list-of-DataFrames implementation accumulated ~3-4 MB of
+        # retained references per variant and OOMed on >10K-variant runs.
         arr = parsed.to_numpy(dtype=np.float32, copy=True).ravel()
         return arr, list(parsed.columns)
 
