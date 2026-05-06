@@ -13,9 +13,9 @@ rule download_genome:
 rule download_model:
     """Pull a specific checkpoint dir from GCS into results/checkpoints/{model}/.
 
-    The trailing slash on the source URL makes `gcloud storage cp -r` copy
-    the contents of the source dir into {output}, so HF model files land
-    directly at results/checkpoints/{model}/ (no extra step-N/ subdir).
+    `gcloud storage cp -r` insists on (a) the destination directory existing
+    and (b) nesting the source under it — so we mkdir first, then glob the
+    source's contents into {output} via `{gcs_path}/*` to flatten.
 
     Auth: relies on `gcloud auth application-default login` (user-side) or
     GCE/EC2 default credentials. We don't add the snakemake-gcs storage
@@ -29,4 +29,5 @@ rule download_model:
     params:
         gcs_path=lambda wc: get_model_config(wc.model)["gcs_path"],
     shell:
-        "gcloud storage cp -r {params.gcs_path}/ {output}"
+        "mkdir -p {output} && "
+        "gcloud storage cp -r '{params.gcs_path}/*' {output}/"
