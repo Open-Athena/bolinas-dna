@@ -17,8 +17,9 @@ name: evals-v2
 
 resources:
     infra: aws/us-east-2
-    accelerators: A10G:1        # 24 GB Ampere — bf16-capable. Tried L4 (g6) first but its
-                                # AMI hits a getcwd() race during sky's runtime rsync.
+    accelerators: A10G:1        # 24 GB Ampere — bf16-capable. L4 (g6.xlarge) is
+                                # ~$0.21/hr cheaper and would also work; keeping A10G
+                                # because that's what we benchmarked batch_size=64 on.
     disk_size: 200
     labels:
         project: dna

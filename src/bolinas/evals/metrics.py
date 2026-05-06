@@ -38,10 +38,13 @@ def pairwise_accuracy(
 
     Args:
         label: 0/1 (or bool) per row. Cast to int internally.
-        score: numeric score per row. NaN is allowed but the caller is
-            responsible for any fill policy (here ``NaN > NaN`` and
-            ``NaN == NaN`` are both False, so a NaN-vs-NaN pair would be
-            counted as a loss for the positive).
+        score: numeric score per row. **Must not contain NaN** — fill
+            upstream with a semantically appropriate value (the
+            ``conservation_eval`` pipeline does ``.fillna(0)``). Without
+            this rule, a NaN-vs-NaN pair would silently count as a loss
+            for the positive (since ``NaN > NaN`` and ``NaN == NaN`` are
+            both False) — that's exactly the kind of silent-corruption
+            risk we want to fail loud on.
         match_group: integer group id; positives and negatives are paired
             within a group.
 
@@ -57,6 +60,10 @@ def pairwise_accuracy(
     label_int = pd.Series(label).astype(int).reset_index(drop=True)
     score_arr = pd.Series(score).reset_index(drop=True)
     mg = pd.Series(match_group).reset_index(drop=True)
+    assert not score_arr.isna().any(), (
+        f"score has {int(score_arr.isna().sum())} NaN values; fill upstream "
+        f"with a semantically appropriate default before scoring"
+    )
 
     df = pd.DataFrame({"label": label_int, "score": score_arr, "match_group": mg})
 

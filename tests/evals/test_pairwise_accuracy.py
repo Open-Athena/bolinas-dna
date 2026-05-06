@@ -122,6 +122,16 @@ def test_pairwise_accuracy_rejects_length_mismatch():
         )
 
 
+def test_pairwise_accuracy_rejects_nan_score():
+    """NaN in score is a silent-corruption risk (NaN > NaN and NaN == NaN both
+    False -> NaN-vs-NaN silently counts as a loss). Caller must fill upstream."""
+    label = [1, 0, 1, 0]
+    score = [float("nan"), 0.1, 0.8, 0.2]
+    mg = [0, 0, 1, 1]
+    with pytest.raises(AssertionError, match="NaN"):
+        pairwise_accuracy(*_frame(label, score, mg))
+
+
 # ---- compute_pairwise_metrics --------------------------------------------
 
 
