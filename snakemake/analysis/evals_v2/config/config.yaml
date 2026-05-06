@@ -47,7 +47,7 @@ models:
   #   window_size: 255   # 255 bp DNA + BOS = 256 total tokens
 
 inference:
-  batch_size: 512
+  batch_size: 64        # OOMs at 512 on A10G (24 GB) for 0.6B Qwen3 + 256 tokens
   num_workers: 4
   data_transform_on_the_fly: true
   torch_compile: false
