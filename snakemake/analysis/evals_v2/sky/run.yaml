@@ -17,7 +17,8 @@ name: evals-v2
 
 resources:
     infra: aws/us-east-2
-    accelerators: L4:1          # 24 GB Ada — bf16-capable; cheapest GPU that runs this workload
+    accelerators: A10G:1        # 24 GB Ampere — bf16-capable. Tried L4 (g6) first but its
+                                # AMI hits a getcwd() race during sky's runtime rsync.
     disk_size: 200
     labels:
         project: dna
@@ -60,6 +61,11 @@ run: |
 
     export PATH="$HOME/google-cloud-sdk/bin:$HOME/.local/bin:$PATH"
     export GOOGLE_APPLICATION_CREDENTIALS="$HOME/.config/gcloud/application_default_credentials.json"
+
+    # HF Trainer auto-initializes wandb if it can find the package; without
+    # an API key on this fresh node it errors out. Disable wandb entirely
+    # since this is a non-training inference job.
+    export WANDB_DISABLED=true
 
     cd snakemake/analysis/evals_v2
 
