@@ -24,19 +24,19 @@ datasets:
 # 255 = new convention (BOS prepended, e.g. exp136).
 models:
   - name: exp55-mammals
-    gcs_path: gs://marin-us-central1/checkpoints/exp55-mammals-r01-52f413/hf/step-16999
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-mammals-r01-52f413/hf/step-16999
     window_size: 256
 
   - name: exp58-mammals
-    gcs_path: gs://marin-us-central1/checkpoints/exp58-mammals-r01-23d451/hf/step-16999
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp58-mammals-r01-23d451/hf/step-16999
     window_size: 256
 
   - name: exp58-animals
-    gcs_path: gs://marin-us-central1/checkpoints/exp58-animals-r01-1e3682/hf/step-16999
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp58-animals-r01-1e3682/hf/step-16999
     window_size: 256
 
   - name: exp59-mammals
-    gcs_path: gs://marin-us-central1/checkpoints/exp59-mammals-r01-1d9235/hf/step-16999
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp59-mammals-r01-1d9235/hf/step-16999
     window_size: 256
 
   - name: exp136-proj_v30
