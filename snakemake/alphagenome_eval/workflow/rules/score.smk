@@ -24,6 +24,14 @@ rule compute_per_track_l2:
         for col in REQUIRED_VARIANT_COLUMNS:
             assert col in ds.columns, f"dataset missing column {col!r}"
 
+        if SUBSET_N_PAIRS is not None:
+            keep = ds["match_group"].drop_duplicates().head(int(SUBSET_N_PAIRS))
+            ds = ds[ds["match_group"].isin(keep)].reset_index(drop=True)
+            print(
+                f"[alphagenome_eval] {wildcards.dataset}: "
+                f"subset_n_pairs={SUBSET_N_PAIRS} → {len(ds)} variants"
+            )
+
         per_track = score_variants_alphagenome(
             ds[["chrom", "pos", "ref", "alt"]],
             num_workers=NUM_WORKERS,

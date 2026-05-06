@@ -25,6 +25,10 @@ resources:
 
 envs:
     ALPHA_GENOME_API_KEY:    # passthrough — no default; --env on launch
+    # Optional extra args appended to the snakemake invocation (e.g. specific
+    # target paths to build only one dataset, or `--config subset_n_pairs=5`
+    # for a smoke run). Default empty = build `rule all`.
+    SNAKEMAKE_ARGS: ""
 
 workdir: .
 
@@ -36,9 +40,9 @@ setup: |
     fi
     export PATH="$HOME/.local/bin:$PATH"
 
-    # Install with the alphagenome-eval extra so the official Google client is
-    # available. Other extras (enhancer-classification etc.) are not needed.
-    uv sync --extra alphagenome-eval
+    # Install with the alphagenome-eval group so the official Google client is
+    # available. Other groups (enhancer-classification etc.) are not needed.
+    uv sync --group alphagenome-eval
 
     # Smoke-test the API key — fail fast in setup, not 30 min into a rule.
     uv run python -c "
@@ -54,7 +58,9 @@ run: |
 
     cd snakemake/alphagenome_eval
 
-    uv run --project ../.. snakemake \
+    # SNAKEMAKE_ARGS may contain target paths and/or `--config x=y` overrides;
+    # leaving it empty falls through to `rule all`.
+    uv run --project ../.. snakemake $SNAKEMAKE_ARGS \
         --profile workflow/profiles/default \
         --printshellcmds \
         --rerun-incomplete \

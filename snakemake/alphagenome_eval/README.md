@@ -64,7 +64,7 @@ The official Google `alphagenome` Python client is in the optional
 `alphagenome-eval` dep group:
 
 ```bash
-uv sync --extra alphagenome-eval
+uv sync --group alphagenome-eval
 ```
 
 (SkyPilot's `setup:` does this automatically.)

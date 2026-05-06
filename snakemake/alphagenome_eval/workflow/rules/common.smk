@@ -15,3 +15,4 @@ INPUT_HF_PREFIX = config["input_hf_prefix"]
 SPLIT = config["split"]
 SCORE_COLUMN = config["score_column"]
 NUM_WORKERS = config["num_workers"]
+SUBSET_N_PAIRS = config.get("subset_n_pairs")

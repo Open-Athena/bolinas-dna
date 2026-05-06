@@ -18,3 +18,8 @@ num_workers: 4
 # Direction-agnostic by construction (L2 of differences) — one column suffices
 # for both mendelian (pathogenic > benign) and complex traits (magnitude).
 score_column: alphagenome_max_l2
+
+# Optional smoke-test knob: keep only the first N matched pairs (= 2N rows)
+# from each dataset before scoring. Leave null in production runs. Override on
+# the CLI: `--config subset_n_pairs=5`.
+subset_n_pairs: null
