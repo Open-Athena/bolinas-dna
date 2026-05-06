@@ -51,6 +51,9 @@ enhancer-classification = [
     "py2bit",
     "torchmetrics>=1.0",
 ]
+alphagenome-eval = [
+    "alphagenome",
+]
 
 [tool.hatch.metadata]
 allow-direct-references = true
