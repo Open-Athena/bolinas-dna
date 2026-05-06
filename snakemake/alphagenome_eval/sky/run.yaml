@@ -18,7 +18,10 @@ name: alphagenome-eval
 resources:
     infra: aws/us-east-2
     cpus: 2+
-    memory: 8+
+    # 32 GB — mendelian_traits (~11K variants) OOMs at ~5 GB on an 8 GB box.
+    # The snakemake child process holds growing memory across the API call
+    # accumulation; complex_traits (1.4K variants) fits in 8 GB easily.
+    memory: 32+
     disk_size: 50
     labels:
         project: dna
