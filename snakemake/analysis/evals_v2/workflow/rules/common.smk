@@ -1,0 +1,29 @@
+"""Common imports + helpers for evals_v2 rules."""
+
+from pathlib import Path
+
+import pandas as pd
+from datasets import load_dataset
+
+from bolinas.evals.conservation import REQUIRED_VARIANT_COLUMNS
+from bolinas.evals.inference import compute_variant_scores
+from bolinas.evals.metrics import compute_pairwise_metrics
+
+
+def get_dataset_config(name):
+    for d in config["datasets"]:
+        if d["name"] == name:
+            return d
+    raise ValueError(f"dataset {name!r} not found in config")
+
+
+def get_model_config(name):
+    for m in config["models"]:
+        if m["name"] == name:
+            return m
+    raise ValueError(f"model {name!r} not found in config")
+
+
+# Wildcard alternations used across rules.
+DATASETS = [d["name"] for d in config["datasets"]]
+MODELS = [m["name"] for m in config["models"]]

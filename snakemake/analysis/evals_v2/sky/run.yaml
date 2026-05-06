@@ -1,0 +1,76 @@
+# SkyPilot task: run the evals_v2 pipeline on a small GPU node.
+#
+# The pipeline pulls model checkpoints from `gs://marin-us-central1/...`,
+# scores variants on the matched-pair eval datasets, and computes
+# PairwiseAccuracy ± SE per (model, dataset). 5 models × 2 datasets = 10
+# inference runs, each ≤ 10K variants — fits on a single small GPU.
+#
+# Auth: the user's GCP application-default credentials are mounted from
+# ~/.config/gcloud/application_default_credentials.json. The setup step
+# installs the gcloud CLI so the pipeline's `gcloud storage cp -r` rule
+# works.
+#
+# Launch:
+#   sky launch snakemake/analysis/evals_v2/sky/run.yaml -c evals-v2
+
+name: evals-v2
+
+resources:
+    infra: aws/us-east-2
+    accelerators: A10G:1        # 24 GB Ampere — bf16-capable. L4 (g6.xlarge) is
+                                # ~$0.21/hr cheaper and would also work; keeping A10G
+                                # because that's what we benchmarked batch_size=64 on.
+    disk_size: 200
+    labels:
+        project: dna
+
+workdir: .
+
+file_mounts:
+    # Application Default Credentials so `gcloud storage cp -r` can pull
+    # private GCS objects from gs://marin-us-central1/...
+    ~/.config/gcloud/application_default_credentials.json: ~/.config/gcloud/application_default_credentials.json
+
+setup: |
+    set -euxo pipefail
+
+    if ! command -v uv >/dev/null 2>&1; then
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+    fi
+
+    # gcloud CLI for the pipeline's `download_model` shell rule.
+    if ! command -v gcloud >/dev/null 2>&1; then
+        curl -fsSL https://sdk.cloud.google.com > /tmp/gcloud-install.sh
+        bash /tmp/gcloud-install.sh --disable-prompts --install-dir="$HOME"
+    fi
+
+    grep -q 'google-cloud-sdk/bin' "$HOME/.bashrc" || \
+        echo 'export PATH="$HOME/google-cloud-sdk/bin:$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+
+    export PATH="$HOME/google-cloud-sdk/bin:$HOME/.local/bin:$PATH"
+
+    # Pin to the ADC we mounted; gcloud picks this up automatically.
+    export GOOGLE_APPLICATION_CREDENTIALS="$HOME/.config/gcloud/application_default_credentials.json"
+
+    uv sync
+
+    # Smoke-test GCS access so a bad ADC fails fast in setup, not in a rule.
+    gcloud storage ls gs://marin-us-central1/checkpoints/ | head -3 >/dev/null
+
+run: |
+    set -euxo pipefail
+
+    export PATH="$HOME/google-cloud-sdk/bin:$HOME/.local/bin:$PATH"
+    export GOOGLE_APPLICATION_CREDENTIALS="$HOME/.config/gcloud/application_default_credentials.json"
+
+    # HF Trainer auto-initializes wandb if it can find the package; without
+    # an API key on this fresh node it errors out. Disable wandb entirely
+    # since this is a non-training inference job.
+    export WANDB_DISABLED=true
+
+    cd snakemake/analysis/evals_v2
+
+    uv run --project ../../.. snakemake \
+        --profile workflow/profiles/default \
+        --printshellcmds \
+        --rerun-incomplete

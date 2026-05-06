@@ -215,7 +215,7 @@ wheels = [
 [[package]]
 name = "biofoundation"
 version = "0.1.0"
-source = { git = "https://github.com/Open-Athena/biofoundation.git#66cf4d46fd8b53d9c39446a4278f7b24ccf7fc40" }
+source = { git = "https://github.com/Open-Athena/biofoundation.git#df5bd4994ca4b2a5bbbc429ec7a592b08e5a22c3" }
 dependencies = [
     { name = "bioframe" },
     { name = "biopython" },

@@ -7,7 +7,7 @@ import pytest
 
 from bolinas.evals.conservation import (
     CONSERVATION_TRACKS,
-    aggregate_traitgym_metrics,
+    aggregate_conservation_metrics,
     score_variants_at_positions,
 )
 
@@ -110,7 +110,7 @@ def test_score_variants_rejects_non_integer_pos(tmp_path):
         score_variants_at_positions(df, bw_path)
 
 
-def _scored_parquet(tmp_path, name, scores, labels, subsets):
+def _scored_parquet(tmp_path, name, scores, labels, subsets, match_groups):
     """Write a fake scored-variant parquet matching the score_variants output schema."""
     path = tmp_path / f"{name}.parquet"
     n = len(scores)
@@ -122,6 +122,7 @@ def _scored_parquet(tmp_path, name, scores, labels, subsets):
             "alt": ["T"] * n,
             "label": labels,
             "subset": subsets,
+            "match_group": match_groups,
             "score": scores,
         }
     )
@@ -129,135 +130,128 @@ def _scored_parquet(tmp_path, name, scores, labels, subsets):
     return path
 
 
-def test_aggregate_traitgym_metrics_nan_accounting(tmp_path):
-    """NaN counts should be correct per subset and globally; AUPRC computed
-    after fillna(0)."""
-    # 6 variants: 3 in subset_A, 3 in subset_B. Score column has 1 NaN
-    # in subset_A, 0 in subset_B.
-    scores = [0.9, np.nan, 0.1, 0.8, 0.2, 0.5]
-    labels = [1, 1, 0, 1, 0, 0]
-    subsets = ["A", "A", "A", "B", "B", "B"]
-    p = _scored_parquet(tmp_path, "phyloP_241m", scores, labels, subsets)
+def test_aggregate_conservation_metrics_nan_accounting(tmp_path):
+    """NaN counts should be correct per subset; PairwiseAccuracy computed
+    after fillna(0). 4 matched pairs across 2 subsets; subset A has 1 NaN."""
+    # 8 variants = 4 pairs. NaN in pos of group 0 -> after fillna(0) it's
+    # a loss for that pair (0 < 0.1).
+    scores = [np.nan, 0.1, 0.8, 0.2, 0.9, 0.1, 0.7, 0.3]
+    labels = [1, 0, 1, 0, 1, 0, 1, 0]
+    subsets = ["A", "A", "A", "A", "B", "B", "B", "B"]
+    match_groups = [0, 0, 1, 1, 2, 2, 3, 3]
+    p = _scored_parquet(tmp_path, "phyloP_241m", scores, labels, subsets, match_groups)
 
-    metrics, md = aggregate_traitgym_metrics({"phyloP_241m": p})
+    metrics, md = aggregate_conservation_metrics({"phyloP_241m": p})
 
     # Schema check.
     expected_cols = {
-        "metric",
         "score_type",
         "score_name",
         "subset",
         "value",
-        "n_pos",
-        "n_neg",
+        "se",
+        "n_pairs",
+        "n_ties",
         "n_nan",
         "n_total",
     }
     assert expected_cols.issubset(set(metrics.columns))
 
     # NaN accounting.
-    nan_global = metrics[
-        (metrics["score_name"] == "phyloP_241m") & (metrics["subset"] == "global")
-    ]["n_nan"].iloc[0]
     nan_a = metrics[
         (metrics["score_name"] == "phyloP_241m") & (metrics["subset"] == "A")
     ]["n_nan"].iloc[0]
     nan_b = metrics[
         (metrics["score_name"] == "phyloP_241m") & (metrics["subset"] == "B")
     ]["n_nan"].iloc[0]
-    assert nan_global == 1
     assert nan_a == 1
     assert nan_b == 0
 
     # Total counts.
-    tot_global = metrics[
-        (metrics["score_name"] == "phyloP_241m") & (metrics["subset"] == "global")
+    tot_a = metrics[
+        (metrics["score_name"] == "phyloP_241m") & (metrics["subset"] == "A")
     ]["n_total"].iloc[0]
-    assert tot_global == 6
+    assert tot_a == 4
 
-    # Markdown contains the AUPRC and NaN-count tables.
-    assert "AUPRC" in md
+    # Subset A: pair0 has NaN→0 vs 0.1 → loss; pair1 0.8 vs 0.2 → win. value = 0.5.
+    val_a = metrics[
+        (metrics["score_name"] == "phyloP_241m") & (metrics["subset"] == "A")
+    ]["value"].iloc[0]
+    assert val_a == 0.5
+    # Subset B: both pairs are wins. value = 1.0.
+    val_b = metrics[
+        (metrics["score_name"] == "phyloP_241m") & (metrics["subset"] == "B")
+    ]["value"].iloc[0]
+    assert val_b == 1.0
+
+    # Markdown contains the PairwiseAccuracy and NaN-count tables.
+    assert "Pairwise Accuracy" in md
     assert "NaN" in md
     assert "phyloP_241m" in md
 
 
-def test_aggregate_traitgym_metrics_multi_score_column_order(tmp_path):
+def test_aggregate_conservation_metrics_multi_score_column_order(tmp_path):
     """Markdown columns appear in the order of parquet_paths.keys()."""
-    scores = [0.5, 0.7, 0.3, 0.2]
-    labels = [1, 1, 0, 0]
+    scores = [0.7, 0.5, 0.3, 0.2]
+    labels = [1, 0, 1, 0]
     subsets = ["x", "x", "x", "x"]
+    match_groups = [0, 0, 1, 1]
     paths = {
         "phyloP_100v": _scored_parquet(
-            tmp_path, "phyloP_100v", scores, labels, subsets
+            tmp_path, "phyloP_100v", scores, labels, subsets, match_groups
         ),
         "phyloP_241m": _scored_parquet(
-            tmp_path, "phyloP_241m", scores, labels, subsets
+            tmp_path, "phyloP_241m", scores, labels, subsets, match_groups
         ),
         "phastCons_43p": _scored_parquet(
-            tmp_path, "phastCons_43p", scores, labels, subsets
+            tmp_path, "phastCons_43p", scores, labels, subsets, match_groups
         ),
     }
-    _, md = aggregate_traitgym_metrics(paths)
+    _, md = aggregate_conservation_metrics(paths)
 
-    # All three names appear; phyloP_100v comes before phyloP_241m (column order).
     pos_100v = md.find("phyloP_100v")
     pos_241m = md.find("phyloP_241m")
     pos_43p = md.find("phastCons_43p")
     assert 0 < pos_100v < pos_241m < pos_43p
 
 
-def test_aggregate_traitgym_metrics_mean_row_replaces_global(tmp_path):
-    """AUPRC table has a 'mean' row (unweighted across subsets) at the top
-    and *no* 'global' row. The NaN-counts table still includes global."""
-    # 8 variants, two subsets of size 4. The two subsets' AUPRCs differ,
-    # so unweighted mean ≠ global AUPRC and we can tell them apart.
-    # subset A: perfectly separable -> AUPRC = 1.0
-    # subset B: anti-correlated     -> AUPRC ≈ 0.4
-    scores = [0.9, 0.8, 0.2, 0.1, 0.1, 0.2, 0.8, 0.9]
-    labels = [1, 1, 0, 0, 1, 1, 0, 0]
+def test_aggregate_conservation_metrics_no_global_or_mean_row(tmp_path):
+    """PairwiseAccuracy table has only per-subset rows — no 'global' or
+    'mean' aggregate row (per user requirements)."""
+    # 8 variants = 4 pairs across 2 subsets.
+    scores = [0.9, 0.1, 0.8, 0.2, 0.7, 0.3, 0.6, 0.4]
+    labels = [1, 0, 1, 0, 1, 0, 1, 0]
     subsets = ["A", "A", "A", "A", "B", "B", "B", "B"]
-    p = _scored_parquet(tmp_path, "score1", scores, labels, subsets)
+    match_groups = [0, 0, 1, 1, 2, 2, 3, 3]
+    p = _scored_parquet(tmp_path, "score1", scores, labels, subsets, match_groups)
 
-    metrics, md = aggregate_traitgym_metrics({"score1": p})
+    _, md = aggregate_conservation_metrics({"score1": p})
 
     # Split markdown into the two tables.
-    auprc_section, nan_section = md.split("### NaN counts")
-    assert "AUPRC" in auprc_section
+    pa_section, nan_section = md.split("### NaN counts")
+    assert "Pairwise Accuracy" in pa_section
 
-    # AUPRC table: must have a 'mean' row, must NOT have a 'global' row.
-    auprc_rows = [
-        ln
-        for ln in auprc_section.splitlines()
-        if ln.startswith("| ") and "---" not in ln
+    pa_rows = [
+        ln for ln in pa_section.splitlines() if ln.startswith("| ") and "---" not in ln
     ]
     # First row is the header; data rows follow.
-    data_rows = auprc_rows[1:]
+    data_rows = pa_rows[1:]
     row_labels = [r.split("|")[1].strip() for r in data_rows]
-    assert "mean" in row_labels
     assert "global" not in row_labels
-    assert row_labels[0] == "mean", "mean row must be at the top of the AUPRC table"
+    assert "mean" not in row_labels
+    assert set(row_labels) == {"A", "B"}
 
-    # NaN-counts table: still has global.
-    nan_rows = [
-        ln for ln in nan_section.splitlines() if ln.startswith("| ") and "---" not in ln
-    ]
-    nan_data = nan_rows[1:]
-    nan_labels = [r.split("|")[1].strip() for r in nan_data]
-    assert "global" in nan_labels
 
-    # Mean value matches the unweighted mean of per-subset AUPRCs in metrics_df.
-    per_subset_auprc = metrics[
-        (metrics["metric"] == "AUPRC")
-        & (metrics["score_name"] == "score1")
-        & (metrics["subset"].isin(["A", "B"]))
-    ]["value"]
-    expected_mean = float(per_subset_auprc.mean())
-
-    mean_row_str = next(r for r in data_rows if r.split("|")[1].strip() == "mean")
-    # Cells: ['', 'mean', 'n_pos', 'n_neg', 'score1', '']
-    cells = [c.strip() for c in mean_row_str.split("|")]
-    rendered_mean = float(cells[4])
-    assert rendered_mean == pytest.approx(expected_mean, abs=1e-3)
+def test_aggregate_conservation_metrics_value_formatting(tmp_path):
+    """Cells in the markdown table follow the ``value ± se`` format."""
+    # 4 variants = 2 pairs in subset A. Both wins -> value=1.0, se=0.0.
+    scores = [0.9, 0.1, 0.8, 0.2]
+    labels = [1, 0, 1, 0]
+    subsets = ["A", "A", "A", "A"]
+    match_groups = [0, 0, 1, 1]
+    p = _scored_parquet(tmp_path, "score1", scores, labels, subsets, match_groups)
+    _, md = aggregate_conservation_metrics({"score1": p})
+    assert "1.000 ± 0.000" in md
 
 
 def test_score_variants_preserves_input_order(tmp_path):

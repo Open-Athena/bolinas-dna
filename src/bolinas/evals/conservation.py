@@ -1,7 +1,8 @@
 """Per-variant conservation scoring via UCSC bigWig tracks.
 
-Used by ``snakemake/conservation_eval/`` (issue #146) to score TraitGym
-Mendelian v2 variants with classical conservation tracks:
+Used by ``snakemake/conservation_eval/`` (issue #146) to score matched-pair
+variant-effect datasets (e.g. ``bolinas-dna/evals_mendelian_traits``,
+``bolinas-dna/evals_complex_traits``) with classical conservation tracks:
 
 - ``phyloP_100v``    — UCSC 100-vertebrate phyloP (multiz alignment)
 - ``phastCons_100v`` — UCSC 100-vertebrate phastCons (multiz alignment)
@@ -29,7 +30,7 @@ import numpy as np
 import pandas as pd
 import pyBigWig
 
-from bolinas.evals.metrics import compute_metrics
+from bolinas.evals.metrics import compute_pairwise_metrics
 
 
 CONSERVATION_TRACKS: dict[str, str] = {
@@ -52,8 +53,9 @@ CONSERVATION_TRACKS: dict[str, str] = {
 }
 
 
-# TraitGym variant columns the pipeline preserves end-to-end. Asserted by
-# the score and aggregate stages so a schema drift fails fast.
+# Variant columns the pipeline preserves end-to-end. Asserted by the score
+# and aggregate stages so a schema drift fails fast. ``match_group`` links
+# 1:1 matched positives and negatives produced by ``snakemake/evals/``.
 REQUIRED_VARIANT_COLUMNS: tuple[str, ...] = (
     "chrom",
     "pos",
@@ -61,6 +63,7 @@ REQUIRED_VARIANT_COLUMNS: tuple[str, ...] = (
     "alt",
     "label",
     "subset",
+    "match_group",
 )
 
 
@@ -113,20 +116,21 @@ def score_variants_at_positions(
     return scores
 
 
-def aggregate_traitgym_metrics(
+def aggregate_conservation_metrics(
     parquet_paths: dict[str, str | Path],
 ) -> tuple[pd.DataFrame, str]:
     """Aggregate per-score scored-variant parquets into a metrics DataFrame
     and a markdown report.
 
     Each input parquet is the output of ``score_variants_at_positions`` plus
-    the original TraitGym columns: must contain ``[chrom, pos, ref, alt,
-    label, subset, score]``. The ``score`` column may contain NaN (positions
-    with no alignment in the bigWig).
+    the matched-pair variant columns: must contain ``[chrom, pos, ref, alt,
+    label, subset, match_group, score]``. The ``score`` column may contain
+    NaN (positions with no alignment in the bigWig).
 
     For each score: NaN count is recorded per subset, then ``score`` is
     filled with 0 (semantically meaningful — see module docstring) before
-    AUPRC is computed via ``bolinas.evals.metrics.compute_metrics``.
+    PairwiseAccuracy + binomial SE is computed via
+    ``bolinas.evals.metrics.compute_pairwise_metrics``.
 
     Args:
         parquet_paths: mapping ``score_name -> parquet path``. Order is
@@ -134,7 +138,7 @@ def aggregate_traitgym_metrics(
 
     Returns:
         ``(metrics_df, markdown)`` where ``metrics_df`` has columns
-        ``[metric, score_type, score_name, subset, value, n_pos, n_neg,
+        ``[score_type, score_name, subset, value, se, n_pairs, n_ties,
         n_nan, n_total]``.
     """
     assert parquet_paths, "parquet_paths must be non-empty"
@@ -150,19 +154,15 @@ def aggregate_traitgym_metrics(
                 f"{parquet_paths[score_name]}: missing column {col!r}"
             )
 
-        # Count NaN per subset before filling; "global" matches compute_metrics'
-        # convention for the all-rows row.
+        # Count NaN per subset before filling.
         nan_per_subset = df.groupby("subset")["score"].apply(
             lambda s: int(s.isna().sum())
         )
-        nan_per_subset["global"] = int(df["score"].isna().sum())
         total_per_subset = df.groupby("subset").size().astype(int)
-        total_per_subset["global"] = len(df)
 
-        m = compute_metrics(
+        m = compute_pairwise_metrics(
             dataset=df[list(REQUIRED_VARIANT_COLUMNS)],
             scores=df[["score"]].fillna(0),
-            metrics=["AUPRC"],
             score_columns=["score"],
         )
         m["score_name"] = score_name
@@ -178,95 +178,82 @@ def aggregate_traitgym_metrics(
 def _build_markdown(metrics: pd.DataFrame, score_names: list[str]) -> str:
     """Render the metrics DataFrame as a two-table markdown report.
 
-    AUPRC table: per-subset rows plus an unweighted ``mean`` row across
-    subsets at the top (macro-AUPRC). The ``global`` row is intentionally
-    excluded — it would be dominated by the largest subset (missense).
+    PairwiseAccuracy table: one row per ``subset`` (no ``global`` / ``mean``
+    aggregate row). Each cell is ``f"{value:.3f} ± {se:.3f}"``.
 
-    NaN-counts table: keeps the ``global`` row (it's a real total count,
-    not an aggregate of AUPRCs).
+    NaN-counts table: per-subset NaN counts plus per-subset n_total.
     """
-    auprc = metrics[metrics["metric"] == "AUPRC"].copy()
 
     def _pivot(values_col: str) -> pd.DataFrame:
-        return auprc.pivot_table(
+        return metrics.pivot_table(
             index="subset",
             columns="score_name",
             values=values_col,
             aggfunc="first",
         )
 
-    # Per-subset n_pos/n_neg/n_total from the first score (subset coverage
-    # is score-independent).
+    # Per-subset coverage (n_pairs / n_total / n_ties) from the first score —
+    # subset coverage is score-independent. n_ties varies per score, handled
+    # below in its own table column if we want to surface it.
     coverage = (
-        auprc[auprc["score_name"] == score_names[0]][
-            ["subset", "n_pos", "n_neg", "n_total"]
+        metrics[metrics["score_name"] == score_names[0]][
+            ["subset", "n_pairs", "n_total"]
         ]
         .drop_duplicates(subset="subset")
         .set_index("subset")
     )
 
-    pivot = _pivot("value")
+    val_pivot = _pivot("value")
+    se_pivot = _pivot("se")
     nan_pivot = _pivot("n_nan")
 
-    # Per-subset rows ordered by n_pos descending; "global" is excluded
-    # from the AUPRC table but kept for the NaN-counts table.
-    per_subset = [
-        s for s in coverage.sort_values("n_pos", ascending=False).index if s != "global"
-    ]
-    pivot_subsets = pivot.reindex(per_subset)
-
-    # Unweighted mean of per-subset AUPRCs (one value per score). NaN-skip
-    # so a missing subset value for one score doesn't take down the mean.
-    mean_row = pivot_subsets.mean(axis=0, skipna=True)
+    per_subset = list(coverage.sort_values("n_pairs", ascending=False).index)
 
     lines: list[str] = []
-    lines.append("### TraitGym Mendelian v2 — AUPRC")
+    lines.append("### Conservation — Pairwise Accuracy")
     lines.append("")
     lines.append(
-        "Per-subset AUPRC. The top `mean` row is the unweighted mean across "
-        "subsets (macro-AUPRC); each subset contributes equally regardless "
-        "of its size."
+        "Per-subset pairwise accuracy ± binomial SE. For each `match_group` "
+        "(1:1 matched positive and negative variants), the metric counts +1 "
+        "if the positive scores higher, +0.5 on a tie, +0 otherwise; the "
+        "table reports the mean across pairs and `sqrt(p*(1-p)/n)`."
     )
     lines.append("")
-    header = ["subset", "n_pos", "n_neg", *score_names]
+    header = ["subset", "n_pairs", *score_names]
     lines.append("| " + " | ".join(header) + " |")
     lines.append("| " + " | ".join(["---"] * len(header)) + " |")
 
-    mean_vals = [
-        f"{mean_row[s]:.3f}" if pd.notna(mean_row[s]) else "—" for s in score_names
-    ]
-    lines.append("| " + " | ".join(["mean", "—", "—", *mean_vals]) + " |")
-
     for subset in per_subset:
-        n_pos = int(coverage.loc[subset, "n_pos"])
-        n_neg = int(coverage.loc[subset, "n_neg"])
-        vals = [
-            f"{pivot.loc[subset, s]:.3f}" if pd.notna(pivot.loc[subset, s]) else "—"
-            for s in score_names
-        ]
-        lines.append("| " + " | ".join([subset, str(n_pos), str(n_neg), *vals]) + " |")
+        n_pairs = int(coverage.loc[subset, "n_pairs"])
+        cells: list[str] = []
+        for s in score_names:
+            v = val_pivot.loc[subset, s] if s in val_pivot.columns else float("nan")
+            e = se_pivot.loc[subset, s] if s in se_pivot.columns else float("nan")
+            cells.append(f"{v:.3f} ± {e:.3f}" if pd.notna(v) and pd.notna(e) else "—")
+        lines.append("| " + " | ".join([subset, str(n_pairs), *cells]) + " |")
 
-    # NaN counts: keep the global row at the top, then per-subset rows.
-    nan_order = (["global"] if "global" in nan_pivot.index else []) + per_subset
-    nan_pivot_ordered = nan_pivot.reindex(nan_order)
-
+    # NaN counts: per-subset rows ordered the same way as the metric table.
     lines.append("")
     lines.append("### NaN counts")
     lines.append("")
     lines.append(
-        "NaN = no alignment at that locus in the bigWig. AUPRC above is computed "
-        "after `.fillna(0)`: 0 is semantically meaningful for both phyloP "
-        "(neither conserved nor accelerated) and phastCons (non-conserved)."
+        "NaN = no alignment at that locus in the bigWig. PairwiseAccuracy "
+        "above is computed after `.fillna(0)`: 0 is semantically meaningful "
+        "for both phyloP (neither conserved nor accelerated) and phastCons "
+        "(non-conserved)."
     )
     lines.append("")
     nan_header = ["subset", "n_total", *score_names]
     lines.append("| " + " | ".join(nan_header) + " |")
     lines.append("| " + " | ".join(["---"] * len(nan_header)) + " |")
-    for subset in nan_pivot_ordered.index:
-        n_total = (
-            int(coverage.loc[subset, "n_total"]) if subset in coverage.index else 0
-        )
-        vals = [str(int(nan_pivot_ordered.loc[subset, s])) for s in score_names]
+    for subset in per_subset:
+        n_total = int(coverage.loc[subset, "n_total"])
+        vals = [
+            str(int(nan_pivot.loc[subset, s]))
+            if s in nan_pivot.columns and pd.notna(nan_pivot.loc[subset, s])
+            else "0"
+            for s in score_names
+        ]
         lines.append("| " + " | ".join([subset, str(n_total), *vals]) + " |")
 
     return "\n".join(lines) + "\n"
