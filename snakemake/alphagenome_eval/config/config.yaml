@@ -1,0 +1,20 @@
+# HuggingFace prefix for the matched-pair eval datasets. Each dataset is
+# loaded as f"{input_hf_prefix}_{dataset}".
+input_hf_prefix: bolinas-dna/evals
+
+# Train-only convention (matches snakemake/analysis/evals_v2/) — the test
+# split is held out for the final-eval pass.
+split: train
+
+datasets:
+  - mendelian_traits
+  - complex_traits
+
+# Threads in the per-rule ThreadPoolExecutor. AlphaGenome rate-limits, so keep
+# this low (4 has been a safe ceiling in practice).
+num_workers: 4
+
+# Score column produced by `aggregate_max` and consumed by `compute_metrics`.
+# Direction-agnostic by construction (L2 of differences) — one column suffices
+# for both mendelian (pathogenic > benign) and complex traits (magnitude).
+score_column: alphagenome_max_l2

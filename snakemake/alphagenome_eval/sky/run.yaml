@@ -1,0 +1,61 @@
+# SkyPilot task: run the alphagenome_eval pipeline on a small CPU node.
+#
+# AlphaGenome scoring is API-bound — no GPU needed, no model checkpoint to
+# pull, no genome reference to download. Runtime is dominated by per-variant
+# HTTPS round-trips to the AlphaGenome API; the pipeline runs ~4 worker
+# threads against the API, well under the rate limit.
+#
+# Auth: ALPHA_GENOME_API_KEY is inherited from the launching shell's
+# environment via the `envs:` block (no default). Export it locally (e.g. in
+# ~/.bashrc) and pass `--env ALPHA_GENOME_API_KEY` to `sky launch`.
+#
+# Launch:
+#   export ALPHA_GENOME_API_KEY=<key>      # or have it set in ~/.bashrc
+#   sky launch snakemake/alphagenome_eval/sky/run.yaml -c alphagenome-eval --env ALPHA_GENOME_API_KEY
+
+name: alphagenome-eval
+
+resources:
+    infra: aws/us-east-2
+    cpus: 2+
+    memory: 8+
+    disk_size: 50
+    labels:
+        project: dna
+
+envs:
+    ALPHA_GENOME_API_KEY:    # passthrough — no default; --env on launch
+
+workdir: .
+
+setup: |
+    set -euxo pipefail
+
+    if ! command -v uv >/dev/null 2>&1; then
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+    fi
+    export PATH="$HOME/.local/bin:$PATH"
+
+    # Install with the alphagenome-eval extra so the official Google client is
+    # available. Other extras (enhancer-classification etc.) are not needed.
+    uv sync --extra alphagenome-eval
+
+    # Smoke-test the API key — fail fast in setup, not 30 min into a rule.
+    uv run python -c "
+    import os
+    from alphagenome.models import dna_client
+    dna_client.create(os.environ['ALPHA_GENOME_API_KEY']).output_metadata()
+    print('AlphaGenome API key OK')
+    "
+
+run: |
+    set -euxo pipefail
+    export PATH="$HOME/.local/bin:$PATH"
+
+    cd snakemake/alphagenome_eval
+
+    uv run --project ../.. snakemake \
+        --profile workflow/profiles/default \
+        --printshellcmds \
+        --rerun-incomplete \
+        --restart-times 3
