@@ -39,12 +39,9 @@ models:
     gcs_path: gs://marin-dna-us-central1/checkpoints/exp59-mammals-r01-1d9235/hf/step-16999
     window_size: 256
 
-  # exp136 is commented out until biofoundation is patched to support
-  # window_size=255 (currently asserts even). Will re-enable once the
-  # library accepts odd windows. See conversation 2026-05-06.
-  # - name: exp136-proj_v30
-  #   gcs_path: gs://marin-us-central1/checkpoints/dna-bolinas-enhancer-curation-v0.1-proj_v30-6692f0/hf/step-9999
-  #   window_size: 255   # 255 bp DNA + BOS = 256 total tokens
+  - name: exp136-proj_v30
+    gcs_path: gs://marin-us-central1/checkpoints/dna-bolinas-enhancer-curation-v0.1-proj_v30-6692f0/hf/step-9999
+    window_size: 255   # 255 bp DNA + BOS = 256 total tokens
 
 inference:
   batch_size: 64        # OOMs at 512 on A10G (24 GB) for 0.6B Qwen3 + 256 tokens
