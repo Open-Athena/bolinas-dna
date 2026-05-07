@@ -14,6 +14,7 @@ commit `e59d612e9`, so HGMD pathogenic SNVs are included as a positive source.
 |---|---|---|---|
 | `mendelian_traits` | Mendelian disease pathogenic SNVs | HGMD ∪ OMIM ∪ Smedley et al. 2016 (de-duped, AF<0.001) | gnomAD common (AN≥25k, AF>0.05) |
 | `complex_traits` | UKBB fine-mapped complex-trait variants | SuSiE+FINEMAP PIP > 0.9 across 119 traits | PIP < 0.01 (and not null in any trait) |
+| `eqtl` | GTEx v8 fine-mapped eQTLs (49 tissues, pooled) | SuSiE PIP > 0.9 in ≥1 tissue | PIP < 0.01 in ≥1 tissue and never positive |
 
 Each dataset has a corresponding `*_harness_255` eval-harness variant where a
 255 bp window centered on each variant is materialized into
@@ -56,6 +57,10 @@ Per-dataset specifics:
     matching but kept as a passthrough column on the output dataset)
   - categorical = same as mendelian, plus an always-on `MAF_bin` (right-closed,
     log-spaced toward low MAF; `MAF_BIN_EDGES` in `bolinas.evals.matching`)
+- **eqtl**: same matching call as `complex_traits` (the cohort-matched MAF
+  comes natively from the Finucane GTEx file, not joined from gnomAD/UKBB).
+  `tissues` (comma-separated list of tissues where PIP > 0.9 for positives) is
+  dropped from matching but kept as a passthrough column.
 
 ## Pipeline structure
 
@@ -88,6 +93,15 @@ dataset_unsplit/mendelian_traits.parquet  (gene-matched 1:1)
 complex-trait dataset along the same lines, plus per-trait fine-mapping
 downloads and aggregation across 119 traits.
 
+`workflow/rules/eqtl.smk` produces the `eqtl` dataset from a single combined
+SuSiE fine-mapping file in the Finucane lab GTEx GCS bucket
+(`gs://finucane-requester-pays/gtex_v8/GTEx_49tissues_release1.SuSiE.tsv.bgz`,
+hg38, 49 tissues × all tested gene-variant pairs, with cohort-matched MAF).
+The aggregate step pools across tissues — a variant is positive if its SuSiE
+PIP exceeds `pip_pos_threshold` in ≥1 tissue and negative if its PIP falls
+below `pip_neg_threshold` in ≥1 tissue while never crossing the positive
+threshold in any tissue.
+
 The generic `split_dataset_by_chrom` rule then turns each
 `results/dataset_unsplit/{name}.parquet` into the train/test pair, and
 `hf_upload` ships them.
@@ -111,6 +125,14 @@ S3 storage and cores automatically.
 You need AWS credentials with S3 access:
 - **On EC2**: attach an IAM role with `AmazonS3FullAccess` to the instance.
 - **On your laptop**: run `aws configure` with an IAM user's access key.
+
+### GCP billing project (eqtl)
+
+The `eqtl` rule downloads from `gs://finucane-requester-pays/`, a Requester-Pays
+bucket that bills the requester for egress. Set the project to bill via
+`gcp_billing_project` in `config/config.yaml` (default: `hai-gcp-models`). You
+need `gsutil` available and authenticated against an account with permission
+on that project (`gcloud auth login`).
 
 ### Singularity (LD score)
 
@@ -145,6 +167,8 @@ Top-level keys:
 | `datasets` | Which datasets `rule all` builds + uploads. |
 | `mendelian_traits.*` | HGMD URL, Smedley URL, ClinVar release pin, submission summary date, AF threshold. |
 | `complex_traits.*` | Fine-mapping repo, LD-score S3 path, PIP thresholds. |
+| `gcp_billing_project` | GCP project to bill for Requester-Pays downloads (used by `eqtl`). |
+| `eqtl.*` | Source URL (Finucane GTEx GCS), PIP thresholds. |
 
 `config/complex_traits.csv` lists the 119 UKBB traits used for `complex_traits`.
 
@@ -171,6 +195,7 @@ Examples:
 
 - `bolinas-dna/evals_mendelian_traits`
 - `bolinas-dna/evals_complex_traits`
+- `bolinas-dna/evals_eqtl`
 - `bolinas-dna/evals_mendelian_traits_harness_255`
 - `bolinas-dna/evals_complex_traits_harness_255`
 

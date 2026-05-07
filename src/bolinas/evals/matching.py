@@ -51,15 +51,15 @@ MAF_BIN_EDGES = [
 def splice_prefilter() -> pl.Expr:
     """Filter mask for the iter22 splice pre-filter (issue #156).
 
-    Drops splicing variants with ``exon_dist`` beyond the splice window cap
-    (``EXON_DIST_BIN_EDGES[-1]``); their protein-coding-only ``exon_dist`` is
-    misleading at non-coding-transcript splice sites.
+    Drops splicing variants whose combined ``distance_exon`` (= min of nearest
+    PC exon and nearest non-PC exon) is beyond the splice window cap
+    (``EXON_DIST_BIN_EDGES[-1]``).
 
     Use as ``V.filter(splice_prefilter())``.
     """
     return ~(
         (pl.col("consequence_group") == "splicing")
-        & (pl.col("exon_dist") > EXON_DIST_BIN_EDGES[-1])
+        & (pl.col("distance_exon") > EXON_DIST_BIN_EDGES[-1])
     )
 
 

@@ -1,0 +1,38 @@
+name: eqtl-build
+
+workdir: .
+
+resources:
+  infra: aws/us-east-2
+  cpus: 8+
+  memory: 64+
+  disk_size: 200
+  labels:
+    project: dna
+
+# eqtl_download pulls from Requester-Pays GCS, so the launched VM needs gcloud
+# creds (mendelian/complex don't need this).
+file_mounts:
+  ~/.config/gcloud: ~/.config/gcloud
+
+setup: |
+  # uv + Python
+  command -v uv >/dev/null 2>&1 || curl -LsSf https://astral.sh/uv/install.sh | sh
+  source $HOME/.local/bin/env 2>/dev/null || true
+  # gsutil (Google Cloud SDK) for the Requester-Pays download
+  if ! command -v gsutil >/dev/null 2>&1; then
+    curl -sSL https://sdk.cloud.google.com | bash -s -- --disable-prompts >/dev/null
+  fi
+  echo 'export PATH="$HOME/google-cloud-sdk/bin:$PATH"' >> ~/.bashrc
+  cd ~/sky_workdir
+  uv sync --quiet
+
+run: |
+  source $HOME/.local/bin/env 2>/dev/null || true
+  export PATH="$HOME/google-cloud-sdk/bin:$PATH"
+  cd ~/sky_workdir/snakemake/evals
+  uv run snakemake \
+    --cores 4 \
+    -p \
+    --rerun-triggers=mtime \
+    -- results/dataset_unsplit/eqtl.parquet

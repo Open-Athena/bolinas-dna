@@ -589,7 +589,7 @@ class TestSplicePrefilter:
         return pl.DataFrame(
             {
                 "consequence_group": [r[0] for r in rows],
-                "exon_dist": [r[1] for r in rows],
+                "distance_exon": [r[1] for r in rows],
             }
         )
 
@@ -605,7 +605,7 @@ class TestSplicePrefilter:
         )
         kept = V.filter(splice_prefilter())
         # exon_dist == cap is kept (boundary inclusive); > cap is dropped.
-        assert kept["exon_dist"].to_list() == [0.0, float(cap)]
+        assert kept["distance_exon"].to_list() == [0.0, float(cap)]
 
     def test_keeps_non_splicing_regardless_of_exon_dist(self) -> None:
         cap = EXON_DIST_BIN_EDGES[-1]

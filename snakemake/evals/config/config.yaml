@@ -11,6 +11,10 @@ datasets:
   - complex_traits
   - mendelian_traits_harness_255
   - complex_traits_harness_255
+  - eqtl
+
+# GCP billing project for downloads from Requester-Pays buckets (e.g. eqtl).
+gcp_billing_project: hai-gcp-models
 
 # ----- Shared trait-pipeline parameters -----
 annotation_url: http://ftp.ensembl.org/pub/release-107/gtf/homo_sapiens/Homo_sapiens.GRCh38.107.chr.gtf.gz
@@ -85,5 +89,13 @@ mendelian_traits:
 complex_traits:
   finemapping_repo: gonzalobenegas/finucane-ukbb-finemapping
   ldscore_s3: s3://pan-ukb-us-east-1/ld_release/UKBB.EUR.ldscore.ht
+  pip_pos_threshold: 0.9
+  pip_neg_threshold: 0.01
+
+# ----- eQTL (Finucane GTEx v8 SuSiE fine-mapping) -----
+# Single combined file across 49 GTEx tissues, hg38 native, cohort-matched MAF.
+# Requester-Pays bucket — needs gcp_billing_project (above).
+eqtl:
+  source_url: gs://finucane-requester-pays/gtex_v8/GTEx_49tissues_release1.SuSiE.tsv.bgz
   pip_pos_threshold: 0.9
   pip_neg_threshold: 0.01

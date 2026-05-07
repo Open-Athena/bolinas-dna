@@ -11,6 +11,7 @@ include: "rules/smedley.smk"
 include: "rules/ldscore.smk"
 include: "rules/mendelian_traits.smk"
 include: "rules/complex_traits.smk"
+include: "rules/eqtl.smk"
 
 
 rule all:

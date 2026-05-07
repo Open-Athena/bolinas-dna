@@ -87,12 +87,12 @@ rule complex_traits_aggregate_traits:
     output:
         "results/complex_traits/finemapping/aggregated.parquet",
     run:
-        # Streaming: scan_parquet + sink_parquet so polars can chunk through the
-        # 119-trait concat + group_by without materializing all ~50 GB of
-        # per-trait fine-mapping data at once.
         high = config["complex_traits"]["pip_pos_threshold"]
         low = config["complex_traits"]["pip_neg_threshold"]
         any_null_pip = pl.col("pip").is_null().any()
+        # Streaming: scan_parquet + sink_parquet so polars can chunk through the
+        # 119-trait concat + group_by without materializing all ~50 GB of
+        # per-trait fine-mapping data at once.
         (
             pl.concat(
                 [
@@ -138,9 +138,7 @@ rule complex_traits_annotate:
     output:
         "results/complex_traits/annotated.parquet",
     run:
-        ldscore = pl.read_parquet(
-            input[1], columns=COORDINATES + ["MAF", "ld_score"]
-        )
+        ldscore = pl.read_parquet(input[1], columns=COORDINATES + ["MAF", "ld_score"])
         genome = Genome(input.genome)
         V = (
             pl.read_parquet(input[0])
@@ -173,19 +171,23 @@ rule complex_traits_annotate:
 rule complex_traits_dataset_all:
     input:
         "results/complex_traits/annotated.parquet",
-        "results/intervals/exon.parquet",
-        "results/intervals/tss.parquet",
+        "results/intervals/exon_pc.parquet",
+        "results/intervals/exon_nc.parquet",
+        "results/intervals/tss_pc.parquet",
+        "results/intervals/tss_nc.parquet",
     output:
         "results/complex_traits/dataset_all.parquet",
     run:
         build_dataset(
             pl.read_parquet(input[0]),
-            pl.read_parquet(input[1]),
-            pl.read_parquet(input[2]),
-            config["exclude_consequences"],
-            config["exon_proximal_dist"],
-            config["tss_proximal_dist"],
-            config["consequence_groups"],
+            exon_pc=pl.read_parquet(input[1]),
+            exon_nc=pl.read_parquet(input[2]),
+            tss_pc=pl.read_parquet(input[3]),
+            tss_nc=pl.read_parquet(input[4]),
+            exclude_consequences=config["exclude_consequences"],
+            exon_proximal_dist=config["exon_proximal_dist"],
+            tss_proximal_dist=config["tss_proximal_dist"],
+            consequence_groups=config["consequence_groups"],
         ).write_parquet(output[0])
 
 
@@ -206,13 +208,13 @@ rule complex_traits_dataset:
             .filter(splice_prefilter())
             .with_columns(
                 pl.when(pl.col("consequence_group") == "tss_proximal")
-                .then(bin_feature("tss_dist", TSS_DIST_BIN_EDGES))
+                .then(bin_feature("distance_tss", TSS_DIST_BIN_EDGES))
                 .otherwise(pl.lit(BIN_NA))
-                .alias("tss_dist_bin"),
+                .alias("distance_tss_bin"),
                 pl.when(pl.col("consequence_group") == "splicing")
-                .then(bin_feature("exon_dist", EXON_DIST_BIN_EDGES))
+                .then(bin_feature("distance_exon", EXON_DIST_BIN_EDGES))
                 .otherwise(pl.lit(BIN_NA))
-                .alias("exon_dist_bin"),
+                .alias("distance_exon_bin"),
                 bin_feature("MAF", MAF_BIN_EDGES, right_closed=True).alias("MAF_bin"),
             )
         )
@@ -220,14 +222,14 @@ rule complex_traits_dataset:
             match_features(
                 V.filter(pl.col("label")),
                 V.filter(~pl.col("label")),
-                ["tss_dist", "exon_dist", "MAF"],
+                ["distance_tss", "distance_exon", "MAF"],
                 [
                     "chrom",
                     "consequence_final",
                     "tss_closest_gene_id",
                     "exon_closest_gene_id",
-                    "tss_dist_bin",
-                    "exon_dist_bin",
+                    "distance_tss_bin",
+                    "distance_exon_bin",
                     "MAF_bin",
                 ],
                 k=1,
