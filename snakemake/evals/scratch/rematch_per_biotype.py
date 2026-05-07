@@ -1,8 +1,9 @@
 """Re-match: pull dataset_all parquets from S3, apply the new per-biotype
 matching design, save dataset_unsplit locally (NO S3 / HF push).
 
-Mirrors the *_dataset rules in the smk files. Cap polars threads to avoid
-overwhelming a small shared box.
+Mirrors the *_dataset rules in the smk files. Single-threaded everywhere —
+the previous 16-thread BLAS default thrashed the kernel during cdist on a
+12M-row dataset and killed the cluster's SSH.
 
 Per-dataset bin behaviour:
   - mendelian_traits / eqtl: TSS bins active only for `tss_proximal`.
@@ -12,7 +13,17 @@ Per-dataset bin behaviour:
     dataset).
 """
 import os
-os.environ.setdefault("POLARS_MAX_THREADS", "2")
+
+# Cap every thread source BEFORE importing numpy / sklearn / scipy / polars.
+for var in (
+    "POLARS_MAX_THREADS",
+    "OMP_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+    "VECLIB_MAXIMUM_THREADS",
+):
+    os.environ.setdefault(var, "1")
 
 import boto3
 import polars as pl
