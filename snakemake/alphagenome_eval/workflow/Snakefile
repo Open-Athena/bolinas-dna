@@ -1,0 +1,21 @@
+"""Snakemake workflow: AlphaGenome baseline on matched-pair eval datasets.
+
+Per-track L2_DIFF_LOG1P scores via the AlphaGenome API → max across tracks
+→ PairwiseAccuracy ± SE per consequence subset. Train split only.
+"""
+
+
+configfile: "config/config.yaml"
+
+
+include: "rules/common.smk"
+include: "rules/score.smk"
+include: "rules/metrics.smk"
+
+
+rule all:
+    input:
+        expand(
+            "results/metrics/{dataset}.parquet",
+            dataset=DATASETS,
+        ),
