@@ -197,39 +197,51 @@ rule complex_traits_dataset:
     output:
         "results/dataset_unsplit/complex_traits.parquet",
     run:
-        V = (
-            # Matching design locked in issue #156 (iter 24): same splice
-            # pre-filter and subset-conditional tss/exon bins as mendelian
-            # (iter 22), plus an always-on right-closed MAF bin (log-spaced
-            # toward low MAF) that closes the heavy MAF leak the basic
-            # continuous-only matching had. ld_score is dropped from the
-            # matching call but kept on the output as a passthrough column.
-            pl.read_parquet(input[0])
-            .filter(splice_prefilter())
-            .with_columns(
-                pl.when(pl.col("consequence_group") == "tss_proximal")
-                .then(bin_feature("distance_tss", TSS_DIST_BIN_EDGES))
-                .otherwise(pl.lit(BIN_NA))
-                .alias("distance_tss_bin"),
-                pl.when(pl.col("consequence_group") == "splicing")
-                .then(bin_feature("distance_exon", EXON_DIST_BIN_EDGES))
-                .otherwise(pl.lit(BIN_NA))
-                .alias("distance_exon_bin"),
-                bin_feature("MAF", MAF_BIN_EDGES, right_closed=True).alias("MAF_bin"),
-            )
+        V = pl.read_parquet(input[0])
+        # Per-biotype matching: same set as mendelian + always-on MAF features.
+        # Combined min-distance and combined-closest-gene columns are passthrough
+        # metadata only — not used in matching. ld_score is also a passthrough.
+        V = V.with_columns(
+            pl.when(pl.col("consequence_group").is_in(["tss_proximal", "distal"]))
+            .then(bin_feature("distance_tss_pc", TSS_DIST_BIN_EDGES))
+            .otherwise(pl.lit(BIN_NA))
+            .alias("distance_tss_pc_bin"),
+            pl.when(pl.col("consequence_group").is_in(["tss_proximal", "distal"]))
+            .then(bin_feature("distance_tss_nc", TSS_DIST_BIN_EDGES))
+            .otherwise(pl.lit(BIN_NA))
+            .alias("distance_tss_nc_bin"),
+            pl.when(pl.col("consequence_group") == "splicing")
+            .then(bin_feature("distance_exon_pc", EXON_DIST_BIN_EDGES))
+            .otherwise(pl.lit(BIN_NA))
+            .alias("distance_exon_pc_bin"),
+            pl.when(pl.col("consequence_group") == "splicing")
+            .then(bin_feature("distance_exon_nc", EXON_DIST_BIN_EDGES))
+            .otherwise(pl.lit(BIN_NA))
+            .alias("distance_exon_nc_bin"),
+            bin_feature("MAF", MAF_BIN_EDGES, right_closed=True).alias("MAF_bin"),
         )
         (
             match_features(
                 V.filter(pl.col("label")),
                 V.filter(~pl.col("label")),
-                ["distance_tss", "distance_exon", "MAF"],
+                [
+                    "distance_tss_pc",
+                    "distance_tss_nc",
+                    "distance_exon_pc",
+                    "distance_exon_nc",
+                    "MAF",
+                ],
                 [
                     "chrom",
                     "consequence_final",
-                    "tss_closest_gene_id",
-                    "exon_closest_gene_id",
-                    "distance_tss_bin",
-                    "distance_exon_bin",
+                    "tss_closest_pc_gene_id",
+                    "tss_closest_nc_gene_id",
+                    "exon_closest_pc_gene_id",
+                    "exon_closest_nc_gene_id",
+                    "distance_tss_pc_bin",
+                    "distance_tss_nc_bin",
+                    "distance_exon_pc_bin",
+                    "distance_exon_nc_bin",
                     "MAF_bin",
                 ],
                 k=1,

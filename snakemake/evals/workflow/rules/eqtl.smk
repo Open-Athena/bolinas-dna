@@ -170,33 +170,51 @@ rule eqtl_dataset:
         "results/dataset_unsplit/eqtl.parquet",
     run:
         V = pl.read_parquet(input[0])
-        # Same matching design as complex_traits (issue #156, iter 24): splice
-        # pre-filter + subset-conditional tss/exon bins + always-on right-closed
-        # MAF bin. tissues / genes / biotype_classes are dropped from matching
-        # but kept as passthrough columns.
-        V = V.filter(splice_prefilter()).with_columns(
+        # Per-biotype matching: same set as complex_traits + always-on MAF
+        # features. Combined min-distance and combined-closest-gene columns are
+        # passthrough metadata only — not used in matching. tissues / genes /
+        # biotype_classes are also passthrough.
+        V = V.with_columns(
             pl.when(pl.col("consequence_group") == "tss_proximal")
-            .then(bin_feature("distance_tss", TSS_DIST_BIN_EDGES))
+            .then(bin_feature("distance_tss_pc", TSS_DIST_BIN_EDGES))
             .otherwise(pl.lit(BIN_NA))
-            .alias("distance_tss_bin"),
+            .alias("distance_tss_pc_bin"),
+            pl.when(pl.col("consequence_group") == "tss_proximal")
+            .then(bin_feature("distance_tss_nc", TSS_DIST_BIN_EDGES))
+            .otherwise(pl.lit(BIN_NA))
+            .alias("distance_tss_nc_bin"),
             pl.when(pl.col("consequence_group") == "splicing")
-            .then(bin_feature("distance_exon", EXON_DIST_BIN_EDGES))
+            .then(bin_feature("distance_exon_pc", EXON_DIST_BIN_EDGES))
             .otherwise(pl.lit(BIN_NA))
-            .alias("distance_exon_bin"),
+            .alias("distance_exon_pc_bin"),
+            pl.when(pl.col("consequence_group") == "splicing")
+            .then(bin_feature("distance_exon_nc", EXON_DIST_BIN_EDGES))
+            .otherwise(pl.lit(BIN_NA))
+            .alias("distance_exon_nc_bin"),
             bin_feature("MAF", MAF_BIN_EDGES, right_closed=True).alias("MAF_bin"),
         )
         (
             match_features(
                 V.filter(pl.col("label")),
                 V.filter(~pl.col("label")),
-                ["distance_tss", "distance_exon", "MAF"],
+                [
+                    "distance_tss_pc",
+                    "distance_tss_nc",
+                    "distance_exon_pc",
+                    "distance_exon_nc",
+                    "MAF",
+                ],
                 [
                     "chrom",
                     "consequence_final",
-                    "tss_closest_gene_id",
-                    "exon_closest_gene_id",
-                    "distance_tss_bin",
-                    "distance_exon_bin",
+                    "tss_closest_pc_gene_id",
+                    "tss_closest_nc_gene_id",
+                    "exon_closest_pc_gene_id",
+                    "exon_closest_nc_gene_id",
+                    "distance_tss_pc_bin",
+                    "distance_tss_nc_bin",
+                    "distance_exon_pc_bin",
+                    "distance_exon_nc_bin",
                     "MAF_bin",
                 ],
                 k=1,

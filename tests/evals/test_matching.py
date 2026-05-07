@@ -23,7 +23,6 @@ from bolinas.evals.matching import (
     _validate_columns,
     bin_feature,
     match_features,
-    splice_prefilter,
 )
 
 
@@ -582,45 +581,6 @@ class TestMatchFeaturesAcceptsBinColumns:
         result = match_features(pos, neg, ["MAF"], ["cat"], k=1)
         assert "ld_score" in result.columns
         assert result.height == 2
-
-
-class TestSplicePrefilter:
-    def _frame(self, rows: list[tuple[str, float]]) -> pl.DataFrame:
-        return pl.DataFrame(
-            {
-                "consequence_group": [r[0] for r in rows],
-                "distance_exon": [r[1] for r in rows],
-            }
-        )
-
-    def test_drops_splicing_with_exon_dist_above_cap(self) -> None:
-        cap = EXON_DIST_BIN_EDGES[-1]  # 30
-        V = self._frame(
-            [
-                ("splicing", 0.0),
-                ("splicing", float(cap)),
-                ("splicing", float(cap + 1)),
-                ("splicing", 1000.0),
-            ]
-        )
-        kept = V.filter(splice_prefilter())
-        # exon_dist == cap is kept (boundary inclusive); > cap is dropped.
-        assert kept["distance_exon"].to_list() == [0.0, float(cap)]
-
-    def test_keeps_non_splicing_regardless_of_exon_dist(self) -> None:
-        cap = EXON_DIST_BIN_EDGES[-1]
-        V = self._frame(
-            [
-                ("distal", float(cap + 1)),
-                ("missense_variant", 9999.0),
-                ("tss_proximal", 0.0),
-            ]
-        )
-        kept = V.filter(splice_prefilter())
-        assert kept.height == V.height
-
-    def test_returns_polars_expression(self) -> None:
-        assert isinstance(splice_prefilter(), pl.Expr)
 
 
 def test_bin_na_constant_distinct_from_bin_labels() -> None:

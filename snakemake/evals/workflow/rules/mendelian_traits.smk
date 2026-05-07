@@ -94,36 +94,49 @@ rule mendelian_traits_dataset:
     output:
         "results/dataset_unsplit/mendelian_traits.parquet",
     run:
-        V = (
-            # Matching design locked in issue #156 (iter 22): splice pre-filter +
-            # subset-conditional distance bins as exact-match categoricals;
-            # continuous distance_tss / distance_exon still match as a within-bin
-            # tie-breaker.
-            pl.read_parquet(input[0])
-            .filter(splice_prefilter())
-            .with_columns(
-                pl.when(pl.col("consequence_group") == "tss_proximal")
-                .then(bin_feature("distance_tss", TSS_DIST_BIN_EDGES))
-                .otherwise(pl.lit(BIN_NA))
-                .alias("distance_tss_bin"),
-                pl.when(pl.col("consequence_group") == "splicing")
-                .then(bin_feature("distance_exon", EXON_DIST_BIN_EDGES))
-                .otherwise(pl.lit(BIN_NA))
-                .alias("distance_exon_bin"),
-            )
+        V = pl.read_parquet(input[0])
+        # Per-biotype matching: positives and negatives matched on PC and nc
+        # distances/bins/closest-gene-ids separately. The combined min-distance
+        # columns are passthrough metadata only — not used in matching.
+        V = V.with_columns(
+            pl.when(pl.col("consequence_group") == "tss_proximal")
+            .then(bin_feature("distance_tss_pc", TSS_DIST_BIN_EDGES))
+            .otherwise(pl.lit(BIN_NA))
+            .alias("distance_tss_pc_bin"),
+            pl.when(pl.col("consequence_group") == "tss_proximal")
+            .then(bin_feature("distance_tss_nc", TSS_DIST_BIN_EDGES))
+            .otherwise(pl.lit(BIN_NA))
+            .alias("distance_tss_nc_bin"),
+            pl.when(pl.col("consequence_group") == "splicing")
+            .then(bin_feature("distance_exon_pc", EXON_DIST_BIN_EDGES))
+            .otherwise(pl.lit(BIN_NA))
+            .alias("distance_exon_pc_bin"),
+            pl.when(pl.col("consequence_group") == "splicing")
+            .then(bin_feature("distance_exon_nc", EXON_DIST_BIN_EDGES))
+            .otherwise(pl.lit(BIN_NA))
+            .alias("distance_exon_nc_bin"),
         )
         (
             match_features(
                 V.filter(pl.col("label")),
                 V.filter(~pl.col("label")),
-                ["distance_tss", "distance_exon"],
+                [
+                    "distance_tss_pc",
+                    "distance_tss_nc",
+                    "distance_exon_pc",
+                    "distance_exon_nc",
+                ],
                 [
                     "chrom",
                     "consequence_final",
-                    "tss_closest_gene_id",
-                    "exon_closest_gene_id",
-                    "distance_tss_bin",
-                    "distance_exon_bin",
+                    "tss_closest_pc_gene_id",
+                    "tss_closest_nc_gene_id",
+                    "exon_closest_pc_gene_id",
+                    "exon_closest_nc_gene_id",
+                    "distance_tss_pc_bin",
+                    "distance_tss_nc_bin",
+                    "distance_exon_pc_bin",
+                    "distance_exon_nc_bin",
                 ],
                 k=1,
             )
