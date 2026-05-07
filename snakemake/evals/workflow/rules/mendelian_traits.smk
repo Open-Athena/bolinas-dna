@@ -96,17 +96,16 @@ rule mendelian_traits_dataset:
     run:
         V = pl.read_parquet(input[0])
         # Per-biotype matching: positives and negatives matched on PC and nc
-        # distances/bins/closest-gene-ids separately. TSS bins are active for
-        # both `tss_proximal` and `distal` so distal pairs share the same
-        # 0-10kb sub-binning that fixed the iter-26 distal leakage in
-        # complex_traits. The combined min-distance columns are passthrough
-        # metadata only — not used in matching.
+        # distances/bins/closest-gene-ids separately. PC TSS bin is active for
+        # {tss_proximal, distal} (parallel to complex_traits' iter-26 distal
+        # fix); nc TSS bin stays tss_proximal-only. The combined min-distance
+        # columns are passthrough metadata only — not used in matching.
         V = V.with_columns(
             pl.when(pl.col("consequence_group").is_in(["tss_proximal", "distal"]))
             .then(bin_feature("distance_tss_pc", TSS_DIST_BIN_EDGES))
             .otherwise(pl.lit(BIN_NA))
             .alias("distance_tss_pc_bin"),
-            pl.when(pl.col("consequence_group").is_in(["tss_proximal", "distal"]))
+            pl.when(pl.col("consequence_group") == "tss_proximal")
             .then(bin_feature("distance_tss_nc", TSS_DIST_BIN_EDGES))
             .otherwise(pl.lit(BIN_NA))
             .alias("distance_tss_nc_bin"),

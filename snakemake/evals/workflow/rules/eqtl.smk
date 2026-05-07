@@ -171,18 +171,17 @@ rule eqtl_dataset:
     run:
         V = pl.read_parquet(input[0])
         # Per-biotype matching: same set as complex_traits + always-on MAF
-        # features. TSS bins are active for both `tss_proximal` and `distal`
-        # so distal pairs share the same 0-10kb sub-binning that fixed the
-        # iter-26 distal leakage in complex_traits. Combined min-distance and
-        # combined-closest-gene columns are passthrough metadata only — not
-        # used in matching. tissues / genes / biotype_classes are also
-        # passthrough.
+        # features. PC TSS bin is active for {tss_proximal, distal} (parallel
+        # to complex_traits' iter-26 distal fix); nc TSS bin stays
+        # tss_proximal-only. Combined min-distance and combined-closest-gene
+        # columns are passthrough metadata only — not used in matching.
+        # tissues / genes / biotype_classes are also passthrough.
         V = V.with_columns(
             pl.when(pl.col("consequence_group").is_in(["tss_proximal", "distal"]))
             .then(bin_feature("distance_tss_pc", TSS_DIST_BIN_EDGES))
             .otherwise(pl.lit(BIN_NA))
             .alias("distance_tss_pc_bin"),
-            pl.when(pl.col("consequence_group").is_in(["tss_proximal", "distal"]))
+            pl.when(pl.col("consequence_group") == "tss_proximal")
             .then(bin_feature("distance_tss_nc", TSS_DIST_BIN_EDGES))
             .otherwise(pl.lit(BIN_NA))
             .alias("distance_tss_nc_bin"),

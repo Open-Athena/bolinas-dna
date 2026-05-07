@@ -52,36 +52,44 @@ def memlog(tag: str) -> None:
 
 s3 = boto3.client("s3", region_name="us-east-2")
 
-# Per-dataset config. Aligned with the *_dataset rules in the smk files —
-# all three datasets now use {tss_proximal, distal} for TSS bin coverage.
+# Per-dataset config. Aligned with the *_dataset rules in the smk files:
+# PC TSS bin is active for {tss_proximal, distal} on all three (the iter-26
+# fix for distal distance_tss_pc leakage); nc TSS bin stays tss_proximal-only
+# everywhere — distal didn't leak on distance_tss_nc and adding the nc
+# constraint thinned distal too aggressively (audit: 100+ pos lost from the
+# nc bin alone, plus heavy interaction with MAF_bin/gene_id columns).
 DATASET_CONFIG = {
     "mendelian_traits": {
         "with_maf": False,
-        "tss_bin_subsets": ["tss_proximal", "distal"],
+        "tss_pc_bin_subsets": ["tss_proximal", "distal"],
+        "tss_nc_bin_subsets": ["tss_proximal"],
     },
     "complex_traits": {
         "with_maf": True,
-        "tss_bin_subsets": ["tss_proximal", "distal"],
+        "tss_pc_bin_subsets": ["tss_proximal", "distal"],
+        "tss_nc_bin_subsets": ["tss_proximal"],
     },
     "eqtl": {
         "with_maf": True,
-        "tss_bin_subsets": ["tss_proximal", "distal"],
+        "tss_pc_bin_subsets": ["tss_proximal", "distal"],
+        "tss_nc_bin_subsets": ["tss_proximal"],
     },
 }
-DATASETS = ("mendelian_traits", "complex_traits", "eqtl")
+DATASETS = ("complex_traits",)  # iterate only complex_traits this round
 
 
 def add_bins(
     V: pl.DataFrame,
     with_maf: bool,
-    tss_bin_subsets: list[str],
+    tss_pc_bin_subsets: list[str],
+    tss_nc_bin_subsets: list[str],
 ) -> pl.DataFrame:
     cols = [
-        pl.when(pl.col("consequence_group").is_in(tss_bin_subsets))
+        pl.when(pl.col("consequence_group").is_in(tss_pc_bin_subsets))
         .then(bin_feature("distance_tss_pc", TSS_DIST_BIN_EDGES))
         .otherwise(pl.lit(BIN_NA))
         .alias("distance_tss_pc_bin"),
-        pl.when(pl.col("consequence_group").is_in(tss_bin_subsets))
+        pl.when(pl.col("consequence_group").is_in(tss_nc_bin_subsets))
         .then(bin_feature("distance_tss_nc", TSS_DIST_BIN_EDGES))
         .otherwise(pl.lit(BIN_NA))
         .alias("distance_tss_nc_bin"),
@@ -103,7 +111,11 @@ def add_bins(
 
 for name in DATASETS:
     cfg = DATASET_CONFIG[name]
-    print(f"\n=== {name} (tss_bin_subsets={cfg['tss_bin_subsets']}) ===", flush=True)
+    print(
+        f"\n=== {name} "
+        f"(tss_pc={cfg['tss_pc_bin_subsets']} tss_nc={cfg['tss_nc_bin_subsets']}) ===",
+        flush=True,
+    )
     src = f"snakemake/evals/results/{name}/dataset_all.parquet"
     local_in = f"/tmp/{name}_da.parquet"
     if not os.path.exists(local_in):
@@ -118,7 +130,12 @@ for name in DATASETS:
     )
     memlog("after read_parquet")
 
-    V = add_bins(df, with_maf=cfg["with_maf"], tss_bin_subsets=cfg["tss_bin_subsets"])
+    V = add_bins(
+        df,
+        with_maf=cfg["with_maf"],
+        tss_pc_bin_subsets=cfg["tss_pc_bin_subsets"],
+        tss_nc_bin_subsets=cfg["tss_nc_bin_subsets"],
+    )
     del df
     gc.collect()
     memlog("after add_bins (df freed)")

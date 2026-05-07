@@ -199,14 +199,19 @@ rule complex_traits_dataset:
     run:
         V = pl.read_parquet(input[0])
         # Per-biotype matching: same set as mendelian + always-on MAF features.
-        # Combined min-distance and combined-closest-gene columns are passthrough
-        # metadata only — not used in matching. ld_score is also a passthrough.
+        # PC TSS bin is active for {tss_proximal, distal} (the iter-26 fix
+        # for the distal distance_tss_pc leakage); nc TSS bin stays
+        # tss_proximal-only — distal didn't leak on distance_tss_nc and
+        # adding the nc constraint thins distal pair count too much.
+        # Combined min-distance and combined-closest-gene columns are
+        # passthrough metadata only — not used in matching. ld_score is also a
+        # passthrough.
         V = V.with_columns(
             pl.when(pl.col("consequence_group").is_in(["tss_proximal", "distal"]))
             .then(bin_feature("distance_tss_pc", TSS_DIST_BIN_EDGES))
             .otherwise(pl.lit(BIN_NA))
             .alias("distance_tss_pc_bin"),
-            pl.when(pl.col("consequence_group").is_in(["tss_proximal", "distal"]))
+            pl.when(pl.col("consequence_group") == "tss_proximal")
             .then(bin_feature("distance_tss_nc", TSS_DIST_BIN_EDGES))
             .otherwise(pl.lit(BIN_NA))
             .alias("distance_tss_nc_bin"),
