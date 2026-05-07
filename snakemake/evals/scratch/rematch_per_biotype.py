@@ -52,11 +52,12 @@ def memlog(tag: str) -> None:
 
 s3 = boto3.client("s3", region_name="us-east-2")
 
-# Per-dataset config. Switch DATASETS to the full tuple to run all three.
+# Per-dataset config. Aligned with the *_dataset rules in the smk files —
+# all three datasets now use {tss_proximal, distal} for TSS bin coverage.
 DATASET_CONFIG = {
     "mendelian_traits": {
         "with_maf": False,
-        "tss_bin_subsets": ["tss_proximal"],
+        "tss_bin_subsets": ["tss_proximal", "distal"],
     },
     "complex_traits": {
         "with_maf": True,
@@ -64,10 +65,10 @@ DATASET_CONFIG = {
     },
     "eqtl": {
         "with_maf": True,
-        "tss_bin_subsets": ["tss_proximal"],
+        "tss_bin_subsets": ["tss_proximal", "distal"],
     },
 }
-DATASETS = ("complex_traits",)
+DATASETS = ("mendelian_traits", "complex_traits", "eqtl")
 
 
 def add_bins(
