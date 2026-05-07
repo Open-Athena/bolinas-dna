@@ -25,6 +25,9 @@ for var in (
 ):
     os.environ.setdefault(var, "1")
 
+import gc
+import resource
+
 import boto3
 import polars as pl
 
@@ -36,6 +39,16 @@ from bolinas.evals.matching import (
     bin_feature,
     match_features,
 )
+
+
+def memlog(tag: str) -> None:
+    """Print current peak RSS so we can see which step blew up if the kernel
+    OOM-kills the process before the next print line lands.
+    """
+    # ru_maxrss on linux is in KB; divide by 1024 for MB.
+    peak_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+    print(f"  [mem peak={peak_mb:7.0f} MB] {tag}", flush=True)
+
 
 s3 = boto3.client("s3", region_name="us-east-2")
 
@@ -102,8 +115,12 @@ for name in DATASETS:
         f"({df.filter(pl.col('label')).height} pos)",
         flush=True,
     )
+    memlog("after read_parquet")
 
     V = add_bins(df, with_maf=cfg["with_maf"], tss_bin_subsets=cfg["tss_bin_subsets"])
+    del df
+    gc.collect()
+    memlog("after add_bins (df freed)")
 
     cont = ["distance_tss_pc", "distance_tss_nc", "distance_exon_pc", "distance_exon_nc"]
     cat = [
@@ -122,14 +139,18 @@ for name in DATASETS:
         cont.append("MAF")
         cat.append("MAF_bin")
 
+    pos_V = V.filter(pl.col("label"))
+    neg_V = V.filter(~pl.col("label"))
+    del V
+    gc.collect()
+    memlog(f"before match_features (pos={pos_V.height} neg={neg_V.height})")
     matched = (
-        match_features(
-            V.filter(pl.col("label")),
-            V.filter(~pl.col("label")),
-            cont, cat, k=1,
-        )
+        match_features(pos_V, neg_V, cont, cat, k=1)
         .with_columns(subset=pl.col("consequence_group"))
     )
+    del pos_V, neg_V
+    gc.collect()
+    memlog("after match_features")
 
     out = f"/tmp/{name}_unsplit_v2.parquet"
     matched.write_parquet(out)
