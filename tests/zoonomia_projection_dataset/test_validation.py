@@ -783,15 +783,41 @@ def test_build_cre_region_unknown_recipe_raises(tmp_path: Path) -> None:
 # ----------------------------------------------------------------------------
 
 
-def test_subsample_under_cap_is_identity_sorted() -> None:
+def test_subsample_under_cap_is_identity() -> None:
+    """When len(df) <= max_samples, returns the input as-is (no sort, no shuffle)."""
     df = pl.DataFrame(
         {"chrom": ["1", "2", "1"], "start": [200, 100, 100], "end": [500, 400, 300]}
     )
     out = subsample_deterministic(df, max_samples=10, seed=42)
     assert len(out) == 3
-    # Sorted by (chrom, start)
-    assert out["chrom"].to_list() == ["1", "1", "2"]
-    assert out["start"].to_list() == [100, 200, 100]
+    # Order is preserved as-is (no sort applied; matches input row order).
+    assert out["chrom"].to_list() == ["1", "2", "1"]
+    assert out["start"].to_list() == [200, 100, 100]
+
+
+def test_subsample_does_not_resort_after_sampling() -> None:
+    """After sampling, rows are NOT re-sorted by (chrom, start) — they
+    appear in polars' natural sample order. Guards against accidentally
+    re-introducing a sort that would over-sample chr1 in partial evals."""
+    df = pl.DataFrame(
+        {
+            # 50 rows on chr1 (early), 50 on chr2 (late) — alternating
+            "chrom": [str((i % 2) + 1) for i in range(100)],
+            "start": list(range(100)),
+            "end": [s + 255 for s in range(100)],
+        }
+    )
+    out = subsample_deterministic(df, max_samples=20, seed=42)
+    assert len(out) == 20
+    chroms = out["chrom"].to_list()
+    # If the function were sort-after-sample, chroms would be all "1"s then
+    # all "2"s. Assert it's not strictly grouped — i.e., sampling order is
+    # preserved (mixed).
+    grouped = chroms == sorted(chroms)
+    assert not grouped, (
+        "subsample_deterministic appears to re-sort by chrom; rows came "
+        f"out chrom-grouped: {chroms}"
+    )
 
 
 def test_subsample_seed_reproducible() -> None:

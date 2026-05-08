@@ -307,16 +307,19 @@ def subsample_deterministic(
 ) -> pl.DataFrame:
     """Deterministic subsample to at most ``max_samples`` rows.
 
-    Returns the input sorted by (chrom, start) when ``len(df) <= max_samples``
-    (a no-op canary path that keeps small datasets stable). Otherwise samples
-    without replacement using ``seed`` and re-sorts by (chrom, start) so the
-    output is stable for downstream consumers.
+    Returns the input as-is when ``len(df) <= max_samples`` (no-op canary
+    path). Otherwise samples without replacement using ``seed`` and returns
+    the rows in their natural sample order — i.e. *not* re-sorted by
+    (chrom, start). This matches ``training_dataset/dataset_creation``'s
+    ``create_functional_validation`` pattern and avoids over-sampling early
+    chromosomes during partial / streamed evaluation.
+
+    Reproducibility: same input + same seed produces the same row order
+    across runs (polars' ``DataFrame.sample`` is seeded-deterministic).
     """
-    sort_cols = [c for c in ("chrom", "start") if c in df.columns]
     if len(df) <= max_samples:
-        return df.sort(sort_cols) if sort_cols else df
-    sampled = df.sample(n=max_samples, seed=seed, with_replacement=False)
-    return sampled.sort(sort_cols) if sort_cols else sampled
+        return df
+    return df.sample(n=max_samples, seed=seed, with_replacement=False)
 
 
 def _bw_chrom(chrom: str, prefix: str = "chr") -> str:
