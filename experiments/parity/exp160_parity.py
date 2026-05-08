@@ -415,7 +415,12 @@ def default_tokenize(
         fn=remote(
             tokenize,
             resources=resources or ResourceConfig.with_cpu(cpu=4, ram="16g", disk="10g"),
-            pip_dependency_groups=["cpu"],
+            # Upstream uses ``["cpu"]`` here, which maps to marin's own ``cpu``
+            # extra (marin + jax-cpu + torch-cpu). bolinas-dna doesn't define a
+            # ``cpu`` extra, so we route to the ``marin`` extra instead — it
+            # transitively installs marin + jax + jmp + tokenizers, which is
+            # what tokenization actually needs.
+            pip_dependency_groups=["marin"],
             env_vars={
                 "TRANSFORMERS_NO_TORCH": "1",
                 "TRANSFORMERS_NO_TORCHVISION": "1",
