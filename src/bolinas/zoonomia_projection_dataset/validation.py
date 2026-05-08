@@ -1,14 +1,15 @@
 """Build per-recipe validation parquets for ``zoonomia_projection_dataset``.
 
-Six human-only recipes (val_cds, val_utr5, val_utr3, val_ncrna, val_promoter,
-val_enhancer): tile a region BED into 255 bp non-overlapping windows,
-conservation-pre-filter via phyloP_447m, deterministic subsample, then
-case-encode sequences (uppercase iff phyloP >= threshold else lowercase; NaN
-positions are lowercase).
+Seven human-only recipes (val_cds, val_utr5, val_utr3, val_ncrna, val_tss_pc,
+val_promoter, val_enhancer): tile a region BED into 255 bp non-overlapping
+windows, conservation-pre-filter via phyloP_447m, deterministic subsample,
+then case-encode sequences (uppercase iff phyloP >= threshold else lowercase;
+NaN positions are lowercase).
 
-The annotation-derived recipes (val_cds, val_utr5, val_utr3, val_ncrna) are
-restricted to canonical transcripts (``tag "Ensembl_canonical"``); val_promoter
-and val_enhancer use ENCODE cCRE classes and are transcript-independent.
+The annotation-derived recipes (val_cds, val_utr5, val_utr3, val_ncrna,
+val_tss_pc) are restricted to canonical transcripts (``tag "Ensembl_canonical"``);
+val_promoter and val_enhancer use ENCODE cCRE classes and are
+transcript-independent.
 
 Companion to ``snakemake/zoonomia_projection_dataset/workflow/rules/validation.smk``.
 """
@@ -22,7 +23,12 @@ import polars as pl
 import pyBigWig
 
 from bolinas.data.intervals import GenomicSet
-from bolinas.data.utils import ENHANCER_CRE_CLASSES, get_cds, get_promoters_from_exons
+from bolinas.data.utils import (
+    ENHANCER_CRE_CLASSES,
+    get_cds,
+    get_promoters_from_exons,
+    load_fasta,
+)
 from bolinas.projection.tss import get_ensembl_protein_coding_exons
 
 
@@ -198,7 +204,13 @@ _ANNOTATION_EXTRACTORS: dict[str, Callable[[pl.DataFrame], GenomicSet]] = {
 }
 
 
-ANNOTATION_RECIPES = ("val_cds", "val_utr5", "val_utr3", "val_ncrna", "val_tss_pc")
+# Recipes that use the filter_size + add_flank + expand_min_size chain via
+# `build_annotation_region`. val_tss_pc is annotation-derived too but uses
+# `build_tss_band_region` (TSS ± flank, no chain) and is dispatched separately
+# at the snakemake-rule level — not handled here.
+_FILTER_FLANK_EXPAND_RECIPES = ("val_cds", "val_utr5", "val_utr3", "val_ncrna")
+
+ANNOTATION_RECIPES = _FILTER_FLANK_EXPAND_RECIPES + ("val_tss_pc",)
 CRE_RECIPES = ("val_promoter", "val_enhancer")
 ALL_RECIPES = ANNOTATION_RECIPES + CRE_RECIPES
 
@@ -214,13 +226,17 @@ def build_annotation_region(
     max_size: int = 10_000,
     expand_min: int = 255,
 ) -> GenomicSet:
-    """Annotation-derived region BED for one of the four annotation recipes.
+    """Annotation-derived region BED via the filter_size+flank+expand chain.
 
     Pipeline: extractor(ann) → filter_size → add_flank (splice signal) →
     expand_min_size → intersect(defined). No cross-feature subtraction —
     canonical-transcript filtering already disambiguates CDS vs 5'UTR vs
     3'UTR within a transcript, and ncRNA-vs-coding genes are separated by
     biotype.
+
+    val_tss_pc is annotation-derived too but uses ``build_tss_band_region``
+    (no chain — just a fixed-width band around each TSS); call that directly
+    instead.
 
     Args:
         recipe: one of ``val_cds``, ``val_utr5``, ``val_utr3``, ``val_ncrna``.
@@ -241,8 +257,9 @@ def build_annotation_region(
         intervals = _ANNOTATION_EXTRACTORS[recipe](ann_canonical)
     else:
         raise ValueError(
-            f"unknown annotation-derived recipe: {recipe!r} "
-            f"(expected one of {ANNOTATION_RECIPES})"
+            f"unknown filter+flank+expand recipe: {recipe!r} "
+            f"(expected one of {_FILTER_FLANK_EXPAND_RECIPES}; "
+            "val_tss_pc uses build_tss_band_region instead)"
         )
     intervals = intervals.filter_size(min_size=min_size, max_size=max_size)
     intervals = intervals.add_flank(add_flank)
@@ -349,9 +366,6 @@ def subsample_deterministic(
     n = min(len(df), max_samples)
     if n == 0:
         return df
-    # `shuffle=True` is essential — without it, polars returns rows in input
-    # order when n == len(df) (degenerate "sample everything" path), which is
-    # exactly the chrom-sorted state we're trying to break.
     return df.sample(n=n, seed=seed, with_replacement=False, shuffle=True)
 
 
@@ -380,24 +394,9 @@ def case_encode_sequences(
     Asserts every sequence is exactly ``window_size`` bp; the
     bigWig-vs-sequence length match is also asserted per row.
     """
-    ids: list[str] = []
-    seqs: list[str] = []
-    with open(fasta_path) as fh:
-        cur_id: str | None = None
-        cur_seq: list[str] = []
-        for line in fh:
-            line = line.rstrip("\n")
-            if line.startswith(">"):
-                if cur_id is not None:
-                    ids.append(cur_id)
-                    seqs.append("".join(cur_seq))
-                cur_id = line[1:]
-                cur_seq = []
-            else:
-                cur_seq.append(line)
-        if cur_id is not None:
-            ids.append(cur_id)
-            seqs.append("".join(cur_seq))
+    series = load_fasta(str(fasta_path))
+    ids: list[str] = [str(i) for i in series.index]
+    seqs: list[str] = list(series.values)
 
     encoded: list[str] = []
     bw = pyBigWig.open(str(bw_path))
@@ -557,6 +556,12 @@ def write_hf_readme(
         ncrna_biotypes_md=ncrna_biotypes_md,
     )
 
+    # Conservation pre-filter: at least `min_pass_bp` of `window_size` bases
+    # in a window must score `phyloP_447m >= threshold`. Computed once so the
+    # f-string body keeps to one source of truth.
+    window_size = 255
+    min_pass_bp = int(round(min_proportion_conserved * window_size))
+
     body = f"""---
 tags:
 - biology
@@ -618,8 +623,8 @@ distinguish those two cases.
    primates).
 5. **Conservation pre-filter**: keep only windows with
    `proportion_conserved >= {min_proportion_conserved}` (i.e. at least
-   {int(round(min_proportion_conserved * 255))} of the 255 bases pass the
-   phyloP_447m threshold of `{threshold}`).
+   {min_pass_bp} of the {window_size} bases pass the phyloP_447m threshold
+   of `{threshold}`).
 6. Deterministic subsample to ≤ {max_samples:,} rows (seed `{seed}`).
 7. Extract sequences from hg38 (Ensembl r{ensembl_release}) via
    `twoBitToFa -bedPos`.

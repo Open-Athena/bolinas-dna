@@ -2,11 +2,11 @@ name: zoonomia-validation
 
 # Per-recipe HF validation datasets (rule all_validation).
 #
-# Builds 6 human-only validation parquets (val_cds, val_utr5, val_utr3,
-# val_ncrna, val_promoter, val_enhancer): tile recipe regions into 255 bp
-# windows, score against phyloP_447m, conservation-pre-filter, deterministic
-# subsample, twoBitToFa + per-base case-encode, push each to its own HF
-# repo with a generated dataset card (commit-pinned permalink).
+# Builds 7 human-only validation parquets (val_cds, val_utr5, val_utr3,
+# val_ncrna, val_tss_pc, val_promoter, val_enhancer): tile recipe regions
+# into 255 bp windows, score against phyloP_447m, conservation-pre-filter,
+# deterministic subsample, twoBitToFa + per-base case-encode, push each to
+# its own HF repo with a generated dataset card (commit-pinned permalink).
 #
 # c6id.2xlarge for the same reason as sky/run.yaml: phyloP_447m bigWig is
 # ~10 GB and pyBigWig's per-window scoring benefits from local NVMe (gp3

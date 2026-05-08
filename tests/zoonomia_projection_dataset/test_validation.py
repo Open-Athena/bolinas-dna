@@ -742,7 +742,7 @@ def test_build_annotation_region_unknown_recipe_raises(tmp_path: Path) -> None:
     defined = GenomicSet(
         pd.DataFrame({"chrom": ["1"], "start": [0], "end": [4000]})
     )
-    with pytest.raises(ValueError, match="unknown annotation-derived recipe"):
+    with pytest.raises(ValueError, match="unknown filter\\+flank\\+expand recipe"):
         build_annotation_region(
             "val_promoter",  # cre recipe, not annotation
             canonical,

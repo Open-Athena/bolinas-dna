@@ -1,4 +1,4 @@
-"""Validation datasets — six per-recipe human-only HF parquets.
+"""Validation datasets — seven per-recipe human-only HF parquets.
 
 Pipeline per recipe (8 stages):
   region build  → tile (255 bp non-overlap)
@@ -9,18 +9,23 @@ Pipeline per recipe (8 stages):
               → case-encode (uppercase iff phyloP_447m >= threshold else lowercase)
               → HF upload
 
-Annotation-derived recipes (val_cds / val_utr5 / val_utr3 / val_ncrna) restrict
-to canonical Ensembl transcripts via tag "Ensembl_canonical"; cCRE-derived
-recipes (val_promoter = PLS, val_enhancer = pELS+dELS) are
-transcript-independent. val_enhancer subtracts every annotated exon
-(``get_exons``, no biotype filter — stricter than training_dataset v30 because
-this is a *validation* probe, not a training scan).
+Annotation-derived recipes (val_cds / val_utr5 / val_utr3 / val_ncrna /
+val_tss_pc) restrict to canonical Ensembl transcripts via tag
+"Ensembl_canonical"; cCRE-derived recipes (val_promoter = PLS, val_enhancer =
+pELS+dELS) are transcript-independent. val_enhancer subtracts every annotated
+exon (``get_exons``, no biotype filter — stricter than training_dataset v30
+because this is a *validation* probe, not a training scan).
 
 Library code lives in ``bolinas.zoonomia_projection_dataset.validation``;
 ``run:`` blocks here are thin glue + pipeline-level assertions.
 """
 
 from bolinas.conservation.scoring import score_windows as _score_windows
+from bolinas.zoonomia_projection_dataset.validation import (
+    ANNOTATION_RECIPES,
+    ALL_RECIPES,
+    CRE_RECIPES,
+)
 
 
 VALIDATION_RECIPES = list(config["validation_recipes"])
@@ -32,17 +37,12 @@ VALIDATION_NCRNA_BIOTYPES = list(config["validation_ncrna_biotypes"])
 VALIDATION_TSS_FLANK = int(config["validation_tss_flank"])
 CCRE_URL = str(config["ccre_url"])
 
-ANNOTATION_RECIPES = ["val_cds", "val_utr5", "val_utr3", "val_ncrna", "val_tss_pc"]
-CRE_RECIPES = ["val_promoter", "val_enhancer"]
-
-# Recipe id constraint: val_<lowercase letters/digits>. Used by every wildcarded
-# rule to keep these from matching unrelated paths.
 RECIPE_RE = "|".join(VALIDATION_RECIPES)
 ANNOTATION_RECIPES_RE = "|".join(ANNOTATION_RECIPES)
 CRE_RECIPES_RE = "|".join(CRE_RECIPES)
 
-assert set(VALIDATION_RECIPES) == set(ANNOTATION_RECIPES) | set(CRE_RECIPES), (
-    f"validation_recipes must equal {ANNOTATION_RECIPES + CRE_RECIPES}; "
+assert set(VALIDATION_RECIPES) == set(ALL_RECIPES), (
+    f"config['validation_recipes'] must equal ALL_RECIPES={ALL_RECIPES}; "
     f"got {VALIDATION_RECIPES}"
 )
 
@@ -124,12 +124,7 @@ rule validation_mask_all_exons:
     output:
         "results/human/intervals/validation/mask/all_exons.bed",
     resources:
-        # Empirical peak per-job is 7-10 GB (polars `with_columns` transiently
-        # doubles the ~3 GB parsed GTF frame). On c6id.4xlarge (30 GB budget),
-        # mem_mb=16000 forces these to run one-at-a-time — concurrent OOMs
-        # killed two earlier attempts when the per-job peak exceeded mem_mb.
-        # Cost: ~15 min serial wall for the GTF phase, vs gambling on a
-        # parallel-OOM cycle.
+        # See validation_region_annotation note below for why mem_mb=16000.
         mem_mb=16000,
     run:
         from bolinas.data.utils import get_exons, load_annotation
@@ -162,10 +157,11 @@ rule validation_region_annotation:
         canonical_tag=VALIDATION_CANONICAL_TAG,
         tss_flank=VALIDATION_TSS_FLANK,
     resources:
-        # Empirical peak per-job is 7-10 GB (polars `with_columns` filter
-        # transiently doubles the ~3 GB parsed GTF frame). On c6id.4xlarge
-        # (30 GB budget), mem_mb=16000 forces these to run one-at-a-time —
-        # concurrent peaks exceeded mem_mb in earlier attempts and OOMed.
+        # GTF-loading rules peak ~7-10 GB each (polars `with_columns` filter
+        # transiently doubles the ~3 GB parsed Ensembl r115 frame). On a
+        # 30 GB-budget VM, mem_mb=16000 forces serial execution — earlier
+        # attempts at lower mem_mb let Snakemake schedule concurrent loads
+        # that OOMed.
         mem_mb=16000,
     run:
         from bolinas.data.intervals import GenomicSet
@@ -495,7 +491,7 @@ rule hf_upload_validation:
 
 
 rule all_validation:
-    """Trigger HF upload for all six validation recipes."""
+    """Trigger HF upload for every recipe in ``validation_recipes``."""
     input:
         expand(
             "results/upload.done/validation/{recipe}",
