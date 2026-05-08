@@ -109,6 +109,7 @@ def get_baseline_input_files(plot_name: str) -> list[str]:
 
 # Include rule files
 include: "rules/common.smk"
+include: "rules/download.smk"
 include: "rules/inference.smk"
 include: "rules/metrics.smk"
 include: "rules/plots.smk"
