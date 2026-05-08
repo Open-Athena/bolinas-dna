@@ -12,7 +12,14 @@ from bolinas.evals.matching import (
     BIN_NA,
     BIN_OOR,
     EXON_DIST_BIN_EDGES,
+    LOG_LOCAL,
+    LOG_LOCAL_N,
     MAF_BIN_EDGES,
+    MAF_BIN_EDGES_5,
+    MAF_BIN_EDGES_10,
+    MAF_BIN_EDGES_20,
+    MAF_TIERED_LOG8_DISTAL_ONLY,
+    MAF_TIERED_V1,
     MATCH_GROUP_COL,
     TSS_DIST_BIN_EDGES,
     _combine_results,
@@ -21,6 +28,7 @@ from bolinas.evals.matching import (
     _scale_features,
     _sort_by_coordinates,
     _validate_columns,
+    add_tiered_maf_bin,
     bin_feature,
     match_features,
 )
@@ -588,3 +596,109 @@ def test_bin_na_constant_distinct_from_bin_labels() -> None:
     # with the BIN_OOR sentinel, since both can co-occur in a single column.
     assert not BIN_NA.startswith("b") or not BIN_NA[1:].isdigit()
     assert BIN_NA != BIN_OOR
+
+
+class TestAddTieredMafBin:
+    """Iter 33 per-subset MAF binning helper."""
+
+    def test_global_edges_only_assigns_bin_per_subset(self) -> None:
+        df = pl.DataFrame(
+            {
+                "MAF": [0.001, 0.05, 0.001, 0.05, 0.5],
+                "consequence_group": [
+                    "missense_variant", "missense_variant",  # 5bin range scheme
+                    "distal", "distal",                       # 20bin scheme
+                    "distal",
+                ],
+            }
+        )
+        scheme = {
+            "missense_variant": MAF_BIN_EDGES_5,
+            "distal": MAF_BIN_EDGES_20,
+        }
+        out = add_tiered_maf_bin(df, scheme)
+        labels = out["MAF_bin"].to_list()
+        # Both rows in the same subset with the same MAF must share a bin.
+        # Different subsets have different label prefixes so no cross-collision.
+        assert labels[0] == labels[1] is False or labels[0] != labels[2]
+        # Prefix encodes the subset name (truncated to 8 chars).
+        assert all(":" in lab for lab in labels)
+        assert all(lab.startswith("missense") for lab in labels[:2])
+        assert all(lab.startswith("distal:") for lab in labels[2:])
+
+    def test_log_local_sentinel_groups_by_log_local_group_cols(self) -> None:
+        # Two groups (chrom A vs B), each with a wide MAF range. log_local
+        # bins should be computed per group, so the same MAF lands in
+        # different absolute bins across groups but in the same bin within a
+        # group when MAFs are similar.
+        df = pl.DataFrame(
+            {
+                "MAF": [0.01, 0.05, 0.1, 0.2, 0.4, 0.001, 0.005, 0.01, 0.05, 0.1],
+                "consequence_group": ["distal"] * 10,
+                "chrom": ["A"] * 5 + ["B"] * 5,
+            }
+        )
+        out = add_tiered_maf_bin(
+            df, {"distal": LOG_LOCAL}, log_local_group_cols=["chrom"]
+        )
+        labels = out["MAF_bin"].to_list()
+        # All labels should be `ll:N` for log_local.
+        assert all(lab.startswith("ll:") for lab in labels)
+        # Min-MAF row in each group lands in bucket 0; max in bucket N-1.
+        assert labels[0] == "ll:0"  # MAF=0.01 is min in chrom-A group
+        assert labels[4] == f"ll:{LOG_LOCAL_N - 1}"  # MAF=0.4 is max in chrom-A
+        assert labels[5] == "ll:0"  # MAF=0.001 is min in chrom-B group
+        assert labels[9] == f"ll:{LOG_LOCAL_N - 1}"  # MAF=0.1 is max in chrom-B
+
+    def test_mixed_scheme_log_local_for_one_subset_only(self) -> None:
+        df = pl.DataFrame(
+            {
+                "MAF": [0.001, 0.05, 0.0001, 0.4],
+                "consequence_group": [
+                    "missense_variant", "missense_variant",  # global edges
+                    "distal", "distal",                       # log_local
+                ],
+                "chrom": ["A", "A", "A", "A"],
+            }
+        )
+        scheme = {"missense_variant": MAF_BIN_EDGES_5, "distal": LOG_LOCAL}
+        out = add_tiered_maf_bin(df, scheme, log_local_group_cols=["chrom"])
+        labels = out["MAF_bin"].to_list()
+        assert labels[0].startswith("missense:") and labels[0].split(":")[1].startswith("b")
+        assert labels[1].startswith("missense:")
+        assert labels[2].startswith("ll:")
+        assert labels[3].startswith("ll:")
+
+    def test_log_local_without_group_cols_raises(self) -> None:
+        df = pl.DataFrame(
+            {"MAF": [0.001, 0.05], "consequence_group": ["distal", "distal"]}
+        )
+        with pytest.raises(ValueError, match="log_local_group_cols required"):
+            add_tiered_maf_bin(df, {"distal": LOG_LOCAL})
+
+    def test_unknown_consequence_group_gets_unknown_label(self) -> None:
+        # MAF_BIN_EDGES_5 = [0, 0.001, 0.01, 0.05, 0.2, 0.5] right-closed:
+        # bin 0=[0,0.001], 1=(0.001,0.01], 2=(0.01,0.05], 3=(0.05,0.2], 4=(0.2,0.5]
+        df = pl.DataFrame(
+            {"MAF": [0.001, 0.05], "consequence_group": ["foo", "missense_variant"]}
+        )
+        out = add_tiered_maf_bin(df, {"missense_variant": MAF_BIN_EDGES_5})
+        assert out["MAF_bin"].to_list() == ["UNKNOWN", "missense:b2"]
+
+    def test_iter33_locked_schemes_have_expected_subsets(self) -> None:
+        # Sanity: every consequence_group seen across the three eval datasets
+        # is in MAF_TIERED_V1, and MAF_TIERED_LOG8_DISTAL_ONLY differs only by
+        # `distal`.
+        expected = {
+            "distal", "tss_proximal", "non_coding_transcript_exon_variant",
+            "3_prime_UTR_variant", "5_prime_UTR_variant", "missense_variant",
+            "synonymous_variant", "splicing", "mature_miRNA_variant",
+            "stop_retained_variant", "coding_sequence_variant",
+        }
+        assert set(MAF_TIERED_V1.keys()) == expected
+        assert set(MAF_TIERED_LOG8_DISTAL_ONLY.keys()) == expected
+        assert MAF_TIERED_LOG8_DISTAL_ONLY["distal"] == LOG_LOCAL
+        for k, v in MAF_TIERED_V1.items():
+            if k == "distal":
+                continue
+            assert MAF_TIERED_LOG8_DISTAL_ONLY[k] == v

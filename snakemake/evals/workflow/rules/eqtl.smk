@@ -170,14 +170,29 @@ rule eqtl_dataset:
         "results/dataset_unsplit/eqtl.parquet",
     run:
         V = pl.read_parquet(input[0])
-        # Per-biotype matching: same set as complex_traits + always-on MAF
-        # features. PC TSS bin is active for {tss_proximal, distal} (parallel
-        # to complex_traits' iter-26 distal fix); nc TSS bin stays
-        # tss_proximal-only. Combined min-distance and combined-closest-gene
-        # columns are passthrough metadata only — not used in matching.
-        # tissues / genes / biotype_classes are also passthrough.
+        # Drop NaN/null MAF rows up-front (the log_local computation would
+        # propagate NaN through the per-group min/max otherwise; iter-33
+        # helpers do the same).
+        V = V.filter(pl.col("MAF").is_finite() & pl.col("MAF").is_not_null())
+        # Iter-33 locked design (issue #156). Same distance bins as
+        # mendelian/complex (tss_pc + tss_nc on tss_proximal, exon_pc on
+        # splicing). MAF gets the `MAF_TIERED_LOG8_DISTAL_ONLY` scheme:
+        # tiered_v1 globally, but local equal-width log10(MAF) bins (8 buckets,
+        # joint pos+neg ref over the 6-element categorical match key) for
+        # `distal` — fixed edges left an asymptotic Bonf-significant residual
+        # leak there (PA ≈ 0.532 across all global bin counts), and the
+        # per-group adaptation closes it (PA ≈ 0.517 p=2e-2 sub-Bonf).
+        # tissues / genes / biotype_classes columns are passthrough metadata.
+        cat_match_key = [
+            "chrom",
+            "consequence_final",
+            "tss_closest_pc_gene_id",
+            "tss_closest_nc_gene_id",
+            "exon_closest_pc_gene_id",
+            "exon_closest_nc_gene_id",
+        ]
         V = V.with_columns(
-            pl.when(pl.col("consequence_group").is_in(["tss_proximal", "distal"]))
+            pl.when(pl.col("consequence_group") == "tss_proximal")
             .then(bin_feature("distance_tss_pc", TSS_DIST_BIN_EDGES))
             .otherwise(pl.lit(BIN_NA))
             .alias("distance_tss_pc_bin"),
@@ -189,11 +204,9 @@ rule eqtl_dataset:
             .then(bin_feature("distance_exon_pc", EXON_DIST_BIN_EDGES))
             .otherwise(pl.lit(BIN_NA))
             .alias("distance_exon_pc_bin"),
-            pl.when(pl.col("consequence_group") == "splicing")
-            .then(bin_feature("distance_exon_nc", EXON_DIST_BIN_EDGES))
-            .otherwise(pl.lit(BIN_NA))
-            .alias("distance_exon_nc_bin"),
-            bin_feature("MAF", MAF_BIN_EDGES, right_closed=True).alias("MAF_bin"),
+        )
+        V = add_tiered_maf_bin(
+            V, MAF_TIERED_LOG8_DISTAL_ONLY, log_local_group_cols=cat_match_key
         )
         (
             match_features(
@@ -206,17 +219,11 @@ rule eqtl_dataset:
                     "distance_exon_nc",
                     "MAF",
                 ],
-                [
-                    "chrom",
-                    "consequence_final",
-                    "tss_closest_pc_gene_id",
-                    "tss_closest_nc_gene_id",
-                    "exon_closest_pc_gene_id",
-                    "exon_closest_nc_gene_id",
+                cat_match_key
+                + [
                     "distance_tss_pc_bin",
                     "distance_tss_nc_bin",
                     "distance_exon_pc_bin",
-                    "distance_exon_nc_bin",
                     "MAF_bin",
                 ],
                 k=1,

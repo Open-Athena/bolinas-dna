@@ -19,33 +19,50 @@ MATCH_GROUP_COL = "match_group"
 BIN_OOR = "OOR"  # value outside any bin (or null) — emitted by `bin_feature`
 BIN_NA = "NA"  # subset-conditional bin not applicable for this row
 
-# Bin schemes locked in issue #156 (iter 22 mendelian, iter 24 complex).
-# https://github.com/Open-Athena/bolinas-dna/issues/156
-TSS_DIST_BIN_EDGES = [0, 50, 100, 200, 500, 1000, 2000, 5000, 10000]
+# Bin schemes locked in issue #156 — iter 33 final design covering all three
+# eval datasets (mendelian / complex / eqtl). https://github.com/Open-Athena/bolinas-dna/issues/156
+TSS_DIST_BIN_EDGES = [0, 50, 100, 200, 500, 1000]
 EXON_DIST_BIN_EDGES = [0, 5, 20, 30]
-MAF_BIN_EDGES = [
-    0.0,
-    0.0005,
-    0.001,
-    0.0015,
-    0.002,
-    0.0025,
-    0.003,
-    0.0035,
-    0.004,
-    0.005,
-    0.007,
-    0.01,
-    0.015,
-    0.02,
-    0.03,
-    0.05,
-    0.07,
-    0.1,
-    0.15,
-    0.2,
-    0.5,
+# Three MAF bin granularities used by the per-subset tiered scheme.
+MAF_BIN_EDGES_20 = [
+    0.0, 0.0005, 0.001, 0.0015, 0.002, 0.0025, 0.003, 0.0035, 0.004,
+    0.005, 0.007, 0.01, 0.015, 0.02, 0.03, 0.05, 0.07, 0.1, 0.15, 0.2, 0.5,
 ]
+MAF_BIN_EDGES_10 = [0.0, 0.0005, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.15, 0.2, 0.5]
+MAF_BIN_EDGES_5 = [0.0, 0.001, 0.01, 0.05, 0.2, 0.5]
+# Back-compat alias: existing tests / scratch scripts still import MAF_BIN_EDGES.
+MAF_BIN_EDGES = MAF_BIN_EDGES_20
+
+# Per-subset MAF bin schemes (iter 33 production).
+#
+# `LOG_LOCAL` is a sentinel that means "use a local equal-width log10(MAF) bin
+# computed per categorical match group (joint pos+neg ref) with `LOG_LOCAL_N`
+# buckets". Used for eqtl/distal where fixed global edges left a small but
+# Bonferroni-significant residual MAF leak (PA ≈ 0.532) and the per-group
+# adaptation closes it.
+LOG_LOCAL = "log_local"
+LOG_LOCAL_N = 8
+
+MAF_TIERED_V1: dict[str, list[float] | str] = {
+    # Big subsets with strong leak in the no-bin baseline → fine 20bin.
+    "distal": MAF_BIN_EDGES_20,
+    "tss_proximal": MAF_BIN_EDGES_20,
+    "non_coding_transcript_exon_variant": MAF_BIN_EDGES_20,
+    # Medium subsets → 10bin.
+    "3_prime_UTR_variant": MAF_BIN_EDGES_10,
+    "5_prime_UTR_variant": MAF_BIN_EDGES_10,
+    "missense_variant": MAF_BIN_EDGES_10,
+    # Small subsets → 5bin to preserve pair count.
+    "synonymous_variant": MAF_BIN_EDGES_5,
+    "splicing": MAF_BIN_EDGES_5,
+    "mature_miRNA_variant": MAF_BIN_EDGES_5,
+    "stop_retained_variant": MAF_BIN_EDGES_5,
+    "coding_sequence_variant": MAF_BIN_EDGES_5,
+}
+MAF_TIERED_LOG8_DISTAL_ONLY: dict[str, list[float] | str] = {
+    **MAF_TIERED_V1,
+    "distal": LOG_LOCAL,
+}
 
 
 def bin_feature(
@@ -80,6 +97,81 @@ def bin_feature(
             )
         expr = pl.when(cond).then(pl.lit(f"b{i}")).otherwise(expr)
     return expr
+
+
+def add_tiered_maf_bin(
+    df: pl.DataFrame,
+    scheme: dict[str, list[float] | str],
+    *,
+    log_local_group_cols: list[str] | None = None,
+) -> pl.DataFrame:
+    """Add a ``MAF_bin`` column whose edges depend on each row's
+    ``consequence_group``.
+
+    ``scheme[consequence_group]`` is either:
+      - ``list[float]`` — fixed right-closed bin edges (e.g. ``MAF_BIN_EDGES_20``).
+      - ``LOG_LOCAL`` sentinel — local equal-width log10(MAF) bins, ``LOG_LOCAL_N``
+        buckets, joint pos+neg reference within each group defined by
+        ``log_local_group_cols`` (typically the categorical match features).
+
+    Bin labels are prefixed with the subset name (``"missense:b3"``,
+    ``"distal:OOR"``, ``"ll:5"`` for log_local) so labels never collide across
+    subsets even though ``consequence_final`` already separates them at
+    ``match_features``' partitioning step. Rows whose consequence_group is not
+    in ``scheme`` get ``"UNKNOWN"`` (and won't match anything since no other
+    row will share that label within their consequence_final).
+
+    Args:
+        df: dataframe with at least ``MAF`` and ``consequence_group`` columns.
+        scheme: per-subset bin choice.
+        log_local_group_cols: required iff any scheme value is ``LOG_LOCAL``;
+            usually the 6-element ``CAT_BASE`` list (chrom, consequence_final,
+            and the four ``*_closest_*_gene_id`` columns).
+
+    Returns:
+        New dataframe with a ``MAF_bin`` column appended.
+    """
+    needs_log = any(v == LOG_LOCAL for v in scheme.values())
+    if needs_log:
+        if log_local_group_cols is None:
+            raise ValueError(
+                "log_local_group_cols required when scheme uses LOG_LOCAL"
+            )
+        log_maf = pl.col("MAF").clip(1e-10, 1.0).log10()
+        df = df.with_columns(
+            log_maf.min().over(log_local_group_cols).alias("_lo"),
+            log_maf.max().over(log_local_group_cols).alias("_hi"),
+        )
+        width = (pl.col("_hi") - pl.col("_lo")) / LOG_LOCAL_N
+        log_local_idx = (
+            ((log_maf - pl.col("_lo")) / width)
+            .floor()
+            .cast(pl.Int64, strict=False)
+            .fill_null(0)
+            .clip(0, LOG_LOCAL_N - 1)
+        )
+        log_local_label = pl.format("ll:{}", log_local_idx)
+
+    expr = pl.lit("UNKNOWN")
+    for subset, val in scheme.items():
+        if val == LOG_LOCAL:
+            bin_expr = log_local_label
+        else:
+            bin_expr = pl.format(
+                "{}:{}",
+                pl.lit(subset[:8]),
+                bin_feature("MAF", val, right_closed=True),
+            )
+        expr = (
+            pl.when(pl.col("consequence_group") == subset)
+            .then(bin_expr)
+            .otherwise(expr)
+        )
+
+    df = df.with_columns(expr.alias("MAF_bin"))
+    if needs_log:
+        df = df.drop(["_lo", "_hi"])
+    return df
 
 
 def match_features(

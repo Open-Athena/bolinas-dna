@@ -95,13 +95,14 @@ rule mendelian_traits_dataset:
         "results/dataset_unsplit/mendelian_traits.parquet",
     run:
         V = pl.read_parquet(input[0])
-        # Per-biotype matching: positives and negatives matched on PC and nc
-        # distances/bins/closest-gene-ids separately. PC TSS bin is active for
-        # {tss_proximal, distal} (parallel to complex_traits' iter-26 distal
-        # fix); nc TSS bin stays tss_proximal-only. The combined min-distance
-        # columns are passthrough metadata only — not used in matching.
+        # Iter-33 locked design: per-biotype matching with subset-conditional
+        # distance bins. tss_pc + tss_nc bins on tss_proximal close the iter-22
+        # tss_proximal/distance_tss_pc and (transitively) distance_tss_nc leaks.
+        # exon_pc bin on splicing closes the iter-22 splicing leak. exon_nc bin
+        # not needed — splicing/distance_exon_nc already clean in baseline.
+        # mendelian has no MAF column, so no MAF_bin. See issue #156 iter 33.
         V = V.with_columns(
-            pl.when(pl.col("consequence_group").is_in(["tss_proximal", "distal"]))
+            pl.when(pl.col("consequence_group") == "tss_proximal")
             .then(bin_feature("distance_tss_pc", TSS_DIST_BIN_EDGES))
             .otherwise(pl.lit(BIN_NA))
             .alias("distance_tss_pc_bin"),
@@ -113,10 +114,6 @@ rule mendelian_traits_dataset:
             .then(bin_feature("distance_exon_pc", EXON_DIST_BIN_EDGES))
             .otherwise(pl.lit(BIN_NA))
             .alias("distance_exon_pc_bin"),
-            pl.when(pl.col("consequence_group") == "splicing")
-            .then(bin_feature("distance_exon_nc", EXON_DIST_BIN_EDGES))
-            .otherwise(pl.lit(BIN_NA))
-            .alias("distance_exon_nc_bin"),
         )
         (
             match_features(
@@ -138,7 +135,6 @@ rule mendelian_traits_dataset:
                     "distance_tss_pc_bin",
                     "distance_tss_nc_bin",
                     "distance_exon_pc_bin",
-                    "distance_exon_nc_bin",
                 ],
                 k=1,
             )

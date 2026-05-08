@@ -13,10 +13,12 @@ from bolinas.evals.matching import (
     BIN_NA,
     EXON_DIST_BIN_EDGES,
     MAF_BIN_EDGES,
+    MAF_TIERED_LOG8_DISTAL_ONLY,
+    MAF_TIERED_V1,
     TSS_DIST_BIN_EDGES,
+    add_tiered_maf_bin,
     bin_feature,
     match_features,
-    splice_prefilter,
 )
 from bolinas.evals.trait_intervals import (
     add_exon,

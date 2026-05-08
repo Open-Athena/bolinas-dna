@@ -198,16 +198,21 @@ rule complex_traits_dataset:
         "results/dataset_unsplit/complex_traits.parquet",
     run:
         V = pl.read_parquet(input[0])
-        # Per-biotype matching: same set as mendelian + always-on MAF features.
-        # PC TSS bin is active for {tss_proximal, distal} (the iter-26 fix
-        # for the distal distance_tss_pc leakage); nc TSS bin stays
-        # tss_proximal-only — distal didn't leak on distance_tss_nc and
-        # adding the nc constraint thins distal pair count too much.
-        # Combined min-distance and combined-closest-gene columns are
-        # passthrough metadata only — not used in matching. ld_score is also a
-        # passthrough.
+        # Drop the ~1.5% of rows where the gnomAD-MAF column is null/NaN — they
+        # never reach a useful match group anyway (cdist on NaN distances ends
+        # up at the back of argsort) and the upstream MAF binning needs finite
+        # values. Iter-33 helpers do the same up-front filter.
+        V = V.filter(pl.col("MAF").is_finite() & pl.col("MAF").is_not_null())
+        # Iter-33 locked design (issue #156). Same distance bins as mendelian
+        # (tss_pc + tss_nc on tss_proximal, exon_pc on splicing). MAF gets the
+        # `MAF_TIERED_V1` per-subset scheme: 20bin for {distal, tss_proximal,
+        # ncRNA}, 10bin for {3'UTR, 5'UTR, missense}, 5bin elsewhere — closes
+        # every Bonf-significant MAF leak in the no-bin baseline while
+        # recovering missense pairs vs. uniform 20bin (89 → 125). Combined
+        # min-distance / closest-gene-id columns and ld_score are passthrough
+        # metadata, not in the match key.
         V = V.with_columns(
-            pl.when(pl.col("consequence_group").is_in(["tss_proximal", "distal"]))
+            pl.when(pl.col("consequence_group") == "tss_proximal")
             .then(bin_feature("distance_tss_pc", TSS_DIST_BIN_EDGES))
             .otherwise(pl.lit(BIN_NA))
             .alias("distance_tss_pc_bin"),
@@ -219,12 +224,8 @@ rule complex_traits_dataset:
             .then(bin_feature("distance_exon_pc", EXON_DIST_BIN_EDGES))
             .otherwise(pl.lit(BIN_NA))
             .alias("distance_exon_pc_bin"),
-            pl.when(pl.col("consequence_group") == "splicing")
-            .then(bin_feature("distance_exon_nc", EXON_DIST_BIN_EDGES))
-            .otherwise(pl.lit(BIN_NA))
-            .alias("distance_exon_nc_bin"),
-            bin_feature("MAF", MAF_BIN_EDGES, right_closed=True).alias("MAF_bin"),
         )
+        V = add_tiered_maf_bin(V, MAF_TIERED_V1)
         (
             match_features(
                 V.filter(pl.col("label")),
@@ -246,7 +247,6 @@ rule complex_traits_dataset:
                     "distance_tss_pc_bin",
                     "distance_tss_nc_bin",
                     "distance_exon_pc_bin",
-                    "distance_exon_nc_bin",
                     "MAF_bin",
                 ],
                 k=1,
