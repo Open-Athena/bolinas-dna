@@ -11,6 +11,7 @@ and the downstream cross-mammal projection is human-anchored too. No
 """
 
 import gzip
+import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -18,6 +19,32 @@ import pandas as pd
 import polars as pl
 
 from bolinas.evals.conservation import CONSERVATION_TRACKS
+
+
+def _git_commit_sha() -> str:
+    """Return the current git commit SHA, or ``"main"`` if git is unavailable.
+
+    Used by ``validation.smk`` to embed a commit-pinned permalink in each
+    HuggingFace dataset card. Resolved once at Snakefile-load time so all six
+    per-recipe READMEs in a single run reference the same SHA.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=workflow.basedir,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        sha = result.stdout.strip()
+        if result.returncode == 0 and len(sha) == 40:
+            return sha
+    except FileNotFoundError:
+        pass
+    return "main"
+
+
+GIT_COMMIT_SHA = _git_commit_sha()
 
 
 WINDOW_SIZE = int(config["window_size"])

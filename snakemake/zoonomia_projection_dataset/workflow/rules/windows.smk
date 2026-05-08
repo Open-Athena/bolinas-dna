@@ -10,10 +10,10 @@ unique after merging across chroms.
 rule make_windows:
     """255 bp windows on a single chromosome, dropping any that overlap N regions."""
     input:
-        sizes="results/genome/hg38.chrom.sizes.filtered",
-        undefined="results/genome/hg38.undefined.bed",
+        sizes="results/human/chrom.sizes.filtered",
+        undefined="results/human/intervals/undefined.bed",
     output:
-        "results/windows/{chrom}.bed.gz",
+        "results/human/intervals/windows/{chrom}.bed.gz",
     wildcard_constraints:
         chrom="|".join(STANDARD_CHROMS),
     conda:

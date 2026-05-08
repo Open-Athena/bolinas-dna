@@ -134,7 +134,7 @@ def main() -> None:
     parser.add_argument(
         "--genome-2bit",
         type=Path,
-        default=Path("results/genome/homo_sapiens.2bit"),
+        default=Path("results/human/genome.2bit"),
         help="hg38 .2bit file for chrom-sizes + N-region extraction. "
         "If missing, will be built from the Ensembl FASTA.",
     )

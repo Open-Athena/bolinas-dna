@@ -1,7 +1,7 @@
 name: zoonomia-projection-mammals
 
 # Cross-mammal projection step (issue #149, follows benchmark #153).
-# Projects results/bed/min0.20.bed.gz onto ~108 family-deduped mammals via
+# Projects results/human/intervals/filtered/min0.20.bed.gz onto ~108 family-deduped mammals via
 # halLiftover --noDupes against the 1.18 TiB Zoonomia 447 Cactus HAL.
 #
 # Cluster pattern (memo cloud_launch_conventions + sky_cluster_reuse):

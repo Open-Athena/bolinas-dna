@@ -73,3 +73,26 @@ add_rc: true
 # Shuffle + shard params (mirror training_dataset/dataset_creation defaults).
 n_shards: 64
 shuffle_seed: 42
+
+# ===== Validation datasets (rule all_validation) =====
+# Six per-recipe human-only validation parquets (case-encoded by phyloP_447m).
+# Each becomes its own HF repo at <hf_owner>/zoonomia-<pipeline_version>-<recipe>.
+validation_min_proportion_conserved: 0.20  # filter cutoff before subsampling
+validation_max_samples: 16384              # cap per recipe; fewer if regions are scarce
+validation_seed: 42                        # deterministic subsample
+validation_recipes:
+  ["val_cds", "val_utr5", "val_utr3", "val_promoter", "val_enhancer", "val_ncrna", "val_tss_pc"]
+validation_canonical_tag: "Ensembl_canonical"
+# val_tss_pc: ±flank bp band around each canonical protein_coding TSS.
+# 255 → 510 bp band → 2 × 255 bp tiles per TSS (clean, no leftover).
+validation_tss_flank: 255
+# Tightened to autosome+X+Y functional ncRNAs only. Dropped:
+#   - Mt_tRNA, Mt_rRNA   (mitochondrial; on the MT contig which is not in
+#                          standard_chroms, so excluded by chrom filter anyway).
+#   - rRNA               (the cytoplasmic 45S cluster on chr21 is in tandem
+#                          repeat arrays — repetitive and not what we want for
+#                          val_ncrna; the rest are mitochondrial).
+#   - sRNA, misc_RNA     (Ensembl catch-all biotypes — not specifically functional).
+validation_ncrna_biotypes:
+  ["lncRNA", "miRNA", "snoRNA", "snRNA", "ribozyme", "scaRNA", "vault_RNA"]
+ccre_url: "https://downloads.wenglab.org/Registry-V4/GRCh38-cCREs.bed"

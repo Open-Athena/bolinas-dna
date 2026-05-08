@@ -1,6 +1,6 @@
 """Cross-mammal projection step (issue #149, follows benchmark #153).
 
-Projects the conservation-filtered human BED ``results/bed/min{p}.bed.gz``
+Projects the conservation-filtered human BED ``results/human/intervals/filtered/min{p}.bed.gz``
 onto every species in ``config/species_zoonomia_447_family_dedup.tsv`` via
 ``halLiftover --noDupes`` against the Zoonomia 447 Cactus HAL (1.18 TiB,
 staged outside Snakemake to ``HAL_PATH`` by ``sky/project.yaml``). All
@@ -8,7 +8,7 @@ post-processing logic lives in ``src/bolinas/projection``.
 
 DAG (per ``min_p``):
 
-    results/bed/min{p}.bed.gz                (existing pipeline output)
+    results/human/intervals/filtered/min{p}.bed.gz                (existing pipeline output)
         │
         │  prepare_input_ucsc — strip Ensembl bare names, prepend "chr",
         │                       emit BED6 with strand=+ and score=0
@@ -88,7 +88,7 @@ rule prepare_input_ucsc:
     ZRS cCRE rows and head-truncate the rest to chr1.
     """
     input:
-        "results/bed/min{min_p}.bed.gz",
+        "results/human/intervals/filtered/min{min_p}.bed.gz",
     output:
         "results/projection/input/min{min_p}.ucsc.bed",
     params:
@@ -345,7 +345,7 @@ rule subset_dataset:
 
     Subset definitions live in
     ``config/subsets/{subset}.query_names.txt`` and are pre-computed
-    from human annotation overlaps with ``results/bed/min{min_p}.bed.gz``
+    from human annotation overlaps with ``results/human/intervals/filtered/min{min_p}.bed.gz``
     (out of scope here — bring your own query_names list).
     """
     input:

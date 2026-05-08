@@ -34,13 +34,23 @@ You need AWS credentials with S3 access:
 
 Edit `config/config.yaml` to specify:
 
-1. **Models to evaluate**: Specify training runs with base paths, context size, and checkpoint steps
+1. **Models to evaluate**: Specify training runs with **either** a local
+   `base_path` **or** a `gcs_path` (parent of `step-{N}/`), plus context
+   size and the steps to score:
    ```yaml
    models:
+     # Local checkpoint (legacy convention — typically EFS):
      - name: gpn_promoter
        base_path: /path/to/training/run
        context_size: 512
        steps: [10000, 20000, 50000, 100000]
+
+     # GCS checkpoint (new) — pulled by `download_model_step` from
+     # rules/download.smk. `context_size: 255` if the tokenizer prepends BOS.
+     - name: exp136-proj_v30
+       gcs_path: gs://marin-us-central1/checkpoints/.../hf
+       context_size: 255
+       steps: [9999]
    ```
 
 2. **Datasets**: Evaluation datasets from HuggingFace
@@ -50,6 +60,14 @@ Edit `config/config.yaml` to specify:
        hf_path: gonzalobenegas/bolinas_evals-traitgym_mendelian
        split: test
        metrics: [AUPRC, AUROC]
+
+     # Full TraitGym Mendelian benchmark (3380 vars). `train+test` of our
+     # derivative covers the same coordinates as `songlab/omim_traitgym`'s
+     # canonical test split and keeps the per-subset annotations.
+     - name: traitgym_mendelian_full
+       hf_path: gonzalobenegas/bolinas_evals-traitgym_mendelian
+       split: train+test
+       metrics: [AUPRC]
    ```
 
 3. **Inference settings**: Performance tuning (doesn't affect output, won't trigger recomputation)
@@ -73,6 +91,15 @@ Run the complete pipeline:
 
 ```bash
 uv run snakemake
+```
+
+For GPU-bound inference on `gcs_path`-backed checkpoints, use the SkyPilot
+launcher (mirrors `evals_v2/sky/run.yaml`):
+
+```bash
+sky launch snakemake/analysis/evals_v1/sky/run.yaml -c evals-v1
+# subsequent runs (cluster reuse):
+sky exec evals-v1 snakemake/analysis/evals_v1/sky/run.yaml
 ```
 
 Run specific targets:
