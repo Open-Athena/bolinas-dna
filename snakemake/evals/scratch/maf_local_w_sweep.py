@@ -47,40 +47,41 @@ CONT_BASE = [
 N_BINS_GRID = [2, 4, 8, 16, 32]
 
 
-def add_local_lin_bin(df: pl.DataFrame, n_bins: int) -> pl.DataFrame:
-    """Equal-width linear MAF bins per group, joint pos+neg ref. Uses polars
-    window aggregation (`.over`) to broadcast per-group min/max back to rows
-    without an explicit join — faster on 12M-row tables.
+def _safe_idx(value: pl.Expr, lo: pl.Expr, width: pl.Expr, n_bins: int) -> pl.Expr:
+    """((value - lo) / width).floor() → Int64, with fallback for width==0 or
+    NaN (polars evaluates both when/then branches; need strict=False to keep
+    the (value-lo)/0 -> NaN cast from blowing up).
     """
+    return (
+        ((value - lo) / width)
+        .floor()
+        .cast(pl.Int64, strict=False)
+        .fill_null(0)
+        .clip(0, n_bins - 1)
+    )
+
+
+def add_local_lin_bin(df: pl.DataFrame, n_bins: int) -> pl.DataFrame:
+    """Equal-width linear MAF bins per group, joint pos+neg ref."""
     df = df.with_columns(
         pl.col("MAF").min().over(CAT_BASE).alias("_lo"),
         pl.col("MAF").max().over(CAT_BASE).alias("_hi"),
     )
     width = (pl.col("_hi") - pl.col("_lo")) / n_bins
-    bin_idx = (
-        pl.when(width == 0)
-        .then(0)
-        .otherwise(((pl.col("MAF") - pl.col("_lo")) / width).floor().cast(pl.Int64))
-        .clip(0, n_bins - 1)
-    )
+    bin_idx = _safe_idx(pl.col("MAF"), pl.col("_lo"), width, n_bins)
     df = df.with_columns(pl.format("b{}", bin_idx).alias("MAF_local_bin"))
     return df.drop(["_lo", "_hi"])
 
 
 def add_local_log_bin(df: pl.DataFrame, n_bins: int) -> pl.DataFrame:
-    """Equal-width log10-MAF bins per group, joint pos+neg ref. Window-based."""
+    """Equal-width log10-MAF bins per group, joint pos+neg ref."""
     log_maf = pl.col("MAF").clip(1e-10, 1.0).log10()
     df = df.with_columns(
         log_maf.min().over(CAT_BASE).alias("_lo"),
         log_maf.max().over(CAT_BASE).alias("_hi"),
     )
     width = (pl.col("_hi") - pl.col("_lo")) / n_bins
-    bin_idx = (
-        pl.when(width == 0)
-        .then(0)
-        .otherwise(((log_maf - pl.col("_lo")) / width).floor().cast(pl.Int64))
-        .clip(0, n_bins - 1)
-    )
+    bin_idx = _safe_idx(log_maf, pl.col("_lo"), width, n_bins)
     df = df.with_columns(pl.format("b{}", bin_idx).alias("MAF_local_bin"))
     return df.drop(["_lo", "_hi"])
 
