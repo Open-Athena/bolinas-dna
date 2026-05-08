@@ -13,8 +13,8 @@ commit `e59d612e9`, so HGMD pathogenic SNVs are included as a positive source.
 | Name | Description | Positives | Negatives |
 |---|---|---|---|
 | `mendelian_traits` | Mendelian disease pathogenic SNVs | HGMD ∪ OMIM ∪ Smedley et al. 2016 (de-duped, AF<0.001) | gnomAD common (AN≥25k, AF>0.001) |
-| `complex_traits` | UKBB fine-mapped complex-trait variants | SuSiE+FINEMAP PIP > 0.9 across 119 traits | PIP < 0.01 (and not null in any trait) |
-| `eqtl` | GTEx v8 fine-mapped eQTLs (49 tissues, pooled) | SuSiE PIP > 0.9 in ≥1 tissue | PIP < 0.01 in ≥1 tissue and never positive |
+| `complex_traits` | UKBB fine-mapped complex-trait variants | SuSiE+FINEMAP `max(PIP across the traits where this variant was fine-mapped) > 0.9` | `max(PIP) < 0.01` AND no SuSiE/FINEMAP combine-step null PIP among those traits (`label_variants_by_pip(use_null_pip_guard=True)`) |
+| `eqtl` | GTEx v8 fine-mapped eQTLs (49 tissues, pooled) | SuSiE `max(PIP across the tissues where this variant was fine-mapped) > 0.9` | `max(PIP) < 0.01` (`label_variants_by_pip(use_null_pip_guard=False)`; SuSiE-only source has no combine step) |
 
 Each dataset has a corresponding `*_harness_255` eval-harness variant where a
 255 bp window centered on each variant is materialized into
@@ -123,10 +123,21 @@ downloads and aggregation across 119 traits.
 SuSiE fine-mapping file in the Finucane lab GTEx GCS bucket
 (`gs://finucane-requester-pays/gtex_v8/GTEx_49tissues_release1.SuSiE.tsv.bgz`,
 hg38, 49 tissues × all tested gene-variant pairs, with cohort-matched MAF).
-The aggregate step pools across tissues — a variant is positive if its SuSiE
-PIP exceeds `pip_pos_threshold` in ≥1 tissue and negative if its PIP falls
-below `pip_neg_threshold` in ≥1 tissue while never crossing the positive
-threshold in any tissue.
+The aggregate step pools across tissues — for each variant, take `max(PIP)`
+across the tissues that fine-mapped it (a variant typically only has rows
+for the few tissues where it appeared in a credible set; negatives are NOT
+required to be tested in all 49 tissues). Then label by the cascade in
+`bolinas.evals.labeling.label_variants_by_pip`:
+
+- `max(PIP) > pip_pos_threshold (=0.9)` → positive
+- `max(PIP) < pip_neg_threshold (=0.01)` → negative
+- intermediate `max(PIP)` → variant excluded from the dataset
+
+This is critical: don't row-filter the input to extreme PIPs before the
+group_by — that would silently mislabel a variant with tissue PIPs
+`[0.001, 0.5]` as a clean negative (`max = 0.001` after dropping the 0.5
+row) when its true `max = 0.5` is intermediate and should exclude it.
+The labeling helper has a unit test pinning down this regression.
 
 The generic `split_dataset_by_chrom` rule then turns each
 `results/dataset_unsplit/{name}.parquet` into the train/test pair, and
