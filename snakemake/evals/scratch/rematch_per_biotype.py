@@ -30,13 +30,11 @@ import boto3
 import polars as pl
 
 from bolinas.evals.matching import (
-    BIN_NA,
-    EXON_DIST_BIN_EDGES,
+    CAT_BASE,
     MAF_TIERED_LOG8_DISTAL_ONLY,
     MAF_TIERED_V1,
-    TSS_DIST_BIN_EDGES,
+    add_subset_distance_bins,
     add_tiered_maf_bin,
-    bin_feature,
     match_features,
 )
 
@@ -52,14 +50,6 @@ def stamp(tag: str) -> None:
 
 s3 = boto3.client("s3", region_name="us-east-2")
 
-CAT_BASE = [
-    "chrom",
-    "consequence_final",
-    "tss_closest_pc_gene_id",
-    "tss_closest_nc_gene_id",
-    "exon_closest_pc_gene_id",
-    "exon_closest_nc_gene_id",
-]
 CONT_BASE = [
     "distance_tss_pc",
     "distance_tss_nc",
@@ -73,26 +63,6 @@ DATASET_CONFIG = {
     "eqtl": {"with_maf": True, "maf_scheme": MAF_TIERED_LOG8_DISTAL_ONLY},
 }
 DATASETS = ("mendelian_traits", "complex_traits", "eqtl")
-
-
-def add_distance_bins(df: pl.DataFrame) -> pl.DataFrame:
-    """Iter-33 design: tss_pc + tss_nc bins for tss_proximal, exon_pc bin
-    for splicing. exon_nc bin not needed (clean in baseline).
-    """
-    return df.with_columns(
-        pl.when(pl.col("consequence_group") == "tss_proximal")
-        .then(bin_feature("distance_tss_pc", TSS_DIST_BIN_EDGES))
-        .otherwise(pl.lit(BIN_NA))
-        .alias("distance_tss_pc_bin"),
-        pl.when(pl.col("consequence_group") == "tss_proximal")
-        .then(bin_feature("distance_tss_nc", TSS_DIST_BIN_EDGES))
-        .otherwise(pl.lit(BIN_NA))
-        .alias("distance_tss_nc_bin"),
-        pl.when(pl.col("consequence_group") == "splicing")
-        .then(bin_feature("distance_exon_pc", EXON_DIST_BIN_EDGES))
-        .otherwise(pl.lit(BIN_NA))
-        .alias("distance_exon_pc_bin"),
-    )
 
 
 for name in DATASETS:
@@ -114,7 +84,7 @@ for name in DATASETS:
     )
     stamp("after read_parquet")
 
-    V = add_distance_bins(V)
+    V = add_subset_distance_bins(V)
     cat = CAT_BASE + [
         "distance_tss_pc_bin",
         "distance_tss_nc_bin",

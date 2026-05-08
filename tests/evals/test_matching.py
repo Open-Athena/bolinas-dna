@@ -618,9 +618,10 @@ class TestAddTieredMafBin:
         }
         out = add_tiered_maf_bin(df, scheme)
         labels = out["MAF_bin"].to_list()
-        # Both rows in the same subset with the same MAF must share a bin.
-        # Different subsets have different label prefixes so no cross-collision.
-        assert labels[0] == labels[1] is False or labels[0] != labels[2]
+        # Different MAF within the same subset → different bin index.
+        assert labels[0] != labels[1]
+        # Different subset → different label prefix → cannot collide.
+        assert labels[0] != labels[2]
         # Prefix encodes the subset name (truncated to 8 chars).
         assert all(":" in lab for lab in labels)
         assert all(lab.startswith("missense") for lab in labels[:2])

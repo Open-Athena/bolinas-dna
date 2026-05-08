@@ -99,6 +99,48 @@ def bin_feature(
     return expr
 
 
+# Iter-33 categorical match-key shared by all three eval datasets. The
+# trailing per-subset / per-dataset bin columns (`distance_*_bin`, `MAF_bin`)
+# are appended by each *_dataset rule; this is the chrom + consequence_final +
+# closest-gene-id block they all share.
+CAT_BASE: list[str] = [
+    "chrom",
+    "consequence_final",
+    "tss_closest_pc_gene_id",
+    "tss_closest_nc_gene_id",
+    "exon_closest_pc_gene_id",
+    "exon_closest_nc_gene_id",
+]
+
+
+def add_subset_distance_bins(df: pl.DataFrame) -> pl.DataFrame:
+    """Iter-33 per-biotype distance bins as exact-match categoricals.
+
+    - ``distance_tss_pc_bin`` and ``distance_tss_nc_bin``: meaningful only for
+      ``tss_proximal`` (else ``BIN_NA``); edges = ``TSS_DIST_BIN_EDGES``.
+    - ``distance_exon_pc_bin``: meaningful only for ``splicing`` (else
+      ``BIN_NA``); edges = ``EXON_DIST_BIN_EDGES``.
+
+    ``distance_exon_nc_bin`` is intentionally not added — splicing/exon_nc
+    was clean in the iter-33 baseline so there's no leak to fix and the
+    extra bin column would over-tighten splicing matching.
+    """
+    return df.with_columns(
+        pl.when(pl.col("consequence_group") == "tss_proximal")
+        .then(bin_feature("distance_tss_pc", TSS_DIST_BIN_EDGES))
+        .otherwise(pl.lit(BIN_NA))
+        .alias("distance_tss_pc_bin"),
+        pl.when(pl.col("consequence_group") == "tss_proximal")
+        .then(bin_feature("distance_tss_nc", TSS_DIST_BIN_EDGES))
+        .otherwise(pl.lit(BIN_NA))
+        .alias("distance_tss_nc_bin"),
+        pl.when(pl.col("consequence_group") == "splicing")
+        .then(bin_feature("distance_exon_pc", EXON_DIST_BIN_EDGES))
+        .otherwise(pl.lit(BIN_NA))
+        .alias("distance_exon_pc_bin"),
+    )
+
+
 def add_tiered_maf_bin(
     df: pl.DataFrame,
     scheme: dict[str, list[float] | str],
@@ -131,6 +173,19 @@ def add_tiered_maf_bin(
     Returns:
         New dataframe with a ``MAF_bin`` column appended.
     """
+    # Defensive: subset names get truncated to 8 chars in the bin label below
+    # to keep the column compact. If a future scheme adds two consequence
+    # groups whose first 8 chars collide (e.g. `non_coding_transcript_exon_*`
+    # variants), labels would silently merge across subsets — fail loudly
+    # instead. consequence_final is also in the categorical match key so
+    # cross-subset matching is impossible regardless, but the label-confusion
+    # would surface as a confusing diagnostic rather than wrong matches.
+    fixed_edge_subsets = [s for s, v in scheme.items() if v != LOG_LOCAL]
+    prefixes = {s[:8] for s in fixed_edge_subsets}
+    assert len(prefixes) == len(fixed_edge_subsets), (
+        f"first-8-char collision among scheme keys: {sorted(fixed_edge_subsets)}"
+    )
+
     needs_log = any(v == LOG_LOCAL for v in scheme.values())
     if needs_log:
         if log_local_group_cols is None:
