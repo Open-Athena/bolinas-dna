@@ -39,8 +39,13 @@ run: |
     # Force-rerun scoring + aggregation so the new HF revisions of the eval
     # datasets are actually picked up (load_dataset hits HF directly; no
     # provenance fingerprint, so snakemake otherwise sees outputs as fresh).
+    #
+    # `--cores 1` because score_variants loads a ~10 GB bigWig per task; with
+    # the profile default of 4 parallel cores on a 16 GB box that ends up
+    # OOM'ing one of the parallel jobs.
     uv run --project ../.. snakemake \
         --profile workflow/profiles/default \
+        --cores 1 \
         --printshellcmds \
         --rerun-incomplete \
         --forcerun score_variants
