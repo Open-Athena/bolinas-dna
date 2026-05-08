@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "bolinas"
 version = "0.0.1"
 description = "DNA training dataset creation and genomic interval utilities"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "bioframe",
     "biofoundation @ git+https://github.com/Open-Athena/biofoundation.git",
@@ -34,7 +34,17 @@ dependencies = [
     "zstandard",
     "snakemake-storage-plugin-s3>=0.3.6",
     "wandb",
-    "awscli>=1.45.2",
+]
+
+[project.optional-dependencies]
+# Mirrors marin's own `tpu` extra. libtpu only ships Linux wheels; gate it so
+# darwin resolution still succeeds (no actual TPU support on Mac, as expected).
+tpu = [
+    "jax==0.9.2",
+    "jaxlib==0.9.2",
+    "libtpu==0.0.38; sys_platform == 'linux'",
+    "torch==2.10.0",
+    "torchvision==0.25.0",
 ]
 
 [dependency-groups]
@@ -54,6 +64,95 @@ enhancer-classification = [
 alphagenome-eval = [
     "alphagenome",
 ]
+# `aws` CLI for the complex_traits / ldscore_download snakemake rule (added
+# in #159 — the rule shells out to `aws s3 cp ...`). awscli pins older
+# fsspec/s3fs that conflict with marin's; gate it as an opt-in group via
+# `[tool.uv.conflicts]` below so the marin group can lock independently.
+# Pipeline users running ldscore_download install with `--group aws-cli`.
+aws-cli = [
+    "awscli>=1.45.2",
+]
+marin = [
+    "marin",
+    "marin-levanter",
+    "marin-iris",
+    "marin-zephyr",
+    "marin-rigging",
+    # marin-iris transitively requires marin-finelog (no released wheel yet);
+    # listed here so the [tool.uv.sources] override below applies.
+    "marin-finelog",
+    # marin-root ships marin's `experiments/` package (no released wheel —
+    # only workspace members get release wheels). Needed so the parity-check
+    # script can `from experiments.evals.task_configs import ...`,
+    # `from experiments.qwen3 import ...`, etc.
+    "marin-root",
+]
+
+[tool.uv]
+# awscli (in the `aws-cli` group) pins fsspec/s3fs strictly below the
+# versions marin requires; resolve them in separate "universes" so each
+# group locks against its own compatible set.
+conflicts = [
+    [
+        { group = "marin" },
+        { group = "aws-cli" },
+    ],
+]
+fork-strategy = "fewest"
+prerelease = "allow"
+environments = [
+    "sys_platform == 'darwin'",
+    "sys_platform == 'linux'",
+]
+override-dependencies = [
+    "omegaconf>=2.4.0.dev4",
+    "antlr4-python3-runtime==4.11",
+    "python-multipart>=0.0.22",
+    "wheel>=0.46.2",
+    "datasets>=3.1.0,<4.0.0",
+    "equinox>=0.11.10",
+    # Pin pandas to 2.x — `prerelease = "allow"` (above) lets uv pick the
+    # 3.0 prerelease, which changes parquet round-trip dtypes from `object`
+    # to `StringDtype` and breaks tests/test_intervals.py. Keeps existing
+    # bolinas-dna code on the same pandas major it was developed against.
+    "pandas>=2.0,<3.0",
+]
+find-links = [
+    "https://github.com/marin-community/marin/releases/expanded_assets/marin-latest",
+    "https://github.com/marin-community/marin/releases/expanded_assets/marin-haliax-latest",
+    "https://github.com/marin-community/marin/releases/expanded_assets/marin-levanter-latest",
+    "https://github.com/marin-community/marin/releases/expanded_assets/marin-iris-latest",
+    "https://github.com/marin-community/marin/releases/expanded_assets/marin-zephyr-latest",
+    "https://github.com/marin-community/marin/releases/expanded_assets/marin-rigging-latest",
+    "https://github.com/marin-community/marin/releases/expanded_assets/marin-fray-latest",
+    "https://github.com/marin-community/marin/releases/expanded_assets/dupekit-0.1.0-40ac799",
+    "https://github.com/marin-community/kitoken/releases/expanded_assets/kitoken-0.10.2-a3012f4",
+]
+
+[[tool.uv.index]]
+name = "marin-resiliparse"
+url = "https://marin-community.github.io/chatnoir-resiliparse/simple"
+
+[tool.uv.sources]
+resiliparse = { index = "marin-resiliparse" }
+# Today's marin-iris release (0.99.dev20260508) depends on marin-finelog, but
+# marin-finelog has no published wheel on the marin GitHub releases (only
+# marin/marin-haliax/marin-levanter/marin-iris/marin-zephyr/marin-rigging/
+# marin-fray have `*-latest` tags). Until marin publishes a marin-finelog
+# wheel, build all marin sister packages from the same git SHA so workspace
+# versions (0.99) line up internally — avoids version mismatches between
+# the published-wheel scheme (0.99.dev<DATE>) and the workspace pyprojects
+# (0.99). Refresh the rev when bumping marin.
+marin = { git = "https://github.com/marin-community/marin", subdirectory = "lib/marin" }
+marin-haliax = { git = "https://github.com/marin-community/marin", subdirectory = "lib/haliax" }
+marin-levanter = { git = "https://github.com/marin-community/marin", subdirectory = "lib/levanter" }
+marin-iris = { git = "https://github.com/marin-community/marin", subdirectory = "lib/iris" }
+marin-zephyr = { git = "https://github.com/marin-community/marin", subdirectory = "lib/zephyr" }
+marin-rigging = { git = "https://github.com/marin-community/marin", subdirectory = "lib/rigging" }
+marin-fray = { git = "https://github.com/marin-community/marin", subdirectory = "lib/fray" }
+marin-finelog = { git = "https://github.com/marin-community/marin", subdirectory = "lib/finelog" }
+# marin-root lives at the marin repo root; ships the `experiments/` package.
+marin-root = { git = "https://github.com/marin-community/marin" }
 
 [tool.hatch.metadata]
 allow-direct-references = true

@@ -86,6 +86,24 @@ Development is driven by experiments tracked as GitHub issues.
 uv sync
 ```
 
+Optional dependency groups (all opt-in):
+
+| Group | Purpose |
+|---|---|
+| `dev` | Pre-commit, ruff, pytest, snakefmt. |
+| `marin` | marin / marin-levanter / marin-iris / marin-zephyr / marin-rigging — for marin-launched DNA experiments under `experiments/`. |
+| `enhancer-classification` | AlphaGenome-Pytorch, Lightning, py2bit — for the enhancer-classification training path. |
+| `alphagenome-eval` | AlphaGenome — for AlphaGenome eval pipelines. |
+| `aws-cli` | `awscli` for snakemake rules that shell out to `aws s3 cp` (e.g. `evals/ldscore_download`). |
+
+`marin` and `aws-cli` are mutually exclusive (awscli pins fsspec/s3fs older
+than marin's requirements). For TPU training under marin, also pass
+`--extra tpu`:
+
+```bash
+uv sync --group marin --extra tpu
+```
+
 ## Development
 
 ```bash
