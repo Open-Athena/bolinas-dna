@@ -59,6 +59,10 @@ run: |
 
     cd snakemake/zoonomia_projection_dataset
 
+    # Clear any stale snakemake lockfile from a prior crash. Safe no-op on a
+    # clean working dir (just prints "Unlocked working directory").
+    uv run snakemake --profile workflow/profiles/default --unlock || true
+
     # Dry-run gate first — verify only the new validation/cre/mask jobs are
     # scheduled (genome chain + bigwig + GTF should be S3-resolved no-ops).
     # --rerun-incomplete lets the gate plan around any half-written outputs
