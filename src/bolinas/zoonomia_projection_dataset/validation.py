@@ -634,7 +634,7 @@ deterministic per-locus rows.)
 - **Recipes are independent probes, not a partition.** A small number of
   bases may appear in multiple recipes (e.g. a `val_promoter` PLS overlapping
   a `val_utr5` 5' UTR; an `add_flank(20)` on CDS extending into intronic
-  splice signal that abuts a 3' UTR). Don't concatenate the six parquets
+  splice signal that abuts a 3' UTR). Don't concatenate the seven parquets
   without dedup.
 - **Lowercase is ambiguous.** Lowercase letters could mean either "phyloP
   score is below threshold" or "no alignment at this position". The encoding
