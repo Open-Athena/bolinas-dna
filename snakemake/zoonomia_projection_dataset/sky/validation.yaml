@@ -61,8 +61,11 @@ run: |
 
     # Dry-run gate first — verify only the new validation/cre/mask jobs are
     # scheduled (genome chain + bigwig + GTF should be S3-resolved no-ops).
+    # --rerun-incomplete lets the gate plan around any half-written outputs
+    # left by a previous OOM / SIGKILL.
     uv run snakemake --profile workflow/profiles/default \
         --printshellcmds \
+        --rerun-incomplete \
         -n all_validation
 
     # Real run.
