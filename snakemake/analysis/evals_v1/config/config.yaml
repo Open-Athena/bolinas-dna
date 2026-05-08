@@ -600,14 +600,10 @@ models:
       - 7000
       - 9999
 
-  # GCS-backed entry: pulled from the marin checkpoint bucket via
-  # `download_model_step` (see workflow/rules/download.smk). `gcs_path` is
-  # the parent of `step-{N}/` — same semantics as `base_path`. Using the
-  # same exp136 checkpoint as evals_v2; `context_size: 255` because the
-  # tokenizer prepends BOS (255 bp DNA + BOS = 256 tokens).
   - name: exp136-proj_v30
+    # `gcs_path` is the parent of `step-{N}/` (same semantics as `base_path`).
     gcs_path: gs://marin-us-central1/checkpoints/dna-bolinas-enhancer-curation-v0.1-proj_v30-6692f0/hf
-    context_size: 255
+    context_size: 255  # 255 bp DNA + BOS = 256 tokens
     steps:
       - 9999
 
@@ -620,10 +616,9 @@ datasets:
     metrics:
       - AUPRC
 
-  # Full TraitGym Mendelian benchmark — 3380 variants. `train+test` of our
-  # derivative is the same coordinate set as `songlab/omim_traitgym` test
-  # (the canonical TraitGym leaderboard split). Use this entry for
-  # final-eval comparisons against the v1 baselines.
+  # `train+test` covers the same 3380 coords as `songlab/omim_traitgym` test
+  # (the canonical TraitGym leaderboard split); the existing `traitgym_mendelian`
+  # entry above uses split=train (a 2640-coord dev subset).
   - name: traitgym_mendelian_full
     hf_path: gonzalobenegas/bolinas_evals-traitgym_mendelian
     split: train+test

@@ -2,12 +2,7 @@
 
 
 def _checkpoint_input(wildcards):
-    """Per-(model, step) checkpoint dependency.
-
-    For `gcs_path`-backed entries we depend on the local download from
-    `download.smk`; legacy `base_path` entries return [] (no Snakemake
-    dependency) and the run block resolves the path directly.
-    """
+    """Local download dir for `gcs_path` entries; `[]` (no input) for `base_path` entries."""
     cfg = get_model_config(wildcards.model)
     if "gcs_path" in cfg:
         return f"results/checkpoints/{wildcards.model}/step-{wildcards.step}"
