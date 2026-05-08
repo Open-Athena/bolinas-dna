@@ -202,10 +202,20 @@ def add_tiered_maf_bin(
             ((log_maf - pl.col("_lo")) / width)
             .floor()
             .cast(pl.Int64, strict=False)
-            .fill_null(0)
+            .fill_null(0)  # width=0 (constant-MAF group) → NaN → null → b0
             .clip(0, LOG_LOCAL_N - 1)
         )
-        log_local_label = pl.format("ll:{}", log_local_idx)
+        # Emit `ll:OOR` for null / NaN MAF rows so they only match each other
+        # within their categorical group — matches `bin_feature`'s null
+        # handling (also OOR) so the two scheme types behave consistently.
+        # Without this, the strict_cast=False above produces a null index
+        # which then formats as `ll:null`, silently distinct from the OOR
+        # label other subsets emit for the same input.
+        log_local_label = (
+            pl.when(pl.col("MAF").is_null() | pl.col("MAF").is_nan())
+            .then(pl.lit("ll:OOR"))
+            .otherwise(pl.format("ll:{}", log_local_idx))
+        )
 
     expr = pl.lit("UNKNOWN")
     for subset, val in scheme.items():
@@ -274,6 +284,11 @@ def match_features(
     # space. complex_traits goes from ~12M neg rows to ~100k after this join,
     # which makes the to_pandas/partition_by stack run in seconds instead of
     # minutes (and on a 16 GB box instead of needing 256 GB).
+    # `partition_by` (used below) and the semi-join both require at least one
+    # categorical key. Pre-iter-33 the function had the same limitation
+    # (partition_by raises on an empty key list); this assertion just makes
+    # the failure mode obvious instead of buried polars-internal.
+    assert categorical_features, "categorical_features must be non-empty"
     pos_keys = pos.select(categorical_features).unique()
     neg = neg.join(pos_keys, on=categorical_features, how="semi")
 

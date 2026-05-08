@@ -328,6 +328,15 @@ class TestMatchFeaturesEdgeCases:
 
         assert len(result) == 2 + 2 * 2
 
+    def test_empty_categorical_features_raises(self) -> None:
+        # match_features needs at least one categorical key (partition_by and
+        # the iter-33 semi-join both require it). Make sure the failure mode
+        # is a clear AssertionError, not a buried polars-internal exception.
+        pos = make_variants(2, feat=[1.0, 5.0])
+        neg = make_variants(5, chrom="1", start_pos=200, feat=[1.1, 1.2, 5.1, 5.2, 99.0])
+        with pytest.raises(AssertionError, match="categorical_features"):
+            match_features(pos, neg, ["feat"], [], k=1)
+
     def test_multiple_categorical_features(self) -> None:
         pos = pl.DataFrame(
             {
@@ -685,6 +694,67 @@ class TestAddTieredMafBin:
         )
         out = add_tiered_maf_bin(df, {"missense_variant": MAF_BIN_EDGES_5})
         assert out["MAF_bin"].to_list() == ["UNKNOWN", "missense:b2"]
+
+    def test_null_maf_gets_oor_label_for_both_scheme_types(self) -> None:
+        # Both fixed-edge (via bin_feature) and LOG_LOCAL must emit a
+        # consistent OOR label for null/NaN MAF, so production callers that
+        # forget to pre-filter don't get silently-collapsed distinct buckets.
+        df = pl.DataFrame(
+            {
+                "MAF": [None, 0.05, None, 0.05],
+                "consequence_group": [
+                    "missense_variant", "missense_variant",   # fixed-edge
+                    "distal", "distal",                        # LOG_LOCAL
+                ],
+                "chrom": ["A", "A", "A", "A"],
+            },
+            schema={
+                "MAF": pl.Float64,
+                "consequence_group": pl.String,
+                "chrom": pl.String,
+            },
+        )
+        out = add_tiered_maf_bin(
+            df,
+            {"missense_variant": MAF_BIN_EDGES_5, "distal": LOG_LOCAL},
+            log_local_group_cols=["chrom"],
+        )
+        labels = out["MAF_bin"].to_list()
+        # missense (fixed-edge): null → bin_feature returns "OOR"
+        assert labels[0] == "missense:OOR"
+        # missense with valid MAF=0.05 in 5bin → some "missense:bN"
+        assert labels[1].startswith("missense:b")
+        # distal (LOG_LOCAL): null MAF → "ll:OOR" (not silently merged into ll:0)
+        assert labels[2] == "ll:OOR"
+        assert labels[3].startswith("ll:")
+
+    def test_log_local_handles_constant_maf_within_group(self) -> None:
+        # All rows in one group with the same MAF → width=0 → div-by-zero.
+        # Should not crash; all rows get a single bucket label (ll:0).
+        df = pl.DataFrame(
+            {
+                "MAF": [0.01, 0.01, 0.01],
+                "consequence_group": ["distal", "distal", "distal"],
+                "chrom": ["A", "A", "A"],
+            }
+        )
+        out = add_tiered_maf_bin(
+            df, {"distal": LOG_LOCAL}, log_local_group_cols=["chrom"]
+        )
+        # All rows collapse to bucket 0 (no spread → no bin distinction).
+        assert out["MAF_bin"].to_list() == ["ll:0", "ll:0", "ll:0"]
+
+    def test_empty_dataframe_through_helper(self) -> None:
+        df = pl.DataFrame(
+            schema={"MAF": pl.Float64, "consequence_group": pl.String, "chrom": pl.String}
+        )
+        out = add_tiered_maf_bin(
+            df,
+            {"distal": MAF_BIN_EDGES_5, "missense_variant": LOG_LOCAL},
+            log_local_group_cols=["chrom"],
+        )
+        assert out.height == 0
+        assert "MAF_bin" in out.columns
 
     def test_iter33_locked_schemes_have_expected_subsets(self) -> None:
         # Sanity: every consequence_group seen across the three eval datasets
