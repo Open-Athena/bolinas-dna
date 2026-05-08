@@ -32,7 +32,6 @@ Caveats to flag during the comparison:
 """
 
 import dataclasses
-import importlib.resources
 import logging
 import os
 from datetime import timedelta
@@ -229,19 +228,13 @@ def _build_optimizer() -> AdamConfig:
     )
 
 
-def _custom_task_include_path() -> str:
-    """Path to bolinas-dna's lm-eval custom tasks (YAMLs + their `!function` py).
-
-    Phase B follow-up: marin's current ``LmEvalHarnessConfig`` no longer
-    accepts ``include_path``, so this isn't wired in yet. The parity check
-    can't run TraitGym evals until either marin re-exposes the kwarg or we
-    register the task programmatically; this helper is the bolinas-dna side
-    of whatever mechanism we settle on.
-    """
-    return str(importlib.resources.files("bolinas.evals.lm_eval"))
-
-
 def _eval_harness_config() -> LmEvalHarnessConfig:
+    # Importing ``bolinas.evals.lm_eval.task_configs`` (above) loads the
+    # package and runs its ``_install_task_manager_patch()`` side effect,
+    # which monkeypatches ``lm_eval.tasks.TaskManager`` so it always includes
+    # the bolinas-dna custom-task directory on its search path. Marin's
+    # current ``LmEvalHarnessConfig`` no longer accepts ``include_path``;
+    # without that patch, ``traitgym_mendelian_v2_255`` would be unreachable.
     return LmEvalHarnessConfig(
         task_spec=convert_to_levanter_task_config([TRAITGYM_MENDELIAN_V2_255]),
     )

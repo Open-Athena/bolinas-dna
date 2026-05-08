@@ -74,7 +74,11 @@ aws-cli = [
 ]
 marin = [
     "marin",
-    "marin-levanter",
+    # `[lm_eval]` extra pulls the EleutherAI lm-evaluation-harness fork
+    # marin-levanter pins. Required so eval_harness can run custom tasks
+    # (e.g. ``traitgym_mendelian_v2_255``); marin's plain `marin-levanter`
+    # dep doesn't include it.
+    "marin-levanter[lm_eval]",
     "marin-iris",
     "marin-zephyr",
     "marin-rigging",
@@ -116,6 +120,15 @@ override-dependencies = [
     # to `StringDtype` and breaks tests/test_intervals.py. Keeps existing
     # bolinas-dna code on the same pandas major it was developed against.
     "pandas>=2.0,<3.0",
+]
+# kitoken and dupekit are pulled in transitively by marin-levanter and
+# marin's dedup tooling; they ship as SHA-pinned GitHub release wheels
+# rather than PyPI releases, so uv needs find-links to discover them. The
+# marin sister-packages are git-routed via [tool.uv.sources] (workspace
+# 0.99 versions, see comment there) so they don't appear here.
+find-links = [
+    "https://github.com/marin-community/kitoken/releases/expanded_assets/kitoken-0.10.2-a3012f4",
+    "https://github.com/marin-community/marin/releases/expanded_assets/dupekit-0.1.0-40ac799",
 ]
 
 [[tool.uv.index]]
