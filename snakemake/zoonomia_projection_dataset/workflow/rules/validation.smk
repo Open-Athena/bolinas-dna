@@ -122,6 +122,12 @@ rule validation_mask_all_exons:
         gtf=f"results/annotation/Homo_sapiens.GRCh38.{config['ensembl_release']}.gtf.gz",
     output:
         "results/human/intervals/validation/mask/all_exons.bed",
+    resources:
+        # load_annotation builds a ~2 GB polars frame from the human GTF;
+        # peak-while-running is 3-4 GB. Capping at 5 GB so Snakemake won't
+        # schedule it concurrently with several validation_region_annotation
+        # jobs on a 16 GB box.
+        mem_mb=5000,
     run:
         from bolinas.data.utils import get_exons, load_annotation
 
@@ -151,6 +157,12 @@ rule validation_region_annotation:
     params:
         ncrna_biotypes=VALIDATION_NCRNA_BIOTYPES,
         canonical_tag=VALIDATION_CANONICAL_TAG,
+    resources:
+        # load_annotation + canonical filter + per-recipe extractor on the
+        # human GTF peaks at ~3-4 GB per job. Cap at 5 GB so at most 2 of
+        # these run concurrently on a 16 GB c6id.2xlarge alongside the
+        # ~5 GB validation_mask_all_exons.
+        mem_mb=5000,
     run:
         from bolinas.data.intervals import GenomicSet
         from bolinas.data.utils import load_annotation
