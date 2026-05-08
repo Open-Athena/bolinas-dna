@@ -160,11 +160,11 @@ rule validation_region_annotation:
         ncrna_biotypes=VALIDATION_NCRNA_BIOTYPES,
         canonical_tag=VALIDATION_CANONICAL_TAG,
     resources:
-        # load_annotation + canonical filter + per-recipe extractor on the
-        # human GTF peaks at ~3-4 GB per job. Cap at 5 GB so at most 2 of
-        # these run concurrently on a 16 GB c6id.2xlarge alongside the
-        # ~5 GB validation_mask_all_exons.
-        mem_mb=5000,
+        # Empirical peak per-job is 7-10 GB (polars `with_columns` filter
+        # transiently doubles the ~3 GB parsed GTF frame). On c6id.4xlarge
+        # (30 GB budget), mem_mb=16000 forces these to run one-at-a-time —
+        # concurrent peaks exceeded mem_mb in earlier attempts and OOMed.
+        mem_mb=16000,
     run:
         from bolinas.data.intervals import GenomicSet
         from bolinas.data.utils import load_annotation
