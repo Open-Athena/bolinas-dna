@@ -86,22 +86,22 @@ Development is driven by experiments tracked as GitHub issues.
 uv sync
 ```
 
-Optional dependency groups (all opt-in):
+Optional installs (all opt-in):
 
-| Group | Purpose |
+| Selector | Purpose |
 |---|---|
-| `dev` | Pre-commit, ruff, pytest, snakefmt. |
-| `marin` | marin / marin-levanter / marin-iris / marin-zephyr / marin-rigging — for marin-launched DNA experiments under `experiments/`. |
-| `enhancer-classification` | AlphaGenome-Pytorch, Lightning, py2bit — for the enhancer-classification training path. |
-| `alphagenome-eval` | AlphaGenome — for AlphaGenome eval pipelines. |
-| `aws-cli` | `awscli` for snakemake rules that shell out to `aws s3 cp` (e.g. `evals/ldscore_download`). |
+| `--group dev` | Pre-commit, ruff, pytest, snakefmt. |
+| `--extra marin` | marin / marin-levanter / marin-iris / marin-zephyr / marin-rigging — for marin-launched DNA experiments under `experiments/`. Lives as an extra (not a group) so iris workers can install it via `uv sync --extra marin`. |
+| `--group enhancer-classification` | AlphaGenome-Pytorch, Lightning, py2bit — for the enhancer-classification training path. |
+| `--group alphagenome-eval` | AlphaGenome — for AlphaGenome eval pipelines. |
+| `--group aws-cli` | `awscli` for snakemake rules that shell out to `aws s3 cp` (e.g. `evals/ldscore_download`). |
 
-`marin` and `aws-cli` are mutually exclusive (awscli pins fsspec/s3fs older
-than marin's requirements). For TPU training under marin, also pass
-`--extra tpu`:
+The `marin` extra and `aws-cli` group are mutually exclusive (awscli pins
+fsspec/s3fs older than marin's requirements). For TPU training under marin,
+also pass `--extra tpu`:
 
 ```bash
-uv sync --group marin --extra tpu
+uv sync --extra marin --extra tpu
 ```
 
 ## Development

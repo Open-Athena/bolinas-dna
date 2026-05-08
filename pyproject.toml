@@ -46,6 +46,30 @@ tpu = [
     "torch==2.10.0",
     "torchvision==0.25.0",
 ]
+# Marin-launched DNA experiments. Iris workers run ``uv sync`` with `--extra`
+# flags (not `--group`), so this lives under `[project.optional-dependencies]`
+# rather than `[dependency-groups]`. Local users opt in with
+# `uv sync --extra marin`; snakemake / PyTorch contributors who don't run
+# marin experiments leave it out and skip the JAX/levanter install cost.
+marin = [
+    "marin",
+    "marin-levanter",
+    "marin-iris",
+    "marin-zephyr",
+    "marin-rigging",
+    # `marin-levanter[lm_eval]`'s extra is a URL dep (`lm-eval @ git+...`);
+    # uv requires URL deps as direct (top-level) requirements. Bump the rev
+    # in lockstep with marin-levanter.
+    "lm-eval @ git+https://github.com/stanford-crfm/lm-evaluation-harness.git@d5e3391f22cde186c827674d5c3ec7c5f4fe0cab",
+    # marin-root (which ships marin's `experiments/` package) is deliberately
+    # *not* depended on here — its pyproject carries
+    # ``[tool.uv.sources] marin-* = { workspace = true }``, which propagates
+    # to consumers and overrides the find-links wheels for every marin
+    # sister package, dropping the BUILD_DATE the iris controller's
+    # freshness check requires. The two `experiments.*` symbols the parity
+    # check needs (`qwen3_0_6b_hd128`, `default_tokenize`) are vendored at
+    # the bottom of `experiments/parity/exp160_parity.py`.
+]
 
 [dependency-groups]
 dev = [
@@ -72,35 +96,14 @@ alphagenome-eval = [
 aws-cli = [
     "awscli>=1.45.2",
 ]
-marin = [
-    "marin",
-    "marin-levanter",
-    "marin-iris",
-    "marin-zephyr",
-    "marin-rigging",
-    # `marin-levanter[lm_eval]`'s extra pulls the EleutherAI
-    # lm-evaluation-harness fork as a URL dep — uv requires URL deps to be
-    # declared as direct (top-level) requirements, not transitive through an
-    # extra, so it lands here instead. Bump the rev when marin-levanter does.
-    "lm-eval @ git+https://github.com/stanford-crfm/lm-evaluation-harness.git@d5e3391f22cde186c827674d5c3ec7c5f4fe0cab",
-    # marin-root (which ships marin's `experiments/` package) is deliberately
-    # *not* depended on here — its pyproject carries
-    # ``[tool.uv.sources] marin-* = { workspace = true }``, which propagates
-    # to consumers and overrides the find-links wheels for every marin
-    # sister package. Workspace builds skip ``scripts/python_libs_package.py``,
-    # leaving ``iris._build_info.BUILD_DATE = ""`` and tripping the iris
-    # controller's freshness check. The handful of `experiments.*` symbols
-    # the parity check needs are vendored at the bottom of
-    # ``experiments/parity/exp160_parity.py``.
-]
 
 [tool.uv]
 # awscli (in the `aws-cli` group) pins fsspec/s3fs strictly below the
 # versions marin requires; resolve them in separate "universes" so each
-# group locks against its own compatible set.
+# extra/group locks against its own compatible set.
 conflicts = [
     [
-        { group = "marin" },
+        { extra = "marin" },
         { group = "aws-cli" },
     ],
 ]
