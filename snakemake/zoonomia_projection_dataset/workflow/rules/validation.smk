@@ -123,11 +123,13 @@ rule validation_mask_all_exons:
     output:
         "results/human/intervals/validation/mask/all_exons.bed",
     resources:
-        # Empirical peak ~7 GB on the human GTF (the polars filter step
-        # transiently doubles the parsed frame). With the 14 GB global budget
-        # in workflow/profiles/default/config.yaml, mem_mb=7500 forces
-        # serial execution of these heavy GTF rules on a 16 GB c6id.2xlarge.
-        mem_mb=7500,
+        # Empirical peak per-job is 7-10 GB (polars `with_columns` transiently
+        # doubles the ~3 GB parsed GTF frame). On c6id.4xlarge (30 GB budget),
+        # mem_mb=16000 forces these to run one-at-a-time — concurrent OOMs
+        # killed two earlier attempts when the per-job peak exceeded mem_mb.
+        # Cost: ~15 min serial wall for the 5-rule GTF phase, vs gambling
+        # on a parallel-OOM cycle.
+        mem_mb=16000,
     run:
         from bolinas.data.utils import get_exons, load_annotation
 
