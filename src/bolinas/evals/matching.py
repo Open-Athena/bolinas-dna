@@ -119,6 +119,17 @@ def match_features(
     _validate_no_nulls(pos, all_features, "pos")
     _validate_no_nulls(neg, all_features, "neg")
 
+    # Pre-filter: drop neg rows whose categorical combo doesn't match any
+    # positive's. Behaviorally identical to the current loop (those negs would
+    # never enter `neg_groups[group_key]` for any positive's group_key), but
+    # cuts the next two steps' cost by ~50-100× on real eval datasets where
+    # most negatives sit far from any positive in (gene_id × MAF_bin × …)
+    # space. complex_traits goes from ~12M neg rows to ~100k after this join,
+    # which makes the to_pandas/partition_by stack run in seconds instead of
+    # minutes (and on a 16 GB box instead of needing 256 GB).
+    pos_keys = pos.select(categorical_features).unique()
+    neg = neg.join(pos_keys, on=categorical_features, how="semi")
+
     pos_pd = pos.to_pandas()
     neg_pd = neg.to_pandas()
 

@@ -27,6 +27,7 @@ for var in (
 
 import gc
 import resource
+import time
 
 import boto3
 import polars as pl
@@ -41,13 +42,16 @@ from bolinas.evals.matching import (
 )
 
 
-def memlog(tag: str) -> None:
-    """Print current peak RSS so we can see which step blew up if the kernel
-    OOM-kills the process before the next print line lands.
+_t0 = time.time()
+
+
+def stamp(tag: str) -> None:
+    """Per-step elapsed wall-clock + peak RSS, so iteration speed and the
+    spot where things blow up are both visible from one log line.
     """
-    # ru_maxrss on linux is in KB; divide by 1024 for MB.
+    elapsed = time.time() - _t0
     peak_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
-    print(f"  [mem peak={peak_mb:7.0f} MB] {tag}", flush=True)
+    print(f"  [+{elapsed:6.1f}s  peak={peak_mb:7.0f} MB] {tag}", flush=True)
 
 
 s3 = boto3.client("s3", region_name="us-east-2")
@@ -128,7 +132,7 @@ for name in DATASETS:
         f"({df.filter(pl.col('label')).height} pos)",
         flush=True,
     )
-    memlog("after read_parquet")
+    stamp("after read_parquet")
 
     V = add_bins(
         df,
@@ -138,7 +142,7 @@ for name in DATASETS:
     )
     del df
     gc.collect()
-    memlog("after add_bins (df freed)")
+    stamp("after add_bins (df freed)")
 
     cont = ["distance_tss_pc", "distance_tss_nc", "distance_exon_pc", "distance_exon_nc"]
     cat = [
@@ -161,14 +165,14 @@ for name in DATASETS:
     neg_V = V.filter(~pl.col("label"))
     del V
     gc.collect()
-    memlog(f"before match_features (pos={pos_V.height} neg={neg_V.height})")
+    stamp(f"before match_features (pos={pos_V.height} neg={neg_V.height})")
     matched = (
         match_features(pos_V, neg_V, cont, cat, k=1)
         .with_columns(subset=pl.col("consequence_group"))
     )
     del pos_V, neg_V
     gc.collect()
-    memlog("after match_features")
+    stamp("after match_features")
 
     out = f"/tmp/{name}_unsplit_v2.parquet"
     matched.write_parquet(out)
