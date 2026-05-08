@@ -4,9 +4,9 @@ workdir: .
 
 resources:
   infra: aws/us-east-2
-  cpus: 16+
-  memory: 256+
-  disk_size: 100
+  cpus: 4+
+  memory: 32+
+  disk_size: 50
   labels:
     project: dna
 
