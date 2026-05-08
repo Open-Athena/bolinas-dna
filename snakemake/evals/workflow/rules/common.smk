@@ -8,6 +8,7 @@ from cyvcf2 import VCF
 from datasets import Dataset
 from huggingface_hub import HfApi
 
+from bolinas.evals.labeling import label_variants_by_pip
 from bolinas.evals.materialize import materialize_sequences
 from bolinas.evals.matching import (
     BIN_NA,

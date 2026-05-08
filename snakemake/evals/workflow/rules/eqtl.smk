@@ -17,13 +17,29 @@ rule eqtl_aggregate:
     run:
         pip_pos = config["eqtl"]["pip_pos_threshold"]
         pip_neg = config["eqtl"]["pip_neg_threshold"]
-        # Pre-filter to PIP extremes drops the middle-range bulk of rows up
-        # front (a variant whose only tissue rows all have pip in [pip_neg,
-        # pip_pos] would be excluded from labeling anyway). The streaming
-        # scan_csv + sink_parquet keeps the ~5-15 GB decompressed input
-        # from being materialized at once.
-        # Also collect per-variant unique tissues, target gene IDs (no version),
-        # and target gene biotype classes (collapsed to pc / nc).
+        # Per-variant labeling delegated to `label_variants_by_pip` (in
+        # `src/bolinas/evals/labeling.py`, fully unit-tested in
+        # `tests/evals/test_labeling.py`). Notes:
+        #   - Labels come from `max(pip)` across the tissues that
+        #     fine-mapped this variant. Intermediate `max(pip)` (in
+        #     `[pip_neg, pip_pos]`) is excluded by the cascade's
+        #     `otherwise(None)` + `filter(label.is_not_null())`. Critically,
+        #     do NOT row-filter to extreme PIPs before the helper — that
+        #     would silently mislabel a variant with tissue PIPs
+        #     `[0.001, 0.5]` as a clean negative (`max = 0.001 < pip_neg`)
+        #     when its true `max = 0.5` is intermediate and should
+        #     exclude the variant. (This was the iter-pre-fix bug.)
+        #   - `use_null_pip_guard=False`: source is SuSiE-only, no
+        #     SuSiE/FINEMAP combine step that would emit null PIPs on
+        #     disagreement. There's no quality-flag to guard against.
+        #   - A variant only has rows for the tissues that fine-mapped
+        #     it. Negatives are NOT required to be tested in all 49
+        #     tissues — typical fine-mapping outputs only cover
+        #     significant regions.
+        # Per-variant unique tissues, target gene IDs (no version), and
+        # target gene biotype classes (pc / nc) are collected via
+        # `extra_aggs`, filtered to tissues where the variant was a
+        # positive.
         biotype_lf = (
             pl.scan_parquet(input[1])
             .with_columns(gene_stripped=pl.col("gene_id").str.split(".").list.get(0))
@@ -34,7 +50,7 @@ rule eqtl_aggregate:
             )
             .select(["gene_stripped", "biotype_class"])
         )
-        (
+        rows = (
             pl.scan_csv(
                 input[0],
                 separator="\t",
@@ -48,7 +64,6 @@ rule eqtl_aggregate:
                     "end": pl.Float64,
                 },
             )
-            .filter((pl.col("pip") > pip_pos) | (pl.col("pip") < pip_neg))
             .with_columns(
                 # The `chromosome`/`start`/`end` columns are NOT hg38 — they
                 # appear to be the SuSiE input coordinates (often hg19).
@@ -70,9 +85,13 @@ rule eqtl_aggregate:
             .drop("_v")
             .join(biotype_lf, on="gene_stripped", how="left")
             .with_columns(pl.col("biotype_class").fill_null("nc"))
-            .group_by(COORDINATES)
-            .agg(
-                pl.col("pip").max(),
+        )
+        labeled = label_variants_by_pip(
+            rows,
+            pip_pos_threshold=pip_pos,
+            pip_neg_threshold=pip_neg,
+            use_null_pip_guard=False,
+            extra_aggs=[
                 pl.col("maf").mean().alias("MAF"),
                 pl.col("tissue")
                 .filter(pl.col("pip") > pip_pos)
@@ -92,17 +111,10 @@ rule eqtl_aggregate:
                 .sort()
                 .str.join(",")
                 .alias("biotype_classes"),
-            )
-            .with_columns(
-                pl.when(pl.col("pip") > pip_pos)
-                .then(pl.lit(True))
-                .when(pl.col("pip") < pip_neg)
-                .then(pl.lit(False))
-                .otherwise(pl.lit(None))
-                .alias("label")
-            )
-            .filter(pl.col("label").is_not_null())
-            .pipe(filter_snp)
+            ],
+        )
+        (
+            labeled.pipe(filter_snp)
             .sort(COORDINATES)
             .sink_parquet(output[0])
         )

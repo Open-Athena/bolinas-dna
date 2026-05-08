@@ -89,41 +89,47 @@ rule complex_traits_aggregate_traits:
     run:
         high = config["complex_traits"]["pip_pos_threshold"]
         low = config["complex_traits"]["pip_neg_threshold"]
-        any_null_pip = pl.col("pip").is_null().any()
-        # Streaming: scan_parquet + sink_parquet so polars can chunk through the
-        # 119-trait concat + group_by without materializing all ~50 GB of
-        # per-trait fine-mapping data at once.
-        (
+        # Per-variant labeling delegated to `label_variants_by_pip` (in
+        # `src/bolinas/evals/labeling.py`, fully unit-tested in
+        # `tests/evals/test_labeling.py`). Notes:
+        #   - Labels come from `max(pip)` across the traits that
+        #     fine-mapped this variant. Intermediate `max(pip)`
+        #     (in `[low, high]`) is excluded by the cascade's
+        #     `otherwise(None)` + `filter(label.is_not_null())`. Don't
+        #     row-filter extreme PIPs before the helper — that would
+        #     mislabel `[low_pip, mid_pip]` variants as clean negatives.
+        #   - `use_null_pip_guard=True`: SuSiE/FINEMAP combine-step
+        #     disagreement (`|pip_susie - pip_finemap| > 0.05` in
+        #     `complex_traits_combine_methods`) sets pip to null. Any null
+        #     pip among the tested traits forbids the variant from being
+        #     a confident negative.
+        #   - A variant only has rows for the traits that fine-mapped
+        #     it. Negatives are NOT required to be tested in all 119
+        #     traits — typical fine-mapping outputs only cover
+        #     significant regions.
+        # Streaming: scan_parquet + sink_parquet so polars can chunk
+        # through the 119-trait concat + group_by without materializing
+        # all ~50 GB of per-trait fine-mapping data at once.
+        labeled = label_variants_by_pip(
             pl.concat(
                 [
                     pl.scan_parquet(path).with_columns(trait=pl.lit(trait))
                     for path, trait in zip(input, COMPLEX_TRAITS)
                 ]
-            )
-            .with_columns(
-                pl.when(pl.col("pip") > high)
-                .then(pl.col("trait"))
-                .otherwise(pl.lit(None))
-                .alias("trait")
-            )
-            .group_by(COORDINATES)
-            .agg(
+            ),
+            pip_pos_threshold=high,
+            pip_neg_threshold=low,
+            use_null_pip_guard=True,
+            extra_aggs=[
                 pl.col("rsid").first(),
-                pl.col("pip").max(),
-                any_null_pip.alias("any_null_pip"),
-                pl.col("trait").drop_nulls().unique(),
+                pl.col("trait").filter(pl.col("pip") > high).unique(),
+            ],
+        )
+        (
+            labeled.with_columns(
+                pl.col("trait").list.sort().list.join(",").alias("traits")
             )
-            .with_columns(pl.col("trait").list.sort().list.join(",").alias("traits"))
-            .with_columns(
-                pl.when(pl.col("pip") > high)
-                .then(pl.lit(True))
-                .when((pl.col("pip") < low) & ~pl.col("any_null_pip"))
-                .then(pl.lit(False))
-                .otherwise(pl.lit(None))
-                .alias("label")
-            )
-            .filter(pl.col("label").is_not_null())
-            .drop(["trait", "any_null_pip"])
+            .drop("trait")
             .sort(COORDINATES)
             .sink_parquet(output[0])
         )
