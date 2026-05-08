@@ -9,6 +9,7 @@ at ``bolinas.levanter.batch_tokenizer``.
 """
 
 import dataclasses
+import functools
 
 import numpy as np
 import pytest
@@ -22,16 +23,18 @@ from levanter.tokenizers import load_tokenizer  # noqa: E402
 from bolinas.levanter.batch_tokenizer import DNABatchTokenizer  # noqa: E402
 
 
-def _skip_if_tokenizer_unavailable(tokenizer_name: str):
-    def try_load(name):
-        try:
-            load_tokenizer(name)
-        except Exception:
-            return False
-        return True
+@functools.cache
+def _tokenizer_available(tokenizer_name: str) -> bool:
+    try:
+        load_tokenizer(tokenizer_name)
+    except Exception:
+        return False
+    return True
 
+
+def _skip_if_tokenizer_unavailable(tokenizer_name: str):
     return pytest.mark.skipif(
-        not try_load(tokenizer_name),
+        not _tokenizer_available(tokenizer_name),
         reason=f"Tokenizer {tokenizer_name} not accessible",
     )
 

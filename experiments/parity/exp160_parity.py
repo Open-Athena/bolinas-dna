@@ -230,24 +230,18 @@ def _build_optimizer() -> AdamConfig:
 
 
 def _custom_task_include_path() -> str:
-    """Path to bolinas-dna's lm-eval custom tasks (YAMLs + their `!function` py)."""
-    # uv sync defaults to editable install, so this returns a real on-disk
-    # PosixPath that lm-eval can scan and that resolves `!function` references.
+    """Path to bolinas-dna's lm-eval custom tasks (YAMLs + their `!function` py).
+
+    Phase B follow-up: marin's current ``LmEvalHarnessConfig`` no longer
+    accepts ``include_path``, so this isn't wired in yet. The parity check
+    can't run TraitGym evals until either marin re-exposes the kwarg or we
+    register the task programmatically; this helper is the bolinas-dna side
+    of whatever mechanism we settle on.
+    """
     return str(importlib.resources.files("bolinas.evals.lm_eval"))
 
 
 def _eval_harness_config() -> LmEvalHarnessConfig:
-    # NOTE (issue #168, Phase B): exp160 on dna-dev passed `include_path` and
-    # `max_packed_segments` to ``LmEvalHarnessConfig``. Both kwargs were
-    # removed/refactored on marin's main between dna-dev's branch point and
-    # today's lock. Custom tasks (TraitGym Mendelian v2_255) can no longer be
-    # discovered just by pointing levanter at a directory; either marin needs
-    # to re-expose `include_path`, or we register the task programmatically
-    # before training starts. Tracked as a follow-up to the parity launch —
-    # the parity check cannot actually run with TraitGym evals until this is
-    # resolved. Keep ``_custom_task_include_path()`` available for whichever
-    # registration mechanism we settle on.
-    _ = _custom_task_include_path()
     return LmEvalHarnessConfig(
         task_spec=convert_to_levanter_task_config([TRAITGYM_MENDELIAN_V2_255]),
     )
