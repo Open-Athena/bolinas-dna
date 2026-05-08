@@ -24,43 +24,69 @@ windows for the same reason.
 
 ## Matching scheme
 
-For both datasets, every positive is matched 1:1 to one negative via TraitGym's
+For each dataset, every positive is matched 1:1 to one negative via TraitGym's
 greedy-nearest-neighbor matcher (`bolinas.evals.matching.match_features`).
 Matching is exact on every categorical feature, then Euclidean-nearest on the
 (RobustScaler-scaled) continuous features, without replacement within a group.
 See `src/bolinas/evals/matching.py` for the algorithm.
 
 The matching design below was locked in [issue #156](https://github.com/Open-Athena/bolinas-dna/issues/156)
-after a 24-iteration sweep. Two refinements close window-edge / MAF leaks the
-basic continuous-only matching exhibited:
+at iter 33 after a 33-iteration sweep. Compared to the iter-22/24 production
+design that this replaces, three things changed:
 
-- **Splice pre-filter**: variants with `consequence_group == "splicing" AND
-  exon_dist > 30` are dropped before matching (handful of mendelian splicing
-  positives at non-coding-transcript splice sites whose protein-coding-only
-  `exon_dist` is misleading; small loss in complex too — see issue #156 for
-  per-subset retention tables).
-- **Subset-conditional distance bins** added as exact-match categoricals on top
-  of the continuous features (so continuous matching becomes a within-bin
-  tie-breaker): `tss_dist_bin` only meaningful for `tss_proximal`, "NA"
-  otherwise; `exon_dist_bin` only meaningful for `splicing`, "NA" otherwise.
-  Edges in `bolinas.evals.matching` (`TSS_DIST_BIN_EDGES`,
-  `EXON_DIST_BIN_EDGES`).
+- **Per-biotype distances**: TSS / exon distances are computed twice, once
+  against protein-coding transcripts (`distance_*_pc`) and once against all
+  other transcripts (`distance_*_nc`, mostly lncRNAs / miRNAs / snoRNAs).
+  Both pc and nc columns enter the matching as continuous features, and bin
+  variants of them as categorical features (see below). The same applies to
+  `*_closest_*_gene_id` keys.
+- **Subset-conditional distance bins** as exact-match categoricals on top of
+  the continuous features (so continuous matching becomes a within-bin
+  tie-breaker):
+  - `distance_tss_pc_bin` and `distance_tss_nc_bin` are meaningful only for
+    `tss_proximal` (`"NA"` otherwise), edges `[0, 50, 100, 200, 500, 1000]`
+    in both.
+  - `distance_exon_pc_bin` is meaningful only for `splicing` (`"NA"`
+    otherwise), edges `[0, 5, 20, 30]`.
+  - `distance_exon_nc_bin` was tested and dropped — `splicing/dist_exon_nc`
+    was already clean in the no-bin baseline.
+- **Per-subset MAF binning** (complex_traits, eqtl): the iter-24 uniform 20bin
+  scheme was replaced by a per-`consequence_group` tier (`MAF_TIERED_V1`):
+  20bin for {distal, tss_proximal, ncRNA}, 10bin for {3'UTR, 5'UTR, missense},
+  5bin for {synonymous, splicing, …small subsets}. For `eqtl/distal`
+  specifically, fixed global edges leave an asymptotic Bonferroni-significant
+  residual leak (PA ≈ 0.532 across every global granularity); replacing it
+  with per-categorical-group **local equal-width log10(MAF) bins** (8 buckets,
+  joint pos+neg ref over the categorical match key) closes the leak. That
+  scheme is `MAF_TIERED_LOG8_DISTAL_ONLY` (= tiered_v1 with `LOG_LOCAL` for
+  distal). Apply via `add_tiered_maf_bin(df, scheme, ...)`.
+
+Net result (positives / matched / leaks):
+
+| dataset | n_pos | matched | retention | matched-feature ★ leaks |
+|---|---:|---:|---:|---|
+| mendelian_traits | 17,167 | 8,576 | 50.0% | 0 |
+| complex_traits | 2,165 | 1,134 | 52.4% | 0 |
+| eqtl | 17,799 | 6,549 | 36.8% | 0 |
 
 Per-dataset specifics:
 
-- **mendelian_traits**:
-  - continuous = `[tss_dist, exon_dist]`
-  - categorical = `[chrom, consequence_final, tss_closest_gene_id,
-    exon_closest_gene_id, tss_dist_bin, exon_dist_bin]`
+- **mendelian_traits** (no MAF column in the dataset_all parquet):
+  - continuous = `[distance_tss_pc, distance_tss_nc, distance_exon_pc, distance_exon_nc]`
+  - categorical = `[chrom, consequence_final, tss_closest_pc_gene_id,
+    tss_closest_nc_gene_id, exon_closest_pc_gene_id, exon_closest_nc_gene_id,
+    distance_tss_pc_bin, distance_tss_nc_bin, distance_exon_pc_bin]`
 - **complex_traits**:
-  - continuous = `[tss_dist, exon_dist, MAF]` (`ld_score` is dropped from
-    matching but kept as a passthrough column on the output dataset)
-  - categorical = same as mendelian, plus an always-on `MAF_bin` (right-closed,
-    log-spaced toward low MAF; `MAF_BIN_EDGES` in `bolinas.evals.matching`)
-- **eqtl**: same matching call as `complex_traits` (the cohort-matched MAF
-  comes natively from the Finucane GTEx file, not joined from gnomAD/UKBB).
-  `tissues` (comma-separated list of tissues where PIP > 0.9 for positives) is
-  dropped from matching but kept as a passthrough column.
+  - continuous = mendelian's + `MAF` (`ld_score` is dropped from matching but
+    kept as a passthrough column on the output)
+  - categorical = mendelian's + `MAF_bin` (per-subset, `MAF_TIERED_V1`)
+- **eqtl**:
+  - same continuous as complex_traits (the cohort-matched MAF comes natively
+    from the Finucane GTEx file, not joined from gnomAD)
+  - same categorical as complex_traits but `MAF_bin` uses
+    `MAF_TIERED_LOG8_DISTAL_ONLY` (tiered_v1 + per-group log_local for distal)
+  - `tissues` / `genes` / `biotype_classes` are dropped from matching but kept
+    as passthrough columns
 
 ## Pipeline structure
 
