@@ -123,11 +123,11 @@ rule validation_mask_all_exons:
     output:
         "results/human/intervals/validation/mask/all_exons.bed",
     resources:
-        # load_annotation builds a ~2 GB polars frame from the human GTF;
-        # peak-while-running is 3-4 GB. Capping at 5 GB so Snakemake won't
-        # schedule it concurrently with several validation_region_annotation
-        # jobs on a 16 GB box.
-        mem_mb=5000,
+        # Empirical peak ~7 GB on the human GTF (the polars filter step
+        # transiently doubles the parsed frame). With the 14 GB global budget
+        # in workflow/profiles/default/config.yaml, mem_mb=7500 forces
+        # serial execution of these heavy GTF rules on a 16 GB c6id.2xlarge.
+        mem_mb=7500,
     run:
         from bolinas.data.utils import get_exons, load_annotation
 
