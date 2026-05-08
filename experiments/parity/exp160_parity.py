@@ -57,17 +57,38 @@ from bolinas.evals.lm_eval.task_configs import TRAITGYM_MENDELIAN_V2_255
 from bolinas.levanter.defaults import dna_effective_seq_len
 from bolinas.levanter.formats import DNALmDatasetFormat
 
-# Stays in marin: the EvalTaskConfig → levanter TaskConfig translator and the
-# default tokenize step. Note: ``convert_to_levanter_task_config`` lived in
+# Stays in marin: ``convert_to_levanter_task_config`` lived in
 # ``experiments.evals.task_configs`` on dna-dev but moved to
 # ``marin.evaluation.evaluation_config`` on current main — refresh this import
 # if marin reorganizes again.
-from experiments.defaults import default_tokenize
-from experiments.qwen3 import qwen3_0_6b_hd128
+#
+# NOTE on `experiments.*` imports: marin's `experiments/` package only ships
+# in the `marin-root` git source, which carries a ``[tool.uv.sources]
+# marin-* = { workspace = true }`` block that overrides find-links across
+# the consumer's whole resolve. That cascade leaves `iris._build_info.BUILD_DATE`
+# empty and trips the controller's freshness check. So we vendor the two
+# `experiments.*` symbols we use (`default_tokenize`, `qwen3_0_6b_hd128`)
+# at the bottom of this file instead of importing them. Re-evaluate once
+# marin publishes a `marin-root-latest` wheel.
+from levanter.layers.rotary import Llama3RotaryEmbeddingsConfig
+from levanter.utils import fsspec_utils
 from marin.evaluation.evaluation_config import convert_to_levanter_task_config
-from marin.execution.executor import ExecutorStep, executor_main, this_output_path
+from marin.execution.executor import (
+    ExecutorStep,
+    InputName,
+    VersionedValue,
+    ensure_versioned,
+    executor_main,
+    this_output_path,
+)
 from marin.execution.remote import remote
-from marin.processing.tokenize import lm_mixture_data_config
+from marin.processing.tokenize import (
+    HfDatasetSpec,
+    TokenizeConfig,
+    lm_mixture_data_config,
+    tokenize,
+)
+from marin.processing.tokenize.tokenize import HfTokenizeConfig
 from marin.training.training import TrainLmOnPodConfig, run_levanter_train_lm
 
 # =============================================================================
@@ -296,6 +317,113 @@ def main() -> None:
     executor_main(
         steps=steps,
         description=f"exp160 parity check (bolinas-dna #168) — zoonomia v1/v2 {VERSION}",
+    )
+
+
+# =============================================================================
+# Vendored from marin's `experiments/` package (see import comment above).
+# =============================================================================
+
+# `qwen3_0_6b_hd128` from marin/experiments/qwen3.py — head_dim=128 variant of
+# Qwen3-0.6B (matches HF "Qwen/Qwen3-0.6B"). Vendored verbatim.
+qwen3_0_6b_hd128 = Qwen3Config(
+    max_seq_len=4096,
+    hidden_dim=1024,
+    intermediate_dim=3072,
+    num_heads=16,
+    num_kv_heads=8,
+    num_layers=28,
+    rope=Llama3RotaryEmbeddingsConfig(),
+    tie_word_embeddings=True,
+    head_dim=128,
+)
+
+
+# Subset of marin/experiments/defaults.py:default_tokenize that we actually
+# exercise (HF dataset path: a single ``"<owner>/<name>"`` string). The full
+# upstream version also handles GCS paths, ``HfDatasetSpec``, and
+# ``ExecutorStep`` inputs; not needed for the parity check's HF-only calls.
+_HF_BUCKET_URI_PREFIX = "hf://"
+_HF_BUCKET_PATH_PREFIX = "gs://"  # marin's HF_BUCKET_PATH_PREFIX is gs://, used for cached HF datasets
+
+
+def _is_hf_bucket_path(path: str) -> bool:
+    return path.startswith(_HF_BUCKET_URI_PREFIX) or path.startswith(_HF_BUCKET_PATH_PREFIX)
+
+
+def default_tokenize(
+    name: str,
+    dataset: InputName | ExecutorStep | str | HfDatasetSpec,
+    tokenizer: str,
+    format: DNALmDatasetFormat,  # narrowed from LmDatasetFormatBase for the parity check
+    *,
+    sample_count: int | VersionedValue[int] | None = None,
+    is_validation: bool = False,
+    levanter_batch_size: int | None = None,
+    tags: tuple[str, ...] = (),
+    resources=None,
+    worker_resources=None,
+) -> ExecutorStep:
+    extra_kwargs: dict = {}
+    if worker_resources is not None:
+        extra_kwargs["worker_resources"] = worker_resources
+
+    if isinstance(dataset, HfDatasetSpec):
+        config = HfTokenizeConfig(
+            id=dataset.id,
+            name=dataset.name,
+            cache_path=this_output_path(),
+            tokenizer=ensure_versioned(tokenizer),
+            format=format,
+            sample_count=ensure_versioned(sample_count) if sample_count is not None else None,
+            levanter_batch_size=levanter_batch_size,
+            tags=[*tags],
+            **extra_kwargs,
+        )
+    elif (
+        isinstance(dataset, str)
+        and not _is_hf_bucket_path(dataset)
+        and dataset.count("/") == 1
+        and not fsspec_utils.exists(dataset)
+    ):
+        config = HfTokenizeConfig(
+            id=dataset,
+            cache_path=this_output_path(),
+            tokenizer=ensure_versioned(tokenizer),
+            format=format,
+            sample_count=ensure_versioned(sample_count) if sample_count is not None else None,
+            levanter_batch_size=levanter_batch_size,
+            tags=[*tags],
+            **extra_kwargs,
+        )
+    else:
+        config = TokenizeConfig(
+            train_paths=[dataset] if not is_validation else [],
+            validation_paths=[dataset] if is_validation else [],
+            cache_path=this_output_path(),
+            tokenizer=ensure_versioned(tokenizer),
+            format=format,
+            sample_count=ensure_versioned(sample_count) if sample_count is not None else None,
+            levanter_batch_size=levanter_batch_size,
+            tags=[*tags],
+            **extra_kwargs,
+        )
+
+    return ExecutorStep(
+        name=os.path.join("tokenized", name),
+        description=f"Tokenize raw text using the {tokenizer} tokenizer.",
+        fn=remote(
+            tokenize,
+            resources=resources or ResourceConfig.with_cpu(cpu=4, ram="16g", disk="10g"),
+            pip_dependency_groups=["cpu"],
+            env_vars={
+                "TRANSFORMERS_NO_TORCH": "1",
+                "TRANSFORMERS_NO_TORCHVISION": "1",
+                "USE_TORCH": "0",
+                "TORCH_DISABLE_GLOBAL_DEPS": "1",
+            },
+        ),
+        config=config,
     )
 
 

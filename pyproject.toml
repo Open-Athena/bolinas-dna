@@ -74,22 +74,24 @@ aws-cli = [
 ]
 marin = [
     "marin",
-    # `[lm_eval]` extra pulls the EleutherAI lm-evaluation-harness fork
-    # marin-levanter pins. Required so eval_harness can run custom tasks
-    # (e.g. ``traitgym_mendelian_v2_255``); marin's plain `marin-levanter`
-    # dep doesn't include it.
-    "marin-levanter[lm_eval]",
+    "marin-levanter",
     "marin-iris",
     "marin-zephyr",
     "marin-rigging",
-    # marin-iris transitively requires marin-finelog (no released wheel yet);
-    # listed here so the [tool.uv.sources] override below applies.
-    "marin-finelog",
-    # marin-root ships marin's `experiments/` package (no released wheel —
-    # only workspace members get release wheels). Needed so the parity-check
-    # script can `from experiments.evals.task_configs import ...`,
-    # `from experiments.qwen3 import ...`, etc.
-    "marin-root",
+    # `marin-levanter[lm_eval]`'s extra pulls the EleutherAI
+    # lm-evaluation-harness fork as a URL dep — uv requires URL deps to be
+    # declared as direct (top-level) requirements, not transitive through an
+    # extra, so it lands here instead. Bump the rev when marin-levanter does.
+    "lm-eval @ git+https://github.com/stanford-crfm/lm-evaluation-harness.git@d5e3391f22cde186c827674d5c3ec7c5f4fe0cab",
+    # marin-root (which ships marin's `experiments/` package) is deliberately
+    # *not* depended on here — its pyproject carries
+    # ``[tool.uv.sources] marin-* = { workspace = true }``, which propagates
+    # to consumers and overrides the find-links wheels for every marin
+    # sister package. Workspace builds skip ``scripts/python_libs_package.py``,
+    # leaving ``iris._build_info.BUILD_DATE = ""`` and tripping the iris
+    # controller's freshness check. The handful of `experiments.*` symbols
+    # the parity check needs are vendored at the bottom of
+    # ``experiments/parity/exp160_parity.py``.
 ]
 
 [tool.uv]
@@ -121,14 +123,23 @@ override-dependencies = [
     # bolinas-dna code on the same pandas major it was developed against.
     "pandas>=2.0,<3.0",
 ]
-# kitoken and dupekit are pulled in transitively by marin-levanter and
-# marin's dedup tooling; they ship as SHA-pinned GitHub release wheels
-# rather than PyPI releases, so uv needs find-links to discover them. The
-# marin sister-packages are git-routed via [tool.uv.sources] (workspace
-# 0.99 versions, see comment there) so they don't appear here.
+# marin sister-packages, kitoken, and dupekit ship as GitHub release wheels
+# (not PyPI). Released marin-* wheels carry a baked-in BUILD_DATE that the
+# iris controller's freshness check needs; workspace builds don't stamp it.
+# `marin-finelog-latest` was added by `marin-community/marin#5565` after this
+# repo first locked — the issue was tracked at
+# https://github.com/marin-community/marin/issues/5564.
 find-links = [
-    "https://github.com/marin-community/kitoken/releases/expanded_assets/kitoken-0.10.2-a3012f4",
+    "https://github.com/marin-community/marin/releases/expanded_assets/marin-latest",
+    "https://github.com/marin-community/marin/releases/expanded_assets/marin-haliax-latest",
+    "https://github.com/marin-community/marin/releases/expanded_assets/marin-levanter-latest",
+    "https://github.com/marin-community/marin/releases/expanded_assets/marin-iris-latest",
+    "https://github.com/marin-community/marin/releases/expanded_assets/marin-zephyr-latest",
+    "https://github.com/marin-community/marin/releases/expanded_assets/marin-rigging-latest",
+    "https://github.com/marin-community/marin/releases/expanded_assets/marin-fray-latest",
+    "https://github.com/marin-community/marin/releases/expanded_assets/marin-finelog-latest",
     "https://github.com/marin-community/marin/releases/expanded_assets/dupekit-0.1.0-40ac799",
+    "https://github.com/marin-community/kitoken/releases/expanded_assets/kitoken-0.10.2-a3012f4",
 ]
 
 [[tool.uv.index]]
@@ -137,24 +148,6 @@ url = "https://marin-community.github.io/chatnoir-resiliparse/simple"
 
 [tool.uv.sources]
 resiliparse = { index = "marin-resiliparse" }
-# Today's marin-iris release (0.99.dev20260508) depends on marin-finelog, but
-# marin-finelog has no published wheel on the marin GitHub releases (only
-# marin/marin-haliax/marin-levanter/marin-iris/marin-zephyr/marin-rigging/
-# marin-fray have `*-latest` tags). Until marin publishes a marin-finelog
-# wheel, build all marin sister packages from the same git SHA so workspace
-# versions (0.99) line up internally — avoids version mismatches between
-# the published-wheel scheme (0.99.dev<DATE>) and the workspace pyprojects
-# (0.99). Refresh the rev when bumping marin.
-marin = { git = "https://github.com/marin-community/marin", subdirectory = "lib/marin" }
-marin-haliax = { git = "https://github.com/marin-community/marin", subdirectory = "lib/haliax" }
-marin-levanter = { git = "https://github.com/marin-community/marin", subdirectory = "lib/levanter" }
-marin-iris = { git = "https://github.com/marin-community/marin", subdirectory = "lib/iris" }
-marin-zephyr = { git = "https://github.com/marin-community/marin", subdirectory = "lib/zephyr" }
-marin-rigging = { git = "https://github.com/marin-community/marin", subdirectory = "lib/rigging" }
-marin-fray = { git = "https://github.com/marin-community/marin", subdirectory = "lib/fray" }
-marin-finelog = { git = "https://github.com/marin-community/marin", subdirectory = "lib/finelog" }
-# marin-root lives at the marin repo root; ships the `experiments/` package.
-marin-root = { git = "https://github.com/marin-community/marin" }
 
 [tool.hatch.metadata]
 allow-direct-references = true

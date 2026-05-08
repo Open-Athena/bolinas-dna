@@ -191,7 +191,7 @@ wheels = [
 
 [[package]]
 name = "anndata"
-version = "0.12.6"
+version = "0.12.13"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "array-api-compat", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-7-bolinas-aws-cli' and extra == 'group-7-bolinas-marin')" },
@@ -202,11 +202,12 @@ dependencies = [
     { name = "packaging", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-7-bolinas-aws-cli' and extra == 'group-7-bolinas-marin')" },
     { name = "pandas", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-7-bolinas-aws-cli' and extra == 'group-7-bolinas-marin')" },
     { name = "scipy", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-7-bolinas-aws-cli' and extra == 'group-7-bolinas-marin')" },
+    { name = "scverse-misc", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-7-bolinas-aws-cli' and extra == 'group-7-bolinas-marin')" },
     { name = "zarr", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-7-bolinas-aws-cli' and extra == 'group-7-bolinas-marin')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ac/bc/76769d932cd3b1f69f57b1b8e434e7cf880848094abc85b04f9f4b21c0c1/anndata-0.12.6.tar.gz", hash = "sha256:8d447e7201ea790fe568203495e9fd35d63962e029d408728b164d65d2540fa7", size = 594060, upload-time = "2025-11-06T17:55:43.591Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d9/b6/8e1737f36dd3715d5ec10d3c8627f003af22ec33d0871496f302703b5482/anndata-0.12.13.tar.gz", hash = "sha256:a66b00590aa47c5b31aee0ac20c7ba63b55b6f868d5b70e7ecb32a97fbf5f058", size = 2254241, upload-time = "2026-05-06T23:54:59.034Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/60/2f/fd99b85e3913803e4134657a311971f39d34c9995b26d3cbf9a218459c36/anndata-0.12.6-py3-none-any.whl", hash = "sha256:1088843f63e788128b215a885237a48df3881ccaec66310f269c4cfb0f9a8929", size = 172256, upload-time = "2025-11-06T17:55:41.394Z" },
+    { url = "https://files.pythonhosted.org/packages/77/13/b40a1372e7f66871966bddfea94eb095844517e0de2a252043d439ee4641/anndata-0.12.13-py3-none-any.whl", hash = "sha256:8fbe923c64dc75da50e472de9dcd87c0aa034d35c412ac4ed61f29c5c71074d5", size = 174442, upload-time = "2026-05-06T23:54:57.109Z" },
 ]
 
 [[package]]
@@ -482,12 +483,11 @@ enhancer-classification = [
     { name = "torchmetrics", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-7-bolinas-aws-cli' and extra == 'group-7-bolinas-marin')" },
 ]
 marin = [
+    { name = "lm-eval", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "marin", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "marin-finelog", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "marin-iris", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "marin-levanter", extra = ["lm-eval"], marker = "(sys_platform == 'darwin' and extra == 'group-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'group-7-bolinas-marin') or (extra == 'group-7-bolinas-aws-cli' and extra == 'group-7-bolinas-marin')" },
+    { name = "marin-levanter", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "marin-rigging", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "marin-root", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "marin-zephyr", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
 
@@ -544,13 +544,12 @@ enhancer-classification = [
     { name = "torchmetrics", specifier = ">=1.0" },
 ]
 marin = [
-    { name = "marin", git = "https://github.com/marin-community/marin?subdirectory=lib%2Fmarin" },
-    { name = "marin-finelog", git = "https://github.com/marin-community/marin?subdirectory=lib%2Ffinelog" },
-    { name = "marin-iris", git = "https://github.com/marin-community/marin?subdirectory=lib%2Firis" },
-    { name = "marin-levanter", extras = ["lm-eval"], git = "https://github.com/marin-community/marin?subdirectory=lib%2Flevanter" },
-    { name = "marin-rigging", git = "https://github.com/marin-community/marin?subdirectory=lib%2Frigging" },
-    { name = "marin-root", git = "https://github.com/marin-community/marin" },
-    { name = "marin-zephyr", git = "https://github.com/marin-community/marin?subdirectory=lib%2Fzephyr" },
+    { name = "lm-eval", git = "https://github.com/stanford-crfm/lm-evaluation-harness.git?rev=d5e3391f22cde186c827674d5c3ec7c5f4fe0cab" },
+    { name = "marin" },
+    { name = "marin-iris" },
+    { name = "marin-levanter" },
+    { name = "marin-rigging" },
+    { name = "marin-zephyr" },
 ]
 
 [[package]]
@@ -2162,8 +2161,8 @@ wheels = [
 
 [[package]]
 name = "marin"
-version = "0.99"
-source = { git = "https://github.com/marin-community/marin?subdirectory=lib%2Fmarin#dcd8fad59630196375ed80fe9e26b079acbc6a4a" }
+version = "0.99.dev20260508"
+source = { registry = "https://github.com/marin-community/marin/releases/expanded_assets/marin-latest" }
 dependencies = [
     { name = "backports-zstd", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "braceexpand", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -2206,23 +2205,14 @@ dependencies = [
     { name = "wandb", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "warcio", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
-
-[[package]]
-name = "marin-dupekit"
-version = "0.1.2.dev202605080717"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/fa/c2/ced34df9b0cb8587ff7931c751cf75fa80606f6da21d9e0891ce2b336526/marin_dupekit-0.1.2.dev202605080717.tar.gz", hash = "sha256:b58f112235abdc0b2ce5415640eaf2429787d23cdbaeaf7bb682917f9c0d013e", size = 73865, upload-time = "2026-05-08T07:25:50.951Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/96/30/31fdd0084083d71a4e28768b5e46cdaa6a91d5da0206ef9252149cff87e5/marin_dupekit-0.1.2.dev202605080717-cp311-abi3-macosx_10_12_x86_64.whl", hash = "sha256:9a4607bc4ad6177665a50f10d83cdd100512ab539f820c89e2d28bc6a4f0435f", size = 4418469, upload-time = "2026-05-08T07:25:43.313Z" },
-    { url = "https://files.pythonhosted.org/packages/67/9d/3143cbda87905d696deafcca85f8b7700b790c8f2cd776322c5aacca97b3/marin_dupekit-0.1.2.dev202605080717-cp311-abi3-macosx_11_0_arm64.whl", hash = "sha256:da27c484b4b22a92e47fb3ae5159bbb154a47b09219aa975f2acee113417f227", size = 3981064, upload-time = "2026-05-08T07:25:45.128Z" },
-    { url = "https://files.pythonhosted.org/packages/e4/a5/0af0ff399fbd26f588ec55592abadade7fd6cf56cd66558ed5e74ec221ff/marin_dupekit-0.1.2.dev202605080717-cp311-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:551c4c9fe1c9ce3069ec0250b9fb735a937b2acc6b323ef62054ec54aae010ed", size = 4140735, upload-time = "2026-05-08T07:25:47.181Z" },
-    { url = "https://files.pythonhosted.org/packages/2c/f4/54f212b037504428bb8fb2a9a55bd1826601d01dcc4f97370ac1c364c469/marin_dupekit-0.1.2.dev202605080717-cp311-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:9849adee03184416e7095ebb661272f838e3e4382ee197b4e1df895d7790818a", size = 4520641, upload-time = "2026-05-08T07:25:48.686Z" },
+    { url = "https://github.com/marin-community/marin/releases/download/marin-latest/marin-0.99.dev20260508-py3-none-any.whl" },
 ]
 
 [[package]]
 name = "marin-finelog"
-version = "0.1.0"
-source = { git = "https://github.com/marin-community/marin?subdirectory=lib%2Ffinelog#dcd8fad59630196375ed80fe9e26b079acbc6a4a" }
+version = "0.99.dev20260508"
+source = { registry = "https://github.com/marin-community/marin/releases/expanded_assets/marin-finelog-latest" }
 dependencies = [
     { name = "click", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "connect-python", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -2237,11 +2227,14 @@ dependencies = [
     { name = "uvicorn", extra = ["standard"], marker = "(sys_platform == 'darwin' and extra == 'group-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'group-7-bolinas-marin') or (extra == 'group-7-bolinas-aws-cli' and extra == 'group-7-bolinas-marin')" },
     { name = "zstandard", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
+wheels = [
+    { url = "https://github.com/marin-community/marin/releases/download/marin-finelog-latest/marin_finelog-0.99.dev20260508-py3-none-any.whl" },
+]
 
 [[package]]
 name = "marin-fray"
-version = "0.99"
-source = { git = "https://github.com/marin-community/marin?subdirectory=lib%2Ffray#dcd8fad59630196375ed80fe9e26b079acbc6a4a" }
+version = "0.99.dev20260508"
+source = { registry = "https://github.com/marin-community/marin/releases/expanded_assets/marin-fray-latest" }
 dependencies = [
     { name = "click", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "cloudpickle", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -2259,11 +2252,14 @@ dependencies = [
     { name = "uvicorn", extra = ["standard"], marker = "(sys_platform == 'darwin' and extra == 'group-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'group-7-bolinas-marin') or (extra == 'group-7-bolinas-aws-cli' and extra == 'group-7-bolinas-marin')" },
     { name = "zstandard", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
+wheels = [
+    { url = "https://github.com/marin-community/marin/releases/download/marin-fray-latest/marin_fray-0.99.dev20260508-py3-none-any.whl" },
+]
 
 [[package]]
 name = "marin-haliax"
-version = "0.99"
-source = { git = "https://github.com/marin-community/marin?subdirectory=lib%2Fhaliax#dcd8fad59630196375ed80fe9e26b079acbc6a4a" }
+version = "0.99.dev20260508"
+source = { registry = "https://github.com/marin-community/marin/releases/expanded_assets/marin-haliax-latest" }
 dependencies = [
     { name = "aqtp", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "equinox", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -2272,11 +2268,14 @@ dependencies = [
     { name = "jmp", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "safetensors", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
+wheels = [
+    { url = "https://github.com/marin-community/marin/releases/download/marin-haliax-latest/marin_haliax-0.99.dev20260508-py3-none-any.whl" },
+]
 
 [[package]]
 name = "marin-iris"
-version = "0.99"
-source = { git = "https://github.com/marin-community/marin?subdirectory=lib%2Firis#dcd8fad59630196375ed80fe9e26b079acbc6a4a" }
+version = "0.99.dev20260508"
+source = { registry = "https://github.com/marin-community/marin/releases/expanded_assets/marin-iris-latest" }
 dependencies = [
     { name = "click", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "cloudpickle", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -2300,11 +2299,14 @@ dependencies = [
     { name = "uvicorn", extra = ["standard"], marker = "(sys_platform == 'darwin' and extra == 'group-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'group-7-bolinas-marin') or (extra == 'group-7-bolinas-aws-cli' and extra == 'group-7-bolinas-marin')" },
     { name = "zstandard", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
+wheels = [
+    { url = "https://github.com/marin-community/marin/releases/download/marin-iris-latest/marin_iris-0.99.dev20260508-py3-none-any.whl" },
+]
 
 [[package]]
 name = "marin-levanter"
-version = "0.99"
-source = { git = "https://github.com/marin-community/marin?subdirectory=lib%2Flevanter#dcd8fad59630196375ed80fe9e26b079acbc6a4a" }
+version = "0.99.dev20260508"
+source = { registry = "https://github.com/marin-community/marin/releases/expanded_assets/marin-levanter-latest" }
 dependencies = [
     { name = "async-lru", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "braceexpand", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -2344,11 +2346,11 @@ dependencies = [
     { name = "wandb", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "zstandard", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
+wheels = [
+    { url = "https://github.com/marin-community/marin/releases/download/marin-levanter-latest/marin_levanter-0.99.dev20260508-py3-none-any.whl" },
+]
 
 [package.optional-dependencies]
-lm-eval = [
-    { name = "lm-eval", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-]
 serve = [
     { name = "fastapi", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "openai", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -2357,35 +2359,21 @@ serve = [
 
 [[package]]
 name = "marin-rigging"
-version = "0.99"
-source = { git = "https://github.com/marin-community/marin?subdirectory=lib%2Frigging#dcd8fad59630196375ed80fe9e26b079acbc6a4a" }
+version = "0.99.dev20260508"
+source = { registry = "https://github.com/marin-community/marin/releases/expanded_assets/marin-rigging-latest" }
 dependencies = [
     { name = "fsspec", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "gcsfs", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "s3fs", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
-
-[[package]]
-name = "marin-root"
-version = "0.1.0"
-source = { git = "https://github.com/marin-community/marin#dcd8fad59630196375ed80fe9e26b079acbc6a4a" }
-dependencies = [
-    { name = "marin", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "marin-dupekit", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "marin-finelog", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "marin-fray", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "marin-haliax", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "marin-iris", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "marin-levanter", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "marin-rigging", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "marin-zephyr", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "watchdog", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+wheels = [
+    { url = "https://github.com/marin-community/marin/releases/download/marin-rigging-latest/marin_rigging-0.99.dev20260508-py3-none-any.whl" },
 ]
 
 [[package]]
 name = "marin-zephyr"
-version = "0.99"
-source = { git = "https://github.com/marin-community/marin?subdirectory=lib%2Fzephyr#dcd8fad59630196375ed80fe9e26b079acbc6a4a" }
+version = "0.99.dev20260508"
+source = { registry = "https://github.com/marin-community/marin/releases/expanded_assets/marin-zephyr-latest" }
 dependencies = [
     { name = "braceexpand", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "click", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -2402,6 +2390,9 @@ dependencies = [
     { name = "vortex-data", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "xxhash", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "zstandard", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+]
+wheels = [
+    { url = "https://github.com/marin-community/marin/releases/download/marin-zephyr-latest/marin_zephyr-0.99.dev20260508-py3-none-any.whl" },
 ]
 
 [[package]]
@@ -2495,7 +2486,7 @@ wheels = [
 
 [[package]]
 name = "mcp"
-version = "1.27.0"
+version = "1.27.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -2512,9 +2503,9 @@ dependencies = [
     { name = "typing-inspection", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "uvicorn", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/8b/eb/c0cfc62075dc6e1ec1c64d352ae09ac051d9334311ed226f1f425312848a/mcp-1.27.0.tar.gz", hash = "sha256:d3dc35a7eec0d458c1da4976a48f982097ddaab87e278c5511d5a4a56e852b83", size = 607509, upload-time = "2026-04-02T14:48:08.88Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/38/83/d1efe7c2980d8a3afa476f4e3d42d53dd54c0ab94c27bee5d755b45c8b73/mcp-1.27.1.tar.gz", hash = "sha256:0f47e1820f8f8f941466b39749eb1d1839a04caddca2bc60e9d46e8a99914924", size = 608458, upload-time = "2026-05-08T16:50:12.601Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9c/46/f6b4ad632c67ef35209a66127e4bddc95759649dd595f71f13fba11bdf9a/mcp-1.27.0-py3-none-any.whl", hash = "sha256:5ce1fa81614958e267b21fb2aa34e0aea8e2c6ede60d52aba45fd47246b4d741", size = 215967, upload-time = "2026-04-02T14:48:07.24Z" },
+    { url = "https://files.pythonhosted.org/packages/fd/73/42d9596facebdb533b7f0b86c1b0364ef350d1f8ba78b1052e8a58b48b65/mcp-1.27.1-py3-none-any.whl", hash = "sha256:1af3c4203b329430fde7a87b4fcb6392a041f5cb851fd68fc674016ab4e7c06f", size = 216260, upload-time = "2026-05-08T16:50:10.547Z" },
 ]
 
 [[package]]
@@ -3934,6 +3925,19 @@ wheels = [
 ]
 
 [[package]]
+name = "scverse-misc"
+version = "0.0.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "session-info2", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-7-bolinas-aws-cli' and extra == 'group-7-bolinas-marin')" },
+    { name = "typing-extensions", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-7-bolinas-aws-cli' and extra == 'group-7-bolinas-marin')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a3/c3/46767c8948e0e17c1bebb3b222c407fd815daf7dfb9778a30aab7401d338/scverse_misc-0.0.5.tar.gz", hash = "sha256:73c6adddcb0b17feb37a560c6a735c80f27ab9ff8491c318f63f3e06c7097a24", size = 29164, upload-time = "2026-04-28T12:48:55.089Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6f/ca/7d26336021cc1aff971869de91fc18e3818ee3b59e401f51a44d7e886adb/scverse_misc-0.0.5-py3-none-any.whl", hash = "sha256:536d999a88fb80f0ad5cb9a61531f2163e03ea704f69766a7f75b0231109bc1f", size = 12478, upload-time = "2026-04-28T12:48:53.771Z" },
+]
+
+[[package]]
 name = "seaborn"
 version = "0.13.2"
 source = { registry = "https://pypi.org/simple" }
@@ -3959,6 +3963,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/66/a5/747ab268f2cf3f4cb50af521e1a85a959411f74cf4a2ecf47782e1981cee/sentry_sdk-3.0.0a7.tar.gz", hash = "sha256:439a858d409b84407560df6b7ebb760acd9ad3d14e05cd919ae36b204e411cb2", size = 329999, upload-time = "2025-10-20T13:50:38.131Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ce/5e/23837eadf18ad4f9d5894c1210e6c2591136fd36cff338bedc90a1222bf2/sentry_sdk-3.0.0a7-py2.py3-none-any.whl", hash = "sha256:ada791a77c2d489e07b04c068e0fcacd6bbcfe1cb40b5f303207738baf38e868", size = 353618, upload-time = "2025-10-20T13:50:36.158Z" },
+]
+
+[[package]]
+name = "session-info2"
+version = "0.4.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/50/17/c6a81d91781734bd10d7842c32de665f34395b4db234abdc80dac271632b/session_info2-0.4.1.tar.gz", hash = "sha256:3bb2bf7b73b2e13a1737e9aa91a6dae55e2c49e83bee973f24245f31ae264a1f", size = 25207, upload-time = "2026-04-08T11:30:55.959Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5e/d7/6893c9c2a52e4bcbeca2a2bf2aee970a686cc7bf555f97db13b00f35250e/session_info2-0.4.1-py3-none-any.whl", hash = "sha256:423b3f6bb7023433cfc3f791a6fdbb6a2cfbe226770ae6c127c3b2c4cf5a9d56", size = 17696, upload-time = "2026-04-08T11:30:54.707Z" },
 ]
 
 [[package]]
@@ -4774,24 +4787,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/20/78/df7e1c40a3751ea966be84eb6645270831e511f9932740b5251ace028cfa/warcio-1.8.1.tar.gz", hash = "sha256:76f71b22159ca3c043521e10ee8a2478d167672ad1d137c7c15e40b0d5c73ccd", size = 65772, upload-time = "2026-03-31T16:10:32.196Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c5/be/d92c0899bd52c7f82fc0f8caa8fb3c624e6d1006ee208c710060cda216c2/warcio-1.8.1-py2.py3-none-any.whl", hash = "sha256:82345c5914d36cb5e0513210dbf759e3db348bf8d0f7762996ccce3a5ce6e87b", size = 41578, upload-time = "2026-03-31T16:10:31.059Z" },
-]
-
-[[package]]
-name = "watchdog"
-version = "6.0.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/db/7d/7f3d619e951c88ed75c6037b246ddcf2d322812ee8ea189be89511721d54/watchdog-6.0.0.tar.gz", hash = "sha256:9ddf7c82fda3ae8e24decda1338ede66e1c99883db93711d8fb941eaa2d8c282", size = 131220, upload-time = "2024-11-01T14:07:13.037Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/39/ea/3930d07dafc9e286ed356a679aa02d777c06e9bfd1164fa7c19c288a5483/watchdog-6.0.0-cp312-cp312-macosx_10_13_universal2.whl", hash = "sha256:bdd4e6f14b8b18c334febb9c4425a878a2ac20efd1e0b231978e7b150f92a948", size = 96471, upload-time = "2024-11-01T14:06:37.745Z" },
-    { url = "https://files.pythonhosted.org/packages/12/87/48361531f70b1f87928b045df868a9fd4e253d9ae087fa4cf3f7113be363/watchdog-6.0.0-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:c7c15dda13c4eb00d6fb6fc508b3c0ed88b9d5d374056b239c4ad1611125c860", size = 88449, upload-time = "2024-11-01T14:06:39.748Z" },
-    { url = "https://files.pythonhosted.org/packages/5b/7e/8f322f5e600812e6f9a31b75d242631068ca8f4ef0582dd3ae6e72daecc8/watchdog-6.0.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:6f10cb2d5902447c7d0da897e2c6768bca89174d0c6e1e30abec5421af97a5b0", size = 89054, upload-time = "2024-11-01T14:06:41.009Z" },
-    { url = "https://files.pythonhosted.org/packages/a9/c7/ca4bf3e518cb57a686b2feb4f55a1892fd9a3dd13f470fca14e00f80ea36/watchdog-6.0.0-py3-none-manylinux2014_aarch64.whl", hash = "sha256:7607498efa04a3542ae3e05e64da8202e58159aa1fa4acddf7678d34a35d4f13", size = 79079, upload-time = "2024-11-01T14:06:59.472Z" },
-    { url = "https://files.pythonhosted.org/packages/5c/51/d46dc9332f9a647593c947b4b88e2381c8dfc0942d15b8edc0310fa4abb1/watchdog-6.0.0-py3-none-manylinux2014_armv7l.whl", hash = "sha256:9041567ee8953024c83343288ccc458fd0a2d811d6a0fd68c4c22609e3490379", size = 79078, upload-time = "2024-11-01T14:07:01.431Z" },
-    { url = "https://files.pythonhosted.org/packages/d4/57/04edbf5e169cd318d5f07b4766fee38e825d64b6913ca157ca32d1a42267/watchdog-6.0.0-py3-none-manylinux2014_i686.whl", hash = "sha256:82dc3e3143c7e38ec49d61af98d6558288c415eac98486a5c581726e0737c00e", size = 79076, upload-time = "2024-11-01T14:07:02.568Z" },
-    { url = "https://files.pythonhosted.org/packages/ab/cc/da8422b300e13cb187d2203f20b9253e91058aaf7db65b74142013478e66/watchdog-6.0.0-py3-none-manylinux2014_ppc64.whl", hash = "sha256:212ac9b8bf1161dc91bd09c048048a95ca3a4c4f5e5d4a7d1b1a7d5752a7f96f", size = 79077, upload-time = "2024-11-01T14:07:03.893Z" },
-    { url = "https://files.pythonhosted.org/packages/2c/3b/b8964e04ae1a025c44ba8e4291f86e97fac443bca31de8bd98d3263d2fcf/watchdog-6.0.0-py3-none-manylinux2014_ppc64le.whl", hash = "sha256:e3df4cbb9a450c6d49318f6d14f4bbc80d763fa587ba46ec86f99f9e6876bb26", size = 79078, upload-time = "2024-11-01T14:07:05.189Z" },
-    { url = "https://files.pythonhosted.org/packages/62/ae/a696eb424bedff7407801c257d4b1afda455fe40821a2be430e173660e81/watchdog-6.0.0-py3-none-manylinux2014_s390x.whl", hash = "sha256:2cce7cfc2008eb51feb6aab51251fd79b85d9894e98ba847408f662b3395ca3c", size = 79077, upload-time = "2024-11-01T14:07:06.376Z" },
-    { url = "https://files.pythonhosted.org/packages/b5/e8/dbf020b4d98251a9860752a094d09a65e1b436ad181faf929983f697048f/watchdog-6.0.0-py3-none-manylinux2014_x86_64.whl", hash = "sha256:20ffe5b202af80ab4266dcd3e91aae72bf2da48c0d33bdb15c66658e685e94e2", size = 79078, upload-time = "2024-11-01T14:07:07.547Z" },
 ]
 
 [[package]]
