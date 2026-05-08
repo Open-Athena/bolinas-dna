@@ -4,16 +4,13 @@ under exploration, save dataset_unsplit locally (NO S3 / HF push).
 Single-threaded everywhere — the previous 16-thread BLAS default thrashed the
 kernel during cdist on a 12M-row dataset and killed the cluster's SSH.
 
-Current design under exploration: NO discrete bins anywhere.
-  - Continuous features: 4 per-biotype distances (+ MAF for complex / eqtl)
-  - Categorical features: chrom, consequence_final, 4 closest_*_gene_id
-
-This is the simplest reasonable per-biotype matching. Match groups are
-formed by exact match on the 6 categorical columns; within each group the
-closest negative(s) by Euclidean distance on RobustScaler-scaled continuous
-features are picked, k=1 without replacement. We'll see how leakage and
-pair retention look before deciding whether any bin sub-stratification is
-worth re-introducing.
+Current design under exploration (iter 26):
+  - Continuous: 4 per-biotype distances (+ MAF for complex / eqtl).
+  - Categorical: chrom, consequence_final, 4 closest_*_gene_id, **MAF_bin
+    always-on** for complex / eqtl (the iter-25 baseline showed Bonf-significant
+    MAF leakage in every major subset there — adding the bin globally should
+    close the largest single signal in the diagnostic).
+  - No TSS / exon distance bins yet — will revisit subset-specific bins next.
 """
 import os
 
@@ -35,7 +32,7 @@ import time
 import boto3
 import polars as pl
 
-from bolinas.evals.matching import match_features
+from bolinas.evals.matching import MAF_BIN_EDGES, bin_feature, match_features
 
 
 _t0 = time.time()
@@ -95,7 +92,14 @@ for name in DATASETS:
     )
     stamp("after read_parquet")
 
-    cont = CONT_BASE + (["MAF"] if cfg["with_maf"] else [])
+    cont = CONT_BASE.copy()
+    cat = CAT.copy()
+    if cfg["with_maf"]:
+        cont.append("MAF")
+        cat.append("MAF_bin")
+        V = V.with_columns(
+            bin_feature("MAF", MAF_BIN_EDGES, right_closed=True).alias("MAF_bin")
+        )
 
     pos_V = V.filter(pl.col("label"))
     neg_V = V.filter(~pl.col("label"))
@@ -103,7 +107,7 @@ for name in DATASETS:
     gc.collect()
     stamp(f"before match_features (pos={pos_V.height} neg={neg_V.height})")
     matched = (
-        match_features(pos_V, neg_V, cont, CAT, k=1)
+        match_features(pos_V, neg_V, cont, cat, k=1)
         .with_columns(subset=pl.col("consequence_group"))
     )
     del pos_V, neg_V
