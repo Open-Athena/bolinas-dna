@@ -31,8 +31,12 @@ run: |
   source $HOME/.local/bin/env 2>/dev/null || true
   export PATH="$HOME/google-cloud-sdk/bin:$PATH"
   cd ~/sky_workdir/snakemake/evals
+  # `--forcerun eqtl_aggregate` re-runs the aggregation rule (PIP labeling
+  # bug fix in baf8a16); downstream rules cascade via mtime trigger because
+  # aggregated.parquet's mtime updates after re-run.
   uv run snakemake \
     --cores 4 \
     -p \
     --rerun-triggers=mtime \
+    --forcerun eqtl_aggregate \
     -- results/dataset_unsplit/eqtl.parquet
