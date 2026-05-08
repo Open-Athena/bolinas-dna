@@ -12,7 +12,7 @@ commit `e59d612e9`, so HGMD pathogenic SNVs are included as a positive source.
 
 | Name | Description | Positives | Negatives |
 |---|---|---|---|
-| `mendelian_traits` | Mendelian disease pathogenic SNVs | HGMD ∪ OMIM ∪ Smedley et al. 2016 (de-duped, AF<0.001) | gnomAD common (AN≥25k, AF>0.05) |
+| `mendelian_traits` | Mendelian disease pathogenic SNVs | HGMD ∪ OMIM ∪ Smedley et al. 2016 (de-duped, AF<0.001) | gnomAD common (AN≥25k, AF>0.001) |
 | `complex_traits` | UKBB fine-mapped complex-trait variants | SuSiE+FINEMAP PIP > 0.9 across 119 traits | PIP < 0.01 (and not null in any trait) |
 | `eqtl` | GTEx v8 fine-mapped eQTLs (49 tissues, pooled) | SuSiE PIP > 0.9 in ≥1 tissue | PIP < 0.01 in ≥1 tissue and never positive |
 
