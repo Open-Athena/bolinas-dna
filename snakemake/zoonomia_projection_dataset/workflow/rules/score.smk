@@ -14,10 +14,10 @@ from bolinas.conservation.scoring import score_windows as _score_windows
 rule score_windows_chrom:
     """Score 255 bp windows on a single chromosome against phyloP_447m."""
     input:
-        windows="results/windows/{chrom}.bed.gz",
+        windows="results/human/intervals/windows/{chrom}.bed.gz",
         bw="results/bigwig/phyloP_447m.bw",
     output:
-        "results/scored/per_chrom/phyloP_447m_{chrom}.parquet",
+        "results/human/intervals/scored/per_chrom/phyloP_447m_{chrom}.parquet",
     params:
         threshold=PHYLOP_447M_THRESHOLD,
     wildcard_constraints:
@@ -64,11 +64,11 @@ rule merge_scored:
     """Concatenate per-chrom Parquets into a single sorted Parquet."""
     input:
         expand(
-            "results/scored/per_chrom/phyloP_447m_{chrom}.parquet",
+            "results/human/intervals/scored/per_chrom/phyloP_447m_{chrom}.parquet",
             chrom=STANDARD_CHROMS,
         ),
     output:
-        "results/scored/phyloP_447m_windows.parquet",
+        "results/human/intervals/scored/phyloP_447m_windows.parquet",
     run:
         dfs = [pl.read_parquet(p) for p in input]
         seen_chroms = {df["chrom"].unique().item() for df in dfs}

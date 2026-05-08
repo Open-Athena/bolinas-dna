@@ -7,7 +7,7 @@ rule derive_subset_v2_tss_mrna:
     """Generate v2 query_names: windows overlapping any mRNA TSS ± tss_flank."""
     input:
         gtf=f"results/annotation/Homo_sapiens.GRCh38.{config['ensembl_release']}.gtf.gz",
-        bed="results/bed/min{min_p}.bed.gz",
+        bed="results/human/intervals/filtered/min{min_p}.bed.gz",
     output:
         band="results/projection/min{min_p}/subsets_def/v2_band.bed",
         names="results/projection/min{min_p}/subsets_def/v2.query_names.txt",

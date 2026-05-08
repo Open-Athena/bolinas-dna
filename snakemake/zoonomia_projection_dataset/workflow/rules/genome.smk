@@ -1,13 +1,15 @@
 """Genome download + 2bit + chrom_sizes + N-region BED for hg38.
 
-Patterns copied from ``snakemake/enhancer_classification/workflow/rules/data.smk``
-to keep this pipeline standalone (no cross-pipeline imports).
+Pipeline is human-only by design (no ``{species}`` wildcard); outputs sit
+under ``results/human/`` to keep the species explicit and to separate
+genome-sequence files from interval-style outputs (which live under
+``results/human/intervals/``).
 """
 
 
 rule download_genome:
     output:
-        "results/genome/hg38.fa.gz",
+        "results/human/genome.fa.gz",
     params:
         url=config["genome_url"],
     shell:
@@ -16,9 +18,9 @@ rule download_genome:
 
 rule genome_to_2bit:
     input:
-        "results/genome/hg38.fa.gz",
+        "results/human/genome.fa.gz",
     output:
-        "results/genome/hg38.2bit",
+        "results/human/genome.2bit",
     conda:
         "../envs/bioinformatics.yaml"
     shell:
@@ -27,9 +29,9 @@ rule genome_to_2bit:
 
 rule chrom_sizes:
     input:
-        "results/genome/hg38.2bit",
+        "results/human/genome.2bit",
     output:
-        "results/genome/hg38.chrom.sizes",
+        "results/human/chrom.sizes",
     conda:
         "../envs/bioinformatics.yaml"
     shell:
@@ -39,9 +41,9 @@ rule chrom_sizes:
 rule chrom_sizes_filtered:
     """Restrict to ``standard_chroms`` (autosomes + X + Y)."""
     input:
-        "results/genome/hg38.chrom.sizes",
+        "results/human/chrom.sizes",
     output:
-        "results/genome/hg38.chrom.sizes.filtered",
+        "results/human/chrom.sizes.filtered",
     run:
         df = pd.read_csv(input[0], sep="\t", header=None, names=["chrom", "size"])
         df = df[df["chrom"].isin(STANDARD_CHROMS)]
@@ -54,9 +56,9 @@ rule chrom_sizes_filtered:
 rule undefined_regions:
     """N-region BED. ``twoBitInfo -nBed`` reports stretches of undefined bases."""
     input:
-        "results/genome/hg38.2bit",
+        "results/human/genome.2bit",
     output:
-        "results/genome/hg38.undefined.bed",
+        "results/human/intervals/undefined.bed",
     conda:
         "../envs/bioinformatics.yaml"
     shell:
