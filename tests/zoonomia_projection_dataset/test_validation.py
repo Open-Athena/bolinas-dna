@@ -13,6 +13,7 @@ from bolinas.data.utils import load_annotation
 from bolinas.zoonomia_projection_dataset.validation import (
     build_annotation_region,
     build_cre_region,
+    build_tss_band_region,
     case_encode_sequences,
     filter_to_canonical_transcripts,
     get_ensembl_5_prime_utr,
@@ -584,6 +585,134 @@ def test_build_annotation_region_val_cds_drops_noncanonical(
     assert not ((df["start"] > 5000) | (df["end"] > 5000)).any()
 
 
+def test_build_tss_band_region_plus_strand(tmp_path: Path) -> None:
+    """+ strand: band = [tx_start - flank, tx_start + flank] (TSS = tx_start)."""
+    gtf = tmp_path / "ann.gtf"
+    _write_gtf(
+        gtf,
+        [
+            _gtf_row(
+                "1",
+                "transcript",
+                5001,
+                5500,
+                "+",
+                'transcript_id "T_pc"; tag "Ensembl_canonical"; transcript_biotype "protein_coding";',
+            ),
+            _gtf_row(
+                "1",
+                "exon",
+                5001,
+                5500,
+                "+",
+                'transcript_id "T_pc"; transcript_biotype "protein_coding";',
+            ),
+        ],
+    )
+    ann = load_annotation(str(gtf))
+    canonical = filter_to_canonical_transcripts(ann)
+    defined = GenomicSet(
+        pd.DataFrame({"chrom": ["1"], "start": [0], "end": [10_000]})
+    )
+    band = build_tss_band_region(canonical, defined, flank=255)
+    df = band.to_pandas()
+    assert len(df) == 1
+    # 0-based: tx start = 5000 → band = [5000 - 255, 5000 + 255) = [4745, 5255)
+    assert df.iloc[0]["start"] == 4745
+    assert df.iloc[0]["end"] == 5255
+    assert df.iloc[0]["end"] - df.iloc[0]["start"] == 510
+
+
+def test_build_tss_band_region_minus_strand(tmp_path: Path) -> None:
+    """- strand: TSS = tx_end (genomic right); band = [tx_end - flank, tx_end + flank]."""
+    gtf = tmp_path / "ann.gtf"
+    _write_gtf(
+        gtf,
+        [
+            _gtf_row(
+                "1",
+                "transcript",
+                3001,
+                4000,
+                "-",
+                'transcript_id "T_pc_minus"; tag "Ensembl_canonical"; transcript_biotype "protein_coding";',
+            ),
+            _gtf_row(
+                "1",
+                "exon",
+                3001,
+                4000,
+                "-",
+                'transcript_id "T_pc_minus"; transcript_biotype "protein_coding";',
+            ),
+        ],
+    )
+    ann = load_annotation(str(gtf))
+    canonical = filter_to_canonical_transcripts(ann)
+    defined = GenomicSet(
+        pd.DataFrame({"chrom": ["1"], "start": [0], "end": [10_000]})
+    )
+    band = build_tss_band_region(canonical, defined, flank=255)
+    df = band.to_pandas()
+    assert len(df) == 1
+    # 0-based: tx_end = 4000 (1-based [3001, 4000] → 0-based [3000, 4000)).
+    # -strand TSS = 4000; band = [4000-255, 4000+255) = [3745, 4255).
+    assert df.iloc[0]["start"] == 3745
+    assert df.iloc[0]["end"] == 4255
+
+
+def test_build_tss_band_region_excludes_lncrna(tmp_path: Path) -> None:
+    """Only protein_coding canonical transcripts contribute (lncRNA, miRNA, etc. are skipped)."""
+    gtf = tmp_path / "ann.gtf"
+    _write_gtf(
+        gtf,
+        [
+            _gtf_row(
+                "1",
+                "transcript",
+                5001,
+                5500,
+                "+",
+                'transcript_id "T_pc"; tag "Ensembl_canonical"; transcript_biotype "protein_coding";',
+            ),
+            _gtf_row(
+                "1",
+                "exon",
+                5001,
+                5500,
+                "+",
+                'transcript_id "T_pc"; transcript_biotype "protein_coding";',
+            ),
+            # lncRNA canonical: should be excluded
+            _gtf_row(
+                "2",
+                "transcript",
+                8001,
+                8500,
+                "+",
+                'transcript_id "T_lnc"; tag "Ensembl_canonical"; transcript_biotype "lncRNA";',
+            ),
+            _gtf_row(
+                "2",
+                "exon",
+                8001,
+                8500,
+                "+",
+                'transcript_id "T_lnc"; transcript_biotype "lncRNA";',
+            ),
+        ],
+    )
+    ann = load_annotation(str(gtf))
+    canonical = filter_to_canonical_transcripts(ann)
+    defined = GenomicSet(
+        pd.DataFrame({"chrom": ["1", "2"], "start": [0, 0], "end": [10_000, 10_000]})
+    )
+    band = build_tss_band_region(canonical, defined, flank=255)
+    df = band.to_pandas()
+    assert len(df) == 1
+    assert df.iloc[0]["chrom"] == "1"  # protein_coding chrom only
+
+
 def test_build_annotation_region_unknown_recipe_raises(tmp_path: Path) -> None:
     """A non-recipe wildcard fires a clear ValueError."""
     gtf = tmp_path / "ann.gtf"
@@ -783,25 +912,31 @@ def test_build_cre_region_unknown_recipe_raises(tmp_path: Path) -> None:
 # ----------------------------------------------------------------------------
 
 
-def test_subsample_under_cap_is_identity() -> None:
-    """When len(df) <= max_samples, returns the input as-is (no sort, no shuffle)."""
-    df = pl.DataFrame(
-        {"chrom": ["1", "2", "1"], "start": [200, 100, 100], "end": [500, 400, 300]}
-    )
-    out = subsample_deterministic(df, max_samples=10, seed=42)
-    assert len(out) == 3
-    # Order is preserved as-is (no sort applied; matches input row order).
-    assert out["chrom"].to_list() == ["1", "2", "1"]
-    assert out["start"].to_list() == [200, 100, 100]
-
-
-def test_subsample_does_not_resort_after_sampling() -> None:
-    """After sampling, rows are NOT re-sorted by (chrom, start) — they
-    appear in polars' natural sample order. Guards against accidentally
-    re-introducing a sort that would over-sample chr1 in partial evals."""
+def test_subsample_under_cap_keeps_all_rows_shuffled() -> None:
+    """When len(df) <= max_samples, all rows are kept but in deterministic
+    shuffled order — NOT input order, NOT (chrom, start) order. Guards
+    against val_utr5/val_promoter coming out chrom-sorted from upstream."""
     df = pl.DataFrame(
         {
-            # 50 rows on chr1 (early), 50 on chr2 (late) — alternating
+            # Sorted by (chrom, start) input — what upstream filter produces
+            "chrom": [str(c) for c in [1] * 30 + [2] * 30 + [3] * 30],
+            "start": list(range(90)),
+            "end": [s + 255 for s in range(90)],
+        }
+    )
+    out = subsample_deterministic(df, max_samples=10_000, seed=42)
+    assert len(out) == len(df), "all rows preserved when under cap"
+    in_keys = list(zip(df["chrom"].to_list(), df["start"].to_list()))
+    out_keys = list(zip(out["chrom"].to_list(), out["start"].to_list()))
+    assert set(out_keys) == set(in_keys), "no rows lost or duplicated"
+    assert out_keys != in_keys, "expected shuffle; got identity (input order preserved)"
+    assert out_keys != sorted(in_keys), "expected shuffle; got sort"
+
+
+def test_subsample_over_cap_does_not_resort() -> None:
+    """After sampling at the cap, rows are NOT re-sorted by (chrom, start)."""
+    df = pl.DataFrame(
+        {
             "chrom": [str((i % 2) + 1) for i in range(100)],
             "start": list(range(100)),
             "end": [s + 255 for s in range(100)],
@@ -810,13 +945,10 @@ def test_subsample_does_not_resort_after_sampling() -> None:
     out = subsample_deterministic(df, max_samples=20, seed=42)
     assert len(out) == 20
     chroms = out["chrom"].to_list()
-    # If the function were sort-after-sample, chroms would be all "1"s then
-    # all "2"s. Assert it's not strictly grouped — i.e., sampling order is
-    # preserved (mixed).
     grouped = chroms == sorted(chroms)
     assert not grouped, (
-        "subsample_deterministic appears to re-sort by chrom; rows came "
-        f"out chrom-grouped: {chroms}"
+        "subsample_deterministic re-sorted by chrom; rows came out grouped: "
+        f"{chroms}"
     )
 
 
@@ -1073,9 +1205,9 @@ def test_write_hf_readme_includes_recipe_specific_blurb(
     # Enhancer-specific: subtracts every annotated exon
     assert "subtract" in enh_body.lower()
     assert "exon" in enh_body.lower()
-    # Promoter-specific: subtracts CDS (NOT all exons — preserves 5'UTR overlap)
-    assert "subtract" in prom_body.lower()
-    assert "CDS" in prom_body
+    # Promoter-specific: PLS, no subtraction, mentions 5' UTR overlap is intended
+    assert "PLS" in prom_body or "Promoter-Like Signature" in prom_body
+    assert "no subtraction" in prom_body.lower()
     assert "5' UTR" in prom_body
     # Each blurb is recipe-specific
     assert cds_body != enh_body

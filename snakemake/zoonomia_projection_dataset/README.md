@@ -210,7 +210,7 @@ Parallelised by chromosome via Snakemake's ``{chrom}`` wildcard fan-out (24 work
 
 ## Validation datasets
 
-`rule all_validation` builds **six human-only validation parquets** for evaluating model performance on specific functional regions, and uploads each to its own HuggingFace repo. This is parallel in spirit to `training_dataset/dataset_creation`'s `create_functional_validation` rule, but reusing this pipeline's updated phyloP track (`phyloP_447m`) and Ensembl r115 annotation.
+`rule all_validation` builds **seven human-only validation parquets** for evaluating model performance on specific functional regions, and uploads each to its own HuggingFace repo. This is parallel in spirit to `training_dataset/dataset_creation`'s `create_functional_validation` rule, but reusing this pipeline's updated phyloP track (`phyloP_447m`) and Ensembl r115 annotation.
 
 | HF repo                                  | Source                  | Region selection                                                                                  |
 |------------------------------------------|-------------------------|---------------------------------------------------------------------------------------------------|
@@ -218,7 +218,8 @@ Parallelised by chromosome via Snakemake's ``{chrom}`` wildcard fan-out (24 work
 | `bolinas-dna/zoonomia-v1-val_utr5`       | Ensembl r115 (canonical)| `get_ensembl_5_prime_utr`, filter_size, add_flank(20), expand_min_size(255)                        |
 | `bolinas-dna/zoonomia-v1-val_utr3`       | Ensembl r115 (canonical)| `get_ensembl_3_prime_utr`, filter_size, add_flank(20), expand_min_size(255)                        |
 | `bolinas-dna/zoonomia-v1-val_ncrna`      | Ensembl r115 (canonical)| `get_ensembl_ncrna_exons` filtered to functional ncRNA biotypes (lncRNA, miRNA, snoRNA, snRNA, ribozyme, scaRNA, vault_RNA), filter_size, add_flank(20), expand_min_size(255) |
-| `bolinas-dna/zoonomia-v1-val_promoter`   | ENCODE cCRE V4          | filter `cre_class == "PLS"`, `resize(255)`, **subtract `get_cds` (every annotated CDS, no biotype/canonical filter)**. Genes with short 5' UTRs let the PLS-around-TSS window run into CDS; without this subtraction, the conservation pre-filter (which favors CDS) would over-represent CDS-containing PLS windows and dilute the promoter signal. The legitimate PLS-vs-5'UTR overlap is *preserved* (5' UTR is exonic but not CDS); subtracting all annotated *exons* — as `val_enhancer` does — would gut the set since 5' UTR is the intended biology for a promoter probe. |
+| `bolinas-dna/zoonomia-v1-val_promoter`   | ENCODE cCRE V4          | filter `cre_class == "PLS"`, `resize(255)`. **No subtraction** — PLS sits at the TSS by definition, so its overlap with 5' UTR is the intended biology, and any overlap with CDS in genes with very short 5' UTRs is accepted as part of the natural PLS distribution. |
+| `bolinas-dna/zoonomia-v1-val_tss_pc`     | Ensembl r115 (canonical)| `±255 bp` band around each canonical protein_coding TSS (`get_promoters_from_exons`). Gene-centric annotation-driven probe (~19k anchors), complementary to `val_promoter` (chromatin-centric, ~45k anchors). No subtraction. |
 | `bolinas-dna/zoonomia-v1-val_enhancer`   | ENCODE cCRE V4          | filter `cre_class ∈ {"pELS", "dELS"}`, `resize(255)`, **subtract every annotated exon** (`get_exons`, no biotype filter) — stricter than training_dataset v30's `get_exons_for_masking` because for *validation* we want a clean enhancer probe |
 
 **Per-recipe pipeline (8 stages):**
@@ -234,22 +235,20 @@ validation_dataset      → results/human/intervals/validation/dataset/{recipe}.
 hf_upload_validation    → results/upload.done/validation/{recipe}        (touch)
 ```
 
-**Subtraction policy.** `val_enhancer` subtracts every annotated exon
-(via `get_exons` — strictest exonic mask; ELS classification can mis-flag
-transcribed exonic chromatin). `val_promoter` subtracts only CDS (via
-`get_cds`) — short 5' UTRs let the PLS-around-TSS window run into CDS, and
-since CDS is much more conserved than promoter, the conservation
-pre-filter would over-represent CDS-containing PLS windows and dilute the
-promoter signal; subtracting CDS keeps the recipe focused on genuine
-promoter sequence while preserving the intended PLS-vs-5'UTR overlap. The
-four annotation-derived recipes do no cross-feature subtraction (canonical
-filtering already disambiguates CDS / 5'UTR / 3'UTR within a transcript).
+**Subtraction policy.** Only `val_enhancer` subtracts (every annotated
+exon, via `get_exons` — strictest exonic mask; ELS classification can
+mis-flag transcribed exonic chromatin and the conservation pre-filter
+would otherwise over-represent the exonic confounds). All other recipes
+are unsubtracted: canonical-transcript filtering already disambiguates
+CDS / 5'UTR / 3'UTR / ncRNA within annotation-derived recipes, and
+`val_promoter` / `val_tss_pc` accept their natural CDS overlap (rare,
+biologically meaningful for genes with very short 5' UTRs).
 
 **Conservation pre-filter, then subsample.** Each tiled 255 bp window is scored against `phyloP_447m` and only windows with `proportion_conserved ≥ 0.20` (configurable via `validation_min_proportion_conserved`) advance. The remaining pool is then deterministically subsampled to `validation_max_samples = 16384` rows per recipe (seed `validation_seed = 42`). Pre-filtering enriches the validation pool for biologically interesting positions.
 
-**Canonical-transcript filtering for annotation-derived recipes.** `val_cds`, `val_utr5`, `val_utr3`, and `val_ncrna` are restricted to one transcript per gene via `tag "Ensembl_canonical"`. This eliminates alt-isoform redundancy in the validation pool and means **no cross-feature subtractions are needed** — Ensembl already partitions a canonical transcript's bases between CDS / 5'UTR / 3'UTR, and ncRNA-vs-coding genes are separated by gene biotype. cCRE recipes are transcript-independent so the canonical filter doesn't apply.
+**Canonical-transcript filtering for annotation-derived recipes.** `val_cds`, `val_utr5`, `val_utr3`, `val_ncrna`, and `val_tss_pc` are restricted to one transcript per gene via `tag "Ensembl_canonical"`. This eliminates alt-isoform redundancy in the validation pool and means **no cross-feature subtractions are needed** — Ensembl already partitions a canonical transcript's bases between CDS / 5'UTR / 3'UTR, and ncRNA-vs-coding genes are separated by gene biotype. cCRE recipes (`val_promoter`, `val_enhancer`) are transcript-independent so the canonical filter doesn't apply.
 
-**Recipes are independent probes, not a partition.** A small number of bases may appear in two recipes (e.g. a PLS cCRE overlapping a canonical 5' UTR; the `add_flank(20)` on CDS extending into intron-flanking splice signal that abuts a 3' UTR). That overlap is intentional. Don't concatenate the six parquets as if they were one dataset without dedup.
+**Recipes are independent probes, not a partition.** A small number of bases may appear in two recipes (e.g. a PLS cCRE overlapping a canonical 5' UTR; the `add_flank(20)` on CDS extending into intron-flanking splice signal that abuts a 3' UTR). That overlap is intentional. Don't concatenate the seven parquets as if they were one dataset without dedup.
 
 **Case encoding.** Each row's `seq` is exactly 255 bp; per base, uppercase iff `phyloP_447m ≥ phyloP_447m_threshold` else lowercase. **NaN positions are lowercase** (gaps in the bigWig at unaligned bases — `NaN >= t` is False in NumPy regardless of threshold). The `id` column is `chrom:start-end` with bare Ensembl chrom names ("1", not "chr1"), 0-based half-open — falls out naturally from the `twoBitToFa -bedPos` FASTA headers.
 
@@ -262,7 +261,7 @@ filtering already disambiguates CDS / 5'UTR / 3'UTR within a transcript).
 uv run snakemake --profile workflow/profiles/default \
     results/human/intervals/validation/dataset/val_utr5.parquet
 
-# Full validation set (six parquets + HF upload):
+# Full validation set (seven parquets + HF upload):
 uv run snakemake --profile workflow/profiles/default all_validation
 ```
 
@@ -351,7 +350,7 @@ workflow/rules/
   project.smk                                  # cross-mammal halLiftover + filter + resize + sequence + subset
   subsets.smk                                  # derive query_names lists for v2 subset; subset_dataset_derived override
   dataset.smk                                  # RC augment + shuffle + shard + hf upload-large-folder
-  validation.smk                               # six per-recipe validation parquets + HF upload (rule all_validation)
+  validation.smk                               # seven per-recipe validation parquets + HF upload (rule all_validation)
 scripts/
   calibrate_447m_threshold.py                  # one-off; uses src/bolinas/conservation/
   build_species_list.py                        # one-off; uses src/bolinas/projection/taxonomy
@@ -363,4 +362,4 @@ sky/
   upload.yaml                                  # r6i.8xlarge — HF dataset assembly + push (rule all_hf)
 ```
 
-Library code lives in `src/bolinas/conservation/` (anchor pipeline), `src/bolinas/projection/` (projection + tss + dataset modules), and `src/bolinas/zoonomia_projection_dataset/validation.py` (six per-recipe validation builders + case-encoding) — all testable; reused by their respective rules and one-off scripts. Tests in `tests/conservation/`, `tests/projection/`, and `tests/zoonomia_projection_dataset/`.
+Library code lives in `src/bolinas/conservation/` (anchor pipeline), `src/bolinas/projection/` (projection + tss + dataset modules), and `src/bolinas/zoonomia_projection_dataset/validation.py` (seven per-recipe validation builders + case-encoding) — all testable; reused by their respective rules and one-off scripts. Tests in `tests/conservation/`, `tests/projection/`, and `tests/zoonomia_projection_dataset/`.

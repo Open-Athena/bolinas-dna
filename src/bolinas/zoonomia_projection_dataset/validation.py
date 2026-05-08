@@ -22,7 +22,7 @@ import polars as pl
 import pyBigWig
 
 from bolinas.data.intervals import GenomicSet
-from bolinas.data.utils import ENHANCER_CRE_CLASSES, get_cds
+from bolinas.data.utils import ENHANCER_CRE_CLASSES, get_cds, get_promoters_from_exons
 from bolinas.projection.tss import get_ensembl_protein_coding_exons
 
 
@@ -198,7 +198,7 @@ _ANNOTATION_EXTRACTORS: dict[str, Callable[[pl.DataFrame], GenomicSet]] = {
 }
 
 
-ANNOTATION_RECIPES = ("val_cds", "val_utr5", "val_utr3", "val_ncrna")
+ANNOTATION_RECIPES = ("val_cds", "val_utr5", "val_utr3", "val_ncrna", "val_tss_pc")
 CRE_RECIPES = ("val_promoter", "val_enhancer")
 ALL_RECIPES = ANNOTATION_RECIPES + CRE_RECIPES
 
@@ -249,6 +249,36 @@ def build_annotation_region(
     intervals = intervals.expand_min_size(expand_min)
     intervals = intervals & defined
     return intervals
+
+
+def build_tss_band_region(
+    ann_canonical: pl.DataFrame,
+    defined: GenomicSet,
+    *,
+    flank: int = 255,
+) -> GenomicSet:
+    """TSS ± ``flank`` band over canonical protein_coding transcripts.
+
+    For ``val_tss_pc``: gene-centric symmetric window around each canonical
+    protein_coding TSS. Captures both the proximal-promoter (upstream) and
+    the immediate downstream 5' UTR in one anchor — different probe than
+    val_promoter (cCRE chromatin-centric) and val_utr5 (annotation-driven
+    full UTR including distal regions).
+
+    No CDS subtraction by design — TSS bands sit *at* the TSS, so any
+    overlap with CDS happens only for genes with very short 5' UTRs (where
+    CDS extends back into the TSS-proximal region). For consistency with
+    val_promoter (which is also unsubtracted), the contamination is
+    accepted; downstream consumers can compare val_tss_pc and val_promoter
+    side-by-side without confounding subtraction differences.
+    """
+    exons = get_ensembl_protein_coding_exons(ann_canonical)
+    assert len(exons) > 0, (
+        "no canonical protein_coding exons found "
+        "— wrong GTF flavour or canonical filter?"
+    )
+    band = get_promoters_from_exons(exons, n_upstream=flank, n_downstream=flank)
+    return band & defined
 
 
 def build_cre_region(
@@ -305,21 +335,24 @@ def build_cre_region(
 def subsample_deterministic(
     df: pl.DataFrame, *, max_samples: int, seed: int
 ) -> pl.DataFrame:
-    """Deterministic subsample to at most ``max_samples`` rows.
+    """Deterministic-shuffle subsample to at most ``max_samples`` rows.
 
-    Returns the input as-is when ``len(df) <= max_samples`` (no-op canary
-    path). Otherwise samples without replacement using ``seed`` and returns
-    the rows in their natural sample order — i.e. *not* re-sorted by
-    (chrom, start). This matches ``training_dataset/dataset_creation``'s
-    ``create_functional_validation`` pattern and avoids over-sampling early
-    chromosomes during partial / streamed evaluation.
+    Always shuffles deterministically, even when ``len(df) <= max_samples``
+    (in which case all rows are kept but in a seeded-permuted order).
+    This guards against partial-eval bias: without shuffling, recipes that
+    don't trigger the cap (e.g. val_utr5, val_promoter) would come out in
+    chromosome order from the upstream filter step.
 
     Reproducibility: same input + same seed produces the same row order
     across runs (polars' ``DataFrame.sample`` is seeded-deterministic).
     """
-    if len(df) <= max_samples:
+    n = min(len(df), max_samples)
+    if n == 0:
         return df
-    return df.sample(n=max_samples, seed=seed, with_replacement=False)
+    # `shuffle=True` is essential — without it, polars returns rows in input
+    # order when n == len(df) (degenerate "sample everything" path), which is
+    # exactly the chrom-sorted state we're trying to break.
+    return df.sample(n=n, seed=seed, with_replacement=False, shuffle=True)
 
 
 def _bw_chrom(chrom: str, prefix: str = "chr") -> str:
@@ -445,17 +478,24 @@ _RECIPE_BLURBS: dict[str, str] = {
     ),
     "val_promoter": (
         "Promoter regions defined by ENCODE cCRE V4 Promoter-Like Signature "
-        "(PLS) class. Each cCRE is centered and resized to exactly 255 bp, "
-        "then **CDS regions are subtracted** (every annotated CDS in Ensembl "
-        "r{ensembl_release}, no biotype or canonical filter). Genes with "
-        "very short 5' UTRs let the PLS-around-TSS window extend into CDS, "
-        "and CDS is much more conserved than promoter — without this "
-        "subtraction, the conservation pre-filter would over-represent "
-        "CDS-containing PLS windows and dilute the promoter signal. "
-        "Subtracting all annotated *exons* — as `val_enhancer` does — would "
-        "gut the set, since 5' UTR is exonic but is the intended biology "
-        "for a promoter probe; only CDS is subtracted, so the legitimate "
-        "PLS-vs-5'UTR overlap is preserved."
+        "(PLS) class. Each cCRE is centered and resized to exactly 255 bp. "
+        "**No subtraction** — PLS sits at the TSS by definition, so its "
+        "overlap with 5' UTR is the intended biology, and any overlap with "
+        "CDS in genes with very short 5' UTRs is accepted as part of the "
+        "natural PLS distribution rather than filtered out. For comparison, "
+        "`val_tss_pc` is a gene-centric annotation-driven alternative that "
+        "uses canonical protein_coding TSSes instead of ENCODE cCREs."
+    ),
+    "val_tss_pc": (
+        "Gene-centric promoter / proximal 5' UTR probe: ±255 bp band around "
+        "each canonical protein_coding transcript's TSS, as annotated in "
+        "Ensembl r{ensembl_release} (`tag \"{canonical_tag}\"`). One anchor "
+        "per gene, ~19k canonical TSSes, tiled into 255 bp windows. No "
+        "subtraction (CDS contamination only happens for very-short 5' UTR "
+        "genes; consistent with `val_promoter`'s unsubtracted policy). "
+        "Complementary to `val_promoter` (chromatin-centric, ~45k cCRE "
+        "anchors including non-coding genes and alt-TSSes) and `val_utr5` "
+        "(captures distal 5' UTR beyond the TSS-proximal window)."
     ),
     "val_enhancer": (
         "Enhancer regions defined by ENCODE cCRE V4 Enhancer-Like Signature "

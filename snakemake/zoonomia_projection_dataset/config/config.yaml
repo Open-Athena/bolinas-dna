@@ -81,8 +81,11 @@ validation_min_proportion_conserved: 0.20  # filter cutoff before subsampling
 validation_max_samples: 16384              # cap per recipe; fewer if regions are scarce
 validation_seed: 42                        # deterministic subsample
 validation_recipes:
-  ["val_cds", "val_utr5", "val_utr3", "val_promoter", "val_enhancer", "val_ncrna"]
+  ["val_cds", "val_utr5", "val_utr3", "val_promoter", "val_enhancer", "val_ncrna", "val_tss_pc"]
 validation_canonical_tag: "Ensembl_canonical"
+# val_tss_pc: ±flank bp band around each canonical protein_coding TSS.
+# 255 → 510 bp band → 2 × 255 bp tiles per TSS (clean, no leftover).
+validation_tss_flank: 255
 # Tightened to autosome+X+Y functional ncRNAs only. Dropped:
 #   - Mt_tRNA, Mt_rRNA   (mitochondrial; on the MT contig which is not in
 #                          standard_chroms, so excluded by chrom filter anyway).

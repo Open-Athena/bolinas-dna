@@ -29,9 +29,10 @@ VALIDATION_MAX_SAMPLES = int(config["validation_max_samples"])
 VALIDATION_SEED = int(config["validation_seed"])
 VALIDATION_CANONICAL_TAG = str(config["validation_canonical_tag"])
 VALIDATION_NCRNA_BIOTYPES = list(config["validation_ncrna_biotypes"])
+VALIDATION_TSS_FLANK = int(config["validation_tss_flank"])
 CCRE_URL = str(config["ccre_url"])
 
-ANNOTATION_RECIPES = ["val_cds", "val_utr5", "val_utr3", "val_ncrna"]
+ANNOTATION_RECIPES = ["val_cds", "val_utr5", "val_utr3", "val_ncrna", "val_tss_pc"]
 CRE_RECIPES = ["val_promoter", "val_enhancer"]
 
 # Recipe id constraint: val_<lowercase letters/digits>. Used by every wildcarded
@@ -107,9 +108,7 @@ rule cre_process:
 
 
 # ============================================================================
-# Subtraction masks (val_enhancer subtracts all exons; val_promoter subtracts
-# CDS only — preserves the legitimate PLS-vs-5'UTR overlap while removing the
-# rare PLS-inside-CDS misclassifications)
+# All-exon mask (used only by val_enhancer)
 # ============================================================================
 
 
@@ -129,8 +128,8 @@ rule validation_mask_all_exons:
         # doubles the ~3 GB parsed GTF frame). On c6id.4xlarge (30 GB budget),
         # mem_mb=16000 forces these to run one-at-a-time — concurrent OOMs
         # killed two earlier attempts when the per-job peak exceeded mem_mb.
-        # Cost: ~15 min serial wall for the 5-rule GTF phase, vs gambling
-        # on a parallel-OOM cycle.
+        # Cost: ~15 min serial wall for the GTF phase, vs gambling on a
+        # parallel-OOM cycle.
         mem_mb=16000,
     run:
         from bolinas.data.utils import get_exons, load_annotation
@@ -144,39 +143,13 @@ rule validation_mask_all_exons:
         exons.write_bed(output[0])
 
 
-rule validation_mask_all_cds:
-    """Every annotated CDS region (no biotype / canonical filter) — for
-    val_promoter subtraction. Genes with short 5' UTRs let the PLS-around-TSS
-    window extend into CDS; the conservation pre-filter would otherwise
-    over-represent those CDS-containing windows (CDS is much more conserved
-    than promoter sequence) and dilute the promoter signal. The legitimate
-    PLS-vs-5'UTR overlap is preserved (5' UTR is exonic but not CDS).
-    """
-    input:
-        gtf=f"results/annotation/Homo_sapiens.GRCh38.{config['ensembl_release']}.gtf.gz",
-    output:
-        "results/human/intervals/validation/mask/all_cds.bed",
-    resources:
-        mem_mb=16000,
-    run:
-        from bolinas.data.utils import get_cds, load_annotation
-
-        ann = load_annotation(input.gtf)
-        cds = get_cds(ann)
-        assert cds.n_intervals() > 50_000, (
-            f"too few CDS in {input.gtf}: {cds.n_intervals()} "
-            "(expected tens of thousands for human r115)"
-        )
-        cds.write_bed(output[0])
-
-
 # ============================================================================
 # Region builders (annotation-derived + cCRE-derived)
 # ============================================================================
 
 
 rule validation_region_annotation:
-    """Build region BED for val_cds / val_utr5 / val_utr3 / val_ncrna."""
+    """Build region BED for val_cds / val_utr5 / val_utr3 / val_ncrna / val_tss_pc."""
     input:
         gtf=f"results/annotation/Homo_sapiens.GRCh38.{config['ensembl_release']}.gtf.gz",
         defined="results/human/intervals/defined.bed",
@@ -187,6 +160,7 @@ rule validation_region_annotation:
     params:
         ncrna_biotypes=VALIDATION_NCRNA_BIOTYPES,
         canonical_tag=VALIDATION_CANONICAL_TAG,
+        tss_flank=VALIDATION_TSS_FLANK,
     resources:
         # Empirical peak per-job is 7-10 GB (polars `with_columns` filter
         # transiently doubles the ~3 GB parsed GTF frame). On c6id.4xlarge
@@ -198,6 +172,7 @@ rule validation_region_annotation:
         from bolinas.data.utils import load_annotation
         from bolinas.zoonomia_projection_dataset.validation import (
             build_annotation_region,
+            build_tss_band_region,
             filter_to_canonical_transcripts,
         )
 
@@ -211,12 +186,17 @@ rule validation_region_annotation:
             f"{n_canonical} (expected >10k for human r115)"
         )
         defined = GenomicSet.read_bed(input.defined)
-        intervals = build_annotation_region(
-            wildcards.recipe,
-            canonical,
-            defined,
-            ncrna_biotypes=params.ncrna_biotypes,
-        )
+        if wildcards.recipe == "val_tss_pc":
+            intervals = build_tss_band_region(
+                canonical, defined, flank=params.tss_flank
+            )
+        else:
+            intervals = build_annotation_region(
+                wildcards.recipe,
+                canonical,
+                defined,
+                ncrna_biotypes=params.ncrna_biotypes,
+            )
         assert intervals.n_intervals() > 0, (
             f"empty region BED for {wildcards.recipe}"
         )
@@ -224,15 +204,13 @@ rule validation_region_annotation:
 
 
 def _cre_region_inputs(wildcards):
-    """val_enhancer subtracts all annotated exons; val_promoter subtracts CDS only."""
+    """val_enhancer subtracts all annotated exons; val_promoter has no subtraction."""
     base = {
         "cre": "results/human/intervals/cre/all.parquet",
         "defined": "results/human/intervals/defined.bed",
     }
     if wildcards.recipe == "val_enhancer":
         base["mask"] = "results/human/intervals/validation/mask/all_exons.bed"
-    elif wildcards.recipe == "val_promoter":
-        base["mask"] = "results/human/intervals/validation/mask/all_cds.bed"
     return base
 
 
@@ -249,7 +227,7 @@ rule validation_region_cre:
         from bolinas.zoonomia_projection_dataset.validation import build_cre_region
 
         defined = GenomicSet.read_bed(input.defined)
-        if wildcards.recipe in ("val_enhancer", "val_promoter"):
+        if wildcards.recipe == "val_enhancer":
             subtract = GenomicSet.read_bed(input.mask)
         else:
             subtract = None
