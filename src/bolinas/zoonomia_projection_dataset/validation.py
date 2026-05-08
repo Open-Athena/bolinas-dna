@@ -442,10 +442,17 @@ _RECIPE_BLURBS: dict[str, str] = {
     ),
     "val_promoter": (
         "Promoter regions defined by ENCODE cCRE V4 Promoter-Like Signature "
-        "(PLS) class. Each cCRE is centered and resized to exactly 255 bp. "
-        "**No exon subtraction** — PLS is by definition proximal to a TSS, "
-        "so its overlap with 5' UTR is the intended biology, and subtracting "
-        "exonic regions would gut the set."
+        "(PLS) class. Each cCRE is centered and resized to exactly 255 bp, "
+        "then **CDS regions are subtracted** (every annotated CDS in Ensembl "
+        "r{ensembl_release}, no biotype or canonical filter). Genes with "
+        "very short 5' UTRs let the PLS-around-TSS window extend into CDS, "
+        "and CDS is much more conserved than promoter — without this "
+        "subtraction, the conservation pre-filter would over-represent "
+        "CDS-containing PLS windows and dilute the promoter signal. "
+        "Subtracting all annotated *exons* — as `val_enhancer` does — would "
+        "gut the set, since 5' UTR is exonic but is the intended biology "
+        "for a promoter probe; only CDS is subtracted, so the legitimate "
+        "PLS-vs-5'UTR overlap is preserved."
     ),
     "val_enhancer": (
         "Enhancer regions defined by ENCODE cCRE V4 Enhancer-Like Signature "

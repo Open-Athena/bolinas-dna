@@ -715,21 +715,58 @@ def test_build_cre_region_enhancer_subtracts_exons(tmp_path: Path) -> None:
     assert df.iloc[0]["end"] == 9228
 
 
-def test_build_cre_region_promoter_no_subtraction(tmp_path: Path) -> None:
-    """val_promoter retains PLS regardless of overlap with exons (subtract=None)."""
+def test_build_cre_region_promoter_no_subtract_keeps_all(tmp_path: Path) -> None:
+    """build_cre_region with subtract=None retains every PLS, regardless of overlap.
+
+    The snakemake rule passes a CDS mask as ``subtract`` for val_promoter,
+    but the library function itself must support both subtract=None (no-op)
+    and subtract=<set> (filter). This guards the no-op path.
+    """
     cre = _make_cre_parquet(
         tmp_path,
         [
-            ("1", 5000, 5200, "PLS"),  # would-be exon-overlapping
+            ("1", 5000, 5200, "PLS"),
         ],
     )
     defined = GenomicSet(
         pd.DataFrame({"chrom": ["1"], "start": [0], "end": [20_000]})
     )
-    # Build region without passing `subtract` — even though we have an exon mask.
     region = build_cre_region("val_promoter", cre, defined)
     df = region.to_pandas()
     assert len(df) == 1
+
+
+def test_build_cre_region_promoter_subtracts_cds_when_given(tmp_path: Path) -> None:
+    """val_promoter drops PLS overlapping CDS, keeps PLS overlapping 5' UTR.
+
+    Mirrors how the snakemake rule wires it up: pass an all-CDS mask to
+    subtract; PLS that overlap CDS are dropped, PLS in non-CDS exonic
+    territory (5' UTR) are kept.
+    """
+    cre = _make_cre_parquet(
+        tmp_path,
+        [
+            # PLS at midpoint 5100 → resize(255) → [4973, 5228) — overlaps CDS mask
+            ("1", 5000, 5200, "PLS"),
+            # PLS at midpoint 9100 → [8973, 9228) — clean (no CDS here)
+            ("1", 9000, 9200, "PLS"),
+        ],
+    )
+    defined = GenomicSet(
+        pd.DataFrame({"chrom": ["1"], "start": [0], "end": [20_000]})
+    )
+    cds_mask = GenomicSet(
+        pd.DataFrame({"chrom": ["1"], "start": [4500], "end": [5300]})
+    )
+    region = build_cre_region(
+        "val_promoter", cre, defined, subtract=cds_mask
+    )
+    df = region.to_pandas()
+    # Only the second PLS (9000-9200) survives; the first was wholly inside
+    # the CDS mask.
+    assert len(df) == 1
+    assert df.iloc[0]["start"] == 8973
+    assert df.iloc[0]["end"] == 9228
 
 
 def test_build_cre_region_unknown_recipe_raises(tmp_path: Path) -> None:
@@ -1007,10 +1044,13 @@ def test_write_hf_readme_includes_recipe_specific_blurb(
 
     # CDS-specific
     assert "Protein-coding sequence" in cds_body or "splice signal" in cds_body
-    # Enhancer-specific: subtraction
+    # Enhancer-specific: subtracts every annotated exon
     assert "subtract" in enh_body.lower()
-    # Promoter-specific: NO subtraction
-    assert "No exon subtraction" in prom_body or "no exon subtraction" in prom_body.lower()
+    assert "exon" in enh_body.lower()
+    # Promoter-specific: subtracts CDS (NOT all exons — preserves 5'UTR overlap)
+    assert "subtract" in prom_body.lower()
+    assert "CDS" in prom_body
+    assert "5' UTR" in prom_body
     # Each blurb is recipe-specific
     assert cds_body != enh_body
     assert cds_body != prom_body

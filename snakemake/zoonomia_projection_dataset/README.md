@@ -218,7 +218,7 @@ Parallelised by chromosome via Snakemake's ``{chrom}`` wildcard fan-out (24 work
 | `bolinas-dna/zoonomia-v1-val_utr5`       | Ensembl r115 (canonical)| `get_ensembl_5_prime_utr`, filter_size, add_flank(20), expand_min_size(255)                        |
 | `bolinas-dna/zoonomia-v1-val_utr3`       | Ensembl r115 (canonical)| `get_ensembl_3_prime_utr`, filter_size, add_flank(20), expand_min_size(255)                        |
 | `bolinas-dna/zoonomia-v1-val_ncrna`      | Ensembl r115 (canonical)| `get_ensembl_ncrna_exons` filtered to functional ncRNA biotypes (lncRNA, miRNA, snoRNA, snRNA, ribozyme, scaRNA, vault_RNA), filter_size, add_flank(20), expand_min_size(255) |
-| `bolinas-dna/zoonomia-v1-val_promoter`   | ENCODE cCRE V4          | filter `cre_class == "PLS"`, `resize(255)` — no exon subtraction (PLS is *defined* to overlap 5' UTR; subtracting would gut the set) |
+| `bolinas-dna/zoonomia-v1-val_promoter`   | ENCODE cCRE V4          | filter `cre_class == "PLS"`, `resize(255)`, **subtract `get_cds` (every annotated CDS, no biotype/canonical filter)**. Genes with short 5' UTRs let the PLS-around-TSS window run into CDS; without this subtraction, the conservation pre-filter (which favors CDS) would over-represent CDS-containing PLS windows and dilute the promoter signal. The legitimate PLS-vs-5'UTR overlap is *preserved* (5' UTR is exonic but not CDS); subtracting all annotated *exons* — as `val_enhancer` does — would gut the set since 5' UTR is the intended biology for a promoter probe. |
 | `bolinas-dna/zoonomia-v1-val_enhancer`   | ENCODE cCRE V4          | filter `cre_class ∈ {"pELS", "dELS"}`, `resize(255)`, **subtract every annotated exon** (`get_exons`, no biotype filter) — stricter than training_dataset v30's `get_exons_for_masking` because for *validation* we want a clean enhancer probe |
 
 **Per-recipe pipeline (8 stages):**
@@ -233,6 +233,17 @@ validation_extract_seq  → results/human/intervals/validation/sampled/{recipe}.
 validation_dataset      → results/human/intervals/validation/dataset/{recipe}.parquet    (id = "chrom:start-end", seq = case-encoded)
 hf_upload_validation    → results/upload.done/validation/{recipe}        (touch)
 ```
+
+**Subtraction policy.** `val_enhancer` subtracts every annotated exon
+(via `get_exons` — strictest exonic mask; ELS classification can mis-flag
+transcribed exonic chromatin). `val_promoter` subtracts only CDS (via
+`get_cds`) — short 5' UTRs let the PLS-around-TSS window run into CDS, and
+since CDS is much more conserved than promoter, the conservation
+pre-filter would over-represent CDS-containing PLS windows and dilute the
+promoter signal; subtracting CDS keeps the recipe focused on genuine
+promoter sequence while preserving the intended PLS-vs-5'UTR overlap. The
+four annotation-derived recipes do no cross-feature subtraction (canonical
+filtering already disambiguates CDS / 5'UTR / 3'UTR within a transcript).
 
 **Conservation pre-filter, then subsample.** Each tiled 255 bp window is scored against `phyloP_447m` and only windows with `proportion_conserved ≥ 0.20` (configurable via `validation_min_proportion_conserved`) advance. The remaining pool is then deterministically subsampled to `validation_max_samples = 16384` rows per recipe (seed `validation_seed = 42`). Pre-filtering enriches the validation pool for biologically interesting positions.
 

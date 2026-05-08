@@ -107,7 +107,9 @@ rule cre_process:
 
 
 # ============================================================================
-# All-exon mask (used only for val_enhancer subtraction)
+# Subtraction masks (val_enhancer subtracts all exons; val_promoter subtracts
+# CDS only — preserves the legitimate PLS-vs-5'UTR overlap while removing the
+# rare PLS-inside-CDS misclassifications)
 # ============================================================================
 
 
@@ -140,6 +142,32 @@ rule validation_mask_all_exons:
             "(expected hundreds of thousands for human r115)"
         )
         exons.write_bed(output[0])
+
+
+rule validation_mask_all_cds:
+    """Every annotated CDS region (no biotype / canonical filter) — for
+    val_promoter subtraction. Genes with short 5' UTRs let the PLS-around-TSS
+    window extend into CDS; the conservation pre-filter would otherwise
+    over-represent those CDS-containing windows (CDS is much more conserved
+    than promoter sequence) and dilute the promoter signal. The legitimate
+    PLS-vs-5'UTR overlap is preserved (5' UTR is exonic but not CDS).
+    """
+    input:
+        gtf=f"results/annotation/Homo_sapiens.GRCh38.{config['ensembl_release']}.gtf.gz",
+    output:
+        "results/human/intervals/validation/mask/all_cds.bed",
+    resources:
+        mem_mb=16000,
+    run:
+        from bolinas.data.utils import get_cds, load_annotation
+
+        ann = load_annotation(input.gtf)
+        cds = get_cds(ann)
+        assert cds.n_intervals() > 50_000, (
+            f"too few CDS in {input.gtf}: {cds.n_intervals()} "
+            "(expected tens of thousands for human r115)"
+        )
+        cds.write_bed(output[0])
 
 
 # ============================================================================
@@ -196,13 +224,15 @@ rule validation_region_annotation:
 
 
 def _cre_region_inputs(wildcards):
-    """val_enhancer additionally depends on the all-exon mask; val_promoter doesn't."""
+    """val_enhancer subtracts all annotated exons; val_promoter subtracts CDS only."""
     base = {
         "cre": "results/human/intervals/cre/all.parquet",
         "defined": "results/human/intervals/defined.bed",
     }
     if wildcards.recipe == "val_enhancer":
         base["mask"] = "results/human/intervals/validation/mask/all_exons.bed"
+    elif wildcards.recipe == "val_promoter":
+        base["mask"] = "results/human/intervals/validation/mask/all_cds.bed"
     return base
 
 
@@ -219,7 +249,7 @@ rule validation_region_cre:
         from bolinas.zoonomia_projection_dataset.validation import build_cre_region
 
         defined = GenomicSet.read_bed(input.defined)
-        if wildcards.recipe == "val_enhancer":
+        if wildcards.recipe in ("val_enhancer", "val_promoter"):
             subtract = GenomicSet.read_bed(input.mask)
         else:
             subtract = None
