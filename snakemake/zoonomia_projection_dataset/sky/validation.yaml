@@ -20,7 +20,7 @@ name: zoonomia-validation
 
 resources:
     infra: aws/us-east-2
-    instance_type: c6id.2xlarge      # 8 vCPU, 16 GB RAM, 474 GB local NVMe
+    instance_type: c6id.4xlarge      # 16 vCPU, 32 GB RAM, 950 GB local NVMe
     disk_size: 100
     labels:
         project: dna
