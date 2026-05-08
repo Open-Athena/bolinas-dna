@@ -3,18 +3,21 @@
 Replaces the global MAF_bin (iter 24's 20-edge log-spaced scheme) with a
 LOCAL quantile bin: within each categorical match group
 (chrom × consequence_final × 4 closest_*_gene_id), assign each row a quantile
-bucket of MAF based on the JOINT (pos+neg) distribution of that group.
+bucket of MAF.
 
-The local-quantile bin replaces the global MAF_bin in the categorical match
-key. MAF stays as a continuous feature for cdist tie-break within each
-sub-group. Mendelian skipped — no MAF column.
+Two reference variants:
+  - joint:  quantiles computed on pos+neg jointly. Each bucket has
+            ~1/n_q of the GROUP rows.
+  - neg:    quantiles computed on negatives only. Each bucket has
+            exactly 1/n_q of the NEG rows; pos rows fall into whichever
+            bucket their MAF lands in. Better-behaved for retention since
+            no bucket is empty of negs by construction.
 
-Sweep n_quantiles ∈ {2, 4, 8, 16, 32}. For each scheme reports:
-  (a) per-subset matched-pair count
-  (b) per-subset MAF pairwise-accuracy (PA) and binomial p-value
+The bin replaces the global MAF_bin in the categorical match key. MAF stays
+continuous for cdist tie-break within each sub-group. Mendelian skipped —
+no MAF column.
 
-Compares against `no_bin` baseline (iter 25). The iter-26/27 global 20bin
-result is in the previous comment for reference.
+Sweep n_quantiles ∈ {2, 4, 8, 16, 32} for both reference variants.
 """
 import os
 
@@ -47,13 +50,8 @@ CONT_BASE = [
 N_QUANTILES_GRID = [2, 4, 8, 16, 32]
 
 
-def add_local_q_bin(df: pl.DataFrame, n_q: int) -> pl.DataFrame:
-    """Quantile-bin MAF within each (CAT_BASE) group, joint pos+neg ref.
-
-    Returns df + a `MAF_local_q_bin` String column. Empty / single-value /
-    very-small groups collapse via allow_duplicates=True (they end up in
-    bin 'q0').
-    """
+def add_local_q_bin_joint(df: pl.DataFrame, n_q: int) -> pl.DataFrame:
+    """Joint pos+neg quantile binning — each bucket holds 1/n_q of group rows."""
     labels = [f"q{i}" for i in range(n_q)]
     return df.with_columns(
         pl.col("MAF")
@@ -62,6 +60,24 @@ def add_local_q_bin(df: pl.DataFrame, n_q: int) -> pl.DataFrame:
         .over(CAT_BASE)
         .alias("MAF_local_q_bin")
     )
+
+
+def add_local_q_bin_neg(df: pl.DataFrame, n_q: int) -> pl.DataFrame:
+    """Neg-only quantile bins. Edges from neg distribution per group; pos rows
+    bucketed by where their MAF falls in those edges. Each bucket has exactly
+    1/n_q of the NEG rows by construction (so retention should be high).
+    """
+    neg = df.filter(~pl.col("label"))
+    levels = [(i + 1) / n_q for i in range(n_q - 1)]  # n_q - 1 internal edges
+    edges = neg.group_by(CAT_BASE).agg(
+        [pl.col("MAF").quantile(q).alias(f"_e{i}") for i, q in enumerate(levels)]
+    )
+    df = df.join(edges, on=CAT_BASE, how="left")
+    bucket = pl.lit(f"q{n_q - 1}")
+    for i in reversed(range(n_q - 1)):
+        bucket = pl.when(pl.col("MAF") <= pl.col(f"_e{i}")).then(pl.lit(f"q{i}")).otherwise(bucket)
+    df = df.with_columns(bucket.alias("MAF_local_q_bin"))
+    return df.drop([f"_e{i}" for i in range(n_q - 1)])
 
 
 def pa_p(V: pl.DataFrame, feature: str) -> tuple[float, int, float]:
@@ -113,15 +129,22 @@ for dataset in ("complex_traits", "eqtl"):
     times: dict[str, float] = {}
 
     # No-bin baseline (for reference / Pareto comparison).
-    scheme_names = ["no_bin"] + [f"q{n}" for n in N_QUANTILES_GRID]
+    scheme_names = (
+        ["no_bin"]
+        + [f"j_q{n}" for n in N_QUANTILES_GRID]   # joint-quantile
+        + [f"n_q{n}" for n in N_QUANTILES_GRID]   # neg-only quantile
+    )
     for scheme in scheme_names:
         t0 = time.time()
         if scheme == "no_bin":
             V = df_full
             cat = CAT_BASE
         else:
-            n_q = int(scheme[1:])
-            V = add_local_q_bin(df_full, n_q)
+            n_q = int(scheme.split("_q")[1])
+            if scheme.startswith("j"):
+                V = add_local_q_bin_joint(df_full, n_q)
+            else:
+                V = add_local_q_bin_neg(df_full, n_q)
             cat = CAT_BASE + ["MAF_local_q_bin"]
 
         matched = match_features(

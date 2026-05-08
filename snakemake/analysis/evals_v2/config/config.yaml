@@ -14,6 +14,8 @@ datasets:
     score_column: minus_llr   # pathogenic positives should score higher than gnomAD-common negatives
   - name: complex_traits
     score_column: abs_llr     # fine-mapped positives — magnitude regardless of direction
+  - name: eqtl
+    score_column: abs_llr     # GTEx fine-mapped eQTLs — magnitude regardless of direction
 
 # Model checkpoints. `gcs_path` is the full path to the specific checkpoint
 # directory (i.e. includes /hf/step-{N}). Pipeline copies its contents into

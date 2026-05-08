@@ -4,6 +4,7 @@ split: train
 datasets:
   - mendelian_traits
   - complex_traits
+  - eqtl
 
 # AlphaGenome rate-limits — keep workers low (4 has been a safe ceiling).
 num_workers: 4
