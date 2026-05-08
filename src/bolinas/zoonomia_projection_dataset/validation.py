@@ -572,10 +572,11 @@ Conservation pre-filtered, case-encoded human-genome validation set from the
 [`{_GITHUB_PIPELINE_PATH}`]({pipeline_permalink}) pipeline
 (commit [`{commit_sha[:12]}`]({pipeline_permalink})).
 
-This is one of six per-recipe validation parquets (`val_cds`, `val_utr5`,
-`val_utr3`, `val_ncrna`, `val_promoter`, `val_enhancer`) built from the same
-human-anchored phyloP_447m scoring used to create the cross-mammal training
-sets [`{hf_owner}/zoonomia-{pipeline_version}-v1`](https://huggingface.co/datasets/{hf_owner}/zoonomia-{pipeline_version}-v1)
+This is one of seven per-recipe validation parquets (`val_cds`, `val_utr5`,
+`val_utr3`, `val_ncrna`, `val_promoter`, `val_enhancer`, `val_tss_pc`) built
+from the same human-anchored phyloP_447m scoring used to create the
+cross-mammal training sets
+[`{hf_owner}/zoonomia-{pipeline_version}-v1`](https://huggingface.co/datasets/{hf_owner}/zoonomia-{pipeline_version}-v1)
 and [`{hf_owner}/zoonomia-{pipeline_version}-v2`](https://huggingface.co/datasets/{hf_owner}/zoonomia-{pipeline_version}-v2).
 
 ## Recipe (`{recipe}`)
