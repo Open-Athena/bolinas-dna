@@ -426,6 +426,11 @@ def default_tokenize(
                 "TRANSFORMERS_NO_TORCHVISION": "1",
                 "USE_TORCH": "0",
                 "TORCH_DISABLE_GLOBAL_DEPS": "1",
+                # huggingface_hub's default `read_timeout=10s` is too short for
+                # this dataset (`bolinas-dna/zoonomia-v1-v2`, ~107M rows) — the
+                # API call to fetch the parquet manifest times out and fails
+                # the whole tokenization. Bump to 120s.
+                "HF_HUB_DOWNLOAD_TIMEOUT": "120",
             },
         ),
         config=config,
