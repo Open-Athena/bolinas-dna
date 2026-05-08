@@ -1,13 +1,26 @@
 """Inference rules for computing LLR scores on evaluation datasets."""
 
 
+def _checkpoint_input(wildcards):
+    """Per-(model, step) checkpoint dependency.
+
+    For `gcs_path`-backed entries we depend on the local download from
+    `download.smk`; legacy `base_path` entries return [] (no Snakemake
+    dependency) and the run block resolves the path directly.
+    """
+    cfg = get_model_config(wildcards.model)
+    if "gcs_path" in cfg:
+        return f"results/checkpoints/{wildcards.model}/step-{wildcards.step}"
+    return []
+
+
 rule compute_scores:
     input:
         genome="results/genome.fa.gz",
+        checkpoint=_checkpoint_input,
     output:
         "results/scores/{dataset}/{model}/{step}.parquet",
     params:
-        model_base_path=lambda wildcards: get_model_config(wildcards.model)["base_path"],
         model_context_size=lambda wildcards: get_model_config(wildcards.model)[
             "context_size"
         ],
@@ -15,10 +28,13 @@ rule compute_scores:
             "hf_path"
         ],
         dataset_split=lambda wildcards: get_dataset_config(wildcards.dataset)["split"],
-        step=lambda wildcards: wildcards.step,
     threads: config["inference"]["num_workers"]
     run:
-        checkpoint_path = f"{params.model_base_path}/step-{params.step}"
+        cfg = get_model_config(wildcards.model)
+        if "gcs_path" in cfg:
+            checkpoint_path = input.checkpoint
+        else:
+            checkpoint_path = f"{cfg['base_path']}/step-{wildcards.step}"
 
         hf_dataset = load_dataset(params.dataset_hf_path, split=params.dataset_split)
         dataset = hf_dataset.to_pandas()

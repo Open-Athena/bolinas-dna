@@ -600,12 +600,33 @@ models:
       - 7000
       - 9999
 
+  # GCS-backed entry: pulled from the marin checkpoint bucket via
+  # `download_model_step` (see workflow/rules/download.smk). `gcs_path` is
+  # the parent of `step-{N}/` — same semantics as `base_path`. Using the
+  # same exp136 checkpoint as evals_v2; `context_size: 255` because the
+  # tokenizer prepends BOS (255 bp DNA + BOS = 256 tokens).
+  - name: exp136-proj_v30
+    gcs_path: gs://marin-us-central1/checkpoints/dna-bolinas-enhancer-curation-v0.1-proj_v30-6692f0/hf
+    context_size: 255
+    steps:
+      - 9999
+
 # Evaluation datasets from HuggingFace
 # Each dataset should have been created by the snakemake/evals pipeline
 datasets:
   - name: traitgym_mendelian
     hf_path: gonzalobenegas/bolinas_evals-traitgym_mendelian
     split: train
+    metrics:
+      - AUPRC
+
+  # Full TraitGym Mendelian benchmark — 3380 variants. `train+test` of our
+  # derivative is the same coordinate set as `songlab/omim_traitgym` test
+  # (the canonical TraitGym leaderboard split). Use this entry for
+  # final-eval comparisons against the v1 baselines.
+  - name: traitgym_mendelian_full
+    hf_path: gonzalobenegas/bolinas_evals-traitgym_mendelian
+    split: train+test
     metrics:
       - AUPRC
 
@@ -656,6 +677,7 @@ baselines:
   # Mapping from our dataset names to original TraitGym dataset paths
   dataset_mapping:
     traitgym_mendelian: songlab/omim_traitgym
+    traitgym_mendelian_full: songlab/omim_traitgym
     traitgym_complex: songlab/ukb_finemapped_nc_traitgym
     clinvar_missense: songlab/clinvar_vs_benign
     gwas_missense: songlab/ukb_finemapped_coding
@@ -671,6 +693,44 @@ score_types:
 # Each plot can filter which models and which (dataset, subset) combinations to include
 # Each dataset_subset can specify its own score_type
 custom_plots:
+  - name: exp136_proj_v30_traitgym_mendelian_full
+    title: "exp136 proj_v30 — full TraitGym Mendelian benchmark (3380 vars)"
+    models:
+      - model: exp136-proj_v30
+        title: "proj_v30 (0.6B, enhancer-curated)"
+    n_cols: 3
+    dataset_subsets:
+      - dataset: traitgym_mendelian_full
+        subset: nonexonic_AND_distal
+        score_type: minus_llr
+        include_baselines: true
+        title: "Distal (analogue of v2 distal)"
+      - dataset: traitgym_mendelian_full
+        subset: nonexonic_AND_proximal
+        score_type: minus_llr
+        include_baselines: true
+        title: "Promoter"
+      - dataset: traitgym_mendelian_full
+        subset: 5_prime_UTR_variant
+        score_type: minus_llr
+        include_baselines: true
+        title: "5' UTR"
+      - dataset: traitgym_mendelian_full
+        subset: 3_prime_UTR_variant
+        score_type: minus_llr
+        include_baselines: true
+        title: "3' UTR"
+      - dataset: traitgym_mendelian_full
+        subset: non_coding_transcript_exon_variant
+        score_type: minus_llr
+        include_baselines: true
+        title: "ncRNA"
+      - dataset: traitgym_mendelian_full
+        subset: global
+        score_type: minus_llr
+        include_baselines: true
+        title: "Global"
+
   - name: promoters_yolo
     title: "Promoters YOLO run (Qwen 1.7B)"
     models:
