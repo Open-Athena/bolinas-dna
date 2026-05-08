@@ -114,15 +114,22 @@ CONT_BASE = [
 
 
 def add_distance_bins(df: pl.DataFrame) -> pl.DataFrame:
-    """Iter-22-style distance bins on the per-biotype PC columns.
-    distance_tss_pc_bin : tss_proximal only (else BIN_NA)
-    distance_exon_pc_bin: splicing only (else BIN_NA)
+    """Iter 33: per-biotype TSS bins for tss_proximal (pc + nc) and exon
+    bin for splicing (pc only — exon nc didn't leak in mendelian baseline).
+
+    distance_tss_pc_bin  : tss_proximal only (else BIN_NA)
+    distance_tss_nc_bin  : tss_proximal only (else BIN_NA)
+    distance_exon_pc_bin : splicing     only (else BIN_NA)
     """
     return df.with_columns(
         pl.when(pl.col("consequence_group") == "tss_proximal")
         .then(bin_feature("distance_tss_pc", TSS_EDGES))
         .otherwise(pl.lit(BIN_NA))
         .alias("distance_tss_pc_bin"),
+        pl.when(pl.col("consequence_group") == "tss_proximal")
+        .then(bin_feature("distance_tss_nc", TSS_EDGES))
+        .otherwise(pl.lit(BIN_NA))
+        .alias("distance_tss_nc_bin"),
         pl.when(pl.col("consequence_group") == "splicing")
         .then(bin_feature("distance_exon_pc", EXON_EDGES))
         .otherwise(pl.lit(BIN_NA))
@@ -195,7 +202,11 @@ for name in DATASETS:
     stamp("after read_parquet")
 
     V = add_distance_bins(V)
-    cat = CAT_BASE + ["distance_tss_pc_bin", "distance_exon_pc_bin"]
+    cat = CAT_BASE + [
+        "distance_tss_pc_bin",
+        "distance_tss_nc_bin",
+        "distance_exon_pc_bin",
+    ]
     cont = CONT_BASE.copy()
     if has_maf:
         V = add_maf_bin(V, cfg["maf_scheme"])
