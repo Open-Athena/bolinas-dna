@@ -10,11 +10,12 @@ include: "rules/filter.smk"
 include: "rules/project.smk"
 include: "rules/subsets.smk"
 include: "rules/dataset.smk"
+include: "rules/validation.smk"
 
 
 rule all:
     input:
         expand(
-            "results/bed/min{min_p}.bed.gz",
+            "results/human/intervals/filtered/min{min_p}.bed.gz",
             min_p=[f"{f['min_proportion_conserved']:.2f}" for f in config["filters"]],
         ),

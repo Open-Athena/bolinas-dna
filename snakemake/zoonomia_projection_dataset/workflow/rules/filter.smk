@@ -3,9 +3,9 @@
 
 rule filter_bed:
     input:
-        "results/scored/phyloP_447m_windows.parquet",
+        "results/human/intervals/scored/phyloP_447m_windows.parquet",
     output:
-        "results/bed/min{min_p}.bed.gz",
+        "results/human/intervals/filtered/min{min_p}.bed.gz",
     run:
         min_p = float(wildcards.min_p)
         assert 0.0 <= min_p <= 1.0, f"min_p out of range: {min_p}"

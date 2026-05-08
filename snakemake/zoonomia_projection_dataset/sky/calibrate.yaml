@@ -69,7 +69,7 @@ run: |
     uv run python snakemake/zoonomia_projection_dataset/scripts/calibrate_447m_threshold.py \
         --output snakemake/zoonomia_projection_dataset/results/calibration/calibration.json \
         --bigwig-dir "$WORK/bigwig" \
-        --genome-2bit "$WORK/homo_sapiens.2bit" \
+        --genome-2bit "$WORK/genome.2bit" \
         --chroms 1
 
     # Sanity-print the result so it shows up at the end of `sky logs`.
