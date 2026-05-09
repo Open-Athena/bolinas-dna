@@ -434,10 +434,11 @@ def default_tokenize(
                 # Many concurrent zephyr workers on a single VM all run
                 # `uv sync --extra marin`, which git-builds `lm-eval` (no PyPI
                 # release of marin-levanter's pinned fork). uv's per-cache-key
-                # lock has a 300s default; under contention, several workers
-                # time out and fail the whole pipeline. Bump to 30min so the
-                # lock just queues quietly while the first worker builds.
-                "UV_LOCK_TIMEOUT": "1800",
+                # lock has a 300s default; even 1800s wasn't enough on first
+                # try (suspected stale locks from killed earlier-attempt
+                # workers). Bump to 2h to give plenty of headroom; workers
+                # downstream of a successful build hit cache instantly anyway.
+                "UV_LOCK_TIMEOUT": "7200",
             },
         ),
         config=config,
