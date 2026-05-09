@@ -431,6 +431,13 @@ def default_tokenize(
                 # API call to fetch the parquet manifest times out and fails
                 # the whole tokenization. Bump to 120s.
                 "HF_HUB_DOWNLOAD_TIMEOUT": "120",
+                # Many concurrent zephyr workers on a single VM all run
+                # `uv sync --extra marin`, which git-builds `lm-eval` (no PyPI
+                # release of marin-levanter's pinned fork). uv's per-cache-key
+                # lock has a 300s default; under contention, several workers
+                # time out and fail the whole pipeline. Bump to 30min so the
+                # lock just queues quietly while the first worker builds.
+                "UV_LOCK_TIMEOUT": "1800",
             },
         ),
         config=config,
