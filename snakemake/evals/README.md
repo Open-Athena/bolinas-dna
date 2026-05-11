@@ -12,8 +12,9 @@ commit `e59d612e9`, so HGMD pathogenic SNVs are included as a positive source.
 
 | Name | Description | Positives | Negatives |
 |---|---|---|---|
-| `mendelian_traits` | Mendelian disease pathogenic SNVs | HGMD ∪ OMIM ∪ Smedley et al. 2016 (de-duped, AF<0.001) | gnomAD common (AN≥25k, AF>0.05) |
-| `complex_traits` | UKBB fine-mapped complex-trait variants | SuSiE+FINEMAP PIP > 0.9 across 119 traits | PIP < 0.01 (and not null in any trait) |
+| `mendelian_traits` | Mendelian disease pathogenic SNVs | HGMD ∪ OMIM ∪ Smedley et al. 2016 (de-duped, AF<0.001) | gnomAD common (AN≥25k, AF>0.001) |
+| `complex_traits` | UKBB fine-mapped complex-trait variants | SuSiE+FINEMAP `max(PIP across the traits where this variant was fine-mapped) > 0.9` | `max(PIP) < 0.01` AND no SuSiE/FINEMAP combine-step null PIP among those traits (`label_variants_by_pip(use_null_pip_guard=True)`) |
+| `eqtl` | GTEx v8 fine-mapped eQTLs from [eQTL Catalogue r7](https://www.ebi.ac.uk/eqtl/) (study `QTS000015`, 49 tissues × `ge` quantification, pooled) | SuSiE `max(PIP across tested tissues) > 0.9` from `credible_sets.tsv.gz` | `max(PIP) < 0.01` — variant must appear in at least one tissue's nominal sumstats (`all.tsv.gz`) but never reach a strong credible set; covered by the 0-fill in `bolinas.evals.catalogue_parser.merge_cs_and_sumstats` (sentinel: tested-but-no-signal variant has `pip=0`, not null, so `pl.max()` reaches it). |
 
 Each dataset has a corresponding `*_harness_255` eval-harness variant where a
 255 bp window centered on each variant is materialized into
@@ -23,39 +24,68 @@ windows for the same reason.
 
 ## Matching scheme
 
-For both datasets, every positive is matched 1:1 to one negative via TraitGym's
+For each dataset, every positive is matched 1:1 to one negative via TraitGym's
 greedy-nearest-neighbor matcher (`bolinas.evals.matching.match_features`).
 Matching is exact on every categorical feature, then Euclidean-nearest on the
 (RobustScaler-scaled) continuous features, without replacement within a group.
 See `src/bolinas/evals/matching.py` for the algorithm.
 
 The matching design below was locked in [issue #156](https://github.com/Open-Athena/bolinas-dna/issues/156)
-after a 24-iteration sweep. Two refinements close window-edge / MAF leaks the
-basic continuous-only matching exhibited:
+at iter 33 after a 33-iteration sweep. Compared to the iter-22/24 production
+design that this replaces, three things changed:
 
-- **Splice pre-filter**: variants with `consequence_group == "splicing" AND
-  exon_dist > 30` are dropped before matching (handful of mendelian splicing
-  positives at non-coding-transcript splice sites whose protein-coding-only
-  `exon_dist` is misleading; small loss in complex too — see issue #156 for
-  per-subset retention tables).
-- **Subset-conditional distance bins** added as exact-match categoricals on top
-  of the continuous features (so continuous matching becomes a within-bin
-  tie-breaker): `tss_dist_bin` only meaningful for `tss_proximal`, "NA"
-  otherwise; `exon_dist_bin` only meaningful for `splicing`, "NA" otherwise.
-  Edges in `bolinas.evals.matching` (`TSS_DIST_BIN_EDGES`,
-  `EXON_DIST_BIN_EDGES`).
+- **Per-biotype distances**: TSS / exon distances are computed twice, once
+  against protein-coding transcripts (`distance_*_pc`) and once against all
+  other transcripts (`distance_*_nc`, mostly lncRNAs / miRNAs / snoRNAs).
+  Both pc and nc columns enter the matching as continuous features, and bin
+  variants of them as categorical features (see below). The same applies to
+  `*_closest_*_gene_id` keys.
+- **Subset-conditional distance bins** as exact-match categoricals on top of
+  the continuous features (so continuous matching becomes a within-bin
+  tie-breaker):
+  - `distance_tss_pc_bin` and `distance_tss_nc_bin` are meaningful only for
+    `tss_proximal` (`"NA"` otherwise), edges `[0, 50, 100, 200, 500, 1000]`
+    in both.
+  - `distance_exon_pc_bin` is meaningful only for `splicing` (`"NA"`
+    otherwise), edges `[0, 5, 20, 30]`.
+  - `distance_exon_nc_bin` was tested and dropped — `splicing/dist_exon_nc`
+    was already clean in the no-bin baseline.
+- **Per-subset MAF binning** (complex_traits, eqtl): the iter-24 uniform 20bin
+  scheme was replaced by a per-`consequence_group` tier (`MAF_TIERED_V1`):
+  20bin for {distal, tss_proximal, ncRNA}, 10bin for {3'UTR, 5'UTR, missense},
+  5bin for {synonymous, splicing, …small subsets}. For `eqtl/distal`
+  specifically, fixed global edges leave an asymptotic Bonferroni-significant
+  residual leak (PA ≈ 0.532 across every global granularity); replacing it
+  with per-categorical-group **local equal-width log10(MAF) bins** (8 buckets,
+  joint pos+neg ref over the categorical match key) closes the leak. That
+  scheme is `MAF_TIERED_LOG8_DISTAL_ONLY` (= tiered_v1 with `LOG_LOCAL` for
+  distal). Apply via `add_tiered_maf_bin(df, scheme, ...)`.
+
+Net result (positives / matched / leaks):
+
+| dataset | n_pos | matched | retention | matched-feature ★ leaks |
+|---|---:|---:|---:|---|
+| mendelian_traits | 17,167 | 8,576 | 50.0% | 0 |
+| complex_traits | 2,165 | 1,134 | 52.4% | 0 |
+| eqtl | 17,799 | 6,549 | 36.8% | 0 |
 
 Per-dataset specifics:
 
-- **mendelian_traits**:
-  - continuous = `[tss_dist, exon_dist]`
-  - categorical = `[chrom, consequence_final, tss_closest_gene_id,
-    exon_closest_gene_id, tss_dist_bin, exon_dist_bin]`
+- **mendelian_traits** (no MAF column in the dataset_all parquet):
+  - continuous = `[distance_tss_pc, distance_tss_nc, distance_exon_pc, distance_exon_nc]`
+  - categorical = `[chrom, consequence_final, tss_closest_pc_gene_id,
+    tss_closest_nc_gene_id, exon_closest_pc_gene_id, exon_closest_nc_gene_id,
+    distance_tss_pc_bin, distance_tss_nc_bin, distance_exon_pc_bin]`
 - **complex_traits**:
-  - continuous = `[tss_dist, exon_dist, MAF]` (`ld_score` is dropped from
-    matching but kept as a passthrough column on the output dataset)
-  - categorical = same as mendelian, plus an always-on `MAF_bin` (right-closed,
-    log-spaced toward low MAF; `MAF_BIN_EDGES` in `bolinas.evals.matching`)
+  - continuous = mendelian's + `MAF` (`ld_score` is dropped from matching but
+    kept as a passthrough column on the output)
+  - categorical = mendelian's + `MAF_bin` (per-subset, `MAF_TIERED_V1`)
+- **eqtl**:
+  - same continuous as complex_traits (the cohort-matched MAF comes natively
+    from the eQTL Catalogue nominal sumstats, not joined from gnomAD)
+  - same categorical as complex_traits but `MAF_bin` uses
+    `MAF_TIERED_LOG8_DISTAL_ONLY` (tiered_v1 + per-group log_local for distal)
+  - `tissues` is dropped from matching but kept as a passthrough column
 
 ## Pipeline structure
 
@@ -87,6 +117,45 @@ dataset_unsplit/mendelian_traits.parquet  (gene-matched 1:1)
 `workflow/rules/ldscore.smk` + `workflow/rules/complex_traits.smk` produce the
 complex-trait dataset along the same lines, plus per-trait fine-mapping
 downloads and aggregation across 119 traits.
+
+`workflow/rules/eqtl.smk` produces the `eqtl` dataset from the
+[eQTL Catalogue r7](https://www.ebi.ac.uk/eqtl/) per-tissue SuSiE
+fine-mapping files. Source: study `QTS000015` (GTEx v8), all 49 tissue
+datasets × the `ge` (gene-expression) quantification. Per tissue we
+download two files from public FTP:
+
+- `credible_sets.tsv.gz` (~4 MB) — PIP per credible-set member.
+- `all.tsv.gz` (~3.5 GB) — full nominal sumstats; one row per (variant,
+  gene) tested. Provides every variant tested in fine-mapping, including
+  those that never reached a credible set. This is what makes the eqtl
+  negative pool comparable to complex_traits' UKBB full-sumstats coverage
+  (Finucane's GCS single-file release pre-filtered out the bulk of
+  no-signal variants, capping the pool at ~1.3M; Catalogue gives us
+  >10M).
+
+`src/bolinas/evals/catalogue_parser.py` parses both files per tissue. The
+critical step is `merge_cs_and_sumstats`: left-join the CS PIPs onto the
+sumstats variant inventory, **fill `pip=0` (not null) for variants outside
+any credible set**. This sentinel is load-bearing — `pl.max()` skips nulls,
+so without the fill the tested-but-no-signal variants would fall through to
+`label=None` and be excluded instead of labeled negative.
+
+Cross-tissue aggregation in `eqtl_aggregate_tissues` then concats all 49
+per-tissue parquets and labels via
+`bolinas.evals.labeling.label_variants_by_pip`:
+
+- `max(PIP across tested tissues) > 0.9` → positive
+- `max(PIP) < 0.01` → negative
+- intermediate `max(PIP)` ∈ `[0.01, 0.9]` → variant excluded from the dataset
+
+Don't row-filter the input to extreme PIPs before the group_by — that
+would silently mislabel a variant with tissue PIPs `[0.001, 0.5]` as a
+clean negative (`max = 0.001` after dropping the 0.5 row) when its true
+`max = 0.5` is intermediate and should exclude it. The labeling helper
+has a unit test pinning down this regression
+(`tests/evals/test_labeling.py:test_multiple_studies_max_excludes_when_intermediate`),
+plus integration tests in `tests/evals/test_catalogue_parser.py` that
+exercise the same case through the full Catalogue ingest path.
 
 The generic `split_dataset_by_chrom` rule then turns each
 `results/dataset_unsplit/{name}.parquet` into the train/test pair, and
@@ -145,8 +214,11 @@ Top-level keys:
 | `datasets` | Which datasets `rule all` builds + uploads. |
 | `mendelian_traits.*` | HGMD URL, Smedley URL, ClinVar release pin, submission summary date, AF threshold. |
 | `complex_traits.*` | Fine-mapping repo, LD-score S3 path, PIP thresholds. |
+| `eqtl.*` | eQTL Catalogue study ID (`QTS000015` = GTEx v8), per-tissue list CSV, PIP thresholds. |
 
 `config/complex_traits.csv` lists the 119 UKBB traits used for `complex_traits`.
+`config/gtex_tissues.csv` lists the 49 GTEx v8 datasets used for `eqtl` (one
+row per `(dataset_id, tissue_label, sample_size)` triple).
 
 ## Usage
 
@@ -171,6 +243,7 @@ Examples:
 
 - `bolinas-dna/evals_mendelian_traits`
 - `bolinas-dna/evals_complex_traits`
+- `bolinas-dna/evals_eqtl`
 - `bolinas-dna/evals_mendelian_traits_harness_255`
 - `bolinas-dna/evals_complex_traits_harness_255`
 

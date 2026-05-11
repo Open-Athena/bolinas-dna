@@ -87,43 +87,49 @@ rule complex_traits_aggregate_traits:
     output:
         "results/complex_traits/finemapping/aggregated.parquet",
     run:
-        # Streaming: scan_parquet + sink_parquet so polars can chunk through the
-        # 119-trait concat + group_by without materializing all ~50 GB of
-        # per-trait fine-mapping data at once.
         high = config["complex_traits"]["pip_pos_threshold"]
         low = config["complex_traits"]["pip_neg_threshold"]
-        any_null_pip = pl.col("pip").is_null().any()
-        (
+        # Per-variant labeling delegated to `label_variants_by_pip` (in
+        # `src/bolinas/evals/labeling.py`, fully unit-tested in
+        # `tests/evals/test_labeling.py`). Notes:
+        #   - Labels come from `max(pip)` across the traits that
+        #     fine-mapped this variant. Intermediate `max(pip)`
+        #     (in `[low, high]`) is excluded by the cascade's
+        #     `otherwise(None)` + `filter(label.is_not_null())`. Don't
+        #     row-filter extreme PIPs before the helper — that would
+        #     mislabel `[low_pip, mid_pip]` variants as clean negatives.
+        #   - `use_null_pip_guard=True`: SuSiE/FINEMAP combine-step
+        #     disagreement (`|pip_susie - pip_finemap| > 0.05` in
+        #     `complex_traits_combine_methods`) sets pip to null. Any null
+        #     pip among the tested traits forbids the variant from being
+        #     a confident negative.
+        #   - A variant only has rows for the traits that fine-mapped
+        #     it. Negatives are NOT required to be tested in all 119
+        #     traits — typical fine-mapping outputs only cover
+        #     significant regions.
+        # Streaming: scan_parquet + sink_parquet so polars can chunk
+        # through the 119-trait concat + group_by without materializing
+        # all ~50 GB of per-trait fine-mapping data at once.
+        labeled = label_variants_by_pip(
             pl.concat(
                 [
                     pl.scan_parquet(path).with_columns(trait=pl.lit(trait))
                     for path, trait in zip(input, COMPLEX_TRAITS)
                 ]
-            )
-            .with_columns(
-                pl.when(pl.col("pip") > high)
-                .then(pl.col("trait"))
-                .otherwise(pl.lit(None))
-                .alias("trait")
-            )
-            .group_by(COORDINATES)
-            .agg(
+            ),
+            pip_pos_threshold=high,
+            pip_neg_threshold=low,
+            use_null_pip_guard=True,
+            extra_aggs=[
                 pl.col("rsid").first(),
-                pl.col("pip").max(),
-                any_null_pip.alias("any_null_pip"),
-                pl.col("trait").drop_nulls().unique(),
+                pl.col("trait").filter(pl.col("pip") > high).unique(),
+            ],
+        )
+        (
+            labeled.with_columns(
+                pl.col("trait").list.sort().list.join(",").alias("traits")
             )
-            .with_columns(pl.col("trait").list.sort().list.join(",").alias("traits"))
-            .with_columns(
-                pl.when(pl.col("pip") > high)
-                .then(pl.lit(True))
-                .when((pl.col("pip") < low) & ~pl.col("any_null_pip"))
-                .then(pl.lit(False))
-                .otherwise(pl.lit(None))
-                .alias("label")
-            )
-            .filter(pl.col("label").is_not_null())
-            .drop(["trait", "any_null_pip"])
+            .drop("trait")
             .sort(COORDINATES)
             .sink_parquet(output[0])
         )
@@ -138,9 +144,7 @@ rule complex_traits_annotate:
     output:
         "results/complex_traits/annotated.parquet",
     run:
-        ldscore = pl.read_parquet(
-            input[1], columns=COORDINATES + ["MAF", "ld_score"]
-        )
+        ldscore = pl.read_parquet(input[1], columns=COORDINATES + ["MAF", "ld_score"])
         genome = Genome(input.genome)
         V = (
             pl.read_parquet(input[0])
@@ -153,39 +157,31 @@ rule complex_traits_annotate:
             .pipe(check_ref_alt, genome)
             .sort(COORDINATES)
         )
-        # Per-chrom consequences attach via predicate pushdown (Polars 1.40's
-        # streaming left-join materializes the right side; pos.is_in() lets
-        # the parquet reader skip non-matching row groups instead).
-        results = []
-        for path, chrom in zip(input.consequences, CHROMS):
-            pos_chrom = V.filter(pl.col("chrom") == chrom)
-            if pos_chrom.height == 0:
-                continue
-            cons_subset = (
-                pl.scan_parquet(path)
-                .filter(pl.col("pos").is_in(pos_chrom["pos"].unique().to_list()))
-                .collect()
-            )
-            results.append(pos_chrom.join(cons_subset, on=COORDINATES, how="left"))
-        pl.concat(results).write_parquet(output[0])
+        attach_per_chrom_consequences(V, list(input.consequences), CHROMS).write_parquet(
+            output[0]
+        )
 
 
 rule complex_traits_dataset_all:
     input:
         "results/complex_traits/annotated.parquet",
-        "results/intervals/exon.parquet",
-        "results/intervals/tss.parquet",
+        "results/intervals/exon_pc.parquet",
+        "results/intervals/exon_nc.parquet",
+        "results/intervals/tss_pc.parquet",
+        "results/intervals/tss_nc.parquet",
     output:
         "results/complex_traits/dataset_all.parquet",
     run:
         build_dataset(
             pl.read_parquet(input[0]),
-            pl.read_parquet(input[1]),
-            pl.read_parquet(input[2]),
-            config["exclude_consequences"],
-            config["exon_proximal_dist"],
-            config["tss_proximal_dist"],
-            config["consequence_groups"],
+            exon_pc=pl.read_parquet(input[1]),
+            exon_nc=pl.read_parquet(input[2]),
+            tss_pc=pl.read_parquet(input[3]),
+            tss_nc=pl.read_parquet(input[4]),
+            exclude_consequences=config["exclude_consequences"],
+            exon_proximal_dist=config["exon_proximal_dist"],
+            tss_proximal_dist=config["tss_proximal_dist"],
+            consequence_groups=config["consequence_groups"],
         ).write_parquet(output[0])
 
 
@@ -195,39 +191,31 @@ rule complex_traits_dataset:
     output:
         "results/dataset_unsplit/complex_traits.parquet",
     run:
+        # Iter-33 locked design (issue #156). MAF scheme = `MAF_TIERED_V1`
+        # (per-subset global edges). NaN/null MAF dropped up-front because
+        # the upstream MAF binning needs finite values.
         V = (
-            # Matching design locked in issue #156 (iter 24): same splice
-            # pre-filter and subset-conditional tss/exon bins as mendelian
-            # (iter 22), plus an always-on right-closed MAF bin (log-spaced
-            # toward low MAF) that closes the heavy MAF leak the basic
-            # continuous-only matching had. ld_score is dropped from the
-            # matching call but kept on the output as a passthrough column.
             pl.read_parquet(input[0])
-            .filter(splice_prefilter())
-            .with_columns(
-                pl.when(pl.col("consequence_group") == "tss_proximal")
-                .then(bin_feature("tss_dist", TSS_DIST_BIN_EDGES))
-                .otherwise(pl.lit(BIN_NA))
-                .alias("tss_dist_bin"),
-                pl.when(pl.col("consequence_group") == "splicing")
-                .then(bin_feature("exon_dist", EXON_DIST_BIN_EDGES))
-                .otherwise(pl.lit(BIN_NA))
-                .alias("exon_dist_bin"),
-                bin_feature("MAF", MAF_BIN_EDGES, right_closed=True).alias("MAF_bin"),
-            )
+            .filter(pl.col("MAF").is_finite() & pl.col("MAF").is_not_null())
+            .pipe(add_subset_distance_bins)
         )
+        V = add_tiered_maf_bin(V, MAF_TIERED_V1)
         (
             match_features(
                 V.filter(pl.col("label")),
                 V.filter(~pl.col("label")),
-                ["tss_dist", "exon_dist", "MAF"],
                 [
-                    "chrom",
-                    "consequence_final",
-                    "tss_closest_gene_id",
-                    "exon_closest_gene_id",
-                    "tss_dist_bin",
-                    "exon_dist_bin",
+                    "distance_tss_pc",
+                    "distance_tss_nc",
+                    "distance_exon_pc",
+                    "distance_exon_nc",
+                    "MAF",
+                ],
+                CAT_BASE
+                + [
+                    "distance_tss_pc_bin",
+                    "distance_tss_nc_bin",
+                    "distance_exon_pc_bin",
                     "MAF_bin",
                 ],
                 k=1,

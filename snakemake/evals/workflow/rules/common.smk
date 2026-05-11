@@ -8,15 +8,20 @@ from cyvcf2 import VCF
 from datasets import Dataset
 from huggingface_hub import HfApi
 
+from bolinas.evals.labeling import label_variants_by_pip
 from bolinas.evals.materialize import materialize_sequences
 from bolinas.evals.matching import (
     BIN_NA,
+    CAT_BASE,
     EXON_DIST_BIN_EDGES,
     MAF_BIN_EDGES,
+    MAF_TIERED_LOG8_DISTAL_ONLY,
+    MAF_TIERED_V1,
     TSS_DIST_BIN_EDGES,
+    add_subset_distance_bins,
+    add_tiered_maf_bin,
     bin_feature,
     match_features,
-    splice_prefilter,
 )
 from bolinas.evals.trait_intervals import (
     add_exon,
@@ -28,6 +33,7 @@ from bolinas.evals.trait_intervals import (
 from bolinas.evals.variants import (
     COORDINATES,
     NUCLEOTIDES,
+    attach_per_chrom_consequences,
     check_ref_alt,
     filter_chroms,
     filter_snp,

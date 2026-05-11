@@ -1,0 +1,51 @@
+# SkyPilot task: run the conservation_eval pipeline on a CPU node.
+#
+# Pipeline pulls per-track bigWigs (cached in S3 from prior runs) and scores
+# variants from the HF eval datasets via single-base lookup. Train + test
+# splits both score; ~9 jobs total (3 datasets × 3 tracks per scoring rule
+# instance, then aggregation).
+#
+# Launch:
+#   sky launch snakemake/conservation_eval/sky/run.yaml -c conservation-eval
+
+name: conservation-eval
+
+resources:
+    infra: aws/us-east-2
+    cpus: 4+
+    memory: 16+
+    disk_size: 100
+    labels:
+        project: dna
+
+workdir: .
+
+setup: |
+    set -euxo pipefail
+
+    if ! command -v uv >/dev/null 2>&1; then
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+    fi
+    export PATH="$HOME/.local/bin:$PATH"
+
+    uv sync
+
+run: |
+    set -euxo pipefail
+    export PATH="$HOME/.local/bin:$PATH"
+
+    cd snakemake/conservation_eval
+
+    # Force-rerun scoring + aggregation so the new HF revisions of the eval
+    # datasets are actually picked up (load_dataset hits HF directly; no
+    # provenance fingerprint, so snakemake otherwise sees outputs as fresh).
+    #
+    # `--cores 1` because score_variants loads a ~10 GB bigWig per task; with
+    # the profile default of 4 parallel cores on a 16 GB box that ends up
+    # OOM'ing one of the parallel jobs.
+    uv run --project ../.. snakemake \
+        --profile workflow/profiles/default \
+        --cores 1 \
+        --printshellcmds \
+        --rerun-incomplete \
+        --forcerun score_variants

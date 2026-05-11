@@ -6,6 +6,7 @@ input_hf_prefix: bolinas-dna/evals
 datasets:
   - mendelian_traits
   - complex_traits
+  - eqtl
 
 # Splits to score independently. Each produces its own markdown table.
 splits:

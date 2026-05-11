@@ -26,6 +26,9 @@ resources:
 
 workdir: .
 
+envs:
+    SNAKEMAKE_ARGS: ""           # extra snakemake args (e.g. --forcerun compute_scores)
+
 file_mounts:
     # Application Default Credentials so `gcloud storage cp -r` can pull
     # private GCS objects from gs://marin-us-central1/...
@@ -70,7 +73,13 @@ run: |
 
     cd snakemake/analysis/evals_v2
 
+    # $SNAKEMAKE_ARGS goes last so it can include `-- target1 target2 ...`
+    # without breaking the parser (everything after `--` is positional, so
+    # if `--profile` etc. follow `$SNAKEMAKE_ARGS` they'd be treated as
+    # target paths and the rule lookup fails with
+    # `AttributeError: 'AnnotatedString' object has no attribute 'is_storage'`).
     uv run --project ../../.. snakemake \
         --profile workflow/profiles/default \
         --printshellcmds \
-        --rerun-incomplete
+        --rerun-incomplete \
+        $SNAKEMAKE_ARGS

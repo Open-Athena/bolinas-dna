@@ -19,48 +19,57 @@ MATCH_GROUP_COL = "match_group"
 BIN_OOR = "OOR"  # value outside any bin (or null) — emitted by `bin_feature`
 BIN_NA = "NA"  # subset-conditional bin not applicable for this row
 
-# Bin schemes locked in issue #156 (iter 22 mendelian, iter 24 complex).
-# https://github.com/Open-Athena/bolinas-dna/issues/156
+# Bin schemes locked in issue #156 — iter 33 final design covering all three
+# eval datasets (mendelian / complex / eqtl). https://github.com/Open-Athena/bolinas-dna/issues/156
 TSS_DIST_BIN_EDGES = [0, 50, 100, 200, 500, 1000]
 EXON_DIST_BIN_EDGES = [0, 5, 20, 30]
-MAF_BIN_EDGES = [
-    0.0,
-    0.0005,
-    0.001,
-    0.0015,
-    0.002,
-    0.0025,
-    0.003,
-    0.0035,
-    0.004,
-    0.005,
-    0.007,
-    0.01,
-    0.015,
-    0.02,
-    0.03,
-    0.05,
-    0.07,
-    0.1,
-    0.15,
-    0.2,
-    0.5,
+# Wider edges for `non_coding_transcript_exon_variant` × `distance_tss_nc`,
+# added in round-2 of #156 after the Catalogue source switch exposed a
+# residual leak (PA=0.401, p=1.2e-5). ncRNA-exon variants span a much
+# broader distance-to-TSS range than tss_proximal (the iter-33 design's
+# only consumer of `distance_tss_nc_bin`) — empirical pos quantiles run
+# from 9 bp (q=0.05) to ~8.7 kb (q=0.95). 4 bins (+ OOR for >5 kb).
+NCRNA_TSS_NC_DIST_BIN_EDGES = [0, 200, 1000, 5000]
+# Three MAF bin granularities used by the per-subset tiered scheme.
+MAF_BIN_EDGES_20 = [
+    0.0, 0.0005, 0.001, 0.0015, 0.002, 0.0025, 0.003, 0.0035, 0.004,
+    0.005, 0.007, 0.01, 0.015, 0.02, 0.03, 0.05, 0.07, 0.1, 0.15, 0.2, 0.5,
 ]
+MAF_BIN_EDGES_10 = [0.0, 0.0005, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.15, 0.2, 0.5]
+MAF_BIN_EDGES_5 = [0.0, 0.001, 0.01, 0.05, 0.2, 0.5]
+# Back-compat alias: existing tests / scratch scripts still import MAF_BIN_EDGES.
+MAF_BIN_EDGES = MAF_BIN_EDGES_20
 
+# Per-subset MAF bin schemes (iter 33 production).
+#
+# `LOG_LOCAL` is a sentinel that means "use a local equal-width log10(MAF) bin
+# computed per categorical match group (joint pos+neg ref) with `LOG_LOCAL_N`
+# buckets". Used for eqtl/distal where fixed global edges left a small but
+# Bonferroni-significant residual MAF leak (PA ≈ 0.532) and the per-group
+# adaptation closes it.
+LOG_LOCAL = "log_local"
+LOG_LOCAL_N = 8
 
-def splice_prefilter() -> pl.Expr:
-    """Filter mask for the iter22 splice pre-filter (issue #156).
-
-    Drops splicing variants with ``exon_dist`` beyond the splice window cap
-    (``EXON_DIST_BIN_EDGES[-1]``); their protein-coding-only ``exon_dist`` is
-    misleading at non-coding-transcript splice sites.
-
-    Use as ``V.filter(splice_prefilter())``.
-    """
-    return ~(
-        (pl.col("consequence_group") == "splicing")
-        & (pl.col("exon_dist") > EXON_DIST_BIN_EDGES[-1])
-    )
+MAF_TIERED_V1: dict[str, list[float] | str] = {
+    # Big subsets with strong leak in the no-bin baseline → fine 20bin.
+    "distal": MAF_BIN_EDGES_20,
+    "tss_proximal": MAF_BIN_EDGES_20,
+    "non_coding_transcript_exon_variant": MAF_BIN_EDGES_20,
+    # Medium subsets → 10bin.
+    "3_prime_UTR_variant": MAF_BIN_EDGES_10,
+    "5_prime_UTR_variant": MAF_BIN_EDGES_10,
+    "missense_variant": MAF_BIN_EDGES_10,
+    # Small subsets → 5bin to preserve pair count.
+    "synonymous_variant": MAF_BIN_EDGES_5,
+    "splicing": MAF_BIN_EDGES_5,
+    "mature_miRNA_variant": MAF_BIN_EDGES_5,
+    "stop_retained_variant": MAF_BIN_EDGES_5,
+    "coding_sequence_variant": MAF_BIN_EDGES_5,
+}
+MAF_TIERED_LOG8_DISTAL_ONLY: dict[str, list[float] | str] = {
+    **MAF_TIERED_V1,
+    "distal": LOG_LOCAL,
+}
 
 
 def bin_feature(
@@ -95,6 +104,169 @@ def bin_feature(
             )
         expr = pl.when(cond).then(pl.lit(f"b{i}")).otherwise(expr)
     return expr
+
+
+# Iter-33 categorical match-key shared by all three eval datasets. The
+# trailing per-subset / per-dataset bin columns (`distance_*_bin`, `MAF_bin`)
+# are appended by each *_dataset rule; this is the chrom + consequence_final +
+# closest-gene-id block they all share.
+CAT_BASE: list[str] = [
+    "chrom",
+    "consequence_final",
+    "tss_closest_pc_gene_id",
+    "tss_closest_nc_gene_id",
+    "exon_closest_pc_gene_id",
+    "exon_closest_nc_gene_id",
+]
+
+
+def add_subset_distance_bins(
+    df: pl.DataFrame,
+    *,
+    include_ncrna_tss_nc_bin: bool = False,
+) -> pl.DataFrame:
+    """Iter-33 per-biotype distance bins as exact-match categoricals.
+
+    - ``distance_tss_pc_bin`` and ``distance_tss_nc_bin``: meaningful only for
+      ``tss_proximal`` (else ``BIN_NA``); edges = ``TSS_DIST_BIN_EDGES``.
+    - ``distance_exon_pc_bin``: meaningful only for ``splicing`` (else
+      ``BIN_NA``); edges = ``EXON_DIST_BIN_EDGES``.
+
+    ``distance_exon_nc_bin`` is intentionally not added — splicing/exon_nc
+    was clean in the iter-33 baseline so there's no leak to fix and the
+    extra bin column would over-tighten splicing matching.
+
+    Args:
+        df: dataframe with ``consequence_group`` + distance columns.
+        include_ncrna_tss_nc_bin: round-2 opt-in for eqtl. When True,
+            also applies ``distance_tss_nc_bin`` to the
+            ``non_coding_transcript_exon_variant`` subset using
+            ``NCRNA_TSS_NC_DIST_BIN_EDGES`` (wider than ``TSS_DIST_BIN_EDGES``
+            because ncRNA-exon variants span a much broader
+            distance-to-nc-TSS range than tss_proximal). Off by default to
+            keep mendelian/complex iter-33 outputs byte-equivalent.
+    """
+    tss_nc_bin_expr = (
+        pl.when(pl.col("consequence_group") == "tss_proximal")
+        .then(bin_feature("distance_tss_nc", TSS_DIST_BIN_EDGES))
+    )
+    if include_ncrna_tss_nc_bin:
+        tss_nc_bin_expr = tss_nc_bin_expr.when(
+            pl.col("consequence_group") == "non_coding_transcript_exon_variant"
+        ).then(bin_feature("distance_tss_nc", NCRNA_TSS_NC_DIST_BIN_EDGES))
+    tss_nc_bin_expr = tss_nc_bin_expr.otherwise(pl.lit(BIN_NA)).alias(
+        "distance_tss_nc_bin"
+    )
+
+    return df.with_columns(
+        pl.when(pl.col("consequence_group") == "tss_proximal")
+        .then(bin_feature("distance_tss_pc", TSS_DIST_BIN_EDGES))
+        .otherwise(pl.lit(BIN_NA))
+        .alias("distance_tss_pc_bin"),
+        tss_nc_bin_expr,
+        pl.when(pl.col("consequence_group") == "splicing")
+        .then(bin_feature("distance_exon_pc", EXON_DIST_BIN_EDGES))
+        .otherwise(pl.lit(BIN_NA))
+        .alias("distance_exon_pc_bin"),
+    )
+
+
+def add_tiered_maf_bin(
+    df: pl.DataFrame,
+    scheme: dict[str, list[float] | str],
+    *,
+    log_local_group_cols: list[str] | None = None,
+) -> pl.DataFrame:
+    """Add a ``MAF_bin`` column whose edges depend on each row's
+    ``consequence_group``.
+
+    ``scheme[consequence_group]`` is either:
+      - ``list[float]`` — fixed right-closed bin edges (e.g. ``MAF_BIN_EDGES_20``).
+      - ``LOG_LOCAL`` sentinel — local equal-width log10(MAF) bins, ``LOG_LOCAL_N``
+        buckets, joint pos+neg reference within each group defined by
+        ``log_local_group_cols`` (typically the categorical match features).
+
+    Bin labels are prefixed with the subset name (``"missense:b3"``,
+    ``"distal:OOR"``, ``"ll:5"`` for log_local) so labels never collide across
+    subsets even though ``consequence_final`` already separates them at
+    ``match_features``' partitioning step. Rows whose consequence_group is not
+    in ``scheme`` get ``"UNKNOWN"`` (and won't match anything since no other
+    row will share that label within their consequence_final).
+
+    Args:
+        df: dataframe with at least ``MAF`` and ``consequence_group`` columns.
+        scheme: per-subset bin choice.
+        log_local_group_cols: required iff any scheme value is ``LOG_LOCAL``;
+            usually the 6-element ``CAT_BASE`` list (chrom, consequence_final,
+            and the four ``*_closest_*_gene_id`` columns).
+
+    Returns:
+        New dataframe with a ``MAF_bin`` column appended.
+    """
+    # Defensive: subset names get truncated to 8 chars in the bin label below
+    # to keep the column compact. If a future scheme adds two consequence
+    # groups whose first 8 chars collide (e.g. `non_coding_transcript_exon_*`
+    # variants), labels would silently merge across subsets — fail loudly
+    # instead. consequence_final is also in the categorical match key so
+    # cross-subset matching is impossible regardless, but the label-confusion
+    # would surface as a confusing diagnostic rather than wrong matches.
+    fixed_edge_subsets = [s for s, v in scheme.items() if v != LOG_LOCAL]
+    prefixes = {s[:8] for s in fixed_edge_subsets}
+    assert len(prefixes) == len(fixed_edge_subsets), (
+        f"first-8-char collision among scheme keys: {sorted(fixed_edge_subsets)}"
+    )
+
+    needs_log = any(v == LOG_LOCAL for v in scheme.values())
+    if needs_log:
+        if log_local_group_cols is None:
+            raise ValueError(
+                "log_local_group_cols required when scheme uses LOG_LOCAL"
+            )
+        log_maf = pl.col("MAF").clip(1e-10, 1.0).log10()
+        df = df.with_columns(
+            log_maf.min().over(log_local_group_cols).alias("_lo"),
+            log_maf.max().over(log_local_group_cols).alias("_hi"),
+        )
+        width = (pl.col("_hi") - pl.col("_lo")) / LOG_LOCAL_N
+        log_local_idx = (
+            ((log_maf - pl.col("_lo")) / width)
+            .floor()
+            .cast(pl.Int64, strict=False)
+            .fill_null(0)  # width=0 (constant-MAF group) → NaN → null → b0
+            .clip(0, LOG_LOCAL_N - 1)
+        )
+        # Emit `ll:OOR` for null / NaN MAF rows so they only match each other
+        # within their categorical group — matches `bin_feature`'s null
+        # handling (also OOR) so the two scheme types behave consistently.
+        # Without this, the strict_cast=False above produces a null index
+        # which then formats as `ll:null`, silently distinct from the OOR
+        # label other subsets emit for the same input.
+        log_local_label = (
+            pl.when(pl.col("MAF").is_null() | pl.col("MAF").is_nan())
+            .then(pl.lit("ll:OOR"))
+            .otherwise(pl.format("ll:{}", log_local_idx))
+        )
+
+    expr = pl.lit("UNKNOWN")
+    for subset, val in scheme.items():
+        if val == LOG_LOCAL:
+            bin_expr = log_local_label
+        else:
+            bin_expr = pl.format(
+                "{}:{}",
+                pl.lit(subset[:8]),
+                bin_feature("MAF", val, right_closed=True),
+            )
+        expr = (
+            pl.when(pl.col("consequence_group") == subset)
+            .then(bin_expr)
+            .otherwise(expr)
+        )
+
+    df = df.with_columns(expr.alias("MAF_bin"))
+    if needs_log:
+        df = df.drop(["_lo", "_hi"])
+    return df
 
 
 def match_features(
@@ -133,6 +305,22 @@ def match_features(
     all_features = continuous_features + categorical_features
     _validate_no_nulls(pos, all_features, "pos")
     _validate_no_nulls(neg, all_features, "neg")
+
+    # Pre-filter: drop neg rows whose categorical combo doesn't match any
+    # positive's. Behaviorally identical to the current loop (those negs would
+    # never enter `neg_groups[group_key]` for any positive's group_key), but
+    # cuts the next two steps' cost by ~50-100× on real eval datasets where
+    # most negatives sit far from any positive in (gene_id × MAF_bin × …)
+    # space. complex_traits goes from ~12M neg rows to ~100k after this join,
+    # which makes the to_pandas/partition_by stack run in seconds instead of
+    # minutes (and on a 16 GB box instead of needing 256 GB).
+    # `partition_by` (used below) and the semi-join both require at least one
+    # categorical key. Pre-iter-33 the function had the same limitation
+    # (partition_by raises on an empty key list); this assertion just makes
+    # the failure mode obvious instead of buried polars-internal.
+    assert categorical_features, "categorical_features must be non-empty"
+    pos_keys = pos.select(categorical_features).unique()
+    neg = neg.join(pos_keys, on=categorical_features, how="semi")
 
     pos_pd = pos.to_pandas()
     neg_pd = neg.to_pandas()
