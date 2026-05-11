@@ -52,8 +52,12 @@ run: |
 
     cd snakemake/alphagenome_eval
 
-    uv run --project ../.. snakemake $SNAKEMAKE_ARGS \
+    # $SNAKEMAKE_ARGS last so it can include `-- target1 target2 ...`
+    # without breaking the parser (anything after `--` is positional, so
+    # if `--profile` etc. follow it they get treated as target paths).
+    uv run --project ../.. snakemake \
         --profile workflow/profiles/default \
         --printshellcmds \
         --rerun-incomplete \
-        --restart-times 3
+        --restart-times 3 \
+        $SNAKEMAKE_ARGS
