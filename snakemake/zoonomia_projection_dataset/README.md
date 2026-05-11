@@ -270,7 +270,7 @@ uv run snakemake --profile workflow/profiles/default all_validation
 Each conservation-filtered anchor in `min{min_p}.bed.gz` is assigned **exactly one** of:
 
 ```
-cds  >  utr3  >  ncrna_exon  >  tss_region_and_utr5  >  cre  >  background
+cds  >  utr3  >  ncrna_exon  >  tss_region_and_utr5  >  ccre_non_promoter  >  background
 ```
 
 (priority shown highest → lowest; ties broken by this order). The label is the highest-priority region with any overlap, **provided** the window's union-of-functional fraction is ≥ `region_label_functional_threshold` (default 0.20); otherwise the label is `background`.
@@ -281,7 +281,7 @@ cds  >  utr3  >  ncrna_exon  >  tss_region_and_utr5  >  cre  >  background
 - **`utr3`** — Ensembl r115 3' UTR derived from `transcript_biotype "protein_coding"` exons (`get_ensembl_3_prime_utr`).
 - **`ncrna_exon`** — every annotated exon that is **not** a protein-coding exon, i.e. `get_exons(ann) − get_ensembl_protein_coding_exons(ann)`. No biotype / quality filter: includes lncRNA, miRNA, snoRNA, pseudogenes, retained_intron, NMD, etc.
 - **`tss_region_and_utr5`** — `(TSS ± region_label_tss_radius bp over every annotated transcript) ∪ get_ensembl_5_prime_utr(ann)`. The union with the 5' UTR catches the long-tail UTRs that extend beyond the TSS band. One class (not two) because promoter and 5' UTR overlap by construction. Radius default 256 bp — see issue #42 for the empirical justification.
-- **`cre`** — ENCODE cCRE V4 `cre_class != "PLS"` (so: dELS, pELS, CA, CA-CTCF, CA-TF, CA-H3K4me3, TF, …) padded by `region_label_cre_flank` bp (default 500). PLS is **not** in `cre` because PLS-overlapping windows near a TSS are caught by `tss_region_and_utr5`; PLS isolated from any annotated TSS becomes `background`.
+- **`ccre_non_promoter`** — ENCODE cCRE V4 `cre_class != "PLS"` (so: dELS, pELS, CA, CA-CTCF, CA-TF, CA-H3K4me3, TF, …) padded by `region_label_ccre_flank` bp (default 500). PLS is **not** in `ccre_non_promoter` because PLS-overlapping windows near a TSS are caught by `tss_region_and_utr5`; PLS isolated from any annotated TSS becomes `background`. The "cCRE source-first, qualifier-second" naming makes it clear we're using ENCODE's catalog (cCRE) minus the promoter-like subset.
 - **`background`** — none of the above clear enough (intronic or intergenic).
 
 ### Ensembl-only extractors
@@ -304,7 +304,7 @@ defined.bed (genome − N regions)                       ↓
 
 ### Outputs
 
-- `results/human/intervals/region_labels/min{min_p}.parquet` — one row per input anchor with `name, chrom, start, end, label, functional_frac, cds_frac, utr3_frac, ncrna_exon_frac, tss_region_and_utr5_frac, cre_frac, gene_body_frac, intron_frac, intergenic_frac`.
+- `results/human/intervals/region_labels/min{min_p}.parquet` — one row per input anchor with `name, chrom, start, end, label, functional_frac, cds_frac, utr3_frac, ncrna_exon_frac, tss_region_and_utr5_frac, ccre_non_promoter_frac, gene_body_frac, intron_frac, intergenic_frac`.
 - `results/human/intervals/region_labels/min{min_p}.composition.tsv` — per-label counts, fractions of total, plus an explicit `background_intronic` / `background_intergenic` split (≥ 50% gene-body coverage = intronic).
 - `results/projection/min{min_p}/subsets_def/v3_<label>.query_names.txt` — one anchor name per line, ready to plug into the existing `subset_dataset_derived` rule. HF subset Parquets + upload rules are intentionally deferred to a follow-up PR.
 

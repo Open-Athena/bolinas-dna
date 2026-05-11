@@ -2,12 +2,17 @@
 
 Labels every conservation-filtered human anchor (255 bp) with exactly one of:
 
-    cds  >  utr3  >  ncrna_exon  >  tss_region_and_utr5  >  cre  >  background
+    cds  >  utr3  >  ncrna_exon  >  tss_region_and_utr5  >  ccre_non_promoter  >  background
 
 (see ``REGION_LABELS`` for the functional five; ``BACKGROUND`` covers the
 rest). The label is the highest-priority region with any overlap, *provided*
 the union-of-functional fraction over the window is ≥ ``functional_threshold``;
 otherwise the window is ``background``.
+
+``ccre_non_promoter`` = every ENCODE cCRE V4 class **except** ``PLS``
+(so: dELS, pELS, CA, CA-CTCF, CA-TF, CA-H3K4me3, TF), extended by
+``ccre_flank`` bp on each side. PLS-overlapping windows near an annotated
+TSS are captured by ``tss_region_and_utr5`` instead.
 
 All extractors are Ensembl-flavored: ``transcript_biotype "protein_coding"``,
 ``"lncRNA"``, etc. RefSeq-flavored helpers in ``bolinas.data.utils``
@@ -44,7 +49,7 @@ REGION_LABELS: tuple[str, ...] = (
     "utr3",
     "ncrna_exon",
     "tss_region_and_utr5",
-    "cre",
+    "ccre_non_promoter",
 )
 BACKGROUND_LABEL = "background"
 
@@ -122,7 +127,7 @@ def build_region_beds(
     defined: GenomicSet,
     *,
     tss_radius: int,
-    cre_flank: int,
+    ccre_flank: int,
 ) -> dict[str, GenomicSet]:
     """Build the 5 functional region BEDs + 2 diagnostic sets.
 
@@ -137,13 +142,14 @@ def build_region_beds(
         defined: ``genome − N`` GenomicSet from ``windows.smk:undefined``.
         tss_radius: ± bp around every transcript's TSS for the
             ``tss_region_and_utr5`` class.
-        cre_flank: bp added on each side of every non-PLS cCRE.
+        ccre_flank: bp added on each side of every non-PLS cCRE before it
+            contributes to the ``ccre_non_promoter`` class.
 
     Returns:
         Dict with keys ``cds``, ``utr3``, ``ncrna_exon``,
-        ``tss_region_and_utr5``, ``cre`` (the five functional labels) plus
-        ``gene_body`` and ``all_exons`` (diagnostic, for
-        intron / intergenic decomposition).
+        ``tss_region_and_utr5``, ``ccre_non_promoter`` (the five
+        functional labels) plus ``gene_body`` and ``all_exons``
+        (diagnostic, for intron / intergenic decomposition).
     """
     ann = load_annotation(str(ann_path))
     _assert_ensembl_gtf(ann)
@@ -165,11 +171,13 @@ def build_region_beds(
     )
     tss_region_and_utr5 = tss_band | utr5
 
-    cre_df = pl.read_parquet(cre_parquet).filter(pl.col("cre_class") != "PLS")
-    assert len(cre_df) > 0, (
+    ccre_df = pl.read_parquet(cre_parquet).filter(pl.col("cre_class") != "PLS")
+    assert len(ccre_df) > 0, (
         f"no non-PLS cCREs in {cre_parquet} — wrong file or unexpected schema?"
     )
-    cre = GenomicSet(cre_df.select(["chrom", "start", "end"])).add_flank(cre_flank)
+    ccre_non_promoter = (
+        GenomicSet(ccre_df.select(["chrom", "start", "end"])).add_flank(ccre_flank)
+    )
 
     gene_body = get_ensembl_gene_body(ann)
 
@@ -178,7 +186,7 @@ def build_region_beds(
         "utr3": utr3 & defined,
         "ncrna_exon": ncrna_exon & defined,
         "tss_region_and_utr5": tss_region_and_utr5 & defined,
-        "cre": cre & defined,
+        "ccre_non_promoter": ccre_non_promoter & defined,
         "gene_body": gene_body & defined,
         "all_exons": all_exons & defined,
     }
@@ -246,8 +254,9 @@ def label_windows(
     Returns:
         Polars DataFrame with one row per input window and columns
         ``name, chrom, start, end, label, functional_frac, cds_frac,
-        utr3_frac, ncrna_exon_frac, tss_region_and_utr5_frac, cre_frac,
-        gene_body_frac, intron_frac, intergenic_frac``.
+        utr3_frac, ncrna_exon_frac, tss_region_and_utr5_frac,
+        ccre_non_promoter_frac, gene_body_frac, intron_frac,
+        intergenic_frac``.
     """
     assert 0.0 <= functional_threshold <= 1.0, functional_threshold
     assert set(priority) == set(REGION_LABELS), (

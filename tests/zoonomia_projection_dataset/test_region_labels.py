@@ -55,8 +55,8 @@ from bolinas.zoonomia_projection_dataset.region_labels import (
 #       TSS = 60500, band 60244–60756
 #
 # cCREs (chrom 1):
-#       PLS    950–1050         (near Gene A TSS — excluded from `cre`)
-#       PLS    50000–50200      (isolated — excluded from `cre`)
+#       PLS    950–1050         (near Gene A TSS — excluded from `ccre_non_promoter`)
+#       PLS    50000–50200      (isolated — excluded from `ccre_non_promoter`)
 #       dELS   4100–4300        (inside Gene A CDS exon2; flanked 3600–4800)
 #       dELS   30000–30500      (intergenic; flanked 29500–31000)
 
@@ -189,8 +189,8 @@ _WINDOWS: list[tuple[str, int, int]] = [
     ("w_cds60_utr40", 1198, 1453),
     ("w_cds10_intron90", 1474, 1729),
     ("w_cds25_intron75", 1436, 1691),
-    ("w_cre_in_cds", 4100, 4355),
-    ("w_cre_intergenic", 30000, 30255),
+    ("w_ccre_in_cds", 4100, 4355),
+    ("w_ccre_intergenic", 30000, 30255),
     ("w_utr3_antisense", 60244, 60499),
     ("w_pls_at_tss", 950, 1205),
     ("w_pls_isolated", 50000, 50255),
@@ -245,7 +245,7 @@ def _row(df: pl.DataFrame, name: str) -> dict:
 def test_priority_and_threshold_cases(synth):
     beds = build_region_beds(
         synth["gtf"], synth["cre"], synth["defined"],
-        tss_radius=256, cre_flank=500,
+        tss_radius=256, ccre_flank=500,
     )
     df = label_windows(
         synth["windows"], beds,
@@ -278,15 +278,15 @@ def test_priority_and_threshold_cases(synth):
     assert r["intron_frac"] == pytest.approx(191 / 255)
 
     # cCRE entirely inside a CDS exon — exon wins over CRE
-    r = _row(df, "w_cre_in_cds")
+    r = _row(df, "w_ccre_in_cds")
     assert r["label"] == "cds"
     assert r["cds_frac"] == pytest.approx(1.0)
-    assert r["cre_frac"] == pytest.approx(1.0)
+    assert r["ccre_non_promoter_frac"] == pytest.approx(1.0)
 
     # cCRE in intergenic — no exon overlap, no TSS => cre
-    r = _row(df, "w_cre_intergenic")
-    assert r["label"] == "cre"
-    assert r["cre_frac"] == pytest.approx(1.0)
+    r = _row(df, "w_ccre_intergenic")
+    assert r["label"] == "ccre_non_promoter"
+    assert r["ccre_non_promoter_frac"] == pytest.approx(1.0)
 
     # Antisense TSS-band + 3' UTR overlap, no CDS — utr3 beats tss_region
     r = _row(df, "w_utr3_antisense")
@@ -295,17 +295,17 @@ def test_priority_and_threshold_cases(synth):
     assert r["tss_region_and_utr5_frac"] == pytest.approx(1.0)
     assert r["cds_frac"] == pytest.approx(0.0)
 
-    # PLS sitting on a TSS — PLS excluded from cre, but TSS catches it
+    # PLS sitting on a TSS — PLS excluded from ccre_non_promoter, but TSS catches it
     r = _row(df, "w_pls_at_tss")
     assert r["label"] == "tss_region_and_utr5"
     assert r["tss_region_and_utr5_frac"] == pytest.approx(1.0)
-    assert r["cre_frac"] == pytest.approx(0.0)
+    assert r["ccre_non_promoter_frac"] == pytest.approx(0.0)
     assert r["cds_frac"] == pytest.approx(0.0)
 
     # PLS far from any TSS — nothing functional => background
     r = _row(df, "w_pls_isolated")
     assert r["label"] == BACKGROUND_LABEL
-    assert r["cre_frac"] == pytest.approx(0.0)
+    assert r["ccre_non_promoter_frac"] == pytest.approx(0.0)
     assert r["functional_frac"] == pytest.approx(0.0)
 
     # Pseudogene exon only — broad ncrna_exon picks it up
@@ -322,7 +322,7 @@ def test_priority_and_threshold_cases(synth):
 def test_partition_invariant(synth):
     beds = build_region_beds(
         synth["gtf"], synth["cre"], synth["defined"],
-        tss_radius=256, cre_flank=500,
+        tss_radius=256, ccre_flank=500,
     )
     df = label_windows(
         synth["windows"], beds,
@@ -340,7 +340,7 @@ def test_priority_permutation_changes_label_not_fracs(synth):
     fracs (and functional_frac) must be unchanged."""
     beds = build_region_beds(
         synth["gtf"], synth["cre"], synth["defined"],
-        tss_radius=256, cre_flank=500,
+        tss_radius=256, ccre_flank=500,
     )
     default = label_windows(
         synth["windows"], beds,
@@ -351,7 +351,7 @@ def test_priority_permutation_changes_label_not_fracs(synth):
         synth["windows"], beds,
         functional_threshold=0.20,
         priority=[
-            "tss_region_and_utr5", "cds", "utr3", "ncrna_exon", "cre",
+            "tss_region_and_utr5", "cds", "utr3", "ncrna_exon", "ccre_non_promoter",
         ],
     )
     # Frac columns unchanged
@@ -414,7 +414,7 @@ def test_multi_chrom_alignment(tmp_path):
     )
 
     beds = build_region_beds(
-        gtf_path, cre_path, defined, tss_radius=256, cre_flank=500,
+        gtf_path, cre_path, defined, tss_radius=256, ccre_flank=500,
     )
     df = label_windows(
         windows_bed, beds,
@@ -464,7 +464,7 @@ def test_refseq_gtf_rejected(tmp_path):
     )
     with pytest.raises(AssertionError, match="protein_coding"):
         build_region_beds(
-            refseq_path, cre_path, defined, tss_radius=256, cre_flank=500
+            refseq_path, cre_path, defined, tss_radius=256, ccre_flank=500
         )
 
 
@@ -472,7 +472,7 @@ def test_threshold_validates_range(synth):
     """functional_threshold must be in [0, 1]."""
     beds = build_region_beds(
         synth["gtf"], synth["cre"], synth["defined"],
-        tss_radius=256, cre_flank=500,
+        tss_radius=256, ccre_flank=500,
     )
     with pytest.raises(AssertionError):
         label_windows(
@@ -484,7 +484,7 @@ def test_threshold_validates_range(synth):
 def test_priority_must_be_permutation(synth):
     beds = build_region_beds(
         synth["gtf"], synth["cre"], synth["defined"],
-        tss_radius=256, cre_flank=500,
+        tss_radius=256, ccre_flank=500,
     )
     with pytest.raises(AssertionError, match="permutation"):
         label_windows(

@@ -1,7 +1,8 @@
 """Per-anchor region-type annotation.
 
 Labels every conservation-filtered human anchor (255 bp) with exactly one
-of ``cds``, ``utr3``, ``ncrna_exon``, ``tss_region_and_utr5``, ``cre``,
+of ``cds``, ``utr3``, ``ncrna_exon``, ``tss_region_and_utr5``,
+``ccre_non_promoter``,
 ``background``. Used to characterise the composition of the v1 training
 dataset and to emit per-label ``subsets_def/v3_*.query_names.txt`` lists
 that plug into the existing ``subset_dataset_derived`` machinery.
@@ -17,7 +18,7 @@ from bolinas.zoonomia_projection_dataset.region_labels import REGION_LABELS
 
 
 REGION_LABEL_TSS_RADIUS = int(config["region_label_tss_radius"])
-REGION_LABEL_CRE_FLANK = int(config["region_label_cre_flank"])
+REGION_LABEL_CCRE_FLANK = int(config["region_label_ccre_flank"])
 REGION_LABEL_FUNCTIONAL_THRESHOLD = float(
     config["region_label_functional_threshold"]
 )
@@ -50,7 +51,7 @@ rule build_region_labels:
         labels="results/human/intervals/region_labels/min{min_p}.parquet",
     params:
         tss_radius=REGION_LABEL_TSS_RADIUS,
-        cre_flank=REGION_LABEL_CRE_FLANK,
+        ccre_flank=REGION_LABEL_CCRE_FLANK,
         functional_threshold=REGION_LABEL_FUNCTIONAL_THRESHOLD,
         priority=REGION_LABEL_PRIORITY,
     resources:
@@ -70,7 +71,7 @@ rule build_region_labels:
             input.cre,
             defined,
             tss_radius=params.tss_radius,
-            cre_flank=params.cre_flank,
+            ccre_flank=params.ccre_flank,
         )
         df = label_windows(
             input.anchors,
