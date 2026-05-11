@@ -140,12 +140,25 @@ The current pipeline ships one derived subset:
 
 ## HuggingFace datasets
 
-Two HF datasets per (pipeline, intervals) combination:
+One HF dataset per (pipeline, intervals) combination. v1/v2 are the
+core cross-mammal training sets; v3_* is a per-region-label partition of
+v1 (six disjoint subsets summing to v1 at the anchor level).
 
-| HF repo                              | pipeline | intervals | source Parquet                                                  |
+| HF repo                                          | pipeline | intervals               | source Parquet                                                              |
 |---|---|---|---|
-| `bolinas-dna/zoonomia-v1-v1`         | v1       | v1        | `results/projection/min0.20/all_species_with_sequence.parquet`  |
-| `bolinas-dna/zoonomia-v1-v2`         | v1       | v2        | `results/projection/min0.20/subsets/v2.parquet`                 |
+| `bolinas-dna/zoonomia-v1-v1`                     | v1       | v1                      | `results/projection/min0.20/all_species_with_sequence.parquet`              |
+| `bolinas-dna/zoonomia-v1-v2`                     | v1       | v2                      | `results/projection/min0.20/subsets/v2.parquet`                             |
+| `bolinas-dna/zoonomia-v1-v3_cds`                 | v1       | v3_cds                  | `results/projection/min0.20/subsets/v3_cds.parquet`                         |
+| `bolinas-dna/zoonomia-v1-v3_utr3`                | v1       | v3_utr3                 | `results/projection/min0.20/subsets/v3_utr3.parquet`                        |
+| `bolinas-dna/zoonomia-v1-v3_ncrna_exon`          | v1       | v3_ncrna_exon           | `results/projection/min0.20/subsets/v3_ncrna_exon.parquet`                  |
+| `bolinas-dna/zoonomia-v1-v3_tss_region_and_utr5` | v1       | v3_tss_region_and_utr5  | `results/projection/min0.20/subsets/v3_tss_region_and_utr5.parquet`         |
+| `bolinas-dna/zoonomia-v1-v3_ccre_non_promoter`   | v1       | v3_ccre_non_promoter    | `results/projection/min0.20/subsets/v3_ccre_non_promoter.parquet`           |
+| `bolinas-dna/zoonomia-v1-v3_bg`                  | v1       | v3_bg                   | `results/projection/min0.20/subsets/v3_bg.parquet`                          |
+
+Each v3 repo ships with its own auto-generated dataset card (README.md,
+written by `bolinas.zoonomia_projection_dataset.region_labels.write_subset_hf_readme`);
+v1/v2 are card-less by design (semantics live in this pipeline README
+rather than per-repo).
 
 **Two-axis versioning.** `pipeline_version` (in `config/config.yaml`) snapshots species set, conservation cutoff (`project_min_p`), alignment backend, and resize/length-filter params — bump it and re-run the projection. `intervals_versions` lists the post-projection subset definitions; bumps are cheap (one new derivation rule + cheap re-runs of `subset_dataset_derived` + sharding + upload).
 
@@ -159,6 +172,7 @@ Two HF datasets per (pipeline, intervals) combination:
 **Intervals:**
 - `v1` — identity (every row of `all_species_with_sequence.parquet`)
 - `v2` — window overlaps `[TSS − 256, TSS + 256]` for any Ensembl protein_coding transcript (~5–15% of v1)
+- `v3_<label>` — per-anchor region-type partition of v1 (`cds` / `utr3` / `ncrna_exon` / `tss_region_and_utr5` / `ccre_non_promoter` / `bg`). Each anchor is assigned exactly one label by the priority-walk in `region_labels.smk`; the six v3 subsets sum to v1 at the anchor level. See the "Region-type annotation" section below for label definitions and the partition stats.
 
 **HF dataset schema** (single `train` split per repo; JSONL.zst-sharded at `data/train/shard_NNNN.jsonl.zst`):
 
@@ -306,7 +320,8 @@ defined.bed (genome − N regions)                       ↓
 
 - `results/human/intervals/region_labels/min{min_p}.parquet` — one row per input anchor with `name, chrom, start, end, label, functional_frac, cds_frac, utr3_frac, ncrna_exon_frac, tss_region_and_utr5_frac, ccre_non_promoter_frac, gene_body_frac, intron_frac, intergenic_frac`.
 - `results/human/intervals/region_labels/min{min_p}.composition.tsv` — per-label counts, fractions of total, plus an explicit `background_intronic` / `background_intergenic` split (≥ 50% gene-body coverage = intronic).
-- `results/projection/min{min_p}/subsets_def/v3_<label>.query_names.txt` — one anchor name per line, ready to plug into the existing `subset_dataset_derived` rule. HF subset Parquets + upload rules are intentionally deferred to a follow-up PR.
+- `results/projection/min{min_p}/subsets_def/v3_<label>.query_names.txt` — one anchor name per line. Plugged into the existing `subset_dataset_derived` rule to produce `results/projection/min{min_p}/subsets/v3_<label>.parquet`, which feeds the `prepare_training_shards → compress_shard → hf_upload_dataset` chain in `dataset.smk` (see the "HuggingFace datasets" section above for the six `bolinas-dna/zoonomia-v1-v3_<label>` repos).
+- `results/dataset/zoonomia-v1-v3_<label>/README.md` — per-subset HuggingFace dataset card (one per repo), generated by `bolinas.zoonomia_projection_dataset.region_labels.write_subset_hf_readme` and uploaded alongside the shards.
 
 ### Run
 
