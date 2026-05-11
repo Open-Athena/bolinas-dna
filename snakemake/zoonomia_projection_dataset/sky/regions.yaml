@@ -73,10 +73,11 @@ run: |
         --rerun-incomplete \
         all_region_labels
 
-    # Pull the composition TSV inline for quick eyeballing in `sky logs`.
+    # Pull the composition TSVs inline for quick eyeballing in `sky logs`.
+    # Snakemake prunes the local copy after S3 upload, so fetch from storage.
     echo
     echo "===== composition (min0.20) ====="
-    cat results/human/intervals/region_labels/min0.20.composition.tsv
+    aws s3 cp s3://oa-bolinas/snakemake/zoonomia_projection_dataset/results/human/intervals/region_labels/min0.20.composition.tsv -
     echo
     echo "===== composition (min0.10) ====="
-    cat results/human/intervals/region_labels/min0.10.composition.tsv
+    aws s3 cp s3://oa-bolinas/snakemake/zoonomia_projection_dataset/results/human/intervals/region_labels/min0.10.composition.tsv -
