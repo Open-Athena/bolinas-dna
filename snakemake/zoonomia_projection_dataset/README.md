@@ -265,6 +265,64 @@ uv run snakemake --profile workflow/profiles/default \
 uv run snakemake --profile workflow/profiles/default all_validation
 ```
 
+## Region-type annotation (`rule all_region_labels`)
+
+Each conservation-filtered anchor in `min{min_p}.bed.gz` is assigned **exactly one** of:
+
+```
+cds  >  utr3  >  ncrna_exon  >  tss_region_and_utr5  >  cre  >  background
+```
+
+(priority shown highest → lowest; ties broken by this order). The label is the highest-priority region with any overlap, **provided** the window's union-of-functional fraction is ≥ `region_label_functional_threshold` (default 0.20); otherwise the label is `background`.
+
+### Region definitions
+
+- **`cds`** — Ensembl r115 CDS (`get_cds`).
+- **`utr3`** — Ensembl r115 3' UTR derived from `transcript_biotype "protein_coding"` exons (`get_ensembl_3_prime_utr`).
+- **`ncrna_exon`** — every annotated exon that is **not** a protein-coding exon, i.e. `get_exons(ann) − get_ensembl_protein_coding_exons(ann)`. No biotype / quality filter: includes lncRNA, miRNA, snoRNA, pseudogenes, retained_intron, NMD, etc.
+- **`tss_region_and_utr5`** — `(TSS ± region_label_tss_radius bp over every annotated transcript) ∪ get_ensembl_5_prime_utr(ann)`. The union with the 5' UTR catches the long-tail UTRs that extend beyond the TSS band. One class (not two) because promoter and 5' UTR overlap by construction. Radius default 256 bp — see issue #42 for the empirical justification.
+- **`cre`** — ENCODE cCRE V4 `cre_class != "PLS"` (so: dELS, pELS, CA, CA-CTCF, CA-TF, CA-H3K4me3, TF, …) padded by `region_label_cre_flank` bp (default 500). PLS is **not** in `cre` because PLS-overlapping windows near a TSS are caught by `tss_region_and_utr5`; PLS isolated from any annotated TSS becomes `background`.
+- **`background`** — none of the above clear enough (intronic or intergenic).
+
+### Ensembl-only extractors
+
+All region extractors read **Ensembl** biotype vocabulary (`protein_coding`, `lncRNA`, `miRNA`, …). RefSeq-flavored helpers in `bolinas.data.utils` (`get_mrna_exons`, `get_5_prime_utr`, `get_3_prime_utr`, `get_ncrna_exons`, `get_promoters`) are **not** used and `build_region_beds` asserts the GTF carries `transcript_biotype "protein_coding"` to guard against silent vocabulary mismatch.
+
+### Pipeline
+
+```
+filtered/min{min_p}.bed.gz  (22.9M anchors after PR #152)
+GTF (Ensembl r115)
+cCRE V4 parquet (from validation.smk)        →  build_region_labels
+defined.bed (genome − N regions)                       ↓
+                                          region_labels/min{min_p}.parquet
+                                                       ↓
+                            region_label_composition       derive_subset_v3_region
+                                  ↓                                  ↓
+                         …composition.tsv          subsets_def/v3_<label>.query_names.txt
+```
+
+### Outputs
+
+- `results/human/intervals/region_labels/min{min_p}.parquet` — one row per input anchor with `name, chrom, start, end, label, functional_frac, cds_frac, utr3_frac, ncrna_exon_frac, tss_region_and_utr5_frac, cre_frac, gene_body_frac, intron_frac, intergenic_frac`.
+- `results/human/intervals/region_labels/min{min_p}.composition.tsv` — per-label counts, fractions of total, plus an explicit `background_intronic` / `background_intergenic` split (≥ 50% gene-body coverage = intronic).
+- `results/projection/min{min_p}/subsets_def/v3_<label>.query_names.txt` — one anchor name per line, ready to plug into the existing `subset_dataset_derived` rule. HF subset Parquets + upload rules are intentionally deferred to a follow-up PR.
+
+### Run
+
+```bash
+# Just the labels parquet (cheap if the GTF + cCRE are already on disk):
+uv run snakemake --profile workflow/profiles/default \
+    results/human/intervals/region_labels/min0.20.parquet
+
+# Everything (labels + composition TSV + per-label query_names lists):
+uv run snakemake --profile workflow/profiles/default all_region_labels
+```
+
+### Tuning
+
+Per-region fractions (`*_frac` columns) are emitted regardless of priority and threshold, so you can re-derive labels downstream by sweeping `region_label_functional_threshold` or `region_label_priority` without re-running the bedtools-style overlap pass.
+
 ## Run
 
 ```bash

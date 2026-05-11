@@ -1,0 +1,427 @@
+"""Tests for ``bolinas.zoonomia_projection_dataset.region_labels``.
+
+Builds a small synthetic Ensembl-flavored GTF + cCRE parquet covering every
+priority and threshold case from the plan, then asserts each 255 bp anchor
+gets the expected label and frac_* columns.
+"""
+
+from pathlib import Path
+
+import polars as pl
+import pytest
+
+from bolinas.data.intervals import GenomicSet
+from bolinas.zoonomia_projection_dataset.region_labels import (
+    BACKGROUND_LABEL,
+    REGION_LABELS,
+    build_region_beds,
+    label_windows,
+)
+
+# ============================================================================
+# Synthetic GTF / cCRE / windows
+# ============================================================================
+#
+# Chromosome "1" layout (0-based half-open everywhere):
+#
+#   Gene A — protein_coding, + strand
+#       exon1: 1000–1500   exon2: 4000–4600
+#       intron 1500–4000
+#       CDS  1300–1500 + 4000–4400
+#       =>  5' UTR 1000–1300, 3' UTR 4400–4600
+#       TSS = 1000, band 744–1256
+#
+#   Gene B — processed_pseudogene, + strand
+#       exon: 8000–8500     (no CDS; biotype != protein_coding)
+#       TSS = 8000, band 7744–8256
+#
+#   Gene C — lncRNA, + strand
+#       exon: 20000–20500
+#       TSS = 20000, band 19744–20256
+#
+#   Gene E — protein_coding, + strand, very long 5' UTR
+#       exon: 10000–12000
+#       CDS  11800–12000   =>  5' UTR 10000–11800 (1800 bp), no 3' UTR
+#       TSS = 10000, band 9744–10256
+#
+#   Gene D — protein_coding, - strand (isolated antisense gene)
+#       exon: 60000–60900
+#       CDS  60800–60900   =>  3' UTR 60000–60800, no 5' UTR
+#       TSS = 60900, band 60644–61156
+#
+#   Gene F — protein_coding, + strand (overlaps Gene D's 3' UTR)
+#       exon: 60500–60700
+#       CDS  60500–60700   =>  no UTR
+#       TSS = 60500, band 60244–60756
+#
+# cCREs (chrom 1):
+#       PLS    950–1050         (near Gene A TSS — excluded from `cre`)
+#       PLS    50000–50200      (isolated — excluded from `cre`)
+#       dELS   4100–4300        (inside Gene A CDS exon2; flanked 3600–4800)
+#       dELS   30000–30500      (intergenic; flanked 29500–31000)
+
+
+def _gtf_row(
+    chrom: str,
+    feature: str,
+    start_0based: int,
+    end_0based: int,
+    strand: str,
+    attrs: dict[str, str],
+) -> str:
+    """Build a single GTF row.
+
+    GTF uses 1-based inclusive starts; we accept 0-based half-open intervals
+    and convert to GTF (start+1; end unchanged numerically).
+    """
+    attr_str = " ".join(f'{k} "{v}";' for k, v in attrs.items())
+    return (
+        f"{chrom}\tsynth\t{feature}\t{start_0based + 1}\t{end_0based}\t"
+        f".\t{strand}\t.\t{attr_str}"
+    )
+
+
+def _ensembl_gtf_text() -> str:
+    rows: list[str] = []
+
+    def gene_block(
+        gene_id: str,
+        biotype: str,
+        strand: str,
+        start: int,
+        end: int,
+        exons: list[tuple[int, int]],
+        cds: list[tuple[int, int]] | None = None,
+    ) -> None:
+        tx_id = f"tx_{gene_id}"
+        gene_attrs = {"gene_id": gene_id, "gene_biotype": biotype}
+        tx_attrs = {
+            "gene_id": gene_id,
+            "transcript_id": tx_id,
+            "transcript_biotype": biotype,
+            "tag": "Ensembl_canonical",
+        }
+        rows.append(_gtf_row("1", "gene", start, end, strand, gene_attrs))
+        rows.append(_gtf_row("1", "transcript", start, end, strand, tx_attrs))
+        for ex_start, ex_end in exons:
+            rows.append(_gtf_row("1", "exon", ex_start, ex_end, strand, tx_attrs))
+        if cds is not None:
+            for cs_start, cs_end in cds:
+                rows.append(_gtf_row("1", "CDS", cs_start, cs_end, strand, tx_attrs))
+
+    # Gene A: PC, + strand, 2 exons + intron
+    gene_block(
+        "geneA",
+        "protein_coding",
+        "+",
+        start=1000,
+        end=4600,
+        exons=[(1000, 1500), (4000, 4600)],
+        cds=[(1300, 1500), (4000, 4400)],
+    )
+    # Gene B: pseudogene, + strand
+    gene_block(
+        "geneB",
+        "processed_pseudogene",
+        "+",
+        start=8000,
+        end=8500,
+        exons=[(8000, 8500)],
+        cds=None,
+    )
+    # Gene C: lncRNA, + strand
+    gene_block(
+        "geneC",
+        "lncRNA",
+        "+",
+        start=20000,
+        end=20500,
+        exons=[(20000, 20500)],
+        cds=None,
+    )
+    # Gene E: PC, + strand, long 5' UTR
+    gene_block(
+        "geneE",
+        "protein_coding",
+        "+",
+        start=10000,
+        end=12000,
+        exons=[(10000, 12000)],
+        cds=[(11800, 12000)],
+    )
+    # Gene D: PC, - strand
+    gene_block(
+        "geneD",
+        "protein_coding",
+        "-",
+        start=60000,
+        end=60900,
+        exons=[(60000, 60900)],
+        cds=[(60800, 60900)],
+    )
+    # Gene F: PC, + strand, CDS == exon (no UTR)
+    gene_block(
+        "geneF",
+        "protein_coding",
+        "+",
+        start=60500,
+        end=60700,
+        exons=[(60500, 60700)],
+        cds=[(60500, 60700)],
+    )
+    return "\n".join(rows) + "\n"
+
+
+def _write_synthetic_cre_parquet(path: Path) -> None:
+    pl.DataFrame(
+        {
+            "chrom": ["1", "1", "1", "1"],
+            "start": [950, 50000, 4100, 30000],
+            "end": [1050, 50200, 4300, 30500],
+            "cre_class": ["PLS", "PLS", "dELS", "dELS"],
+        }
+    ).write_parquet(path)
+
+
+# Window definitions: (name, start, end). All on chrom "1", 255 bp wide.
+_WINDOWS: list[tuple[str, int, int]] = [
+    ("w_cds100", 4050, 4305),
+    ("w_cds60_utr40", 1198, 1453),
+    ("w_cds10_intron90", 1474, 1729),
+    ("w_cds25_intron75", 1436, 1691),
+    ("w_cre_in_cds", 4100, 4355),
+    ("w_cre_intergenic", 30000, 30255),
+    ("w_utr3_antisense", 60244, 60499),
+    ("w_pls_at_tss", 950, 1205),
+    ("w_pls_isolated", 50000, 50255),
+    ("w_pseudogene", 8000, 8255),
+    ("w_long_utr5", 11000, 11255),
+]
+
+
+def _write_synthetic_windows_bed(path: Path) -> None:
+    with open(path, "w") as fh:
+        for name, start, end in _WINDOWS:
+            assert end - start == 255, f"{name} not 255 bp"
+            fh.write(f"1\t{start}\t{end}\t{name}\n")
+
+
+# ============================================================================
+# Pytest fixture
+# ============================================================================
+
+
+@pytest.fixture
+def synth(tmp_path):
+    gtf_path = tmp_path / "synth.gtf"
+    gtf_path.write_text(_ensembl_gtf_text())
+    cre_path = tmp_path / "cre.parquet"
+    _write_synthetic_cre_parquet(cre_path)
+    windows_path = tmp_path / "windows.bed"
+    _write_synthetic_windows_bed(windows_path)
+    # Whole-chrom defined region (no N gaps in the synthetic genome).
+    defined = GenomicSet(
+        pl.DataFrame({"chrom": ["1"], "start": [0], "end": [200_000]})
+    )
+    return {
+        "gtf": gtf_path,
+        "cre": cre_path,
+        "windows": windows_path,
+        "defined": defined,
+    }
+
+
+def _row(df: pl.DataFrame, name: str) -> dict:
+    matches = df.filter(pl.col("name") == name)
+    assert len(matches) == 1, f"window {name!r} not found in labels output"
+    return matches.row(0, named=True)
+
+
+# ============================================================================
+# Tests
+# ============================================================================
+
+
+def test_priority_and_threshold_cases(synth):
+    beds = build_region_beds(
+        synth["gtf"], synth["cre"], synth["defined"],
+        tss_radius=256, cre_flank=500,
+    )
+    df = label_windows(
+        synth["windows"], beds,
+        functional_threshold=0.20, priority=list(REGION_LABELS),
+    )
+
+    # Window 100% in CDS
+    r = _row(df, "w_cds100")
+    assert r["label"] == "cds"
+    assert r["cds_frac"] == pytest.approx(1.0)
+    assert r["functional_frac"] == pytest.approx(1.0)
+
+    # 60% CDS + 40% 5' UTR — CDS wins by priority
+    r = _row(df, "w_cds60_utr40")
+    assert r["label"] == "cds"
+    assert r["cds_frac"] == pytest.approx(153 / 255)
+    assert r["tss_region_and_utr5_frac"] == pytest.approx(102 / 255)
+
+    # 10% CDS + 90% intron — below threshold => background
+    r = _row(df, "w_cds10_intron90")
+    assert r["label"] == BACKGROUND_LABEL
+    assert r["cds_frac"] == pytest.approx(26 / 255)
+    assert r["functional_frac"] == pytest.approx(26 / 255)
+    assert r["intron_frac"] == pytest.approx(229 / 255)
+
+    # 25% CDS + 75% intron — above threshold => cds
+    r = _row(df, "w_cds25_intron75")
+    assert r["label"] == "cds"
+    assert r["cds_frac"] == pytest.approx(64 / 255)
+    assert r["intron_frac"] == pytest.approx(191 / 255)
+
+    # cCRE entirely inside a CDS exon — exon wins over CRE
+    r = _row(df, "w_cre_in_cds")
+    assert r["label"] == "cds"
+    assert r["cds_frac"] == pytest.approx(1.0)
+    assert r["cre_frac"] == pytest.approx(1.0)
+
+    # cCRE in intergenic — no exon overlap, no TSS => cre
+    r = _row(df, "w_cre_intergenic")
+    assert r["label"] == "cre"
+    assert r["cre_frac"] == pytest.approx(1.0)
+
+    # Antisense TSS-band + 3' UTR overlap, no CDS — utr3 beats tss_region
+    r = _row(df, "w_utr3_antisense")
+    assert r["label"] == "utr3"
+    assert r["utr3_frac"] == pytest.approx(1.0)
+    assert r["tss_region_and_utr5_frac"] == pytest.approx(1.0)
+    assert r["cds_frac"] == pytest.approx(0.0)
+
+    # PLS sitting on a TSS — PLS excluded from cre, but TSS catches it
+    r = _row(df, "w_pls_at_tss")
+    assert r["label"] == "tss_region_and_utr5"
+    assert r["tss_region_and_utr5_frac"] == pytest.approx(1.0)
+    assert r["cre_frac"] == pytest.approx(0.0)
+    assert r["cds_frac"] == pytest.approx(0.0)
+
+    # PLS far from any TSS — nothing functional => background
+    r = _row(df, "w_pls_isolated")
+    assert r["label"] == BACKGROUND_LABEL
+    assert r["cre_frac"] == pytest.approx(0.0)
+    assert r["functional_frac"] == pytest.approx(0.0)
+
+    # Pseudogene exon only — broad ncrna_exon picks it up
+    r = _row(df, "w_pseudogene")
+    assert r["label"] == "ncrna_exon"
+    assert r["ncrna_exon_frac"] == pytest.approx(1.0)
+
+    # Long 5' UTR > 256 bp from TSS — still tss_region_and_utr5 via UTR union
+    r = _row(df, "w_long_utr5")
+    assert r["label"] == "tss_region_and_utr5"
+    assert r["tss_region_and_utr5_frac"] == pytest.approx(1.0)
+
+
+def test_partition_invariant(synth):
+    beds = build_region_beds(
+        synth["gtf"], synth["cre"], synth["defined"],
+        tss_radius=256, cre_flank=500,
+    )
+    df = label_windows(
+        synth["windows"], beds,
+        functional_threshold=0.20, priority=list(REGION_LABELS),
+    )
+    valid_labels = set(REGION_LABELS) | {BACKGROUND_LABEL}
+    assert set(df["label"].unique().to_list()) <= valid_labels
+    # Every window gets exactly one label — counts sum to total.
+    counts = df.group_by("label").len()
+    assert counts["len"].sum() == len(df) == len(_WINDOWS)
+
+
+def test_priority_permutation_changes_label_not_fracs(synth):
+    """Shuffling `priority` re-routes ambiguous windows but per-region
+    fracs (and functional_frac) must be unchanged."""
+    beds = build_region_beds(
+        synth["gtf"], synth["cre"], synth["defined"],
+        tss_radius=256, cre_flank=500,
+    )
+    default = label_windows(
+        synth["windows"], beds,
+        functional_threshold=0.20, priority=list(REGION_LABELS),
+    )
+    # Promote tss_region_and_utr5 above cds.
+    alt = label_windows(
+        synth["windows"], beds,
+        functional_threshold=0.20,
+        priority=[
+            "tss_region_and_utr5", "cds", "utr3", "ncrna_exon", "cre",
+        ],
+    )
+    # Frac columns unchanged
+    frac_cols = [c for c in default.columns if c.endswith("_frac")]
+    for col in frac_cols:
+        assert default[col].to_list() == alt[col].to_list(), (
+            f"{col} should be invariant to priority order"
+        )
+    # CDS-only window: cds beats tss-with-zero-overlap regardless
+    assert _row(alt, "w_cds100")["label"] == "cds"
+    # 60% CDS + 40% UTR5: now tss_region_and_utr5 wins (it overlaps)
+    assert _row(alt, "w_cds60_utr40")["label"] == "tss_region_and_utr5"
+
+
+def test_refseq_gtf_rejected(tmp_path):
+    """Synthetic RefSeq-style GTF (transcript_biotype "mRNA") must crash."""
+    refseq_rows = [
+        _gtf_row(
+            "1", "gene", 1000, 2000, "+",
+            {"gene_id": "geneA", "gene_biotype": "mRNA"},
+        ),
+        _gtf_row(
+            "1", "transcript", 1000, 2000, "+",
+            {"gene_id": "geneA", "transcript_id": "txA", "transcript_biotype": "mRNA"},
+        ),
+        _gtf_row(
+            "1", "exon", 1000, 2000, "+",
+            {"gene_id": "geneA", "transcript_id": "txA", "transcript_biotype": "mRNA"},
+        ),
+        _gtf_row(
+            "1", "CDS", 1200, 1800, "+",
+            {"gene_id": "geneA", "transcript_id": "txA", "transcript_biotype": "mRNA"},
+        ),
+    ]
+    refseq_path = tmp_path / "refseq.gtf"
+    refseq_path.write_text("\n".join(refseq_rows) + "\n")
+    cre_path = tmp_path / "cre.parquet"
+    pl.DataFrame(
+        {"chrom": ["1"], "start": [3000], "end": [3500], "cre_class": ["dELS"]}
+    ).write_parquet(cre_path)
+    defined = GenomicSet(
+        pl.DataFrame({"chrom": ["1"], "start": [0], "end": [10_000]})
+    )
+    with pytest.raises(AssertionError, match="protein_coding"):
+        build_region_beds(
+            refseq_path, cre_path, defined, tss_radius=256, cre_flank=500
+        )
+
+
+def test_threshold_validates_range(synth):
+    """functional_threshold must be in [0, 1]."""
+    beds = build_region_beds(
+        synth["gtf"], synth["cre"], synth["defined"],
+        tss_radius=256, cre_flank=500,
+    )
+    with pytest.raises(AssertionError):
+        label_windows(
+            synth["windows"], beds,
+            functional_threshold=1.5, priority=list(REGION_LABELS),
+        )
+
+
+def test_priority_must_be_permutation(synth):
+    beds = build_region_beds(
+        synth["gtf"], synth["cre"], synth["defined"],
+        tss_radius=256, cre_flank=500,
+    )
+    with pytest.raises(AssertionError, match="permutation"):
+        label_windows(
+            synth["windows"], beds,
+            functional_threshold=0.20,
+            priority=["cds", "utr3", "ncrna_exon"],  # missing two
+        )
