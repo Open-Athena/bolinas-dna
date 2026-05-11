@@ -39,5 +39,6 @@ run: |
     --cores 4 \
     -p \
     --rerun-triggers=mtime \
+    --rerun-incomplete \
     --forcerun eqtl_parse_per_tissue \
     -- results/dataset_unsplit/eqtl.parquet
