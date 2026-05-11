@@ -32,22 +32,25 @@ single scores carry signal.
 
 ## How
 
-Two-stage caching: a GPU-bound feature-extraction step writes per-variant
-features (joint seq log-probs over the 4 candidate sequences + per-position
-embeddings for REF/ALT × {last, middle}) to one npz per (model, window,
-dataset). The scoring stage is pure pandas/numpy on the cache; adding a new
-scoring rule = re-run stage 2 only, no GPU needed.
+Single-stage GPU rule: 4-pass forward + on-the-fly scoring. For each batch we
+compute likelihood + embedding scores directly from the in-batch hidden states
+and discard them — caching the (N, T, D) fp16 embeddings would be tens of GB
+per (model, window, dataset) and bottleneck on S3 upload. Output is a small
+per-variant parquet with variant metadata + 30 score columns.
 
 ```
 results/
 ├── genome.fa.gz
 ├── checkpoints/{model}/                    # GCS pull
-├── cache/{model}__win{W}__{dataset}.npz   # GPU stage (Stage 1)
-├── scores/{model}__win{W}__{dataset}.parquet
-├── metrics/{model}__win{W}__{dataset}.parquet
-├── metrics_aggregated.parquet              # master table
+├── scores/{model}__win{W}__{dataset}.parquet     # GPU stage (Stage 1)
+├── metrics/{model}__win{W}__{dataset}.parquet    # CPU pairwise + p-values
+├── metrics_aggregated.parquet                    # master table
 └── metrics_aggregated.csv
 ```
+
+Adding a new scoring rule requires re-running stage 1 (GPU). The rank-based
+combinations slated for iteration 2 don't need new forward passes — they're
+computed from existing score columns.
 
 ## Running
 
@@ -69,14 +72,18 @@ sky down zeroshot-vep
 
 ## Where the code lives
 
-- `src/bolinas/zeroshot_vep/features.py` — 4-pass forward inference + cache writer.
-  Inlines biofoundation's `transform_llr_clm` + `_logits_to_logprobs` +
-  `HFCausalLMWithEmbeddings.forward` so the loop is a single straight-line
-  PyTorch function — no Trainer wrapper.
+- `src/bolinas/zeroshot_vep/features.py` — 4-pass forward inference + on-the-fly
+  scoring (`extract_features_and_score`). Inlines biofoundation's
+  `transform_llr_clm` + `_logits_to_logprobs` + `HFCausalLMWithEmbeddings.forward`
+  so the loop is a single straight-line PyTorch function — no Trainer wrapper.
 - `src/bolinas/zeroshot_vep/scores.py` — 30 scoring functions. Pure numpy.
-  Iterate here.
+  Iterate here when adding new rules.
 - `tests/zeroshot_vep/test_scores.py` — unit tests with hand-computed expected
   values for each score family.
+- `bolinas.evals.metrics.pairwise_accuracy` (reused) — now returns ``p_value``
+  alongside ``value`` / ``se``: closed-form two-sided sign-test
+  ``Binom(n_pairs - n_ties, 0.5)``. The macro-aggregation p-value is a one-sample
+  two-sided t-test against ``mean = 0.5`` over the per-subset values.
 
 ## Tracking
 

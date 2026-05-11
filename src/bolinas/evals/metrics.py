@@ -15,7 +15,7 @@ import math
 from typing import Callable
 
 import pandas as pd
-from scipy.stats import spearmanr
+from scipy.stats import binom, spearmanr
 from sklearn.metrics import average_precision_score, roc_auc_score
 
 
@@ -49,8 +49,12 @@ def pairwise_accuracy(
             within a group.
 
     Returns:
-        ``{"value", "se", "n_pairs", "n_ties"}``. ``se`` is the Wald binomial
-        form ``sqrt(value * (1 - value) / n_pairs)``.
+        ``{"value", "se", "n_pairs", "n_ties", "p_value"}``. ``se`` is the Wald
+        binomial form ``sqrt(value * (1 - value) / n_pairs)``. ``p_value`` is
+        the closed-form two-sided sign-test p-value under the null
+        ``P(pos > neg | not tied) = 0.5`` — i.e. ``Binom(n_pairs - n_ties, 0.5)``
+        is at least as extreme (in either direction) as the observed wins.
+        Returns 1.0 when ``n_pairs == n_ties`` (all ties → no information).
     """
     assert len(label) == len(score) == len(match_group), (
         f"length mismatch: label={len(label)} score={len(score)} "
@@ -85,7 +89,26 @@ def pairwise_accuracy(
     ties = int((diff == 0).sum())
     value = (wins + 0.5 * ties) / n
     se = math.sqrt(value * (1 - value) / n)
-    return {"value": float(value), "se": float(se), "n_pairs": int(n), "n_ties": ties}
+
+    # Two-sided sign-test p-value: ties drop out (each side gains 0.5 in
+    # expectation under H0 so they don't shift the test statistic), and
+    # ``wins`` over ``n_eff = n - ties`` non-tied pairs is Binom(n_eff, 0.5).
+    n_eff = n - ties
+    if n_eff == 0:
+        p_value = 1.0
+    else:
+        extreme = max(wins, n_eff - wins)
+        # P(X >= extreme) under Binom(n_eff, 0.5); two-sided by symmetry.
+        p_one_tail = float(binom.sf(extreme - 1, n_eff, 0.5))
+        p_value = min(2.0 * p_one_tail, 1.0)
+
+    return {
+        "value": float(value),
+        "se": float(se),
+        "n_pairs": int(n),
+        "n_ties": ties,
+        "p_value": float(p_value),
+    }
 
 
 def compute_pairwise_metrics(
@@ -109,7 +132,7 @@ def compute_pairwise_metrics(
 
     Returns:
         DataFrame with columns ``[score_type, subset, value, se, n_pairs,
-        n_ties]``. ``score_type`` is the column name from ``scores``.
+        n_ties, p_value]``. ``score_type`` is the column name from ``scores``.
     """
     for col in ("label", "subset", "match_group"):
         assert col in dataset.columns, f"dataset missing required column {col!r}"
@@ -146,6 +169,7 @@ def compute_pairwise_metrics(
                     "se": res["se"],
                     "n_pairs": res["n_pairs"],
                     "n_ties": res["n_ties"],
+                    "p_value": res["p_value"],
                 }
             )
     return pd.DataFrame(rows)

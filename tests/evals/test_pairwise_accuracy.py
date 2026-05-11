@@ -60,6 +60,48 @@ def test_pairwise_accuracy_pure_ties():
     assert res["se"] == pytest.approx(math.sqrt(0.5 * 0.5 / 3))
 
 
+def test_pairwise_accuracy_p_value_all_wins_is_small():
+    # 10 wins out of 10 — two-sided binomial test against Binom(10, 0.5)
+    # → p = 2 * P(X >= 10) = 2 * (1/1024) ≈ 0.00195.
+    label = [1, 0] * 10
+    score = [1.0, 0.0] * 10
+    mg = [i for i in range(10) for _ in range(2)]
+    res = pairwise_accuracy(*_frame(label, score, mg))
+    assert res["n_pairs"] == 10
+    assert res["n_ties"] == 0
+    assert res["p_value"] == pytest.approx(2 / 1024)
+
+
+def test_pairwise_accuracy_p_value_fifty_fifty_near_one():
+    # 5 wins / 5 losses → maximally null, p_value = 1.0.
+    label = [1, 0] * 10
+    score = ([1.0, 0.0] * 5) + ([0.0, 1.0] * 5)
+    mg = [i for i in range(10) for _ in range(2)]
+    res = pairwise_accuracy(*_frame(label, score, mg))
+    assert res["value"] == 0.5
+    assert res["p_value"] == pytest.approx(1.0)
+
+
+def test_pairwise_accuracy_p_value_drops_ties():
+    # 2 wins, 2 ties: effective n=2, both wins → p = 2 * (1/4) = 0.5.
+    label = [1, 0, 1, 0, 1, 0, 1, 0]
+    score = [1.0, 0.0, 1.0, 0.0, 0.5, 0.5, 0.5, 0.5]
+    mg = [0, 0, 1, 1, 2, 2, 3, 3]
+    res = pairwise_accuracy(*_frame(label, score, mg))
+    assert res["n_pairs"] == 4
+    assert res["n_ties"] == 2
+    assert res["p_value"] == pytest.approx(0.5)
+
+
+def test_pairwise_accuracy_p_value_all_ties_is_one():
+    label = [1, 0, 1, 0]
+    score = [0.5, 0.5, 0.5, 0.5]
+    mg = [0, 0, 1, 1]
+    res = pairwise_accuracy(*_frame(label, score, mg))
+    assert res["n_ties"] == 2
+    assert res["p_value"] == 1.0
+
+
 def test_pairwise_accuracy_mixed_wins_and_ties():
     # 4 pairs: 2 wins, 1 tie, 1 loss => value = (2 + 0.5*1) / 4 = 0.625
     label = [1, 0, 1, 0, 1, 0, 1, 0]
@@ -161,6 +203,7 @@ def test_compute_pairwise_metrics_per_subset():
         "se",
         "n_pairs",
         "n_ties",
+        "p_value",
     }
     assert len(metrics) == 2  # 2 subsets x 1 score_column
     by_subset = metrics.set_index("subset")["value"]

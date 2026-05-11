@@ -1,7 +1,7 @@
 """Zero-shot VEP scoring functions.
 
-Pure-numpy post-processing of the npz cache written by :mod:`features`. Inputs
-are pre-computed per-variant tensors; outputs are score columns suitable for
+Pure-numpy scoring functions called by :mod:`features` on each batch's
+in-memory forward-pass outputs. Outputs are score columns suitable for
 :func:`bolinas.evals.metrics.pairwise_accuracy`.
 
 Score sign convention follows the existing leaderboards (higher = more
@@ -24,8 +24,6 @@ row-wise with the input cache.
 """
 
 from __future__ import annotations
-
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -266,27 +264,3 @@ def all_scores(
     return df
 
 
-def score_cache(cache_dir: str | Path) -> pd.DataFrame:
-    """Load a cache directory (meta.npz + emb_*.npy) and compute all score columns.
-
-    Embeddings are read as ``mmap_mode='r'`` numpy arrays so scoring doesn't
-    have to materialize the whole tensor in RAM — pooling reductions stream.
-
-    The cache layout is produced by :func:`bolinas.zeroshot_vep.features.extract_features`:
-    a directory containing ``meta.npz`` (small per-variant arrays + scalars)
-    and ``emb_{ref,alt}_{last,middle}.npy`` (per-position embeddings, fp16).
-    """
-    # Avoid a top-of-file import to keep this module GPU-free.
-    from bolinas.zeroshot_vep.features import read_cache
-
-    cache = read_cache(cache_dir, mmap=True)
-    return all_scores(
-        seq_logprob=cache["seq_logprob"],
-        ref_idx=cache["ref_idx"],
-        alt_idx=cache["alt_idx"],
-        emb_ref_last=cache["emb_ref_last"],
-        emb_ref_middle=cache["emb_ref_middle"],
-        emb_alt_last=cache["emb_alt_last"],
-        emb_alt_middle=cache["emb_alt_middle"],
-        var_pos=int(cache["var_pos"]),
-    )

@@ -7,27 +7,50 @@ Three aggregation flavors per (model, window, dataset, score):
   (weights subsets by their pair counts).
 - ``global_macro``: single row, unweighted mean of per-subset accuracies. SE
   computed from per-subset accuracies as a between-subset standard error.
+
+p-values:
+- ``per_subset`` / ``global_pooled``: two-sided sign-test p-value, closed-form
+  from ``Binom(n_pairs - n_ties, 0.5)`` — supplied by ``pairwise_accuracy``.
+- ``global_macro``: one-sample two-sided t-test on the per-subset values
+  against ``H0: mean = 0.5`` (closed-form via ``scipy.stats.t``).
 """
 
 import math
+from scipy.stats import t as student_t
 
 
 def _macro_aggregate(per_subset: pd.DataFrame) -> dict:
-    """Mean of per-subset PairwiseAccuracies, with between-subset SEM.
+    """Mean of per-subset PairwiseAccuracies, with between-subset SEM + p-value.
 
     SEM = stdev(values) / sqrt(n_subsets). This is the SE of the mean across
     subsets (a different statistical object than per-subset binomial SE — it
     captures variability of the *score's behavior across subsets*, not within).
+
+    ``p_value`` is the closed-form two-sided one-sample t-test against the
+    null ``mean = 0.5`` with ``df = n_subsets - 1``.
     """
     vals = per_subset["value"].values
     n = len(vals)
     mean_val = float(vals.mean())
-    sem = float(vals.std(ddof=1) / math.sqrt(n)) if n > 1 else 0.0
+    if n > 1:
+        std = float(vals.std(ddof=1))
+        sem = std / math.sqrt(n)
+        if sem > 0:
+            t_stat = (mean_val - 0.5) / sem
+            # Two-sided p-value, df = n - 1
+            p_value = float(2 * student_t.sf(abs(t_stat), df=n - 1))
+        else:
+            # All per-subset values identical → degenerate t-test
+            p_value = 0.0 if mean_val != 0.5 else 1.0
+    else:
+        sem = 0.0
+        p_value = float("nan")
     return {
         "value": mean_val,
-        "se": sem,
+        "se": float(sem),
         "n_pairs": int(per_subset["n_pairs"].sum()),
         "n_ties": int(per_subset["n_ties"].sum()),
+        "p_value": p_value,
     }
 
 
