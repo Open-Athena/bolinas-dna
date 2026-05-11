@@ -110,9 +110,11 @@ rule dataset_hf_readme_v3:
 rule hf_upload_dataset:
     """Upload a dataset's compressed shard folder to HF Hub (single train split).
 
-    v3 subsets additionally include a generated ``README.md`` dataset card
-    in the upload folder (``hf upload-large-folder`` recurses, so it picks
-    up the card automatically). v1/v2 ship card-less by design.
+    v3 subsets additionally ship a per-repo ``README.md`` dataset card.
+    The card has to be uploaded with ``hf upload`` separately because
+    ``hf upload-large-folder`` silently skips top-level files outside the
+    ``data/`` subtree (confirmed empirically on the first v3 run).
+    v1/v2 ship card-less and just run the large-folder upload.
     """
     input:
         shards=local(
@@ -132,6 +134,7 @@ rule hf_upload_dataset:
     params:
         repo=lambda wc: f"{HF_OWNER}/zoonomia-{wc.pipeline_version}-{wc.intervals_version}",
         data_dir=lambda wc: f"results/dataset/zoonomia-{wc.pipeline_version}-{wc.intervals_version}",
+        has_readme=lambda wc: int(wc.intervals_version.startswith("v3_")),
     wildcard_constraints:
         pipeline_version=r"v\d+",
         intervals_version=r"v\d+(?:_\w+)?",
@@ -139,6 +142,9 @@ rule hf_upload_dataset:
     shell:
         """
         hf upload-large-folder {params.repo} --repo-type dataset {params.data_dir}
+        if [ "{params.has_readme}" = "1" ]; then
+            hf upload {params.repo} {input.readme} README.md --repo-type dataset
+        fi
         mkdir -p $(dirname {output})
         touch {output}
         """
