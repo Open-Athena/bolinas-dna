@@ -5,14 +5,15 @@ workdir: .
 resources:
   infra: aws/us-east-2
   cpus: 8+
-  # 128 GB safety margin for `eqtl_aggregate_tissues`. The streaming
-  # group_by on ~500M concat'd rows (49 × ~10M per tissue) OOM'd at 64 GB.
-  # The per-chrom chunking in the rule already bounds memory to ~5–10 GB
-  # per pass; the extra headroom is for polars' working memory.
-  memory: 128+
+  # 256 GB: per-tissue parses with eGene list aggregation use 20-40 GB
+  # peak each (the list-typed `positive_genes` / `positive_biotype_classes`
+  # aggregates don't stream cleanly — polars materializes most of the
+  # pre-agg DataFrame). 4 parallel × 40 GB peak = 160 GB; 128 GB cluster
+  # OOM'd. r6i.8xlarge with 256 GB gives comfortable headroom.
+  memory: 256+
   # 49 tissues × 3.5 GB nominal sumstats transit through tempdir
-  # (concurrent: 8 in flight ≈ 30 GB) + 5 GB per-tissue parquets cached
-  # locally before S3 upload. 300 GB gives comfortable slack.
+  # (concurrent: 4 in flight ≈ 14 GB) + 5 GB per-tissue parquets cached
+  # locally before S3 upload. 300 GB disk is plenty.
   disk_size: 300
   labels:
     project: dna
