@@ -492,3 +492,219 @@ def test_priority_must_be_permutation(synth):
             functional_threshold=0.20,
             priority=["cds", "utr3", "ncrna_exon"],  # missing two
         )
+
+
+# ============================================================================
+# write_subset_hf_readme tests
+# ============================================================================
+
+
+from bolinas.zoonomia_projection_dataset.region_labels import (  # noqa: E402
+    write_subset_hf_readme,
+)
+
+
+# Synthetic six-label composition TSV (counts chosen to be distinct so the
+# tests can hand-verify which row each subset's card pulls).
+_SUBSET_LABEL_COUNTS: dict[str, tuple[str, int]] = {
+    "v3_cds": ("cds", 402_393),
+    "v3_utr3": ("utr3", 54_828),
+    "v3_ncrna_exon": ("ncrna_exon", 93_064),
+    "v3_tss_region_and_utr5": ("tss_region_and_utr5", 40_823),
+    "v3_ccre_non_promoter": ("ccre_non_promoter", 468_131),
+    "v3_bg": ("background", 77_615),
+}
+
+
+def _write_synth_composition_tsv(path: Path) -> int:
+    """Mirror ``rule region_label_composition``'s output schema.
+
+    Returns the total anchor count, so callers can assert against
+    ``n_total`` in the rendered README.
+    """
+    labels = [lc[0] for lc in _SUBSET_LABEL_COUNTS.values()]
+    counts = [lc[1] for lc in _SUBSET_LABEL_COUNTS.values()]
+    n_total = sum(counts)
+    rows = []
+    for lbl, n in zip(labels, counts):
+        rows.append((lbl, n, None, None, None, None, n / n_total))
+    # The real rule also appends background_intronic / background_intergenic
+    # rows that split background; include them so the loader's "ignore the
+    # split rows" path is exercised.
+    bg_intronic = 54_141
+    bg_intergenic = 77_615 - 54_141
+    rows.append(
+        ("background_intronic", bg_intronic, None, None, None, None, bg_intronic / n_total)
+    )
+    rows.append(
+        (
+            "background_intergenic", bg_intergenic, None, None, None, None,
+            bg_intergenic / n_total,
+        )
+    )
+
+    df = pl.DataFrame(
+        rows,
+        schema=[
+            ("label", pl.Utf8),
+            ("n_windows", pl.Int64),
+            ("mean_functional_frac", pl.Float64),
+            ("mean_gene_body_frac", pl.Float64),
+            ("mean_intron_frac", pl.Float64),
+            ("mean_intergenic_frac", pl.Float64),
+            ("fraction_of_total", pl.Float64),
+        ],
+        orient="row",
+    )
+    df.write_csv(path, separator="\t")
+    return n_total
+
+
+@pytest.fixture
+def synth_composition(tmp_path: Path) -> tuple[Path, int]:
+    p = tmp_path / "min0.20.composition.tsv"
+    n_total = _write_synth_composition_tsv(p)
+    return p, n_total
+
+
+@pytest.mark.parametrize("subset", list(_SUBSET_LABEL_COUNTS))
+def test_write_subset_hf_readme_renders_per_subset_card(
+    subset: str, tmp_path: Path, synth_composition: tuple[Path, int]
+) -> None:
+    composition_tsv, n_total = synth_composition
+    out = tmp_path / f"{subset}.README.md"
+    label, count = _SUBSET_LABEL_COUNTS[subset]
+
+    # Total samples = anchors × per-anchor projection fanout × 2 (RC).
+    # Use a distinct number so the assertion uniquely matches.
+    n_samples = 12_345_678
+    write_subset_hf_readme(
+        subset,
+        out,
+        commit_sha="0123456789abcdef0123456789abcdef01234567",
+        hf_owner="bolinas-dna",
+        pipeline_version="v1",
+        ensembl_release=115,
+        functional_threshold=0.20,
+        tss_radius=256,
+        ccre_flank=500,
+        priority=[
+            "cds", "utr3", "ncrna_exon",
+            "tss_region_and_utr5", "ccre_non_promoter",
+        ],
+        composition_tsv=composition_tsv,
+        n_samples=n_samples,
+    )
+
+    body = out.read_text()
+    # Repo name + label
+    assert f"bolinas-dna/zoonomia-v1-{subset}" in body
+    assert f"`{label}`" in body
+    # Commit-pinned permalink (short SHA in heading, full SHA in URL)
+    assert "0123456789ab" in body
+    assert (
+        "https://github.com/Open-Athena/bolinas-dna/tree/"
+        "0123456789abcdef0123456789abcdef01234567/"
+        "snakemake/zoonomia_projection_dataset" in body
+    )
+    # Partition stats (anchor count for this subset + grand total + samples)
+    assert f"{count:,}" in body
+    assert f"{n_total:,}" in body
+    assert f"{n_samples:,}" in body
+    # Priority chain (background appended)
+    assert "`cds` > `utr3` > `ncrna_exon` > `tss_region_and_utr5` > `ccre_non_promoter` > `background`" in body
+    # YAML tags minimal (biology/genomics/DNA only — no extras).
+    front_matter, _, _ = body.partition("---\n\n")
+    assert front_matter.count("- ") == 3, (
+        f"expected exactly 3 YAML tags, got: {front_matter!r}"
+    )
+    # Sibling links: five other subsets (not the current one)
+    for other in _SUBSET_LABEL_COUNTS:
+        link = f"https://huggingface.co/datasets/bolinas-dna/zoonomia-v1-{other}"
+        if other == subset:
+            # Cross-link to v1 / v2 is allowed, but no self-link.
+            assert f"-v1-{subset}](https://huggingface.co/datasets/bolinas-dna/zoonomia-v1-{subset})" not in body.split("Five sibling v3 subsets")[1]
+        else:
+            assert link in body, f"missing sibling link for {other}"
+
+
+def test_write_subset_hf_readme_v3_specific_placeholders(
+    tmp_path: Path, synth_composition: tuple[Path, int]
+) -> None:
+    """v3_tss_region_and_utr5's blurb uses {tss_radius}; v3_ccre_non_promoter's
+    uses {ccre_flank}. Render both and assert the values appear.
+    """
+    composition_tsv, _ = synth_composition
+
+    out_tss = tmp_path / "tss.md"
+    write_subset_hf_readme(
+        "v3_tss_region_and_utr5", out_tss,
+        commit_sha="a" * 40, hf_owner="bolinas-dna", pipeline_version="v1",
+        ensembl_release=115, functional_threshold=0.20,
+        tss_radius=999, ccre_flank=500,
+        priority=["cds", "utr3", "ncrna_exon", "tss_region_and_utr5", "ccre_non_promoter"],
+        composition_tsv=composition_tsv,
+        n_samples=1,
+    )
+    assert "999 bp" in out_tss.read_text()
+
+    out_ccre = tmp_path / "ccre.md"
+    write_subset_hf_readme(
+        "v3_ccre_non_promoter", out_ccre,
+        commit_sha="a" * 40, hf_owner="bolinas-dna", pipeline_version="v1",
+        ensembl_release=115, functional_threshold=0.20,
+        tss_radius=256, ccre_flank=777,
+        priority=["cds", "utr3", "ncrna_exon", "tss_region_and_utr5", "ccre_non_promoter"],
+        composition_tsv=composition_tsv,
+        n_samples=1,
+    )
+    assert "777 bp" in out_ccre.read_text()
+
+
+def test_write_subset_hf_readme_rejects_unknown_subset(
+    tmp_path: Path, synth_composition: tuple[Path, int]
+) -> None:
+    composition_tsv, _ = synth_composition
+    with pytest.raises(ValueError, match="unknown subset"):
+        write_subset_hf_readme(
+            "v3_bogus",
+            tmp_path / "bogus.md",
+            commit_sha="a" * 40, hf_owner="bolinas-dna", pipeline_version="v1",
+            ensembl_release=115, functional_threshold=0.20,
+            tss_radius=256, ccre_flank=500,
+            priority=["cds", "utr3", "ncrna_exon", "tss_region_and_utr5", "ccre_non_promoter"],
+            composition_tsv=composition_tsv,
+            n_samples=1,
+        )
+
+
+def test_write_subset_hf_readme_requires_complete_composition(
+    tmp_path: Path,
+) -> None:
+    """Composition TSV missing a canonical label should fail loudly, not
+    silently drop the subset's anchor count from the rendered card.
+    """
+    incomplete = tmp_path / "incomplete.tsv"
+    pl.DataFrame(
+        {
+            "label": ["cds", "utr3"],
+            "n_windows": [100, 50],
+            "mean_functional_frac": [None, None],
+            "mean_gene_body_frac": [None, None],
+            "mean_intron_frac": [None, None],
+            "mean_intergenic_frac": [None, None],
+            "fraction_of_total": [0.67, 0.33],
+        }
+    ).write_csv(incomplete, separator="\t")
+
+    with pytest.raises(AssertionError, match="missing labels"):
+        write_subset_hf_readme(
+            "v3_cds",
+            tmp_path / "out.md",
+            commit_sha="a" * 40, hf_owner="bolinas-dna", pipeline_version="v1",
+            ensembl_release=115, functional_threshold=0.20,
+            tss_radius=256, ccre_flank=500,
+            priority=["cds", "utr3", "ncrna_exon", "tss_region_and_utr5", "ccre_non_promoter"],
+            composition_tsv=incomplete,
+            n_samples=1,
+        )

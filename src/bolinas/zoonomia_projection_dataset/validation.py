@@ -30,6 +30,10 @@ from bolinas.data.utils import (
     load_fasta,
 )
 from bolinas.projection.tss import get_ensembl_protein_coding_exons
+from bolinas.zoonomia_projection_dataset import (
+    _GITHUB_PIPELINE_PATH,
+    _GITHUB_REPO,
+)
 
 
 # ============================================================================
@@ -508,10 +512,6 @@ _RECIPE_BLURBS: dict[str, str] = {
         "disqualifies a base."
     ),
 }
-
-
-_GITHUB_PIPELINE_PATH = "snakemake/zoonomia_projection_dataset"
-_GITHUB_REPO = "Open-Athena/bolinas-dna"
 
 
 def write_hf_readme(

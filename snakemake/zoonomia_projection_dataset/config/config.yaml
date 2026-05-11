@@ -59,7 +59,12 @@ pipeline_version: "v1"
 # Intervals versions to push (one HF repo per entry).
 # v1 = identity (all post-projection windows)
 # v2 = mRNA-TSS proximity (window overlaps [TSS - tss_flank, TSS + tss_flank])
-intervals_versions: ["v1", "v2"]
+# v3_<label> = per-anchor region-type partition (see region_label_subsets);
+#              six disjoint subsets summing to v1 at the anchor level.
+intervals_versions:
+  ["v1", "v2",
+   "v3_cds", "v3_utr3", "v3_ncrna_exon",
+   "v3_tss_region_and_utr5", "v3_ccre_non_promoter", "v3_bg"]
 
 hf_owner: "bolinas-dna"
 
@@ -116,7 +121,8 @@ region_label_functional_threshold: 0.20   # ≥20% functional bases to escape ba
 region_label_priority:
   ["cds", "utr3", "ncrna_exon", "tss_region_and_utr5", "ccre_non_promoter"]
 # Per-region partition labels (one subset per label, plus background).
-# Emitted as subsets_def/<name>.query_names.txt — HF subset Parquets +
-# upload rules are intentionally deferred to a follow-up PR.
+# Emitted as subsets_def/<name>.query_names.txt; each subset is also pushed
+# to its own HF dataset (bolinas-dna/zoonomia-<pipeline_version>-<subset>)
+# via the dataset.smk shard + upload chain.
 region_label_subsets:
   ["v3_cds", "v3_utr3", "v3_ncrna_exon", "v3_tss_region_and_utr5", "v3_ccre_non_promoter", "v3_bg"]

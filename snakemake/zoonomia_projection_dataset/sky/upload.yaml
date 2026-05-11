@@ -15,6 +15,19 @@ workdir: .
 file_mounts:
     ~/.cache/huggingface: ~/.cache/huggingface
 
+# Forward the launcher's commit SHA so HF dataset cards get commit-pinned
+# permalinks. The cluster can't resolve ``git rev-parse HEAD`` itself when
+# the host is in a worktree (the synced ``.git`` is a *file* pointing at a
+# host path that doesn't exist on the cluster). Empty value below makes
+# SkyPilot inherit COMMIT_SHA from the launcher's environment, e.g.:
+#
+#     COMMIT_SHA=$(git rev-parse HEAD) sky launch -c <name> sky/upload.yaml
+#
+# If unset, common.smk falls back to "main" — links still resolve, just
+# not pinned.
+envs:
+    COMMIT_SHA:
+
 setup: |
     set -euxo pipefail
 
@@ -43,13 +56,52 @@ run: |
 
     cd snakemake/zoonomia_projection_dataset
 
+    # Target only the six v3 upload.done files. v1/v2 are already pushed
+    # and their upload.done markers in S3 satisfy `rule all_hf` separately;
+    # we don't need (or want) to walk that branch of the DAG here.
+    V3_TARGETS=$(uv run python -c "
+    import yaml
+    cfg = yaml.safe_load(open('config/config.yaml'))
+    for iv in cfg['intervals_versions']:
+        if iv.startswith('v3_'):
+            print(f'results/upload.done/zoonomia-{cfg[\"pipeline_version\"]}-{iv}')
+    ")
+
+    # `--allowed-rules` whitelists the v3 chain so Snakemake refuses to
+    # walk back into the cross-mammal projection (hal_to_fasta /
+    # project_one_species / extract_sequences / merge_sequences), whose
+    # intermediate `local()` FASTAs aren't mirrored to S3 and which would
+    # otherwise be re-scheduled despite their downstream outputs
+    # (`sequences/{species}.parquet`, `all_species_with_sequence.parquet`)
+    # already existing in S3 default-storage.
+    ALLOWED_RULES=(
+        subset_dataset_derived
+        prepare_training_shards
+        compress_shard
+        dataset_hf_readme_v3
+        hf_upload_dataset
+    )
+
+    # Pass commit SHA through to Snakemake if the launcher provided one
+    # (see envs: COMMIT_SHA above).
+    SNAKEMAKE_EXTRA=()
+    if [ -n "${COMMIT_SHA:-}" ]; then
+        SNAKEMAKE_EXTRA+=(--config "commit_sha=$COMMIT_SHA")
+    fi
+
     # Dry-run gate first — verify only HF-related rules are scheduled.
     uv run snakemake --profile workflow/profiles/default \
+        --allowed-rules "${ALLOWED_RULES[@]}" \
+        --rerun-triggers mtime \
         --printshellcmds \
-        -n all_hf
+        "${SNAKEMAKE_EXTRA[@]}" \
+        -n $V3_TARGETS
 
     # Real run.
     uv run snakemake --profile workflow/profiles/default \
+        --allowed-rules "${ALLOWED_RULES[@]}" \
+        --rerun-triggers mtime \
         --printshellcmds \
         --rerun-incomplete \
-        all_hf
+        "${SNAKEMAKE_EXTRA[@]}" \
+        $V3_TARGETS

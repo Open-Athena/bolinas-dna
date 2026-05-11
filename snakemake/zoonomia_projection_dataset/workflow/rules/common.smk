@@ -11,6 +11,7 @@ and the downstream cross-mammal projection is human-anchored too. No
 """
 
 import gzip
+import os
 import subprocess
 from pathlib import Path
 
@@ -24,10 +25,24 @@ from bolinas.evals.conservation import CONSERVATION_TRACKS
 def _git_commit_sha() -> str:
     """Return the current git commit SHA, or ``"main"`` if git is unavailable.
 
-    Used by ``validation.smk`` to embed a commit-pinned permalink in each
-    HuggingFace dataset card. Resolved once at Snakefile-load time so all six
-    per-recipe READMEs in a single run reference the same SHA.
+    Resolution order:
+      1. ``--config commit_sha=...`` override (or env var ``COMMIT_SHA``),
+         used by ``sky/upload.yaml`` to forward the launcher's SHA to the
+         cluster — needed because a synced git *worktree* has a ``.git``
+         file pointing at the host's main repo path, which doesn't exist
+         on the cluster, so ``git rev-parse HEAD`` would fail there.
+      2. ``git rev-parse HEAD`` from the workflow dir (works on the host
+         and on any cluster with a real ``.git`` directory synced in).
+      3. The literal string ``"main"`` (fallback so permalinks still
+         resolve, just to the head of main instead of a pinned commit).
+
+    Used by per-repo HF dataset cards (validation, region_labels) to
+    embed a commit-pinned permalink. Resolved once at Snakefile-load time
+    so all cards in a single run reference the same SHA.
     """
+    override = config.get("commit_sha") or os.environ.get("COMMIT_SHA")
+    if override and len(override) == 40:
+        return override
     try:
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
