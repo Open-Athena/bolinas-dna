@@ -67,10 +67,11 @@ rule compress_shard:
 rule dataset_hf_readme_v3:
     """Generate a per-subset HF dataset card for v3_<label> repos.
 
-    Lands at ``<data_dir>/README.md`` so the existing
-    ``hf upload-large-folder`` in ``hf_upload_dataset`` picks it up
-    alongside the JSONL.zst shards without any extra upload step. v1/v2
-    don't go through this rule (their HF repos remain card-less).
+    Output lands at ``<data_dir>/README.md`` and is uploaded by
+    ``hf_upload_dataset`` via a separate ``hf upload`` call (after the
+    shards), because ``hf upload-large-folder`` silently skips top-level
+    files outside ``data/``. v1/v2 don't go through this rule (their HF
+    repos remain card-less).
     """
     input:
         composition=f"results/human/intervals/region_labels/min{PROJECT_MIN_P}.composition.tsv",
