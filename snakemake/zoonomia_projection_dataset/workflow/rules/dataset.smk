@@ -75,6 +75,10 @@ rule dataset_hf_readme_v3:
     """
     input:
         composition=f"results/human/intervals/region_labels/min{PROJECT_MIN_P}.composition.tsv",
+        # Source parquet — used only to read its row count metadata
+        # (post-projection rows; doubled at sharding time by RC augmentation
+        # when add_rc=true). Cheap via Polars' parquet metadata path.
+        source=lambda wc: INTERVALS_SOURCES[wc.intervals_version],
     output:
         "results/dataset/zoonomia-{pipeline_version}-{intervals_version}/README.md",
     wildcard_constraints:
@@ -88,11 +92,14 @@ rule dataset_hf_readme_v3:
         tss_radius=int(config["region_label_tss_radius"]),
         ccre_flank=int(config["region_label_ccre_flank"]),
         priority=list(config["region_label_priority"]),
+        add_rc=ADD_RC,
     run:
         from bolinas.zoonomia_projection_dataset.region_labels import (
             write_subset_hf_readme,
         )
 
+        n_rows = pl.scan_parquet(input.source).select(pl.len()).collect().item()
+        n_samples = n_rows * (2 if params.add_rc else 1)
         write_subset_hf_readme(
             wildcards.intervals_version,
             output[0],
@@ -105,6 +112,7 @@ rule dataset_hf_readme_v3:
             ccre_flank=params.ccre_flank,
             priority=params.priority,
             composition_tsv=input.composition,
+            n_samples=n_samples,
         )
 
 

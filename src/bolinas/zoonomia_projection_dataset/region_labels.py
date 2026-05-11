@@ -444,6 +444,7 @@ def write_subset_hf_readme(
     ccre_flank: int,
     priority: list[str],
     composition_tsv: str | Path,
+    n_samples: int,
     github_repo: str = _GITHUB_REPO,
 ) -> None:
     """Write a per-subset HuggingFace dataset card (README.md) for v3 subsets.
@@ -514,11 +515,14 @@ The six v3 subsets partition the conservation-filtered human anchor set
 > {priority_str}
 
 This subset contains **{n_windows:,} of {n_total:,}** human anchors
-({fraction_of_total:.2%} of v1). Each anchor is projected to all 108
-Zoonomia mammals (where the cross-species alignment is clean), then
-RC-augmented and sharded — same shape as
+({fraction_of_total:.2%} of v1), expanding to **{n_samples:,} training
+samples** after halLiftover projection to up to 108 Zoonomia mammals
+and reverse-complement augmentation (same shape as
 [`{hf_owner}/zoonomia-{pipeline_version}-v1`](https://huggingface.co/datasets/{hf_owner}/zoonomia-{pipeline_version}-v1),
-just filtered to this region label.
+just filtered to this region label). The total is the exact row count
+across all 64 JSONL.zst shards — included explicitly because HF's
+automatic estimate (based on first-shard byte size) is unreliable for
+sharded datasets.
 
 Five sibling v3 subsets (one per region label):
 

@@ -575,6 +575,9 @@ def test_write_subset_hf_readme_renders_per_subset_card(
     out = tmp_path / f"{subset}.README.md"
     label, count = _SUBSET_LABEL_COUNTS[subset]
 
+    # Total samples = anchors × per-anchor projection fanout × 2 (RC).
+    # Use a distinct number so the assertion uniquely matches.
+    n_samples = 12_345_678
     write_subset_hf_readme(
         subset,
         out,
@@ -590,6 +593,7 @@ def test_write_subset_hf_readme_renders_per_subset_card(
             "tss_region_and_utr5", "ccre_non_promoter",
         ],
         composition_tsv=composition_tsv,
+        n_samples=n_samples,
     )
 
     body = out.read_text()
@@ -603,9 +607,10 @@ def test_write_subset_hf_readme_renders_per_subset_card(
         "0123456789abcdef0123456789abcdef01234567/"
         "snakemake/zoonomia_projection_dataset" in body
     )
-    # Partition stats (anchor count for this subset + grand total)
+    # Partition stats (anchor count for this subset + grand total + samples)
     assert f"{count:,}" in body
     assert f"{n_total:,}" in body
+    assert f"{n_samples:,}" in body
     # Priority chain (background appended)
     assert "`cds` > `utr3` > `ncrna_exon` > `tss_region_and_utr5` > `ccre_non_promoter` > `background`" in body
     # YAML tags minimal (biology/genomics/DNA only — no extras).
@@ -639,6 +644,7 @@ def test_write_subset_hf_readme_v3_specific_placeholders(
         tss_radius=999, ccre_flank=500,
         priority=["cds", "utr3", "ncrna_exon", "tss_region_and_utr5", "ccre_non_promoter"],
         composition_tsv=composition_tsv,
+        n_samples=1,
     )
     assert "999 bp" in out_tss.read_text()
 
@@ -650,6 +656,7 @@ def test_write_subset_hf_readme_v3_specific_placeholders(
         tss_radius=256, ccre_flank=777,
         priority=["cds", "utr3", "ncrna_exon", "tss_region_and_utr5", "ccre_non_promoter"],
         composition_tsv=composition_tsv,
+        n_samples=1,
     )
     assert "777 bp" in out_ccre.read_text()
 
@@ -667,6 +674,7 @@ def test_write_subset_hf_readme_rejects_unknown_subset(
             tss_radius=256, ccre_flank=500,
             priority=["cds", "utr3", "ncrna_exon", "tss_region_and_utr5", "ccre_non_promoter"],
             composition_tsv=composition_tsv,
+            n_samples=1,
         )
 
 
@@ -698,4 +706,5 @@ def test_write_subset_hf_readme_requires_complete_composition(
             tss_radius=256, ccre_flank=500,
             priority=["cds", "utr3", "ncrna_exon", "tss_region_and_utr5", "ccre_non_promoter"],
             composition_tsv=incomplete,
+            n_samples=1,
         )
