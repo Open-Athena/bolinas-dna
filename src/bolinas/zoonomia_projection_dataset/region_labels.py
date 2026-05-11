@@ -194,6 +194,13 @@ def _coverage_bp(windows: pd.DataFrame, region: pd.DataFrame) -> np.ndarray:
 
     Returns an array aligned to ``windows.index`` (caller must reset index
     before passing in). Empty ``region`` yields all zeros.
+
+    Caveat: ``bf.coverage`` resets its input DataFrame's index in place to
+    ``[0, 1, ...]`` (it sorts internally for the overlap join). We pass a
+    ``.copy()`` and capture ``sub.index`` *before* the call so each chrom
+    iteration writes coverage to the correct rows of ``out``. Without this,
+    the second-and-later chroms in the groupby loop silently corrupt
+    earlier chroms' values — the bug surfaces only on multi-chrom inputs.
     """
     assert windows.index.is_monotonic_increasing and windows.index[0] == 0, (
         "_coverage_bp requires reset_index() windows DataFrame"
@@ -206,8 +213,12 @@ def _coverage_bp(windows: pd.DataFrame, region: pd.DataFrame) -> np.ndarray:
         chrom_region = region_by_chrom.get(chrom)
         if chrom_region is None or len(chrom_region) == 0:
             continue
-        cov = bf.coverage(sub, chrom_region, return_input=False)["coverage"].to_numpy()
-        out[sub.index.to_numpy()] = cov
+        orig_idx = sub.index.to_numpy()  # Capture BEFORE bf.coverage mutates sub.index.
+        cov = (
+            bf.coverage(sub.copy(), chrom_region, return_input=False)["coverage"]
+            .to_numpy()
+        )
+        out[orig_idx] = cov
     return out
 
 

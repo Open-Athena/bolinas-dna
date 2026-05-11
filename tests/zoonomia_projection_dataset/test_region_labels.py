@@ -366,6 +366,73 @@ def test_priority_permutation_changes_label_not_fracs(synth):
     assert _row(alt, "w_cds60_utr40")["label"] == "tss_region_and_utr5"
 
 
+def test_multi_chrom_alignment(tmp_path):
+    """Regression: ``bf.coverage`` resets its input's index in place, so a
+    naive groupby-by-chrom labeler corrupts non-first-chrom alignments.
+    Build a 2-chrom Ensembl GTF and confirm chr-2 windows are labelled
+    correctly (not just chr-1).
+    """
+    # chr "1": one CDS at 1000–1500 (PC transcript).
+    # chr "2": one CDS at 8000–8500 (PC transcript).
+    rows: list[str] = []
+
+    def add_pc_gene(chrom: str, gene: str, start: int, end: int, cds: tuple[int, int]):
+        attrs_gene = {"gene_id": gene, "gene_biotype": "protein_coding"}
+        attrs_tx = {
+            "gene_id": gene,
+            "transcript_id": f"tx_{gene}",
+            "transcript_biotype": "protein_coding",
+            "tag": "Ensembl_canonical",
+        }
+        rows.append(_gtf_row(chrom, "gene", start, end, "+", attrs_gene))
+        rows.append(_gtf_row(chrom, "transcript", start, end, "+", attrs_tx))
+        rows.append(_gtf_row(chrom, "exon", start, end, "+", attrs_tx))
+        rows.append(_gtf_row(chrom, "CDS", cds[0], cds[1], "+", attrs_tx))
+
+    add_pc_gene("1", "geneA", 1000, 1500, cds=(1000, 1500))
+    add_pc_gene("2", "geneB", 8000, 8500, cds=(8000, 8500))
+    gtf_path = tmp_path / "two_chrom.gtf"
+    gtf_path.write_text("\n".join(rows) + "\n")
+
+    cre_path = tmp_path / "cre.parquet"
+    pl.DataFrame(
+        {"chrom": ["1"], "start": [50_000], "end": [50_500], "cre_class": ["dELS"]}
+    ).write_parquet(cre_path)
+
+    # Defined for both chroms.
+    defined = GenomicSet(
+        pl.DataFrame(
+            {"chrom": ["1", "2"], "start": [0, 0], "end": [100_000, 100_000]}
+        )
+    )
+
+    # Windows on BOTH chroms, each entirely in their chrom's CDS.
+    windows_bed = tmp_path / "windows.bed"
+    windows_bed.write_text(
+        "1\t1100\t1355\tw_chr1_cds\n"
+        "2\t8100\t8355\tw_chr2_cds\n"
+    )
+
+    beds = build_region_beds(
+        gtf_path, cre_path, defined, tss_radius=256, cre_flank=500,
+    )
+    df = label_windows(
+        windows_bed, beds,
+        functional_threshold=0.20, priority=list(REGION_LABELS),
+    )
+
+    # Both windows must be labelled `cds` with cds_frac == 1.0.
+    # Without the bf.coverage in-place mutation fix, the chr-2 window's
+    # coverage gets misaligned (written to the chr-1 row's position in `out`),
+    # and chr-2 is labelled `background` while chr-1 gets the wrong frac.
+    chr1 = _row(df, "w_chr1_cds")
+    chr2 = _row(df, "w_chr2_cds")
+    assert chr1["label"] == "cds", f"chr1 label={chr1['label']!r}"
+    assert chr1["cds_frac"] == pytest.approx(1.0), chr1
+    assert chr2["label"] == "cds", f"chr2 label={chr2['label']!r}"
+    assert chr2["cds_frac"] == pytest.approx(1.0), chr2
+
+
 def test_refseq_gtf_rejected(tmp_path):
     """Synthetic RefSeq-style GTF (transcript_biotype "mRNA") must crash."""
     refseq_rows = [
