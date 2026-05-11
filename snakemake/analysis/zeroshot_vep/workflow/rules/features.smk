@@ -20,7 +20,10 @@ rule extract_features:
         genome="results/genome.fa.gz",
         checkpoint="results/checkpoints/{model}",
     output:
-        "results/cache/{model}__win{window}__{dataset}.npz",
+        # Directory output: contains meta.npz + emb_{ref,alt}_{last,middle}.npy.
+        # Per-position embeddings are written as memory-mapped .npy so we
+        # never hold the (N, T, D) fp16 tensor in RAM during extraction.
+        directory("results/cache/{model}__win{window}__{dataset}"),
     wildcard_constraints:
         model="|".join(MODELS),
         dataset="|".join(DATASETS),
@@ -35,7 +38,7 @@ rule extract_features:
         gpu=1,
     run:
         import torch
-        from bolinas.zeroshot_vep.features import extract_features, write_cache
+        from bolinas.zeroshot_vep.features import extract_features
 
         # Load dataset, train split only (per project convention).
         ds = load_dataset(params.hf_path, split=config["split"]).to_pandas()
@@ -45,16 +48,16 @@ rule extract_features:
         dtype_map = {"bfloat16": torch.bfloat16, "float16": torch.float16, "float32": torch.float32}
         torch_dtype = dtype_map[params.dtype]
 
-        cache = extract_features(
+        extract_features(
             checkpoint_path=input.checkpoint,
             dataset=ds,
             genome_path=input.genome,
             window_size=int(wildcards.window),
+            cache_dir=output[0],
             batch_size=int(params.batch_size),
             dtype=torch_dtype,
             store_pos_logprob=bool(params.store_pos_logprob),
         )
-        write_cache(output[0], cache)
 
         print(
             f"[zeroshot_vep/features] {wildcards.model} win={wildcards.window} "

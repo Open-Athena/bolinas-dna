@@ -136,15 +136,23 @@ def extract_features(
     dataset: pd.DataFrame,
     genome_path: str | Path,
     window_size: int,
+    cache_dir: str | Path,
     batch_size: int = 16,
     device: str | None = None,
     dtype: torch.dtype = torch.bfloat16,
     store_pos_logprob: bool = True,
-) -> dict[str, np.ndarray]:
-    """Run 4-pass inference over a dataset of variants and return a cache dict.
+) -> None:
+    """Run 4-pass inference over a dataset of variants and stream features to disk.
 
     Each variant contributes 4 forward-pass rows; per-batch input tensor shape
     is ``(4 * batch_size, T)`` where ``T = window_size + n_prefix``.
+
+    The 4 per-position embedding tensors dominate memory (e.g. mendelian
+    win=512 → 4 × 9820 × 512 × 1024 × 2 B ≈ 41 GB), so we write them to
+    memory-mapped ``.npy`` files in ``cache_dir`` as we go — never holding the
+    full tensor in RAM. The small per-variant scalars (seq_logprob,
+    pos_logprob, ref/alt indices) are aggregated and written as ``meta.npz``
+    at the end.
 
     Args:
         checkpoint_path: HuggingFace checkpoint directory (must contain config,
@@ -154,6 +162,7 @@ def extract_features(
         genome_path: FASTA reference (loaded via :class:`biofoundation.data.Genome`).
         window_size: DNA window length around the variant. Token length is
             ``window_size + n_prefix`` where ``n_prefix`` is 1 for BOS tokenizers.
+        cache_dir: Directory to write the cache to. Created if missing.
         batch_size: Number of *variants* per batch (sequence batch will be 4×).
         device: ``"cuda"`` / ``"cpu"``. Defaults to cuda if available.
         dtype: Model compute dtype. ``torch.bfloat16`` matches the evals_v2
@@ -161,16 +170,11 @@ def extract_features(
         store_pos_logprob: Also save per-position log-probs to the cache.
             Cheap (~MB) and useful for future per-position scoring experiments.
 
-    Returns:
-        Cache dict with keys (all numpy arrays):
-            ``seq_logprob`` (N, 4) fp32 — joint seq log-prob per candidate
-            ``ref_idx``, ``alt_idx`` (N,) int8 — index in {0,1,2,3}
-            ``emb_ref_last``, ``emb_ref_middle`` (N, T, D) fp16
-            ``emb_alt_last``, ``emb_alt_middle`` (N, T, D) fp16
-            ``var_pos`` (scalar int) — token-index of variant center
-            ``window_size``, ``n_prefix``, ``n_suffix`` (scalar int)
-            ``row_idx`` (N,) int32 — index into source dataset
-            ``pos_logprob`` (N, 4, T-1) fp32 — only if store_pos_logprob
+    Files written to ``cache_dir``::
+
+        meta.npz                                       small arrays + scalars
+        emb_ref_last.npy / emb_ref_middle.npy /
+        emb_alt_last.npy / emb_alt_middle.npy          (N, T, D) fp16 memmapped
     """
     checkpoint_path = Path(checkpoint_path)
     genome_path = Path(genome_path)
@@ -242,18 +246,33 @@ def extract_features(
     )
 
     N = len(dataset)
-    cache: dict[str, np.ndarray] = {
+
+    # Small in-RAM arrays — these fit easily even for largest configs.
+    meta: dict[str, np.ndarray] = {
         "seq_logprob": np.empty((N, 4), dtype=np.float32),
         "ref_idx": np.empty(N, dtype=np.int8),
         "alt_idx": np.empty(N, dtype=np.int8),
-        "emb_ref_last": np.empty((N, T_tok, D), dtype=np.float16),
-        "emb_ref_middle": np.empty((N, T_tok, D), dtype=np.float16),
-        "emb_alt_last": np.empty((N, T_tok, D), dtype=np.float16),
-        "emb_alt_middle": np.empty((N, T_tok, D), dtype=np.float16),
         "row_idx": np.empty(N, dtype=np.int32),
     }
     if store_pos_logprob:
-        cache["pos_logprob"] = np.empty((N, 4, T_tok - 1), dtype=np.float32)
+        meta["pos_logprob"] = np.empty((N, 4, T_tok - 1), dtype=np.float32)
+
+    # Big per-position embeddings: write to memory-mapped .npy on disk.
+    # ``np.lib.format.open_memmap`` creates the file with the right header and
+    # returns a memmap'd ndarray we can write slices to without OS allocating
+    # the full thing in RAM.
+    cache_dir = Path(cache_dir)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    emb_keys = ("emb_ref_last", "emb_ref_middle", "emb_alt_last", "emb_alt_middle")
+    emb_mmaps: dict[str, np.ndarray] = {
+        k: np.lib.format.open_memmap(
+            cache_dir / f"{k}.npy",
+            mode="w+",
+            dtype=np.float16,
+            shape=(N, T_tok, D),
+        )
+        for k in emb_keys
+    }
 
     b_arange = torch.arange(batch_size, device=device)  # capped below per-batch
 
@@ -297,45 +316,64 @@ def extract_features(
         middle_hidden_b = out.hidden_states[middle_idx].reshape(B, 4, T_tok, D)
         del out
 
-        cache["seq_logprob"][batch_start:batch_end] = seq_logp_b.cpu().numpy()
+        meta["seq_logprob"][batch_start:batch_end] = seq_logp_b.cpu().numpy()
         if store_pos_logprob:
-            cache["pos_logprob"][batch_start:batch_end] = pos_logp_b.cpu().numpy()
-        cache["ref_idx"][batch_start:batch_end] = ref_idx_np
-        cache["alt_idx"][batch_start:batch_end] = alt_idx_np
+            meta["pos_logprob"][batch_start:batch_end] = pos_logp_b.cpu().numpy()
+        meta["ref_idx"][batch_start:batch_end] = ref_idx_np
+        meta["alt_idx"][batch_start:batch_end] = alt_idx_np
 
         ref_idx_dev = torch.as_tensor(ref_idx_np, device=device, dtype=torch.long)
         alt_idx_dev = torch.as_tensor(alt_idx_np, device=device, dtype=torch.long)
         b_dev = b_arange[:B]
-        emb_ref_last = last_hidden_b[b_dev, ref_idx_dev]      # (B, T, D)
-        emb_alt_last = last_hidden_b[b_dev, alt_idx_dev]
-        emb_ref_mid = middle_hidden_b[b_dev, ref_idx_dev]
-        emb_alt_mid = middle_hidden_b[b_dev, alt_idx_dev]
-        cache["emb_ref_last"][batch_start:batch_end]   = emb_ref_last.to(torch.float16).cpu().numpy()
-        cache["emb_alt_last"][batch_start:batch_end]   = emb_alt_last.to(torch.float16).cpu().numpy()
-        cache["emb_ref_middle"][batch_start:batch_end] = emb_ref_mid.to(torch.float16).cpu().numpy()
-        cache["emb_alt_middle"][batch_start:batch_end] = emb_alt_mid.to(torch.float16).cpu().numpy()
-        cache["row_idx"][batch_start:batch_end] = np.arange(batch_start, batch_end, dtype=np.int32)
+        emb_mmaps["emb_ref_last"][batch_start:batch_end] = (
+            last_hidden_b[b_dev, ref_idx_dev].to(torch.float16).cpu().numpy()
+        )
+        emb_mmaps["emb_alt_last"][batch_start:batch_end] = (
+            last_hidden_b[b_dev, alt_idx_dev].to(torch.float16).cpu().numpy()
+        )
+        emb_mmaps["emb_ref_middle"][batch_start:batch_end] = (
+            middle_hidden_b[b_dev, ref_idx_dev].to(torch.float16).cpu().numpy()
+        )
+        emb_mmaps["emb_alt_middle"][batch_start:batch_end] = (
+            middle_hidden_b[b_dev, alt_idx_dev].to(torch.float16).cpu().numpy()
+        )
+        meta["row_idx"][batch_start:batch_end] = np.arange(batch_start, batch_end, dtype=np.int32)
 
         if batch_start % (batch_size * 50) == 0:
             print(f"[features]   {batch_end}/{N} variants", flush=True)
 
-    cache["var_pos"] = np.asarray(int(tok_var_pos), dtype=np.int32)
-    cache["n_prefix"] = np.asarray(int(n_prefix), dtype=np.int32)
-    cache["n_suffix"] = np.asarray(int(n_suffix), dtype=np.int32)
-    cache["window_size"] = np.asarray(int(window_size), dtype=np.int32)
+    # Flush memmaps to disk + close their file handles by deleting refs.
+    for k in emb_keys:
+        emb_mmaps[k].flush()
+    del emb_mmaps
 
-    assert not np.isnan(cache["seq_logprob"]).any(), "NaN in seq_logprob — investigate"
-    return cache
+    meta["var_pos"] = np.asarray(int(tok_var_pos), dtype=np.int32)
+    meta["n_prefix"] = np.asarray(int(n_prefix), dtype=np.int32)
+    meta["n_suffix"] = np.asarray(int(n_suffix), dtype=np.int32)
+    meta["window_size"] = np.asarray(int(window_size), dtype=np.int32)
+
+    assert not np.isnan(meta["seq_logprob"]).any(), "NaN in seq_logprob — investigate"
+
+    # Write small arrays as a single npz inside the cache dir.
+    np.savez_compressed(cache_dir / "meta.npz", **meta)
 
 
-def write_cache(path: str | Path, cache: dict[str, np.ndarray]) -> None:
-    """Save cache to ``path`` via ``np.savez_compressed``."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(path, **cache)
+def read_cache(cache_dir: str | Path, mmap: bool = True) -> dict[str, np.ndarray]:
+    """Load a cache directory written by :func:`extract_features`.
 
+    Args:
+        cache_dir: Directory containing ``meta.npz`` + ``emb_*.npy``.
+        mmap: If True (default), embeddings are returned as memory-mapped
+            ndarrays — no full read into RAM. Saves memory for scoring.
 
-def read_cache(path: str | Path) -> dict[str, np.ndarray]:
-    """Load all arrays from an npz cache into a dict (materializes into RAM)."""
-    with np.load(path) as f:
-        return {k: f[k] for k in f.files}
+    Returns:
+        Dict with the same keys as the legacy npz format.
+    """
+    cache_dir = Path(cache_dir)
+    out: dict[str, np.ndarray] = {}
+    with np.load(cache_dir / "meta.npz") as f:
+        for k in f.files:
+            out[k] = f[k]
+    for k in ("emb_ref_last", "emb_ref_middle", "emb_alt_last", "emb_alt_middle"):
+        out[k] = np.load(cache_dir / f"{k}.npy", mmap_mode="r" if mmap else None)
+    return out

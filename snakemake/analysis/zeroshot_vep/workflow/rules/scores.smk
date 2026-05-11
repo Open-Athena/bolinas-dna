@@ -7,7 +7,7 @@ re-run this stage (and stages 3 / 4), not the GPU extract_features stage.
 
 rule compute_scores:
     input:
-        cache="results/cache/{model}__win{window}__{dataset}.npz",
+        cache=directory("results/cache/{model}__win{window}__{dataset}"),
     output:
         "results/scores/{model}__win{window}__{dataset}.parquet",
     wildcard_constraints:

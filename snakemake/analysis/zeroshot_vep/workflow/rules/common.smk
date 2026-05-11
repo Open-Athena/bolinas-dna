@@ -7,7 +7,7 @@ import pandas as pd
 from datasets import load_dataset
 
 from bolinas.evals.metrics import pairwise_accuracy
-from bolinas.zeroshot_vep.features import extract_features, read_cache, write_cache
+from bolinas.zeroshot_vep.features import extract_features, read_cache
 from bolinas.zeroshot_vep.scores import SCORE_NAMES, score_cache
 
 
@@ -53,7 +53,7 @@ MODEL_WINDOW_DATASET_TRIPLES: list[tuple[str, int, str]] = [
 
 def all_cache_paths() -> list[str]:
     return [
-        f"results/cache/{model}__win{w}__{dataset}.npz"
+        f"results/cache/{model}__win{w}__{dataset}"
         for model, w, dataset in MODEL_WINDOW_DATASET_TRIPLES
     ]
 

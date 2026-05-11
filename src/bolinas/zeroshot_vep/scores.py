@@ -266,22 +266,27 @@ def all_scores(
     return df
 
 
-def score_cache(cache_path: str | Path) -> pd.DataFrame:
-    """Load an npz cache and compute all score columns.
+def score_cache(cache_dir: str | Path) -> pd.DataFrame:
+    """Load a cache directory (meta.npz + emb_*.npy) and compute all score columns.
 
-    The npz is expected to contain the keys written by :func:`features.write_cache`:
-    ``seq_logprob``, ``ref_idx``, ``alt_idx``, ``emb_ref_last``,
-    ``emb_ref_middle``, ``emb_alt_last``, ``emb_alt_middle``, ``var_pos``
-    (scalar int).
+    Embeddings are read as ``mmap_mode='r'`` numpy arrays so scoring doesn't
+    have to materialize the whole tensor in RAM — pooling reductions stream.
+
+    The cache layout is produced by :func:`bolinas.zeroshot_vep.features.extract_features`:
+    a directory containing ``meta.npz`` (small per-variant arrays + scalars)
+    and ``emb_{ref,alt}_{last,middle}.npy`` (per-position embeddings, fp16).
     """
-    with np.load(cache_path) as f:
-        return all_scores(
-            seq_logprob=f["seq_logprob"],
-            ref_idx=f["ref_idx"],
-            alt_idx=f["alt_idx"],
-            emb_ref_last=f["emb_ref_last"],
-            emb_ref_middle=f["emb_ref_middle"],
-            emb_alt_last=f["emb_alt_last"],
-            emb_alt_middle=f["emb_alt_middle"],
-            var_pos=int(f["var_pos"]),
-        )
+    # Avoid a top-of-file import to keep this module GPU-free.
+    from bolinas.zeroshot_vep.features import read_cache
+
+    cache = read_cache(cache_dir, mmap=True)
+    return all_scores(
+        seq_logprob=cache["seq_logprob"],
+        ref_idx=cache["ref_idx"],
+        alt_idx=cache["alt_idx"],
+        emb_ref_last=cache["emb_ref_last"],
+        emb_ref_middle=cache["emb_ref_middle"],
+        emb_alt_last=cache["emb_alt_last"],
+        emb_alt_middle=cache["emb_alt_middle"],
+        var_pos=int(cache["var_pos"]),
+    )
