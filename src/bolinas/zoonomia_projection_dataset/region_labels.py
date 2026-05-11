@@ -38,6 +38,10 @@ from bolinas.data.utils import (
     load_annotation,
 )
 from bolinas.projection.tss import get_ensembl_protein_coding_exons
+from bolinas.zoonomia_projection_dataset import (
+    _GITHUB_PIPELINE_PATH,
+    _GITHUB_REPO,
+)
 from bolinas.zoonomia_projection_dataset.validation import (
     get_ensembl_3_prime_utr,
     get_ensembl_5_prime_utr,
@@ -401,10 +405,6 @@ _SUBSET_BLURBS: dict[str, str] = {
         "annotation (UCEs, unannotated regulatory elements)."
     ),
 }
-
-
-_GITHUB_PIPELINE_PATH = "snakemake/zoonomia_projection_dataset"
-_GITHUB_REPO = "Open-Athena/bolinas-dna"
 
 
 def _read_composition(
