@@ -34,7 +34,7 @@ def _install_task_manager_patch() -> None:
     @wraps(original_init)
     def patched_init(self, *args, include_path=None, **kwargs):
         if include_path is None:
-            merged: list[str] = [bolinas_dna_path]
+            merged = [bolinas_dna_path]
         elif isinstance(include_path, str):
             merged = [include_path, bolinas_dna_path]
         else:

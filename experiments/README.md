@@ -10,8 +10,8 @@ to wire together one or more `ExecutorStep`s (tokenize → train → eval).
 uv sync --extra marin --extra tpu
 ```
 
-The `marin` and `aws-cli` groups are mutually exclusive (see the top-level
-README).
+The `marin` extra and `aws-cli` group are mutually exclusive (see the
+top-level README).
 
 ## Launch
 

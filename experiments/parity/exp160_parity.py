@@ -3,32 +3,35 @@
 
 """Parity-check rerun of exp160 against its existing WandB baseline.
 
-Validates the bolinas-dna marin-consumer infrastructure end-to-end (issue #168)
-by re-running ~1000 steps of exp160's ``zoonomia_v1`` arm and comparing against
-the reference run on dna-dev:
+Validates the bolinas-dna marin-consumer infrastructure end-to-end (issue
+#168). Mirrors exp160's two-arm sweep (``zoonomia_v1`` / ``zoonomia_v2``);
+``SWEEP_DATASETS`` selects a subset for a partial run. Reference WandB runs
+on dna-dev are in group ``exp160-zoonomia-v1-v2-v0.1`` with names
+``dna-bolinas-zoonomia-v1-v2-{VERSION}-{strategy}``.
 
-- WandB group: ``exp160-zoonomia-v1-v2-v0.1``
-- Reference run name: ``dna-bolinas-zoonomia-v1-v2-v0.1-zoonomia_v1``
+The validation strategy is **content-hash equivalence**, not numerical
+re-comparison: if the marin executor's content-hash for our ``TrainLmConfig``
+matches exp160's reference run's hash, the executor adopts the cached output
+as-is. That's a stronger check than re-training would be — any scientific
+divergence (different ``lowercase_weight``, model dim, LR schedule shape,
+DNA format params, eval task spec, ...) would change the hash and force a
+re-train. Phase B in PR #170 confirmed equivalence on the v2 arm
+(``--region us-east5``); the v1 arm uses the same config layout.
 
-This is a one-time validation script, not a maintained experiment. The
-scientific content (model, hparams, data, eval setup) MUST stay identical to
-exp160; only imports are rewired to use bolinas-dna's modules. Specifically,
-``NUM_TRAIN_STEPS`` stays at 10_000 so the LR schedule (warmup=0.1 → step 1000,
-decay=0.2) produces the same hparams as the reference; the run is killed
-manually shortly after the step-1000 eval lands.
-
+The scientific content (model, hparams, data, eval setup) MUST stay
+identical to exp160; only imports are rewired to use bolinas-dna's modules.
 Source of truth (do not change scientific content here without changing it
-upstream too): ``marin-community/marin@dna-dev:experiments/dna/exp160_zoonomia_v1_v2.py``.
+upstream too):
+``marin-community/marin@dna-dev:experiments/dna/exp160_zoonomia_v1_v2.py``.
 
-Caveats to flag during the comparison:
-- RNG seed: verify the reference exp160 pinned a deterministic seed; if not,
-  step-by-step train-loss will drift between runs but eval numbers should
-  still be close.
-- Tokenization cache: aim to hit ``bolinas-zoonomia-v1-zoonomia_v1-char-bos``
-  so training inputs match the reference run exactly.
+Caveats if the executor doesn't cache-hit (e.g. on a fresh region or after
+a marin major bump):
+
 - Marin version drift: the locked marin wheel is newer than dna-dev's
-  vendored levanter; any behavior change in the training loop / eval harness
-  will surface here.
+  vendored levanter; behavior changes in the training loop / eval harness
+  will surface as a hash divergence.
+- Tokenization cache: aim to land in a region where exp160's reference
+  caches already exist (currently ``gs://marin-us-east5/...``).
 """
 
 import dataclasses
@@ -57,37 +60,25 @@ from bolinas.evals.lm_eval.task_configs import TRAITGYM_MENDELIAN_V2_255
 from bolinas.levanter.defaults import dna_effective_seq_len
 from bolinas.levanter.formats import DNALmDatasetFormat
 
-# Stays in marin: ``convert_to_levanter_task_config`` lived in
-# ``experiments.evals.task_configs`` on dna-dev but moved to
-# ``marin.evaluation.evaluation_config`` on current main — refresh this import
-# if marin reorganizes again.
-#
 # NOTE on `experiments.*` imports: marin's `experiments/` package only ships
 # in the `marin-root` git source, which carries a ``[tool.uv.sources]
 # marin-* = { workspace = true }`` block that overrides find-links across
-# the consumer's whole resolve. That cascade leaves `iris._build_info.BUILD_DATE`
-# empty and trips the controller's freshness check. So we vendor the two
-# `experiments.*` symbols we use (`default_tokenize`, `qwen3_0_6b_hd128`)
-# at the bottom of this file instead of importing them. Re-evaluate once
-# marin publishes a `marin-root-latest` wheel.
+# the consumer's whole resolve. That cascade leaves
+# ``iris._build_info.BUILD_DATE`` empty and trips the controller's freshness
+# check. So we vendor the two `experiments.*` symbols we use
+# (``default_tokenize``, ``qwen3_0_6b_hd128``) at the bottom of this file
+# instead of importing them. Re-evaluate once marin publishes a
+# ``marin-root-latest`` wheel.
 from levanter.layers.rotary import Llama3RotaryEmbeddingsConfig
-from levanter.utils import fsspec_utils
 from marin.evaluation.evaluation_config import convert_to_levanter_task_config
 from marin.execution.executor import (
     ExecutorStep,
-    InputName,
-    VersionedValue,
     ensure_versioned,
     executor_main,
     this_output_path,
 )
 from marin.execution.remote import remote
-from marin.processing.tokenize import (
-    HfDatasetSpec,
-    TokenizeConfig,
-    lm_mixture_data_config,
-    tokenize,
-)
+from marin.processing.tokenize import lm_mixture_data_config, tokenize
 from marin.processing.tokenize.tokenize import HfTokenizeConfig
 from marin.training.training import TrainLmOnPodConfig, run_levanter_train_lm
 
@@ -339,82 +330,37 @@ qwen3_0_6b_hd128 = Qwen3Config(
 )
 
 
-# Subset of marin/experiments/defaults.py:default_tokenize that we actually
-# exercise (HF dataset path: a single ``"<owner>/<name>"`` string). The full
-# upstream version also handles GCS paths, ``HfDatasetSpec``, and
-# ``ExecutorStep`` inputs; not needed for the parity check's HF-only calls.
-_HF_BUCKET_URI_PREFIX = "hf://"
-_HF_BUCKET_PATH_PREFIX = "gs://"  # marin's HF_BUCKET_PATH_PREFIX is gs://, used for cached HF datasets
-
-
-def _is_hf_bucket_path(path: str) -> bool:
-    return path.startswith(_HF_BUCKET_URI_PREFIX) or path.startswith(_HF_BUCKET_PATH_PREFIX)
-
-
+# Narrow subset of marin/experiments/defaults.py:default_tokenize — handles
+# only the HF-dataset-name path (``"<owner>/<name>"`` string). Upstream also
+# handles ``HfDatasetSpec`` and GCS/local paths; those code paths aren't
+# exercised here (call sites always pass HF names), so they're trimmed.
+# Restore them by hand if a future experiment needs them.
 def default_tokenize(
     name: str,
-    dataset: InputName | ExecutorStep | str | HfDatasetSpec,
+    dataset: str,
     tokenizer: str,
-    format: DNALmDatasetFormat,  # narrowed from LmDatasetFormatBase for the parity check
+    format: DNALmDatasetFormat,  # narrowed from LmDatasetFormatBase
     *,
-    sample_count: int | VersionedValue[int] | None = None,
-    is_validation: bool = False,
-    levanter_batch_size: int | None = None,
-    tags: tuple[str, ...] = (),
     resources=None,
-    worker_resources=None,
 ) -> ExecutorStep:
-    extra_kwargs: dict = {}
-    if worker_resources is not None:
-        extra_kwargs["worker_resources"] = worker_resources
-
-    if isinstance(dataset, HfDatasetSpec):
-        config = HfTokenizeConfig(
-            id=dataset.id,
-            name=dataset.name,
-            cache_path=this_output_path(),
-            tokenizer=ensure_versioned(tokenizer),
-            format=format,
-            sample_count=ensure_versioned(sample_count) if sample_count is not None else None,
-            levanter_batch_size=levanter_batch_size,
-            tags=[*tags],
-            **extra_kwargs,
-        )
-    elif (
-        isinstance(dataset, str)
-        and not _is_hf_bucket_path(dataset)
-        and dataset.count("/") == 1
-        and not fsspec_utils.exists(dataset)
-    ):
-        config = HfTokenizeConfig(
-            id=dataset,
-            cache_path=this_output_path(),
-            tokenizer=ensure_versioned(tokenizer),
-            format=format,
-            sample_count=ensure_versioned(sample_count) if sample_count is not None else None,
-            levanter_batch_size=levanter_batch_size,
-            tags=[*tags],
-            **extra_kwargs,
-        )
-    else:
-        config = TokenizeConfig(
-            train_paths=[dataset] if not is_validation else [],
-            validation_paths=[dataset] if is_validation else [],
-            cache_path=this_output_path(),
-            tokenizer=ensure_versioned(tokenizer),
-            format=format,
-            sample_count=ensure_versioned(sample_count) if sample_count is not None else None,
-            levanter_batch_size=levanter_batch_size,
-            tags=[*tags],
-            **extra_kwargs,
-        )
+    assert isinstance(dataset, str) and dataset.count("/") == 1, (
+        f"Vendored default_tokenize only handles `<owner>/<name>` HF dataset "
+        f"strings (got {dataset!r}); restore upstream branches if needed."
+    )
+    config = HfTokenizeConfig(
+        id=dataset,
+        cache_path=this_output_path(),
+        tokenizer=ensure_versioned(tokenizer),
+        format=format,
+    )
 
     return ExecutorStep(
         name=os.path.join("tokenized", name),
         description=f"Tokenize raw text using the {tokenizer} tokenizer.",
         fn=remote(
             tokenize,
-            resources=resources or ResourceConfig.with_cpu(cpu=4, ram="16g", disk="10g"),
+            resources=resources
+            or ResourceConfig.with_cpu(cpu=4, ram="16g", disk="10g"),
             # Upstream uses ``["cpu"]`` here, which maps to marin's own ``cpu``
             # extra (marin + jax-cpu + torch-cpu). bolinas-dna doesn't define a
             # ``cpu`` extra, so we route to the ``marin`` extra instead — it
