@@ -205,10 +205,26 @@ def extract_features(
         f"unexpected token length {T_tok} for window_size={window_size}, n_prefix={n_prefix}"
     )
 
+    # max_position_embeddings is the *training* context. With rope_scaling
+    # (e.g. llama3 with factor=8.0 on exp55-mammals), RoPE can extrapolate
+    # to ``factor * original_max_position_embeddings`` with degradation. We
+    # do NOT hard-fail here — the user may want to compare scores under
+    # extrapolation explicitly. Warn loudly so the regime is visible in logs.
     max_pos = getattr(model.config, "max_position_embeddings", None)
-    if max_pos is not None:
-        assert T_tok <= max_pos, (
-            f"token length {T_tok} exceeds model.config.max_position_embeddings={max_pos}"
+    rope_scaling = getattr(model.config, "rope_scaling", None) or {}
+    rope_factor = float(rope_scaling.get("factor", 1.0)) if rope_scaling else 1.0
+    rope_orig = int(rope_scaling.get("original_max_position_embeddings", max_pos or 0)) if rope_scaling else (max_pos or 0)
+    effective_max = max(max_pos or 0, int(rope_factor * (rope_orig or 0)))
+    if max_pos is not None and T_tok > max_pos:
+        print(
+            f"[features] WARN: T_tok={T_tok} exceeds model.config.max_position_embeddings={max_pos}; "
+            f"rope_scaling={rope_scaling} → effective_max≈{effective_max}. "
+            f"Running in extrapolation regime.",
+            flush=True,
+        )
+        assert effective_max == 0 or T_tok <= effective_max, (
+            f"token length {T_tok} exceeds rope-scaling effective_max={effective_max}; "
+            f"model will not produce meaningful output"
         )
 
     with torch.no_grad():
