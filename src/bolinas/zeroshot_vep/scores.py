@@ -235,6 +235,86 @@ SCORE_NAMES: list[str] = [
 assert len(SCORE_NAMES) == 30, f"expected 30 scores, got {len(SCORE_NAMES)}"
 
 
+# ---------------------------------------------------------------------------
+# Score-sign assumptions (locked, used by metrics.smk to build "higher = more
+# pathogenic" columns from the raw values written by features.py).
+#
+# Mapping: ``final_name → (raw_column, sign_multiplier)``.
+# - ``sign_multiplier = +1`` keeps the raw value (it's already in the
+#   "higher = pathogenic" direction).
+# - ``sign_multiplier = -1`` negates the raw value to align with that direction.
+#
+# Conventions:
+# - ``minus_llr`` (mendelian leaderboard): pathogenic alt is less likely under
+#   the model → ``-(log p[alt] - log p[ref]) > 0``. Keep raw.
+# - ``abs_llr`` (complex / eqtl leaderboard): magnitude of effect, no sign issue.
+# - ``minus_logp_alt``: surprisal of alt — rare alt = deleterious. Keep raw.
+# - ``logp_ref`` (Option B chosen 2026-05-11): ``log p[ref]`` (i.e. negate the
+#   raw ``minus_logp_ref`` to get the un-negated log p). Assumption: pathogenic
+#   variants concentrate at conserved positions where the model is confident
+#   the ref belongs there → high ``log p[ref]`` = constrained site.
+# - ``minus_entropy``: bidirectional-conditional entropy negated. Pathogenic
+#   variants are at functional / constrained positions with LOW entropy → flip
+#   sign so "higher = pathogenic" holds.
+# - ``embed_l2_*``, ``embed_cosine_*``: distance metrics. "Different = impactful."
+# - ``embed_minus_dot_*``: rename of the raw ``embed_dot_*`` columns. The raw
+#   ``embed_dot_*`` value is ALREADY ``-⟨ref, alt⟩`` (so higher = less
+#   similar = more impactful); the rename just makes the sign convention
+#   visible at the call site.
+# - ``llr`` (raw, sign as-is): kept for sanity-check parity with biofoundation.
+#   Not in the matched-pair test set since its sign convention isn't "higher =
+#   pathogenic" (pathogenic alt → llr < 0). Use ``minus_llr`` or ``abs_llr``
+#   for the actual test.
+# ---------------------------------------------------------------------------
+
+SCORE_DIRECTIONS: dict[str, tuple[str, float]] = {
+    # Likelihood
+    "llr": ("llr", 1.0),
+    "minus_llr": ("minus_llr", 1.0),
+    "abs_llr": ("abs_llr", 1.0),
+    "logp_ref": ("minus_logp_ref", -1.0),
+    "minus_logp_alt": ("minus_logp_alt", 1.0),
+    "minus_entropy": ("entropy", -1.0),
+}
+for layer in LAYERS:
+    for pool in POOLS:
+        for dist in DISTANCES:
+            raw = f"embed_{dist}_{pool}_{layer}"
+            if dist == "dot":
+                final = f"embed_minus_dot_{pool}_{layer}"
+            else:
+                final = raw
+            SCORE_DIRECTIONS[final] = (raw, 1.0)
+
+assert len(SCORE_DIRECTIONS) == 30, f"expected 30 directional scores, got {len(SCORE_DIRECTIONS)}"
+
+# Canonical ordered list of final score names (what metrics + aggregate emit).
+SCORE_NAMES_FINAL: list[str] = list(SCORE_DIRECTIONS.keys())
+
+
+def apply_score_directions(scores_df: pd.DataFrame) -> pd.DataFrame:
+    """Re-emit a DataFrame using final score names + signed values.
+
+    Given a DataFrame containing the raw score columns from
+    :func:`bolinas.zeroshot_vep.features.extract_features_and_score` (or any
+    superset that includes them), return a NEW DataFrame whose columns are the
+    final user-facing names (``minus_entropy``, ``logp_ref``,
+    ``embed_minus_dot_*``, etc.) with sign multipliers applied.
+
+    Other columns in ``scores_df`` (variant metadata) are NOT touched here —
+    callers should ``pd.concat`` the result back as needed.
+    """
+    out = {}
+    for final_name, (raw_name, mult) in SCORE_DIRECTIONS.items():
+        if raw_name not in scores_df.columns:
+            raise KeyError(
+                f"raw score column {raw_name!r} not found in DataFrame "
+                f"(need it to emit {final_name!r})"
+            )
+        out[final_name] = scores_df[raw_name].values * mult
+    return pd.DataFrame(out)
+
+
 def all_scores(
     seq_logprob: np.ndarray,
     ref_idx: np.ndarray,

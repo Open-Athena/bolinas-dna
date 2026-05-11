@@ -1,33 +1,36 @@
-"""Stage 3 (CPU): PairwiseAccuracy per (subset, score) + global pooled + macro.
+"""Stage 2 (CPU): PairwiseAccuracy per (subset, score) + global pooled + macro.
+
+Sign convention: every score is converted to "higher = more pathogenic" via
+the ``SCORE_DIRECTIONS`` mapping in :mod:`bolinas.zeroshot_vep.scores` BEFORE
+calling ``pairwise_accuracy``. Three sign flips happen here (vs. the raw
+features parquet):
+- ``entropy`` → ``minus_entropy`` (negate; high entropy = permissive = NOT pathogenic).
+- ``minus_logp_ref`` → ``logp_ref`` (negate; high log p[ref] = conserved = pathogenic-prone).
+- ``embed_dot_*`` → ``embed_minus_dot_*`` (rename only; the raw value is already ``-⟨ref, alt⟩``).
+
+With the sign locked, p-values are **one-sided** (``H1: acc > 0.5``) which is
+2x more powerful than two-sided at the same FDR. A score with the wrong sign
+correctly tests as non-significant (one-sided p ~1.0).
 
 Three aggregation flavors per (model, window, dataset, score):
-
-- ``per_subset``: 8 rows, one per consequence-group subset (the breakdown).
-- ``global_pooled``: single row, PairwiseAccuracy on all matched pairs flat
-  (weights subsets by their pair counts).
-- ``global_macro``: single row, unweighted mean of per-subset accuracies. SE
-  computed from per-subset accuracies as a between-subset standard error.
-
-p-values:
-- ``per_subset`` / ``global_pooled``: two-sided sign-test p-value, closed-form
-  from ``Binom(n_pairs - n_ties, 0.5)`` — supplied by ``pairwise_accuracy``.
-- ``global_macro``: one-sample two-sided t-test on the per-subset values
-  against ``H0: mean = 0.5`` (closed-form via ``scipy.stats.t``).
+- ``per_subset``: 8 rows, one per consequence-group subset.
+- ``global_pooled``: single row, PairwiseAccuracy on all matched pairs flat.
+- ``global_macro``: single row, unweighted mean of per-subset accuracies. SE is
+  the between-subset SEM. p-value is a one-sided one-sample t-test against
+  ``H1: mean > 0.5`` (df = n_subsets - 1).
 """
 
 import math
 from scipy.stats import t as student_t
 
+from bolinas.zeroshot_vep.scores import SCORE_DIRECTIONS, apply_score_directions
+
 
 def _macro_aggregate(per_subset: pd.DataFrame) -> dict:
     """Mean of per-subset PairwiseAccuracies, with between-subset SEM + p-value.
 
-    SEM = stdev(values) / sqrt(n_subsets). This is the SE of the mean across
-    subsets (a different statistical object than per-subset binomial SE — it
-    captures variability of the *score's behavior across subsets*, not within).
-
-    ``p_value`` is the closed-form two-sided one-sample t-test against the
-    null ``mean = 0.5`` with ``df = n_subsets - 1``.
+    SEM = stdev(values) / sqrt(n_subsets). ``p_value`` is the closed-form
+    **one-sided** one-sample t-test against ``H1: mean > 0.5`` (df = n - 1).
     """
     vals = per_subset["value"].values
     n = len(vals)
@@ -37,11 +40,11 @@ def _macro_aggregate(per_subset: pd.DataFrame) -> dict:
         sem = std / math.sqrt(n)
         if sem > 0:
             t_stat = (mean_val - 0.5) / sem
-            # Two-sided p-value, df = n - 1
-            p_value = float(2 * student_t.sf(abs(t_stat), df=n - 1))
+            # One-sided p-value, df = n - 1, alternative: mean > 0.5
+            p_value = float(student_t.sf(t_stat, df=n - 1))
         else:
             # All per-subset values identical → degenerate t-test
-            p_value = 0.0 if mean_val != 0.5 else 1.0
+            p_value = 0.0 if mean_val > 0.5 else (1.0 if mean_val <= 0.5 else float("nan"))
     else:
         sem = 0.0
         p_value = float("nan")
@@ -65,19 +68,27 @@ rule compute_metrics:
         window=r"[0-9]+",
     run:
         df = pd.read_parquet(input[0])
-        score_cols = list(config["score_columns"])
-        for c in score_cols:
-            assert c in df.columns, f"missing score column {c!r}"
+
+        # Apply locked sign convention: build a DataFrame with final names
+        # (minus_entropy / logp_ref / embed_minus_dot_*) and "higher = pathogenic"
+        # values. Pass this to pairwise_accuracy with alternative='greater' for
+        # a one-sided test.
+        signed = apply_score_directions(df)
+        score_cols = list(SCORE_DIRECTIONS.keys())
 
         records: list[dict] = []
         for score_col in score_cols:
             # Per-subset.
             per_subset_rows = []
-            for subset_name, sub in df.groupby("subset", sort=False):
+            for subset_name, sub_idx in df.groupby("subset", sort=False).groups.items():
+                sub_label = df.loc[sub_idx, "label"]
+                sub_mg = df.loc[sub_idx, "match_group"]
+                sub_score = signed.loc[sub_idx, score_col]
                 res = pairwise_accuracy(
-                    label=sub["label"],
-                    score=sub[score_col],
-                    match_group=sub["match_group"],
+                    label=sub_label,
+                    score=sub_score,
+                    match_group=sub_mg,
+                    alternative="greater",
                 )
                 row = dict(
                     aggregation="per_subset",
@@ -89,13 +100,11 @@ rule compute_metrics:
                 per_subset_rows.append(row)
 
             # Global pooled — every matched_group across the whole dataset.
-            # match_group ids are globally unique across subsets per evals_v2's
-            # invariant ("no match_group spans subsets"), so passing the full
-            # frame to pairwise_accuracy is safe.
             pooled = pairwise_accuracy(
                 label=df["label"],
-                score=df[score_col],
+                score=signed[score_col],
                 match_group=df["match_group"],
+                alternative="greater",
             )
             records.append(dict(
                 aggregation="global_pooled",

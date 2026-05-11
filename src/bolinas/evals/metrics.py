@@ -30,6 +30,7 @@ def pairwise_accuracy(
     label: pd.Series,
     score: pd.Series,
     match_group: pd.Series,
+    alternative: str = "two-sided",
 ) -> dict[str, float | int]:
     """Within-``match_group`` accuracy: fraction of pairs where the positive
     scores higher than the negative (ties = 0.5).
@@ -47,13 +48,17 @@ def pairwise_accuracy(
             risk we want to fail loud on.
         match_group: integer group id; positives and negatives are paired
             within a group.
+        alternative: ``"two-sided"`` (default) tests the null ``acc = 0.5``
+            against any deviation; ``"greater"`` tests against ``acc > 0.5``
+            (use when the score's sign is fixed by assumption so "higher =
+            class 1" is the only direction of interest — gives 2x the power
+            of a two-sided test); ``"less"`` is the mirror image.
 
     Returns:
         ``{"value", "se", "n_pairs", "n_ties", "p_value"}``. ``se`` is the Wald
         binomial form ``sqrt(value * (1 - value) / n_pairs)``. ``p_value`` is
-        the closed-form two-sided sign-test p-value under the null
-        ``P(pos > neg | not tied) = 0.5`` — i.e. ``Binom(n_pairs - n_ties, 0.5)``
-        is at least as extreme (in either direction) as the observed wins.
+        the closed-form sign-test p-value under the null
+        ``P(pos > neg | not tied) = 0.5`` — direction set by ``alternative``.
         Returns 1.0 when ``n_pairs == n_ties`` (all ties → no information).
     """
     assert len(label) == len(score) == len(match_group), (
@@ -90,17 +95,29 @@ def pairwise_accuracy(
     value = (wins + 0.5 * ties) / n
     se = math.sqrt(value * (1 - value) / n)
 
-    # Two-sided sign-test p-value: ties drop out (each side gains 0.5 in
-    # expectation under H0 so they don't shift the test statistic), and
-    # ``wins`` over ``n_eff = n - ties`` non-tied pairs is Binom(n_eff, 0.5).
+    # Sign-test p-value: ties drop out (each side gains 0.5 in expectation
+    # under H0 so they don't shift the test statistic), and ``wins`` over
+    # ``n_eff = n - ties`` non-tied pairs is Binom(n_eff, 0.5).
     n_eff = n - ties
     if n_eff == 0:
         p_value = 1.0
     else:
-        extreme = max(wins, n_eff - wins)
-        # P(X >= extreme) under Binom(n_eff, 0.5); two-sided by symmetry.
-        p_one_tail = float(binom.sf(extreme - 1, n_eff, 0.5))
-        p_value = min(2.0 * p_one_tail, 1.0)
+        # P(X >= wins) under Binom(n_eff, 0.5) is the one-sided p for H1: acc > 0.5.
+        # binom.sf(k, n, p) = P(X > k) = P(X >= k+1), so use wins - 1.
+        p_greater = float(binom.sf(wins - 1, n_eff, 0.5))
+        p_less = float(binom.cdf(wins, n_eff, 0.5))
+        if alternative == "greater":
+            p_value = p_greater
+        elif alternative == "less":
+            p_value = p_less
+        elif alternative == "two-sided":
+            extreme = max(wins, n_eff - wins)
+            p_one_tail = float(binom.sf(extreme - 1, n_eff, 0.5))
+            p_value = min(2.0 * p_one_tail, 1.0)
+        else:
+            raise ValueError(
+                f"alternative must be 'two-sided', 'greater', or 'less'; got {alternative!r}"
+            )
 
     return {
         "value": float(value),

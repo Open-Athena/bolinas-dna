@@ -60,16 +60,52 @@ def test_pairwise_accuracy_pure_ties():
     assert res["se"] == pytest.approx(math.sqrt(0.5 * 0.5 / 3))
 
 
-def test_pairwise_accuracy_p_value_all_wins_is_small():
+def test_pairwise_accuracy_p_value_all_wins_two_sided():
     # 10 wins out of 10 — two-sided binomial test against Binom(10, 0.5)
     # → p = 2 * P(X >= 10) = 2 * (1/1024) ≈ 0.00195.
     label = [1, 0] * 10
     score = [1.0, 0.0] * 10
     mg = [i for i in range(10) for _ in range(2)]
-    res = pairwise_accuracy(*_frame(label, score, mg))
+    res = pairwise_accuracy(*_frame(label, score, mg))  # default two-sided
     assert res["n_pairs"] == 10
     assert res["n_ties"] == 0
     assert res["p_value"] == pytest.approx(2 / 1024)
+
+
+def test_pairwise_accuracy_p_value_one_sided_greater():
+    # 10/10 wins, one-sided H1: acc > 0.5 — p = P(X >= 10) = 1/1024.
+    label = [1, 0] * 10
+    score = [1.0, 0.0] * 10
+    mg = [i for i in range(10) for _ in range(2)]
+    res = pairwise_accuracy(*_frame(label, score, mg), alternative="greater")
+    assert res["p_value"] == pytest.approx(1 / 1024)
+
+
+def test_pairwise_accuracy_p_value_one_sided_less_for_zero_wins():
+    # 0/10 wins, one-sided H1: acc < 0.5 — p = P(X <= 0) = 1/1024.
+    label = [1, 0] * 10
+    score = [0.0, 1.0] * 10  # alt always wins
+    mg = [i for i in range(10) for _ in range(2)]
+    res = pairwise_accuracy(*_frame(label, score, mg), alternative="less")
+    assert res["value"] == 0.0
+    assert res["p_value"] == pytest.approx(1 / 1024)
+
+
+def test_pairwise_accuracy_p_value_one_sided_greater_wrong_sign_is_one():
+    # Score is "wrong sign" (negatives always > positives). Under H1: acc > 0.5,
+    # the one-sided p should be ~1.0 (no power) — correctly fails to flag this.
+    label = [1, 0] * 10
+    score = [0.0, 1.0] * 10
+    mg = [i for i in range(10) for _ in range(2)]
+    res = pairwise_accuracy(*_frame(label, score, mg), alternative="greater")
+    assert res["value"] == 0.0
+    assert res["p_value"] == pytest.approx(1.0)
+
+
+def test_pairwise_accuracy_rejects_unknown_alternative():
+    label, score, mg = _frame([1, 0], [0.9, 0.1], [0, 0])
+    with pytest.raises(ValueError, match="alternative"):
+        pairwise_accuracy(label, score, mg, alternative="bogus")
 
 
 def test_pairwise_accuracy_p_value_fifty_fifty_near_one():

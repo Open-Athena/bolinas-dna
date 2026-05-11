@@ -61,39 +61,6 @@ inference:
   dtype: bfloat16
   store_pos_logprob: true  # cheap; kept for future per-position scoring experiments
 
-# Score columns to send to PairwiseAccuracy. Listed explicitly so adding a new
-# scoring rule means appending one line here — the heatmap / aggregate stage
-# discovers them automatically.
-score_columns:
-  # likelihood (6)
-  - llr
-  - minus_llr
-  - abs_llr
-  - minus_logp_ref
-  - minus_logp_alt
-  - entropy
-  # embeddings: 3 distances × 4 pools × 2 layers = 24
-  - embed_l2_flat_last
-  - embed_l2_mean_last
-  - embed_l2_varpos_last
-  - embed_l2_lastpos_last
-  - embed_l2_flat_middle
-  - embed_l2_mean_middle
-  - embed_l2_varpos_middle
-  - embed_l2_lastpos_middle
-  - embed_cosine_flat_last
-  - embed_cosine_mean_last
-  - embed_cosine_varpos_last
-  - embed_cosine_lastpos_last
-  - embed_cosine_flat_middle
-  - embed_cosine_mean_middle
-  - embed_cosine_varpos_middle
-  - embed_cosine_lastpos_middle
-  - embed_dot_flat_last
-  - embed_dot_mean_last
-  - embed_dot_varpos_last
-  - embed_dot_lastpos_last
-  - embed_dot_flat_middle
-  - embed_dot_mean_middle
-  - embed_dot_varpos_middle
-  - embed_dot_lastpos_middle
+# Score columns and their sign conventions are defined in
+# ``src/bolinas/zeroshot_vep/scores.py:SCORE_DIRECTIONS``. The metrics rule
+# reads them from there so adding/removing a scoring rule is a one-place change.

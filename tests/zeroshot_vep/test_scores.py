@@ -6,6 +6,7 @@ Synthetic inputs with hand-computed expected values for each score family.
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from bolinas.zeroshot_vep import scores
@@ -200,3 +201,58 @@ def test_all_scores_column_naming_grid():
     }
     assert expected.issubset(set(scores.SCORE_NAMES))
     assert len(expected) == 24
+
+
+def test_score_directions_renames_match_expected():
+    # The three locked renames: entropy → minus_entropy, embed_dot_* → embed_minus_dot_*,
+    # minus_logp_ref → logp_ref. Everything else passes through unchanged.
+    assert "minus_entropy" in scores.SCORE_DIRECTIONS
+    assert scores.SCORE_DIRECTIONS["minus_entropy"] == ("entropy", -1.0)
+    assert "logp_ref" in scores.SCORE_DIRECTIONS
+    assert scores.SCORE_DIRECTIONS["logp_ref"] == ("minus_logp_ref", -1.0)
+    # All 8 dot scores renamed to minus_dot, with sign +1 (already negated upstream).
+    for pool in scores.POOLS:
+        for layer in scores.LAYERS:
+            final = f"embed_minus_dot_{pool}_{layer}"
+            raw = f"embed_dot_{pool}_{layer}"
+            assert scores.SCORE_DIRECTIONS[final] == (raw, 1.0), final
+            assert f"embed_dot_{pool}_{layer}" not in scores.SCORE_DIRECTIONS, (
+                "raw embed_dot_* should not appear as a final-name key"
+            )
+    # Total final names = 30.
+    assert len(scores.SCORE_DIRECTIONS) == 30
+    assert len(scores.SCORE_NAMES_FINAL) == 30
+
+
+def test_apply_score_directions_flips_correctly():
+    rng = np.random.default_rng(0)
+    n, L, D = 5, 8, 3
+    seq_logprob = rng.standard_normal((n, 4)).astype(np.float32)
+    ref_idx = np.array([0, 1, 2, 3, 0], dtype=np.int64)
+    alt_idx = np.array([1, 2, 3, 0, 2], dtype=np.int64)
+    emb_args = [rng.standard_normal((n, L, D)).astype(np.float32) for _ in range(4)]
+    raw_df = scores.all_scores(seq_logprob, ref_idx, alt_idx, *emb_args, var_pos=L // 2)
+
+    signed = scores.apply_score_directions(raw_df)
+    # entropy → minus_entropy with sign flip
+    np.testing.assert_allclose(signed["minus_entropy"], -raw_df["entropy"], rtol=1e-5)
+    # minus_logp_ref → logp_ref with sign flip
+    np.testing.assert_allclose(signed["logp_ref"], -raw_df["minus_logp_ref"], rtol=1e-5)
+    # embed_dot_* → embed_minus_dot_*: rename only, no flip
+    for pool in scores.POOLS:
+        for layer in scores.LAYERS:
+            np.testing.assert_allclose(
+                signed[f"embed_minus_dot_{pool}_{layer}"],
+                raw_df[f"embed_dot_{pool}_{layer}"],
+                rtol=1e-5,
+            )
+    # Pass-through columns
+    np.testing.assert_allclose(signed["minus_llr"], raw_df["minus_llr"])
+    np.testing.assert_allclose(signed["abs_llr"], raw_df["abs_llr"])
+    np.testing.assert_allclose(signed["embed_l2_flat_last"], raw_df["embed_l2_flat_last"])
+
+
+def test_apply_score_directions_missing_raw_column_raises():
+    bad = pd.DataFrame({"llr": [0.1, 0.2]})
+    with pytest.raises(KeyError, match="raw score column"):
+        scores.apply_score_directions(bad)
