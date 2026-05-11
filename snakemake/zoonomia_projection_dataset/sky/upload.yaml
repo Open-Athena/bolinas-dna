@@ -43,13 +43,30 @@ run: |
 
     cd snakemake/zoonomia_projection_dataset
 
+    # Targets: each intervals_version listed in config.yaml gets its own
+    # upload.done marker. Explicit per-version targets (rather than `all_hf`)
+    # let `--rerun-triggers mtime` walk back only as far as each target's
+    # actual missing inputs — Snakemake stops at the first existing upstream
+    # file (e.g. `all_species_with_sequence.parquet` in S3), preventing a
+    # spurious re-walk of `hal_to_fasta` / `project_one_species` /
+    # `extract_sequences` / `merge_sequences` whose intermediate `local()`
+    # FASTAs aren't mirrored to S3.
+    TARGETS=$(uv run python -c "
+    import yaml
+    cfg = yaml.safe_load(open('config/config.yaml'))
+    for iv in cfg['intervals_versions']:
+        print(f'results/upload.done/zoonomia-{cfg[\"pipeline_version\"]}-{iv}')
+    ")
+
     # Dry-run gate first — verify only HF-related rules are scheduled.
     uv run snakemake --profile workflow/profiles/default \
+        --rerun-triggers mtime \
         --printshellcmds \
-        -n all_hf
+        -n $TARGETS
 
     # Real run.
     uv run snakemake --profile workflow/profiles/default \
+        --rerun-triggers mtime \
         --printshellcmds \
         --rerun-incomplete \
-        all_hf
+        $TARGETS
