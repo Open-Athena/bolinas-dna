@@ -1,4 +1,4 @@
-name: eqtl-build
+name: eqtl-catalogue-build
 
 workdir: .
 
@@ -6,37 +6,34 @@ resources:
   infra: aws/us-east-2
   cpus: 8+
   memory: 64+
-  disk_size: 200
+  # 49 tissues × 3.5 GB nominal sumstats transit through tempdir
+  # (concurrent: 8 in flight ≈ 30 GB) + 5 GB per-tissue parquets cached
+  # locally before S3 upload. 300 GB gives comfortable slack.
+  disk_size: 300
   labels:
     project: dna
 
-# eqtl_download pulls from Requester-Pays GCS, so the launched VM needs gcloud
-# creds (mendelian/complex don't need this).
-file_mounts:
-  ~/.config/gcloud: ~/.config/gcloud
+# No GCP / Requester-Pays creds needed — eQTL Catalogue is anonymous FTP.
 
 setup: |
-  # uv + Python
   command -v uv >/dev/null 2>&1 || curl -LsSf https://astral.sh/uv/install.sh | sh
   source $HOME/.local/bin/env 2>/dev/null || true
-  # gsutil (Google Cloud SDK) for the Requester-Pays download
-  if ! command -v gsutil >/dev/null 2>&1; then
-    curl -sSL https://sdk.cloud.google.com | bash -s -- --disable-prompts >/dev/null
-  fi
-  echo 'export PATH="$HOME/google-cloud-sdk/bin:$PATH"' >> ~/.bashrc
   cd ~/sky_workdir
   uv sync --quiet
 
 run: |
   source $HOME/.local/bin/env 2>/dev/null || true
-  export PATH="$HOME/google-cloud-sdk/bin:$PATH"
   cd ~/sky_workdir/snakemake/evals
-  # `--forcerun eqtl_aggregate` re-runs the aggregation rule (PIP labeling
-  # bug fix in baf8a16); downstream rules cascade via mtime trigger because
-  # aggregated.parquet's mtime updates after re-run.
+  # `--forcerun eqtl_aggregate_tissues` to ensure the cross-tissue concat
+  # re-runs (its inputs are the 49 per_tissue parquets, which don't exist
+  # on S3 yet — but mtime-trigger alone may not catch the new rule on
+  # an existing aggregated.parquet from the prior Finucane pipeline).
+  # Snakemake will run `eqtl_parse_per_tissue` for each missing per-tissue
+  # parquet, then cascade through annotate / dataset_all / dataset / split
+  # / hf_upload.
   uv run snakemake \
-    --cores 4 \
+    --cores 8 \
     -p \
     --rerun-triggers=mtime \
-    --forcerun eqtl_aggregate \
+    --forcerun eqtl_aggregate_tissues \
     -- results/dataset_unsplit/eqtl.parquet

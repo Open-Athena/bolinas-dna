@@ -14,7 +14,7 @@ commit `e59d612e9`, so HGMD pathogenic SNVs are included as a positive source.
 |---|---|---|---|
 | `mendelian_traits` | Mendelian disease pathogenic SNVs | HGMD ∪ OMIM ∪ Smedley et al. 2016 (de-duped, AF<0.001) | gnomAD common (AN≥25k, AF>0.001) |
 | `complex_traits` | UKBB fine-mapped complex-trait variants | SuSiE+FINEMAP `max(PIP across the traits where this variant was fine-mapped) > 0.9` | `max(PIP) < 0.01` AND no SuSiE/FINEMAP combine-step null PIP among those traits (`label_variants_by_pip(use_null_pip_guard=True)`) |
-| `eqtl` | GTEx v8 fine-mapped eQTLs (49 tissues, pooled) | SuSiE `max(PIP across the tissues where this variant was fine-mapped) > 0.9` | `max(PIP) < 0.01` (`label_variants_by_pip(use_null_pip_guard=False)`; SuSiE-only source has no combine step) |
+| `eqtl` | GTEx v8 fine-mapped eQTLs from [eQTL Catalogue r7](https://www.ebi.ac.uk/eqtl/) (study `QTS000015`, 49 tissues × `ge` quantification, pooled) | SuSiE `max(PIP across tested tissues) > 0.9` from `credible_sets.tsv.gz` | `max(PIP) < 0.01` — variant must appear in at least one tissue's nominal sumstats (`all.tsv.gz`) but never reach a strong credible set; covered by the 0-fill in `bolinas.evals.catalogue_parser.merge_cs_and_sumstats` (sentinel: tested-but-no-signal variant has `pip=0`, not null, so `pl.max()` reaches it). |
 
 Each dataset has a corresponding `*_harness_255` eval-harness variant where a
 255 bp window centered on each variant is materialized into
@@ -82,11 +82,10 @@ Per-dataset specifics:
   - categorical = mendelian's + `MAF_bin` (per-subset, `MAF_TIERED_V1`)
 - **eqtl**:
   - same continuous as complex_traits (the cohort-matched MAF comes natively
-    from the Finucane GTEx file, not joined from gnomAD)
+    from the eQTL Catalogue nominal sumstats, not joined from gnomAD)
   - same categorical as complex_traits but `MAF_bin` uses
     `MAF_TIERED_LOG8_DISTAL_ONLY` (tiered_v1 + per-group log_local for distal)
-  - `tissues` / `genes` / `biotype_classes` are dropped from matching but kept
-    as passthrough columns
+  - `tissues` is dropped from matching but kept as a passthrough column
 
 ## Pipeline structure
 
@@ -119,25 +118,44 @@ dataset_unsplit/mendelian_traits.parquet  (gene-matched 1:1)
 complex-trait dataset along the same lines, plus per-trait fine-mapping
 downloads and aggregation across 119 traits.
 
-`workflow/rules/eqtl.smk` produces the `eqtl` dataset from a single combined
-SuSiE fine-mapping file in the Finucane lab GTEx GCS bucket
-(`gs://finucane-requester-pays/gtex_v8/GTEx_49tissues_release1.SuSiE.tsv.bgz`,
-hg38, 49 tissues × all tested gene-variant pairs, with cohort-matched MAF).
-The aggregate step pools across tissues — for each variant, take `max(PIP)`
-across the tissues that fine-mapped it (a variant typically only has rows
-for the few tissues where it appeared in a credible set; negatives are NOT
-required to be tested in all 49 tissues). Then label by the cascade in
+`workflow/rules/eqtl.smk` produces the `eqtl` dataset from the
+[eQTL Catalogue r7](https://www.ebi.ac.uk/eqtl/) per-tissue SuSiE
+fine-mapping files. Source: study `QTS000015` (GTEx v8), all 49 tissue
+datasets × the `ge` (gene-expression) quantification. Per tissue we
+download two files from public FTP:
+
+- `credible_sets.tsv.gz` (~4 MB) — PIP per credible-set member.
+- `all.tsv.gz` (~3.5 GB) — full nominal sumstats; one row per (variant,
+  gene) tested. Provides every variant tested in fine-mapping, including
+  those that never reached a credible set. This is what makes the eqtl
+  negative pool comparable to complex_traits' UKBB full-sumstats coverage
+  (Finucane's GCS single-file release pre-filtered out the bulk of
+  no-signal variants, capping the pool at ~1.3M; Catalogue gives us
+  >10M).
+
+`src/bolinas/evals/catalogue_parser.py` parses both files per tissue. The
+critical step is `merge_cs_and_sumstats`: left-join the CS PIPs onto the
+sumstats variant inventory, **fill `pip=0` (not null) for variants outside
+any credible set**. This sentinel is load-bearing — `pl.max()` skips nulls,
+so without the fill the tested-but-no-signal variants would fall through to
+`label=None` and be excluded instead of labeled negative.
+
+Cross-tissue aggregation in `eqtl_aggregate_tissues` then concats all 49
+per-tissue parquets and labels via
 `bolinas.evals.labeling.label_variants_by_pip`:
 
-- `max(PIP) > pip_pos_threshold (=0.9)` → positive
-- `max(PIP) < pip_neg_threshold (=0.01)` → negative
-- intermediate `max(PIP)` → variant excluded from the dataset
+- `max(PIP across tested tissues) > 0.9` → positive
+- `max(PIP) < 0.01` → negative
+- intermediate `max(PIP)` ∈ `[0.01, 0.9]` → variant excluded from the dataset
 
-This is critical: don't row-filter the input to extreme PIPs before the
-group_by — that would silently mislabel a variant with tissue PIPs
-`[0.001, 0.5]` as a clean negative (`max = 0.001` after dropping the 0.5
-row) when its true `max = 0.5` is intermediate and should exclude it.
-The labeling helper has a unit test pinning down this regression.
+Don't row-filter the input to extreme PIPs before the group_by — that
+would silently mislabel a variant with tissue PIPs `[0.001, 0.5]` as a
+clean negative (`max = 0.001` after dropping the 0.5 row) when its true
+`max = 0.5` is intermediate and should exclude it. The labeling helper
+has a unit test pinning down this regression
+(`tests/evals/test_labeling.py:test_multiple_studies_max_excludes_when_intermediate`),
+plus integration tests in `tests/evals/test_catalogue_parser.py` that
+exercise the same case through the full Catalogue ingest path.
 
 The generic `split_dataset_by_chrom` rule then turns each
 `results/dataset_unsplit/{name}.parquet` into the train/test pair, and
@@ -162,14 +180,6 @@ S3 storage and cores automatically.
 You need AWS credentials with S3 access:
 - **On EC2**: attach an IAM role with `AmazonS3FullAccess` to the instance.
 - **On your laptop**: run `aws configure` with an IAM user's access key.
-
-### GCP billing project (eqtl)
-
-The `eqtl` rule downloads from `gs://finucane-requester-pays/`, a Requester-Pays
-bucket that bills the requester for egress. Set the project to bill via
-`gcp_billing_project` in `config/config.yaml` (default: `hai-gcp-models`). You
-need `gsutil` available and authenticated against an account with permission
-on that project (`gcloud auth login`).
 
 ### Singularity (LD score)
 
@@ -204,10 +214,11 @@ Top-level keys:
 | `datasets` | Which datasets `rule all` builds + uploads. |
 | `mendelian_traits.*` | HGMD URL, Smedley URL, ClinVar release pin, submission summary date, AF threshold. |
 | `complex_traits.*` | Fine-mapping repo, LD-score S3 path, PIP thresholds. |
-| `gcp_billing_project` | GCP project to bill for Requester-Pays downloads (used by `eqtl`). |
-| `eqtl.*` | Source URL (Finucane GTEx GCS), PIP thresholds. |
+| `eqtl.*` | eQTL Catalogue study ID (`QTS000015` = GTEx v8), per-tissue list CSV, PIP thresholds. |
 
 `config/complex_traits.csv` lists the 119 UKBB traits used for `complex_traits`.
+`config/gtex_tissues.csv` lists the 49 GTEx v8 datasets used for `eqtl` (one
+row per `(dataset_id, tissue_label, sample_size)` triple).
 
 ## Usage
 

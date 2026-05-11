@@ -1,93 +1,103 @@
-rule eqtl_download:
+GTEX_TISSUES = pd.read_csv("config/gtex_tissues.csv")
+GTEX_DATASET_IDS = GTEX_TISSUES["dataset_id"].tolist()
+_GTEX_TISSUE_BY_ID = dict(zip(GTEX_TISSUES["dataset_id"], GTEX_TISSUES["tissue_label"]))
+
+
+# eQTL Catalogue r7 FTP URLs follow a fixed pattern keyed by (study, dataset).
+# Verified for GTEx (QTS000015) — all 49 datasets have both the CS and the
+# nominal-sumstats files under these paths. See:
+# https://raw.githubusercontent.com/eQTL-Catalogue/eQTL-Catalogue-resources/master/tabix/tabix_ftp_paths.tsv
+def _eqtl_cs_url(dataset_id):
+    study = config["eqtl"]["catalogue_study_id"]
+    return f"ftp://ftp.ebi.ac.uk/pub/databases/spot/eQTL/susie/{study}/{dataset_id}/{dataset_id}.credible_sets.tsv.gz"
+
+
+def _eqtl_sumstats_url(dataset_id):
+    study = config["eqtl"]["catalogue_study_id"]
+    return f"ftp://ftp.ebi.ac.uk/pub/databases/spot/eQTL/sumstats/{study}/{dataset_id}/{dataset_id}.all.tsv.gz"
+
+
+rule eqtl_parse_per_tissue:
+    """Per-tissue: download credible_sets + nominal sumstats, parse, output parquet.
+
+    Combines download + parse into one rule so the 3.5 GB nominal sumstats
+    transits through a tempdir and is deleted on rule exit — no S3 round-trip
+    for the raw TSV (would be 170 GB of waste across 49 tissues for files we
+    only need to parse once).
+
+    The parse: streams the nominal sumstats via `pl.scan_csv`, dedupes to one
+    row per variant, left-joins per-tissue CS PIPs, 0-fills the PIP for
+    tested-but-not-in-CS variants. The 0-fill is the load-bearing sentinel
+    that makes downstream `label_variants_by_pip` produce a negative label
+    for "tested but no signal" variants — see
+    `bolinas.evals.catalogue_parser` docstring.
+
+    Output: ~50–400 MB per tissue (depends on tissue sample size + cis-window
+    variant density). Cached on S3 so subsequent rule firings are no-ops.
+    """
     output:
-        "results/eqtl/raw.tsv.bgz",
+        "results/eqtl/per_tissue/{dataset_id}.parquet",
     params:
-        url=config["eqtl"]["source_url"],
-        billing_project=config["gcp_billing_project"],
-    shell:
-        "gsutil -u {params.billing_project} cp {params.url} {output}"
+        cs_url=lambda wc: _eqtl_cs_url(wc.dataset_id),
+        sumstats_url=lambda wc: _eqtl_sumstats_url(wc.dataset_id),
+    run:
+        import subprocess
+        import tempfile
+
+        from bolinas.evals.catalogue_parser import (
+            extract_tested_variants,
+            merge_cs_and_sumstats,
+            parse_credible_sets,
+        )
+
+        tissue_label = _GTEX_TISSUE_BY_ID[wildcards.dataset_id]
+        with tempfile.TemporaryDirectory(prefix=f"eqtl_{wildcards.dataset_id}_") as tmp:
+            cs_path = f"{tmp}/cs.tsv.gz"
+            sumstats_path = f"{tmp}/sumstats.tsv.gz"
+            # `--retry 5 --retry-delay 10` to ride out FTP hiccups; `--fail`
+            # so curl exits nonzero on HTTP/FTP error (snakemake then re-runs).
+            subprocess.run(
+                ["curl", "-sS", "--fail", "--retry", "5", "--retry-delay", "10",
+                 "-o", cs_path, params.cs_url],
+                check=True,
+            )
+            subprocess.run(
+                ["curl", "-sS", "--fail", "--retry", "5", "--retry-delay", "10",
+                 "-o", sumstats_path, params.sumstats_url],
+                check=True,
+            )
+            cs_df = parse_credible_sets(cs_path)
+            sumstats_lf = extract_tested_variants(sumstats_path)
+            merged = merge_cs_and_sumstats(cs_df, sumstats_lf, tissue_label)
+            merged.sink_parquet(output[0])
 
 
-rule eqtl_aggregate:
+rule eqtl_aggregate_tissues:
+    """Cross-tissue per-variant labeling via `label_variants_by_pip`.
+
+    See `src/bolinas/evals/labeling.py` for the cascade (positives if
+    max(pip) > pip_pos, negatives if max(pip) < pip_neg, intermediate
+    excluded by the otherwise→null→filter chain). The 0-fill from
+    `merge_cs_and_sumstats` guarantees max(pip) is well-defined for every
+    variant that appears in any tissue's sumstats — that's the change vs.
+    Finucane that gives us the rich tested-but-no-signal negative pool.
+    """
     input:
-        "results/eqtl/raw.tsv.bgz",
-        "results/intervals/gene_biotype.parquet",
+        expand(
+            "results/eqtl/per_tissue/{dataset_id}.parquet",
+            dataset_id=GTEX_DATASET_IDS,
+        ),
     output:
         "results/eqtl/aggregated.parquet",
     run:
         pip_pos = config["eqtl"]["pip_pos_threshold"]
         pip_neg = config["eqtl"]["pip_neg_threshold"]
-        # Per-variant labeling delegated to `label_variants_by_pip` (in
-        # `src/bolinas/evals/labeling.py`, fully unit-tested in
-        # `tests/evals/test_labeling.py`). Notes:
-        #   - Labels come from `max(pip)` across the tissues that
-        #     fine-mapped this variant. Intermediate `max(pip)` (in
-        #     `[pip_neg, pip_pos]`) is excluded by the cascade's
-        #     `otherwise(None)` + `filter(label.is_not_null())`. Critically,
-        #     do NOT row-filter to extreme PIPs before the helper — that
-        #     would silently mislabel a variant with tissue PIPs
-        #     `[0.001, 0.5]` as a clean negative (`max = 0.001 < pip_neg`)
-        #     when its true `max = 0.5` is intermediate and should
-        #     exclude the variant. (This was the iter-pre-fix bug.)
-        #   - `use_null_pip_guard=False`: source is SuSiE-only, no
-        #     SuSiE/FINEMAP combine step that would emit null PIPs on
-        #     disagreement. There's no quality-flag to guard against.
-        #   - A variant only has rows for the tissues that fine-mapped
-        #     it. Negatives are NOT required to be tested in all 49
-        #     tissues — typical fine-mapping outputs only cover
-        #     significant regions.
-        # Per-variant unique tissues, target gene IDs (no version), and
-        # target gene biotype classes (pc / nc) are collected via
-        # `extra_aggs`, filtered to tissues where the variant was a
-        # positive.
-        biotype_lf = (
-            pl.scan_parquet(input[1])
-            .with_columns(gene_stripped=pl.col("gene_id").str.split(".").list.get(0))
-            .with_columns(
-                biotype_class=pl.when(pl.col("gene_biotype") == "protein_coding")
-                .then(pl.lit("pc"))
-                .otherwise(pl.lit("nc"))
-            )
-            .select(["gene_stripped", "biotype_class"])
-        )
-        rows = (
-            pl.scan_csv(
-                input[0],
-                separator="\t",
-                schema_overrides={
-                    "chromosome": pl.String,
-                    # `start`/`end` are unused (we parse hg38 coords from the
-                    # variant_hg38 column instead, see below) but they're
-                    # sometimes written in scientific notation (e.g. `4.8e+07`)
-                    # so they need a Float schema to even parse.
-                    "start": pl.Float64,
-                    "end": pl.Float64,
-                },
-            )
-            .with_columns(
-                # The `chromosome`/`start`/`end` columns are NOT hg38 — they
-                # appear to be the SuSiE input coordinates (often hg19).
-                # `variant_hg38` is the actual hg38-lifted coordinate, format
-                # `chr{chrom}_{pos}_{ref}_{alt}_b38`. Parse all four canonical
-                # fields from it for safety.
-                pl.col("variant_hg38")
-                .str.strip_suffix("_b38")
-                .str.split("_")
-                .alias("_v"),
-                gene_stripped=pl.col("gene").str.split(".").list.get(0),
-            )
-            .with_columns(
-                pl.col("_v").list.get(0).str.strip_prefix("chr").alias("chrom"),
-                pl.col("_v").list.get(1).cast(pl.Int64).alias("pos"),
-                pl.col("_v").list.get(2).alias("ref"),
-                pl.col("_v").list.get(3).alias("alt"),
-            )
-            .drop("_v")
-            .join(biotype_lf, on="gene_stripped", how="left")
-            .with_columns(pl.col("biotype_class").fill_null("nc"))
-        )
+        # `use_null_pip_guard=False` because Catalogue SuSiE is single-method —
+        # no SuSiE/FINEMAP-disagreement nulls to defend against (unlike
+        # complex_traits). After `merge_cs_and_sumstats` 0-fills, the per-tissue
+        # parquets contain no null pips anyway.
         labeled = label_variants_by_pip(
-            rows,
+            pl.scan_parquet(list(input)),
             pip_pos_threshold=pip_pos,
             pip_neg_threshold=pip_neg,
             use_null_pip_guard=False,
@@ -99,25 +109,9 @@ rule eqtl_aggregate:
                 .sort()
                 .str.join(",")
                 .alias("tissues"),
-                pl.col("gene_stripped")
-                .filter(pl.col("pip") > pip_pos)
-                .unique()
-                .sort()
-                .str.join(",")
-                .alias("genes"),
-                pl.col("biotype_class")
-                .filter(pl.col("pip") > pip_pos)
-                .unique()
-                .sort()
-                .str.join(",")
-                .alias("biotype_classes"),
             ],
         )
-        (
-            labeled.pipe(filter_snp)
-            .sort(COORDINATES)
-            .sink_parquet(output[0])
-        )
+        labeled.sort(COORDINATES).sink_parquet(output[0])
 
 
 rule eqtl_annotate:
