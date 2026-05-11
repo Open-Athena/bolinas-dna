@@ -59,6 +59,8 @@ rule extract_features:
         out = pd.concat(
             [ds.reset_index(drop=True), scores_df.reset_index(drop=True)], axis=1
         )
+        # snakemake's s3-storage local-copy path may not exist yet — mkdir.
+        Path(output[0]).parent.mkdir(parents=True, exist_ok=True)
         out.to_parquet(output[0], index=False)
 
         print(
