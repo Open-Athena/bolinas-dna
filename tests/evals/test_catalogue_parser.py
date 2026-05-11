@@ -525,6 +525,63 @@ def test_integration_all_cs_negative_is_negative():
     assert rows[0]["label"] is False
 
 
+def test_integration_eqtl_extra_aggs_explode_pattern():
+    """Pin down the inline cross-tissue list-col aggregation pattern used
+    by `eqtl_aggregate_tissues` so it can't silently regress without a
+    snakemake re-run.
+
+    Builds two per-tissue-shaped frames with overlapping `positive_genes`
+    + `positive_biotype_classes` lists, calls `label_variants_by_pip`
+    with the exact `extra_aggs` expression chain from eqtl.smk, asserts
+    the explode→drop_nulls→unique→sort→str.join produces a sorted-union
+    comma-separated string. Empty per-tissue lists must not leak nulls
+    into the join (hence the `drop_nulls()` between `explode()` and
+    `unique()`)."""
+    pip_pos = 0.9
+    # Variant 1: positive in two tissues, different but overlapping eGenes.
+    # Variant 2: negative in both (empty positive_genes lists).
+    t1 = pl.DataFrame({
+        "chrom": ["1", "1"], "pos": [100, 200],
+        "ref": ["A", "C"], "alt": ["T", "G"],
+        "pip": [0.95, 0.001], "maf": [0.05, 0.10],
+        "positive_genes": [["GENE_A", "GENE_B"], []],
+        "positive_biotype_classes": [["pc", "nc"], []],
+        "tissue": ["t1", "t1"],
+    })
+    t2 = pl.DataFrame({
+        "chrom": ["1", "1"], "pos": [100, 200],
+        "ref": ["A", "C"], "alt": ["T", "G"],
+        "pip": [0.92, 0.005], "maf": [0.05, 0.10],
+        "positive_genes": [["GENE_B", "GENE_C"], []],
+        "positive_biotype_classes": [["pc"], []],
+        "tissue": ["t2", "t2"],
+    })
+    combined = pl.concat([t1, t2])
+    out = label_variants_by_pip(
+        combined,
+        pip_pos_threshold=pip_pos,
+        pip_neg_threshold=0.01,
+        use_null_pip_guard=False,
+        extra_aggs=[
+            pl.col("maf").mean().alias("MAF"),
+            pl.col("tissue").filter(pl.col("pip") > pip_pos).unique().sort().str.join(",").alias("tissues"),
+            pl.col("positive_genes").explode().drop_nulls().unique().sort().str.join(",").alias("genes"),
+            pl.col("positive_biotype_classes").explode().drop_nulls().unique().sort().str.join(",").alias("biotype_classes"),
+        ],
+    ).sort("pos")
+    rows = out.to_dicts()
+    # Variant 1: positive, eGene union = A,B,C; biotype union = nc,pc; both tissues
+    assert rows[0]["label"] is True
+    assert rows[0]["genes"] == "GENE_A,GENE_B,GENE_C"
+    assert rows[0]["biotype_classes"] == "nc,pc"
+    assert rows[0]["tissues"] == "t1,t2"
+    # Variant 2: negative, empty lists must yield empty string (no nulls in join)
+    assert rows[1]["label"] is False
+    assert rows[1]["genes"] == ""
+    assert rows[1]["biotype_classes"] == ""
+    assert rows[1]["tissues"] == ""
+
+
 def test_integration_cs_mid_plus_cs_negative_is_excluded():
     """A variant that's CS-negative in one tissue and CS-mid in another
     must be excluded (max-then-filter), matching the eqtl pre-filter bug

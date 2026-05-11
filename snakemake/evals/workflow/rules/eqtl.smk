@@ -119,6 +119,24 @@ rule eqtl_aggregate_tissues:
         # complex_traits). After `merge_cs_and_sumstats` 0-fills, the
         # per-tissue parquets contain no null pips anyway.
         all_tissues_lf = pl.scan_parquet(list(input))
+        # Pin the per-tissue parquet contract — drift here (e.g. a renamed
+        # `tissue` column or a missing list[str] cast on `positive_genes`)
+        # would surface as a confusing polars error 24 chrom-loops in.
+        _expected_schema = {
+            "chrom": pl.String,
+            "pos": pl.Int64,
+            "ref": pl.String,
+            "alt": pl.String,
+            "pip": pl.Float64,
+            "maf": pl.Float64,
+            "positive_genes": pl.List(pl.String),
+            "positive_biotype_classes": pl.List(pl.String),
+            "tissue": pl.String,
+        }
+        _got_schema = dict(all_tissues_lf.collect_schema())
+        assert _got_schema == _expected_schema, (
+            f"per-tissue parquet schema drift: expected {_expected_schema}, got {_got_schema}"
+        )
         per_chrom_results = []
         for chrom in CHROMS:
             chrom_df = (

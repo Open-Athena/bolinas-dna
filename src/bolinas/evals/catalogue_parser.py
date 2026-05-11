@@ -48,6 +48,10 @@ def _parse_variant_id(variant_col: pl.Expr) -> tuple[pl.Expr, pl.Expr, pl.Expr, 
     characters (e.g. ``chr7_66367367_C_CTTAT``). Splitting on ``_`` always
     yields exactly 4 parts after stripping the ``chr`` prefix, because
     chromosomes never contain ``_``.
+
+    Callers should assert that the resulting ``alt`` column has no nulls
+    after parsing — a null indicates a malformed input string (fewer than
+    4 ``_``-separated parts).
     """
     parts = variant_col.str.strip_prefix("chr").str.split("_")
     return (
@@ -84,9 +88,17 @@ def parse_credible_sets(path: str) -> pl.DataFrame:
         schema_overrides={"pip": pl.Float64, "pvalue": pl.Float64},
     )
     chrom, pos, ref, alt = _parse_variant_id(pl.col("variant"))
+    parsed = df.with_columns(chrom, pos, ref, alt)
+    # Fail loudly if the `variant` column has any rows that don't split into
+    # 4 `_`-separated parts after stripping `chr` — would yield null `alt`
+    # and silently corrupt the per-variant aggregation downstream.
+    n_bad = parsed["alt"].null_count()
+    assert n_bad == 0, (
+        f"parse_credible_sets: {n_bad} rows in {path} have malformed `variant` "
+        f"strings (expected `chr{{c}}_{{pos}}_{{ref}}_{{alt}}`)"
+    )
     return (
-        df.with_columns(chrom, pos, ref, alt)
-        .group_by(["chrom", "pos", "ref", "alt", "gene_id"])
+        parsed.group_by(["chrom", "pos", "ref", "alt", "gene_id"])
         .agg(pl.col("pip").max())
     )
 
