@@ -15,6 +15,19 @@ workdir: .
 file_mounts:
     ~/.cache/huggingface: ~/.cache/huggingface
 
+# Forward the launcher's commit SHA so HF dataset cards get commit-pinned
+# permalinks. The cluster can't resolve ``git rev-parse HEAD`` itself when
+# the host is in a worktree (the synced ``.git`` is a *file* pointing at a
+# host path that doesn't exist on the cluster). Empty value below makes
+# SkyPilot inherit COMMIT_SHA from the launcher's environment, e.g.:
+#
+#     COMMIT_SHA=$(git rev-parse HEAD) sky launch -c <name> sky/upload.yaml
+#
+# If unset, common.smk falls back to "main" — links still resolve, just
+# not pinned.
+envs:
+    COMMIT_SHA:
+
 setup: |
     set -euxo pipefail
 
@@ -69,11 +82,19 @@ run: |
         hf_upload_dataset
     )
 
+    # Pass commit SHA through to Snakemake if the launcher provided one
+    # (see envs: COMMIT_SHA above).
+    SNAKEMAKE_EXTRA=()
+    if [ -n "${COMMIT_SHA:-}" ]; then
+        SNAKEMAKE_EXTRA+=(--config "commit_sha=$COMMIT_SHA")
+    fi
+
     # Dry-run gate first — verify only HF-related rules are scheduled.
     uv run snakemake --profile workflow/profiles/default \
         --allowed-rules "${ALLOWED_RULES[@]}" \
         --rerun-triggers mtime \
         --printshellcmds \
+        "${SNAKEMAKE_EXTRA[@]}" \
         -n $V3_TARGETS
 
     # Real run.
@@ -82,4 +103,5 @@ run: |
         --rerun-triggers mtime \
         --printshellcmds \
         --rerun-incomplete \
+        "${SNAKEMAKE_EXTRA[@]}" \
         $V3_TARGETS
