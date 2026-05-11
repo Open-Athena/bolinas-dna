@@ -314,11 +314,28 @@ def main() -> None:
 # =============================================================================
 # Vendored from marin's `experiments/` package (see import comment above).
 #
-# Future experiments in this repo should *not* copy this vendoring — instead
-# construct ``ExecutorStep``s directly from ``marin.processing.tokenize.tokenize``
-# + ``HfTokenizeConfig`` inline (the pattern marin-experiments/tiny-stories
-# and speech-asr now use as of 2026-04 onward). The vendor is kept here only
-# to preserve content-hash equivalence with exp160's reference run.
+# Future experiments in this repo should *not* copy this vendoring. Two
+# inline patterns are available — both used by marin-experiments tiny-stories
+# and speech-asr (2026-04 onward):
+#
+#   1. Fetch + tokenize in one step (what this exp160 path does): pass an
+#      HF dataset name directly to ``HfTokenizeConfig(id=...)`` and let the
+#      tokenize worker fetch from HF at run time. Single step, simple, but
+#      HF-fetch errors take out the whole step.
+#
+#   2. Fetch then tokenize (recommended for new work): materialize the HF
+#      dataset to GCS first via
+#      ``marin.datakit.download.huggingface.download_hf_step``, then point
+#      a tokenize step at the materialized output. Isolates HF-fetch
+#      resilience from compute-heavy tokenization and lets several tokenize
+#      configs share a single raw-data cache. This is the inline equivalent
+#      of marin's `experiments/defaults.py:default_download` — `default_download`
+#      itself stays unimported here for the same reason ``default_tokenize``
+#      does (it lives in the unshipped `experiments/` package).
+#
+# The vendor below is kept only because changing the wrapper would shift the
+# train step's serialized config and break content-hash equivalence with
+# exp160's reference run.
 # =============================================================================
 
 # `qwen3_0_6b_hd128` from marin/experiments/qwen3.py — head_dim=128 variant of
