@@ -37,15 +37,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# libtpu ships Linux wheels only; gate it so darwin resolution still succeeds
-# (no actual TPU support on Mac, as expected).
-tpu = [
-    "jax==0.9.2",
-    "jaxlib==0.9.2",
-    "libtpu==0.0.38; sys_platform == 'linux'",
-    "torch==2.10.0",
-    "torchvision==0.25.0",
-]
+# Delegate to marin's own `tpu` extra so `uv lock --upgrade-package marin`
+# auto-picks up future jax/torch/libtpu bumps. Linux-only at the consumer
+# level (matches marin-experiments/tiny-stories@28d53c6 from 2026-05-08);
+# TPU isn't usable on Mac so dropping the macOS install is correct.
+tpu = ["marin[tpu]; sys_platform == 'linux'"]
 # Marin-launched DNA experiments. Iris workers run ``uv sync`` with `--extra`
 # flags (not `--group`), so this lives under `[project.optional-dependencies]`
 # rather than `[dependency-groups]`. Local users opt in with
@@ -104,10 +100,16 @@ aws-cli = [
 [tool.uv]
 # awscli (in the `aws-cli` group) pins fsspec/s3fs strictly below the
 # versions marin requires; resolve them in separate "universes" so each
-# extra/group locks against its own compatible set.
+# extra/group locks against its own compatible set. The `tpu` extra now
+# delegates to `marin[tpu]`, so it transitively pulls marin in too and
+# needs the same isolation.
 conflicts = [
     [
         { extra = "marin" },
+        { group = "aws-cli" },
+    ],
+    [
+        { extra = "tpu" },
         { group = "aws-cli" },
     ],
 ]

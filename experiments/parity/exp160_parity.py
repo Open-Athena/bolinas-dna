@@ -313,6 +313,12 @@ def main() -> None:
 
 # =============================================================================
 # Vendored from marin's `experiments/` package (see import comment above).
+#
+# Future experiments in this repo should *not* copy this vendoring — instead
+# construct ``ExecutorStep``s directly from ``marin.processing.tokenize.tokenize``
+# + ``HfTokenizeConfig`` inline (the pattern marin-experiments/tiny-stories
+# and speech-asr now use as of 2026-04 onward). The vendor is kept here only
+# to preserve content-hash equivalence with exp160's reference run.
 # =============================================================================
 
 # `qwen3_0_6b_hd128` from marin/experiments/qwen3.py — head_dim=128 variant of
