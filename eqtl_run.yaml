@@ -32,8 +32,11 @@ run: |
   # `positive_biotype_classes` list columns (eGene metadata). Schema
   # change → force-rerun the per-tissue parses, which cascades through
   # aggregate / annotate / dataset_all / dataset.
+  # --cores 4 (not 8): per-tissue parses at (variant, gene_id) granularity
+  # use ~10–20 GB peak each. 4-way parallel × 128 GB = 32 GB headroom per
+  # worker; 8-way OOM'd at 128 GB (Ray killed worker at 119 GB / 124 GB).
   uv run snakemake \
-    --cores 8 \
+    --cores 4 \
     -p \
     --rerun-triggers=mtime \
     --forcerun eqtl_parse_per_tissue \

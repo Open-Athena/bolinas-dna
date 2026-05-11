@@ -93,12 +93,17 @@ def parse_credible_sets(path: str) -> pl.DataFrame:
 
 def extract_tested_variants(path: str) -> pl.LazyFrame:
     """Stream-read a Catalogue ``*.all.tsv.gz`` nominal sumstats; return
-    per-(variant, gene) MAF.
+    per-(variant, gene) rows.
 
-    The full file is ~3.5 GB compressed (~140M rows). Per-(variant, gene)
-    dedup is roughly 1:1 (one row per tested pair already), but we still
-    group_by to be safe against duplicate rows. Stays lazy so the caller
-    can chain ``sink_parquet`` without materializing.
+    The full file is ~3.5 GB compressed (~140M rows). Each row is already
+    unique per (variant, gene_id) — Catalogue's sumstats has one row per
+    tested gene-variant pair, no duplicates. So we just project the
+    columns we need; no group_by hash agg here (which is what previously
+    OOM'd the 128 GB cluster with 8-way parallel parses — each hash table
+    held ~140M entries × ~50 bytes ≈ 7 GB per worker).
+
+    Stays lazy so the caller can chain ``sink_parquet`` without
+    materializing.
 
     Args:
         path: filesystem path to ``*.all.tsv.gz``.
@@ -114,8 +119,7 @@ def extract_tested_variants(path: str) -> pl.LazyFrame:
             schema_overrides={"chromosome": pl.String},
         )
         .rename({"chromosome": "chrom", "position": "pos"})
-        .group_by(["chrom", "pos", "ref", "alt", "gene_id"])
-        .agg(pl.col("maf").first())
+        .select(["chrom", "pos", "ref", "alt", "gene_id", "maf"])
     )
 
 
