@@ -51,24 +51,13 @@ rule eqtl_parse_per_tissue:
         import tempfile
 
         from bolinas.evals.catalogue_parser import (
+            collapse_gene_biotype,
             extract_tested_variants,
             merge_cs_and_sumstats,
             parse_credible_sets,
         )
 
-        # Collapse the raw `gene_biotype` field to a 2-class label: `pc` for
-        # protein-coding, `nc` for everything else (lncRNA, miRNA, snRNA,
-        # pseudogenes, …). Genes missing from this table get `nc` by default
-        # via `fill_null` inside `merge_cs_and_sumstats`.
-        gene_biotype_df = (
-            pl.read_parquet(input.gene_biotype)
-            .with_columns(
-                biotype_class=pl.when(pl.col("gene_biotype") == "protein_coding")
-                .then(pl.lit("pc"))
-                .otherwise(pl.lit("nc"))
-            )
-            .select(["gene_id", "biotype_class"])
-        )
+        gene_biotype_df = collapse_gene_biotype(pl.read_parquet(input.gene_biotype))
         pip_pos = config["eqtl"]["pip_pos_threshold"]
         tissue_label = _GTEX_TISSUE_BY_ID[wildcards.dataset_id]
         with tempfile.TemporaryDirectory(prefix=f"eqtl_{wildcards.dataset_id}_") as tmp:
@@ -189,21 +178,9 @@ rule eqtl_annotate:
             .pipe(check_ref_alt, genome)
             .sort(COORDINATES)
         )
-        # Per-chrom consequences attach via predicate pushdown (same trick as
-        # complex_traits.smk:159-170): pos.is_in() lets parquet skip non-matching
-        # row groups so each chrom's join only touches the relevant rows.
-        results = []
-        for path, chrom in zip(input.consequences, CHROMS):
-            pos_chrom = V.filter(pl.col("chrom") == chrom)
-            if pos_chrom.height == 0:
-                continue
-            cons_subset = (
-                pl.scan_parquet(path)
-                .filter(pl.col("pos").is_in(pos_chrom["pos"].unique().to_list()))
-                .collect()
-            )
-            results.append(pos_chrom.join(cons_subset, on=COORDINATES, how="left"))
-        pl.concat(results).write_parquet(output[0])
+        attach_per_chrom_consequences(V, list(input.consequences), CHROMS).write_parquet(
+            output[0]
+        )
 
 
 rule eqtl_dataset_all:

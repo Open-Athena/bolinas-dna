@@ -33,6 +33,7 @@ from bolinas.evals.trait_intervals import (
 from bolinas.evals.variants import (
     COORDINATES,
     NUCLEOTIDES,
+    attach_per_chrom_consequences,
     check_ref_alt,
     filter_chroms,
     filter_snp,

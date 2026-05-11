@@ -123,6 +123,23 @@ def extract_tested_variants(path: str) -> pl.LazyFrame:
     )
 
 
+def collapse_gene_biotype(df: pl.DataFrame) -> pl.DataFrame:
+    """Collapse the raw Ensembl ``gene_biotype`` field to a 2-class label.
+
+    ``protein_coding`` → ``"pc"``; everything else (lncRNA, miRNA, snRNA,
+    pseudogenes, …) → ``"nc"``. Returns a 2-column ``(gene_id, biotype_class)``
+    frame ready to pass as ``gene_biotype_df`` to :func:`merge_cs_and_sumstats`.
+
+    Input must have at least ``gene_id`` and ``gene_biotype`` columns; other
+    columns are dropped.
+    """
+    return df.with_columns(
+        biotype_class=pl.when(pl.col("gene_biotype") == "protein_coding")
+        .then(pl.lit("pc"))
+        .otherwise(pl.lit("nc"))
+    ).select(["gene_id", "biotype_class"])
+
+
 def merge_cs_and_sumstats(
     cs_df: pl.DataFrame,
     sumstats_lf: pl.LazyFrame,
@@ -172,6 +189,14 @@ def merge_cs_and_sumstats(
         columns are empty for the bulk of variants and only populated for
         those crossing ``pip_pos_threshold`` in some gene.
     """
+    # Defensive: gene_biotype_df schema is load-bearing — a column rename
+    # upstream would silently feed `null` biotypes through and `fill_null`
+    # would stash every gene as `nc`, corrupting the
+    # `positive_biotype_classes` aggregate. Use `collapse_gene_biotype()`
+    # if starting from the raw Ensembl `gene_biotype` field.
+    assert set(gene_biotype_df.columns) == {"gene_id", "biotype_class"}, (
+        f"gene_biotype_df must be (gene_id, biotype_class); got {gene_biotype_df.columns}"
+    )
     return (
         sumstats_lf.join(
             cs_df.lazy(), on=["chrom", "pos", "ref", "alt", "gene_id"], how="left"

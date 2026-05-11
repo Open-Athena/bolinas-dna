@@ -5,15 +5,14 @@ workdir: .
 resources:
   infra: aws/us-east-2
   cpus: 8+
-  # 256 GB: per-tissue parses with eGene list aggregation use 20-40 GB
-  # peak each (the list-typed `positive_genes` / `positive_biotype_classes`
-  # aggregates don't stream cleanly — polars materializes most of the
-  # pre-agg DataFrame). 4 parallel × 40 GB peak = 160 GB; 128 GB cluster
-  # OOM'd. r6i.8xlarge with 256 GB gives comfortable headroom.
+  # Per-tissue parses with eGene list aggregation use 20-40 GB peak each
+  # — list-typed `positive_genes` / `positive_biotype_classes` aggregates
+  # don't stream cleanly (polars materializes most of the pre-agg frame).
+  # 4 parallel × 40 GB = 160 GB; 128 GB cluster OOM'd previously. 256 GB
+  # gives headroom.
   memory: 256+
   # 49 tissues × 3.5 GB nominal sumstats transit through tempdir
-  # (concurrent: 4 in flight ≈ 14 GB) + 5 GB per-tissue parquets cached
-  # locally before S3 upload. 300 GB disk is plenty.
+  # (concurrent: 4 in flight ≈ 14 GB) + 5 GB cached parquet output.
   disk_size: 300
   labels:
     project: dna
@@ -29,17 +28,18 @@ setup: |
 run: |
   source $HOME/.local/bin/env 2>/dev/null || true
   cd ~/sky_workdir/snakemake/evals
-  # Round 2-2 of #156: per-tissue parser now emits `positive_genes` +
-  # `positive_biotype_classes` list columns (eGene metadata). Schema
-  # change → force-rerun the per-tissue parses, which cascades through
-  # aggregate / annotate / dataset_all / dataset.
-  # --cores 4 (not 8): per-tissue parses at (variant, gene_id) granularity
-  # use ~10–20 GB peak each. 4-way parallel × 128 GB = 32 GB headroom per
-  # worker; 8-way OOM'd at 128 GB (Ray killed worker at 119 GB / 124 GB).
+  # --cores 4: per-tissue parses use ~20-40 GB peak each (gene-granularity
+  # list-col aggregation doesn't stream); 4-way parallel ≈ 160 GB, leaves
+  # 96 GB headroom on the 256 GB box.
+  # `--restart-times 3` auto-retries transient FTP / Ray hiccups.
+  # No `--forcerun` here: re-running the yaml from scratch should be
+  # idempotent against cached parquets. Add `--forcerun eqtl_parse_per_tissue`
+  # locally (and bump the cluster yaml) only when changing the per-tissue
+  # parquet schema, which would otherwise rebuild 170 GB of FTP downloads.
   uv run snakemake \
     --cores 4 \
     -p \
     --rerun-triggers=mtime \
     --rerun-incomplete \
-    --forcerun eqtl_parse_per_tissue \
+    --restart-times 3 \
     -- results/dataset_unsplit/eqtl.parquet

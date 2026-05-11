@@ -18,6 +18,7 @@ import pytest
 
 from bolinas.evals.catalogue_parser import (
     _parse_variant_id,
+    collapse_gene_biotype,
     extract_tested_variants,
     merge_cs_and_sumstats,
     parse_credible_sets,
@@ -307,6 +308,60 @@ def test_merge_empty_positive_lists_for_pure_negative():
     assert row["positive_biotype_classes"] == []
     # And the variant's max(pip) reflects the low value
     assert row["pip"] == pytest.approx(0.005)
+
+
+def test_merge_rejects_wrong_gene_biotype_schema():
+    """A `gene_biotype_df` without the expected `(gene_id, biotype_class)`
+    schema must fail loudly — without the assert, a column rename upstream
+    would silently feed null biotypes through and the `positive_biotype_classes`
+    aggregate would mark every gene as 'nc' (default fill)."""
+    cs = parse_credible_sets(
+        _write_tsv_gz([_cs_row("chr1_100_A_T", "G", 0.95)], _CS_HEADER)
+    )
+    sumstats = extract_tested_variants(
+        _write_tsv_gz([_sumstats_row("chr1_100_A_T", "G", 0.015)], _SUMSTATS_HEADER)
+    )
+    # Wrong schema: extra column. Should reject (load-bearing for correctness).
+    bad = pl.DataFrame(
+        {"gene_id": ["G"], "biotype_class": ["pc"], "gene_biotype": ["protein_coding"]}
+    )
+    with pytest.raises(AssertionError, match="gene_biotype_df must be"):
+        merge_cs_and_sumstats(
+            cs, sumstats, "T", gene_biotype_df=bad, pip_pos_threshold=0.9
+        )
+
+
+# ---------- collapse_gene_biotype ----------
+
+
+class TestCollapseGeneBiotype:
+    def test_protein_coding_to_pc(self) -> None:
+        df = pl.DataFrame({"gene_id": ["G1"], "gene_biotype": ["protein_coding"]})
+        out = collapse_gene_biotype(df)
+        assert out.to_dicts() == [{"gene_id": "G1", "biotype_class": "pc"}]
+
+    def test_everything_else_to_nc(self) -> None:
+        df = pl.DataFrame(
+            {
+                "gene_id": ["G1", "G2", "G3", "G4"],
+                "gene_biotype": ["lncRNA", "miRNA", "processed_pseudogene", "snoRNA"],
+            }
+        )
+        out = collapse_gene_biotype(df).sort("gene_id")
+        assert out["biotype_class"].to_list() == ["nc", "nc", "nc", "nc"]
+
+    def test_output_schema_is_exactly_two_cols(self) -> None:
+        """Drops `gene_biotype` and any extra cols, so the output is
+        directly usable as `gene_biotype_df` for `merge_cs_and_sumstats`."""
+        df = pl.DataFrame(
+            {
+                "gene_id": ["G1"],
+                "gene_biotype": ["protein_coding"],
+                "extra": ["junk"],
+            }
+        )
+        out = collapse_gene_biotype(df)
+        assert set(out.columns) == {"gene_id", "biotype_class"}
 
 
 def test_merge_missing_gene_in_biotype_defaults_to_nc():
