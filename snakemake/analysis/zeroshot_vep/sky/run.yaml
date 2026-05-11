@@ -1,0 +1,72 @@
+# SkyPilot task: zero-shot VEP scoring experiment.
+#
+# 5 models × 3 datasets × 3 windows = 45 (model, window, dataset) combos. Each
+# does 4 forward passes per variant, ~3 K-9 K variants → ~30 min total inference
+# at batch_size=16 on A10G. Embedding cache rotated per model to stay within
+# 200 GB disk (~100 GB peak).
+#
+# Results (parquets, csv) persist to s3://oa-bolinas/snakemake/analysis/zeroshot_vep/
+# via the default-storage-provider in workflow/profiles/default/config.yaml.
+#
+# Launch (foreground feature-extraction run):
+#   sky launch snakemake/analysis/zeroshot_vep/sky/run.yaml -c zeroshot-vep
+#
+# Iterate on scores only (re-run stages 2-4, skip GPU stage 1):
+#   sky exec zeroshot-vep snakemake/analysis/zeroshot_vep/sky/run.yaml \
+#     --env SNAKEMAKE_ARGS='--forcerun compute_scores compute_metrics aggregate_metrics'
+
+name: zeroshot-vep
+
+resources:
+    infra: aws/us-east-2
+    accelerators: A10G:1
+    disk_size: 200
+    labels:
+        project: dna
+
+workdir: .
+
+envs:
+    SNAKEMAKE_ARGS: ""
+
+file_mounts:
+    ~/.config/gcloud/application_default_credentials.json: ~/.config/gcloud/application_default_credentials.json
+
+setup: |
+    set -euxo pipefail
+
+    if ! command -v uv >/dev/null 2>&1; then
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+    fi
+
+    if ! command -v gcloud >/dev/null 2>&1; then
+        curl -fsSL https://sdk.cloud.google.com > /tmp/gcloud-install.sh
+        bash /tmp/gcloud-install.sh --disable-prompts --install-dir="$HOME"
+    fi
+
+    grep -q 'google-cloud-sdk/bin' "$HOME/.bashrc" || \
+        echo 'export PATH="$HOME/google-cloud-sdk/bin:$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+
+    export PATH="$HOME/google-cloud-sdk/bin:$HOME/.local/bin:$PATH"
+    export GOOGLE_APPLICATION_CREDENTIALS="$HOME/.config/gcloud/application_default_credentials.json"
+
+    uv sync
+
+    # Smoke-test GCS access.
+    gcloud storage ls gs://marin-dna-us-central1/checkpoints/ | head -3 >/dev/null
+    gcloud storage ls gs://marin-us-central1/checkpoints/ | head -3 >/dev/null
+
+run: |
+    set -euxo pipefail
+
+    export PATH="$HOME/google-cloud-sdk/bin:$HOME/.local/bin:$PATH"
+    export GOOGLE_APPLICATION_CREDENTIALS="$HOME/.config/gcloud/application_default_credentials.json"
+    export WANDB_DISABLED=true
+
+    cd snakemake/analysis/zeroshot_vep
+
+    uv run --project ../../.. snakemake \
+        --profile workflow/profiles/default \
+        --printshellcmds \
+        --rerun-incomplete \
+        $SNAKEMAKE_ARGS

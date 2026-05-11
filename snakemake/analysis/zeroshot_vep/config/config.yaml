@@ -1,0 +1,99 @@
+# Zero-shot VEP scoring experiment. Train split only — DO NOT
+# repurpose this for the leaderboards. (#161 / #162 / #172 stay frozen on
+# evals_v2's fixed scoring rule.)
+
+# HuggingFace dataset prefix; each dataset loaded as f"{input_hf_prefix}_{name}".
+input_hf_prefix: bolinas-dna/evals
+
+# Reference genome (GRCh38, Ensembl 113 — same as evals_v2 for byte-for-byte
+# reproducibility of variant windows).
+genome_url: http://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz
+
+# Train-only convention (matches evals_v2 / project memory). Test held out.
+split: train
+
+datasets:
+  - name: mendelian_traits
+  - name: complex_traits
+  - name: eqtl
+
+# Each model lists its window sweep explicitly. `native_window` is the size
+# the model was trained on; we also test ½× and ~2× to see how shrink/expand
+# behaves. For exp136 the native is 255 (BOS prepended → 256 tokens), so the
+# half/double points are kept as DNA bases (128 / 512) for comparability with
+# the no-BOS exp55/58/59 models.
+models:
+  - name: exp55-mammals
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-mammals-r01-52f413/hf/step-16999
+    native_window: 256
+    windows: [128, 256, 512]
+    region_label: promoter
+
+  - name: exp58-mammals
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp58-mammals-r01-23d451/hf/step-16999
+    native_window: 256
+    windows: [128, 256, 512]
+    region_label: cds
+
+  - name: exp58-animals
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp58-animals-r01-1e3682/hf/step-16999
+    native_window: 256
+    windows: [128, 256, 512]
+    region_label: cds
+
+  - name: exp59-mammals
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp59-mammals-r01-1d9235/hf/step-16999
+    native_window: 256
+    windows: [128, 256, 512]
+    region_label: downstream
+
+  - name: exp136-proj_v30
+    gcs_path: gs://marin-us-central1/checkpoints/dna-bolinas-enhancer-curation-v0.1-proj_v30-6692f0/hf/step-9999
+    native_window: 255
+    windows: [128, 255, 512]
+    region_label: enhancer
+
+inference:
+  # 4 candidate sequences per variant → effective sequence batch = 4 * batch_size.
+  # 16 variants → 64 sequences fits A10G 24GB at window=512 once the vocab-sized
+  # logits tensor is freed before the embedding gather (see features.py).
+  batch_size: 16
+  dtype: bfloat16
+  store_pos_logprob: true  # cheap; kept for future per-position scoring experiments
+
+# Score columns to send to PairwiseAccuracy. Listed explicitly so adding a new
+# scoring rule means appending one line here — the heatmap / aggregate stage
+# discovers them automatically.
+score_columns:
+  # likelihood (6)
+  - llr
+  - minus_llr
+  - abs_llr
+  - minus_logp_ref
+  - minus_logp_alt
+  - entropy
+  # embeddings: 3 distances × 4 pools × 2 layers = 24
+  - embed_l2_flat_last
+  - embed_l2_mean_last
+  - embed_l2_varpos_last
+  - embed_l2_lastpos_last
+  - embed_l2_flat_middle
+  - embed_l2_mean_middle
+  - embed_l2_varpos_middle
+  - embed_l2_lastpos_middle
+  - embed_cosine_flat_last
+  - embed_cosine_mean_last
+  - embed_cosine_varpos_last
+  - embed_cosine_lastpos_last
+  - embed_cosine_flat_middle
+  - embed_cosine_mean_middle
+  - embed_cosine_varpos_middle
+  - embed_cosine_lastpos_middle
+  - embed_dot_flat_last
+  - embed_dot_mean_last
+  - embed_dot_varpos_last
+  - embed_dot_lastpos_last
+  - embed_dot_flat_middle
+  - embed_dot_mean_middle
+  - embed_dot_varpos_middle
+  - embed_dot_lastpos_middle

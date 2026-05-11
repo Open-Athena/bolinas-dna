@@ -1,0 +1,27 @@
+"""Snakemake workflow: zero-shot VEP scoring experiment.
+
+Train-split only. 5 models × 3 datasets × 3 windows = 45 (model, window, dataset)
+feature caches, each yielding 30 score columns × 8 subsets + 2 global aggregations.
+
+Stage 1 (GPU): extract features (4-pass forward → npz cache).
+Stage 2 (CPU): compute scores from cache.
+Stage 3 (CPU): pairwise accuracy per subset + global pooled + macro.
+Stage 4 (CPU): aggregate all metrics into a single parquet for the issue body.
+"""
+
+
+configfile: "config/config.yaml"
+
+
+include: "rules/common.smk"
+include: "rules/download.smk"
+include: "rules/features.smk"
+include: "rules/scores.smk"
+include: "rules/metrics.smk"
+include: "rules/aggregate.smk"
+
+
+rule all:
+    input:
+        "results/metrics_aggregated.parquet",
+        "results/metrics_aggregated.csv",
