@@ -5,7 +5,11 @@ workdir: .
 resources:
   infra: aws/us-east-2
   cpus: 8+
-  memory: 64+
+  # 128 GB safety margin for `eqtl_aggregate_tissues`. The streaming
+  # group_by on ~500M concat'd rows (49 × ~10M per tissue) OOM'd at 64 GB.
+  # The per-chrom chunking in the rule already bounds memory to ~5–10 GB
+  # per pass; the extra headroom is for polars' working memory.
+  memory: 128+
   # 49 tissues × 3.5 GB nominal sumstats transit through tempdir
   # (concurrent: 8 in flight ≈ 30 GB) + 5 GB per-tissue parquets cached
   # locally before S3 upload. 300 GB gives comfortable slack.

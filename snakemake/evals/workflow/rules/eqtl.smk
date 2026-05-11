@@ -81,6 +81,13 @@ rule eqtl_aggregate_tissues:
     `merge_cs_and_sumstats` guarantees max(pip) is well-defined for every
     variant that appears in any tissue's sumstats — that's the change vs.
     Finucane that gives us the rich tested-but-no-signal negative pool.
+
+    **Memory:** the 49 per-tissue parquets concat to ~500M rows (49 ×
+    ~10M). A streaming group_by on the whole union exceeded 64 GB on
+    Sky (exit 137). We process one chromosome at a time instead — polars
+    predicate-pushdown on `chrom == X` reads only the matching row
+    groups from each per-tissue parquet, and the per-chrom hash table
+    fits comfortably in memory.
     """
     input:
         expand(
@@ -94,24 +101,34 @@ rule eqtl_aggregate_tissues:
         pip_neg = config["eqtl"]["pip_neg_threshold"]
         # `use_null_pip_guard=False` because Catalogue SuSiE is single-method —
         # no SuSiE/FINEMAP-disagreement nulls to defend against (unlike
-        # complex_traits). After `merge_cs_and_sumstats` 0-fills, the per-tissue
-        # parquets contain no null pips anyway.
-        labeled = label_variants_by_pip(
-            pl.scan_parquet(list(input)),
-            pip_pos_threshold=pip_pos,
-            pip_neg_threshold=pip_neg,
-            use_null_pip_guard=False,
-            extra_aggs=[
-                pl.col("maf").mean().alias("MAF"),
-                pl.col("tissue")
-                .filter(pl.col("pip") > pip_pos)
-                .unique()
-                .sort()
-                .str.join(",")
-                .alias("tissues"),
-            ],
-        )
-        labeled.sort(COORDINATES).sink_parquet(output[0])
+        # complex_traits). After `merge_cs_and_sumstats` 0-fills, the
+        # per-tissue parquets contain no null pips anyway.
+        all_tissues_lf = pl.scan_parquet(list(input))
+        per_chrom_results = []
+        for chrom in CHROMS:
+            chrom_df = (
+                all_tissues_lf.filter(pl.col("chrom") == chrom).collect()
+            )
+            if chrom_df.height == 0:
+                continue
+            labeled_chrom = label_variants_by_pip(
+                chrom_df,
+                pip_pos_threshold=pip_pos,
+                pip_neg_threshold=pip_neg,
+                use_null_pip_guard=False,
+                extra_aggs=[
+                    pl.col("maf").mean().alias("MAF"),
+                    pl.col("tissue")
+                    .filter(pl.col("pip") > pip_pos)
+                    .unique()
+                    .sort()
+                    .str.join(",")
+                    .alias("tissues"),
+                ],
+            )
+            per_chrom_results.append(labeled_chrom)
+            del chrom_df
+        pl.concat(per_chrom_results).sort(COORDINATES).write_parquet(output[0])
 
 
 rule eqtl_annotate:
