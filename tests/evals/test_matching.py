@@ -21,6 +21,7 @@ from bolinas.evals.matching import (
     MAF_TIERED_LOG8_DISTAL_ONLY,
     MAF_TIERED_V1,
     MATCH_GROUP_COL,
+    NCRNA_TSS_NC_DIST_BIN_EDGES,
     TSS_DIST_BIN_EDGES,
     _combine_results,
     _find_closest,
@@ -28,6 +29,7 @@ from bolinas.evals.matching import (
     _scale_features,
     _sort_by_coordinates,
     _validate_columns,
+    add_subset_distance_bins,
     add_tiered_maf_bin,
     bin_feature,
     match_features,
@@ -605,6 +607,82 @@ def test_bin_na_constant_distinct_from_bin_labels() -> None:
     # with the BIN_OOR sentinel, since both can co-occur in a single column.
     assert not BIN_NA.startswith("b") or not BIN_NA[1:].isdigit()
     assert BIN_NA != BIN_OOR
+
+
+class TestAddSubsetDistanceBins:
+    """Tests for the per-biotype distance-bin assignment helper.
+
+    The default (iter-33) only applies `distance_tss_nc_bin` to
+    `tss_proximal`; round-2 of #156 opts eqtl into also binning ncRNA via
+    `include_ncrna_tss_nc_bin=True` to close the PA=0.401 leak that
+    showed up after the Catalogue source switch.
+    """
+
+    def _frame(self) -> pl.DataFrame:
+        return pl.DataFrame(
+            {
+                "chrom": ["1"] * 4,
+                "consequence_group": [
+                    "tss_proximal",
+                    "splicing",
+                    "non_coding_transcript_exon_variant",
+                    "distal",
+                ],
+                "distance_tss_pc": [25.0, 5000.0, 8000.0, 200000.0],
+                "distance_tss_nc": [25.0, 5000.0, 600.0, 200000.0],
+                "distance_exon_pc": [1000.0, 5.0, 5000.0, 50000.0],
+                "distance_exon_nc": [1000.0, 5000.0, 5000.0, 50000.0],
+            }
+        )
+
+    def test_default_does_not_bin_ncrna(self) -> None:
+        """Default (iter-33): only tss_proximal gets `distance_tss_nc_bin`.
+        ncRNA gets BIN_NA so existing mendelian/complex outputs are
+        byte-equivalent."""
+        out = add_subset_distance_bins(self._frame())
+        rows = {r["consequence_group"]: r for r in out.to_dicts()}
+        assert rows["tss_proximal"]["distance_tss_nc_bin"] == "b0"  # 25 ∈ [0, 50)
+        assert rows["non_coding_transcript_exon_variant"]["distance_tss_nc_bin"] == BIN_NA
+        assert rows["distal"]["distance_tss_nc_bin"] == BIN_NA
+        assert rows["splicing"]["distance_tss_nc_bin"] == BIN_NA
+
+    def test_opt_in_bins_ncrna_with_wider_edges(self) -> None:
+        """`include_ncrna_tss_nc_bin=True` adds the ncRNA bin without
+        affecting other subsets."""
+        out = add_subset_distance_bins(
+            self._frame(), include_ncrna_tss_nc_bin=True
+        )
+        rows = {r["consequence_group"]: r for r in out.to_dicts()}
+        # tss_proximal still uses the narrower TSS_DIST_BIN_EDGES (cap at 1 kb)
+        assert rows["tss_proximal"]["distance_tss_nc_bin"] == "b0"  # 25 ∈ [0, 50)
+        # ncRNA: distance 600 falls in NCRNA_TSS_NC_DIST_BIN_EDGES = [0, 200, 1000, 5000]
+        #   → bin b1 (200 ≤ x < 1000).
+        assert rows["non_coding_transcript_exon_variant"]["distance_tss_nc_bin"] == "b1"
+        # Other subsets unchanged.
+        assert rows["distal"]["distance_tss_nc_bin"] == BIN_NA
+        assert rows["splicing"]["distance_tss_nc_bin"] == BIN_NA
+        # The opt-in flag must NOT affect the other two bin columns.
+        assert rows["non_coding_transcript_exon_variant"]["distance_tss_pc_bin"] == BIN_NA
+        assert rows["non_coding_transcript_exon_variant"]["distance_exon_pc_bin"] == BIN_NA
+
+    def test_ncrna_edges_match_constant(self) -> None:
+        """NCRNA_TSS_NC_DIST_BIN_EDGES is [0, 200, 1000, 5000] — pin both
+        the constant value and the bin assignment behavior."""
+        assert NCRNA_TSS_NC_DIST_BIN_EDGES == [0, 200, 1000, 5000]
+        df = pl.DataFrame(
+            {
+                "chrom": ["1"] * 5,
+                "consequence_group": ["non_coding_transcript_exon_variant"] * 5,
+                "distance_tss_pc": [0.0] * 5,
+                "distance_tss_nc": [50.0, 500.0, 2000.0, 4999.0, 6000.0],
+                "distance_exon_pc": [0.0] * 5,
+                "distance_exon_nc": [0.0] * 5,
+            }
+        )
+        out = add_subset_distance_bins(df, include_ncrna_tss_nc_bin=True)
+        bins = out["distance_tss_nc_bin"].to_list()
+        # [0, 200): b0; [200, 1000): b1; [1000, 5000]: b2 (last bin inclusive); >5000: OOR
+        assert bins == ["b0", "b1", "b2", "b2", BIN_OOR]
 
 
 class TestAddTieredMafBin:

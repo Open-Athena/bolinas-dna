@@ -28,16 +28,12 @@ setup: |
 run: |
   source $HOME/.local/bin/env 2>/dev/null || true
   cd ~/sky_workdir/snakemake/evals
-  # `--forcerun eqtl_aggregate_tissues` to ensure the cross-tissue concat
-  # re-runs (its inputs are the 49 per_tissue parquets, which don't exist
-  # on S3 yet — but mtime-trigger alone may not catch the new rule on
-  # an existing aggregated.parquet from the prior Finucane pipeline).
-  # Snakemake will run `eqtl_parse_per_tissue` for each missing per-tissue
-  # parquet, then cascade through annotate / dataset_all / dataset / split
-  # / hf_upload.
+  # Round-2 of #156: matching code changed (add_subset_distance_bins +
+  # include_ncrna_tss_nc_bin=True for eqtl). Upstream `dataset_all.parquet`
+  # is unchanged, so only `--forcerun eqtl_dataset` needs to re-run.
   uv run snakemake \
     --cores 8 \
     -p \
     --rerun-triggers=mtime \
-    --forcerun eqtl_aggregate_tissues \
+    --forcerun eqtl_dataset \
     -- results/dataset_unsplit/eqtl.parquet

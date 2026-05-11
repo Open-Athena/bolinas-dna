@@ -200,7 +200,16 @@ rule eqtl_dataset:
         V = (
             pl.read_parquet(input[0])
             .filter(pl.col("MAF").is_finite() & pl.col("MAF").is_not_null())
-            .pipe(add_subset_distance_bins)
+            # Round-2 of #156: `include_ncrna_tss_nc_bin=True` adds
+            # `distance_tss_nc_bin` as an exact-match categorical for the
+            # `non_coding_transcript_exon_variant` subset, using
+            # `NCRNA_TSS_NC_DIST_BIN_EDGES`. Closes the PA=0.401 leak
+            # exposed when the eqtl source switched to Catalogue (the
+            # larger negative pool made the previously-power-limited
+            # residual detectable). Mendelian / complex still pass
+            # `include_ncrna_tss_nc_bin=False` (the default) so their
+            # iter-33 outputs stay byte-equivalent.
+            .pipe(add_subset_distance_bins, include_ncrna_tss_nc_bin=True)
         )
         V = add_tiered_maf_bin(
             V, MAF_TIERED_LOG8_DISTAL_ONLY, log_local_group_cols=CAT_BASE

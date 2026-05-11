@@ -23,6 +23,13 @@ BIN_NA = "NA"  # subset-conditional bin not applicable for this row
 # eval datasets (mendelian / complex / eqtl). https://github.com/Open-Athena/bolinas-dna/issues/156
 TSS_DIST_BIN_EDGES = [0, 50, 100, 200, 500, 1000]
 EXON_DIST_BIN_EDGES = [0, 5, 20, 30]
+# Wider edges for `non_coding_transcript_exon_variant` × `distance_tss_nc`,
+# added in round-2 of #156 after the Catalogue source switch exposed a
+# residual leak (PA=0.401, p=1.2e-5). ncRNA-exon variants span a much
+# broader distance-to-TSS range than tss_proximal (the iter-33 design's
+# only consumer of `distance_tss_nc_bin`) — empirical pos quantiles run
+# from 9 bp (q=0.05) to ~8.7 kb (q=0.95). 4 bins (+ OOR for >5 kb).
+NCRNA_TSS_NC_DIST_BIN_EDGES = [0, 200, 1000, 5000]
 # Three MAF bin granularities used by the per-subset tiered scheme.
 MAF_BIN_EDGES_20 = [
     0.0, 0.0005, 0.001, 0.0015, 0.002, 0.0025, 0.003, 0.0035, 0.004,
@@ -113,7 +120,11 @@ CAT_BASE: list[str] = [
 ]
 
 
-def add_subset_distance_bins(df: pl.DataFrame) -> pl.DataFrame:
+def add_subset_distance_bins(
+    df: pl.DataFrame,
+    *,
+    include_ncrna_tss_nc_bin: bool = False,
+) -> pl.DataFrame:
     """Iter-33 per-biotype distance bins as exact-match categoricals.
 
     - ``distance_tss_pc_bin`` and ``distance_tss_nc_bin``: meaningful only for
@@ -124,16 +135,35 @@ def add_subset_distance_bins(df: pl.DataFrame) -> pl.DataFrame:
     ``distance_exon_nc_bin`` is intentionally not added — splicing/exon_nc
     was clean in the iter-33 baseline so there's no leak to fix and the
     extra bin column would over-tighten splicing matching.
+
+    Args:
+        df: dataframe with ``consequence_group`` + distance columns.
+        include_ncrna_tss_nc_bin: round-2 opt-in for eqtl. When True,
+            also applies ``distance_tss_nc_bin`` to the
+            ``non_coding_transcript_exon_variant`` subset using
+            ``NCRNA_TSS_NC_DIST_BIN_EDGES`` (wider than ``TSS_DIST_BIN_EDGES``
+            because ncRNA-exon variants span a much broader
+            distance-to-nc-TSS range than tss_proximal). Off by default to
+            keep mendelian/complex iter-33 outputs byte-equivalent.
     """
+    tss_nc_bin_expr = (
+        pl.when(pl.col("consequence_group") == "tss_proximal")
+        .then(bin_feature("distance_tss_nc", TSS_DIST_BIN_EDGES))
+    )
+    if include_ncrna_tss_nc_bin:
+        tss_nc_bin_expr = tss_nc_bin_expr.when(
+            pl.col("consequence_group") == "non_coding_transcript_exon_variant"
+        ).then(bin_feature("distance_tss_nc", NCRNA_TSS_NC_DIST_BIN_EDGES))
+    tss_nc_bin_expr = tss_nc_bin_expr.otherwise(pl.lit(BIN_NA)).alias(
+        "distance_tss_nc_bin"
+    )
+
     return df.with_columns(
         pl.when(pl.col("consequence_group") == "tss_proximal")
         .then(bin_feature("distance_tss_pc", TSS_DIST_BIN_EDGES))
         .otherwise(pl.lit(BIN_NA))
         .alias("distance_tss_pc_bin"),
-        pl.when(pl.col("consequence_group") == "tss_proximal")
-        .then(bin_feature("distance_tss_nc", TSS_DIST_BIN_EDGES))
-        .otherwise(pl.lit(BIN_NA))
-        .alias("distance_tss_nc_bin"),
+        tss_nc_bin_expr,
         pl.when(pl.col("consequence_group") == "splicing")
         .then(bin_feature("distance_exon_pc", EXON_DIST_BIN_EDGES))
         .otherwise(pl.lit(BIN_NA))
