@@ -25,16 +25,22 @@ rule eqtl_parse_per_tissue:
     for the raw TSV (would be 170 GB of waste across 49 tissues for files we
     only need to parse once).
 
-    The parse: streams the nominal sumstats via `pl.scan_csv`, dedupes to one
-    row per variant, left-joins per-tissue CS PIPs, 0-fills the PIP for
-    tested-but-not-in-CS variants. The 0-fill is the load-bearing sentinel
-    that makes downstream `label_variants_by_pip` produce a negative label
-    for "tested but no signal" variants — see
+    The parse: streams the nominal sumstats via `pl.scan_csv` at
+    per-(variant, gene) granularity, left-joins per-tissue CS PIPs, 0-fills
+    PIPs for tested-but-not-in-CS pairs, joins `gene_biotype.parquet` to
+    attach pc/nc biotype per gene, then aggregates per-variant within the
+    tissue. Per-variant output has `max(pip)`, `first(maf)`, plus list
+    columns `positive_genes` / `positive_biotype_classes` populated only
+    for variants crossing `pip_pos_threshold` in some gene. The 0-fill is
+    the load-bearing sentinel that makes downstream `label_variants_by_pip`
+    produce a negative label for "tested but no signal" variants — see
     `bolinas.evals.catalogue_parser` docstring.
 
     Output: ~50–400 MB per tissue (depends on tissue sample size + cis-window
     variant density). Cached on S3 so subsequent rule firings are no-ops.
     """
+    input:
+        gene_biotype="results/intervals/gene_biotype.parquet",
     output:
         "results/eqtl/per_tissue/{dataset_id}.parquet",
     params:
@@ -50,6 +56,20 @@ rule eqtl_parse_per_tissue:
             parse_credible_sets,
         )
 
+        # Collapse the raw `gene_biotype` field to a 2-class label: `pc` for
+        # protein-coding, `nc` for everything else (lncRNA, miRNA, snRNA,
+        # pseudogenes, …). Genes missing from this table get `nc` by default
+        # via `fill_null` inside `merge_cs_and_sumstats`.
+        gene_biotype_df = (
+            pl.read_parquet(input.gene_biotype)
+            .with_columns(
+                biotype_class=pl.when(pl.col("gene_biotype") == "protein_coding")
+                .then(pl.lit("pc"))
+                .otherwise(pl.lit("nc"))
+            )
+            .select(["gene_id", "biotype_class"])
+        )
+        pip_pos = config["eqtl"]["pip_pos_threshold"]
         tissue_label = _GTEX_TISSUE_BY_ID[wildcards.dataset_id]
         with tempfile.TemporaryDirectory(prefix=f"eqtl_{wildcards.dataset_id}_") as tmp:
             cs_path = f"{tmp}/cs.tsv.gz"
@@ -68,7 +88,13 @@ rule eqtl_parse_per_tissue:
             )
             cs_df = parse_credible_sets(cs_path)
             sumstats_lf = extract_tested_variants(sumstats_path)
-            merged = merge_cs_and_sumstats(cs_df, sumstats_lf, tissue_label)
+            merged = merge_cs_and_sumstats(
+                cs_df,
+                sumstats_lf,
+                tissue_label,
+                gene_biotype_df=gene_biotype_df,
+                pip_pos_threshold=pip_pos,
+            )
             merged.sink_parquet(output[0])
 
 
@@ -124,6 +150,23 @@ rule eqtl_aggregate_tissues:
                     .sort()
                     .str.join(",")
                     .alias("tissues"),
+                    # `positive_genes` is a list[str] per per-tissue row;
+                    # explode + unique + sort + join across tissues to get
+                    # the per-variant eGene list (union over tissues, sorted).
+                    pl.col("positive_genes")
+                    .explode()
+                    .drop_nulls()
+                    .unique()
+                    .sort()
+                    .str.join(",")
+                    .alias("genes"),
+                    pl.col("positive_biotype_classes")
+                    .explode()
+                    .drop_nulls()
+                    .unique()
+                    .sort()
+                    .str.join(",")
+                    .alias("biotype_classes"),
                 ],
             )
             per_chrom_results.append(labeled_chrom)

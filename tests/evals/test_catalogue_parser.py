@@ -104,6 +104,17 @@ def test_parse_variant_id_sex_chrom():
     assert out["pos"] == 1000
 
 
+# Default gene_biotype frame for tests that don't care about the biotype agg.
+def _gene_biotype_df(pairs: list[tuple[str, str]] | None = None) -> pl.DataFrame:
+    """Build a `(gene_id, biotype_class)` frame. Defaults to all-`pc` for the
+    test fixture gene names. Tests covering biotype-class aggregation pass
+    custom pairs."""
+    pairs = pairs or [("ENSG00000000001", "pc"), ("GENE_A", "pc"), ("GENE_B", "pc"),
+                      ("GENE_C", "pc"), ("G", "pc"), ("GENE_NC", "nc")]
+    return pl.DataFrame({"gene_id": [p[0] for p in pairs],
+                         "biotype_class": [p[1] for p in pairs]})
+
+
 # ---------- parse_credible_sets ----------
 
 
@@ -114,21 +125,25 @@ def test_parse_credible_sets_single_variant():
     assert out.height == 1
     r = out.to_dicts()[0]
     assert (r["chrom"], r["pos"], r["ref"], r["alt"]) == ("1", 100, "A", "T")
+    assert r["gene_id"] == "ENSG00000000001"
     assert r["pip"] == pytest.approx(0.95)
 
 
-def test_parse_credible_sets_max_across_credible_sets():
-    """A variant in multiple credible sets (different genes / signals) gets
-    its max PIP across all memberships."""
+def test_parse_credible_sets_max_per_variant_gene_pair():
+    """Per-(variant, gene_id) max PIP. Same variant in two different genes
+    gets two rows; same variant + same gene with multiple CS signals
+    (L1, L2, ...) gets one row with max PIP."""
     rows = [
         _cs_row("chr1_100_A_T", "GENE_A", 0.3, cs_index=1),
         _cs_row("chr1_100_A_T", "GENE_B", 0.95, cs_index=1),
-        _cs_row("chr1_100_A_T", "GENE_A", 0.5, cs_index=2),
+        _cs_row("chr1_100_A_T", "GENE_A", 0.5, cs_index=2),  # same variant+gene, L2
     ]
     path = _write_tsv_gz(rows, _CS_HEADER)
-    out = parse_credible_sets(path)
-    assert out.height == 1
-    assert out.to_dicts()[0]["pip"] == pytest.approx(0.95)
+    out = parse_credible_sets(path).sort("gene_id")
+    assert out.height == 2  # GENE_A and GENE_B, NOT collapsed to 1 row
+    by_gene = {r["gene_id"]: r["pip"] for r in out.to_dicts()}
+    assert by_gene["GENE_A"] == pytest.approx(0.5)  # max of L1=0.3 and L2=0.5
+    assert by_gene["GENE_B"] == pytest.approx(0.95)
 
 
 def test_parse_credible_sets_distinct_variants():
@@ -140,6 +155,7 @@ def test_parse_credible_sets_distinct_variants():
     path = _write_tsv_gz(rows, _CS_HEADER)
     out = parse_credible_sets(path).sort(["chrom", "pos"])
     assert out.height == 3
+    assert set(out.columns) == {"chrom", "pos", "ref", "alt", "gene_id", "pip"}
     pips = out["pip"].to_list()
     assert pips == pytest.approx([0.95, 0.005, 0.5])
 
@@ -147,85 +163,163 @@ def test_parse_credible_sets_distinct_variants():
 # ---------- extract_tested_variants ----------
 
 
-def test_extract_tested_variants_dedupes_per_variant():
-    """Sumstats has one row per (variant, gene); dedup collapses to
-    one row per variant. MAF is identical across gene-rows for one variant
-    in one tissue so first() is sufficient."""
+def test_extract_tested_variants_keeps_gene_id():
+    """Each (variant, gene_id) pair is one output row. MAF is constant
+    across gene-rows for one variant in one tissue, so first() suffices."""
     rows = [
         _sumstats_row("chr1_100_A_T", "GENE_A", 0.015),
         _sumstats_row("chr1_100_A_T", "GENE_B", 0.015),  # same variant, diff gene
         _sumstats_row("chr1_200_C_G", "GENE_A", 0.05),
     ]
     path = _write_tsv_gz(rows, _SUMSTATS_HEADER)
-    out = extract_tested_variants(path).collect().sort(["chrom", "pos"])
-    assert out.height == 2
-    assert out["maf"].to_list() == pytest.approx([0.015, 0.05])
+    out = extract_tested_variants(path).collect().sort(["chrom", "pos", "gene_id"])
+    assert out.height == 3
+    assert out["maf"].to_list() == pytest.approx([0.015, 0.015, 0.05])
+    assert out["gene_id"].to_list() == ["GENE_A", "GENE_B", "GENE_A"]
 
 
 def test_extract_tested_variants_columns():
-    """Output schema is exactly (chrom, pos, ref, alt, maf)."""
+    """Output schema is exactly (chrom, pos, ref, alt, gene_id, maf)."""
     rows = [_sumstats_row("chr1_100_A_T", "GENE_A", 0.015)]
     path = _write_tsv_gz(rows, _SUMSTATS_HEADER)
     out = extract_tested_variants(path).collect()
-    assert set(out.columns) == {"chrom", "pos", "ref", "alt", "maf"}
+    assert set(out.columns) == {"chrom", "pos", "ref", "alt", "gene_id", "maf"}
 
 
 # ---------- merge_cs_and_sumstats: 0-fill semantics ----------
+
+
+def _do_merge(
+    cs_rows: list[list[str]],
+    sumstats_rows: list[list[str]],
+    tissue: str = "T",
+    biotype_pairs: list[tuple[str, str]] | None = None,
+    pip_pos: float = 0.9,
+) -> pl.DataFrame:
+    """Test helper: write CS + sumstats TSVs, call the parsers + merge."""
+    cs = parse_credible_sets(_write_tsv_gz(cs_rows, _CS_HEADER))
+    sumstats = extract_tested_variants(
+        _write_tsv_gz(sumstats_rows, _SUMSTATS_HEADER)
+    )
+    return merge_cs_and_sumstats(
+        cs,
+        sumstats,
+        tissue,
+        gene_biotype_df=_gene_biotype_df(biotype_pairs),
+        pip_pos_threshold=pip_pos,
+    ).collect()
 
 
 def test_merge_zero_fills_variants_outside_cs():
     """Variants present in sumstats but not in any CS get pip=0 (not null).
     This is the load-bearing sentinel that makes downstream label_variants_by_pip
     produce a negative label for tested-but-no-signal variants."""
-    cs = parse_credible_sets(
-        _write_tsv_gz(
-            [_cs_row("chr1_100_A_T", "GENE_A", 0.95)],
-            _CS_HEADER,
-        )
-    )
-    sumstats = extract_tested_variants(
-        _write_tsv_gz(
-            [
-                _sumstats_row("chr1_100_A_T", "GENE_A", 0.015),  # in CS
-                _sumstats_row("chr1_200_C_G", "GENE_A", 0.05),   # tested, not in CS
-            ],
-            _SUMSTATS_HEADER,
-        )
-    )
-    out = (
-        merge_cs_and_sumstats(cs, sumstats, "adipose_subcutaneous")
-        .collect()
-        .sort(["chrom", "pos"])
-    )
+    out = _do_merge(
+        cs_rows=[_cs_row("chr1_100_A_T", "GENE_A", 0.95)],
+        sumstats_rows=[
+            _sumstats_row("chr1_100_A_T", "GENE_A", 0.015),  # in CS
+            _sumstats_row("chr1_200_C_G", "GENE_A", 0.05),   # tested, not in CS
+        ],
+    ).sort(["chrom", "pos"])
+    # After per-variant aggregation, each variant gets max(pip) across its genes.
     pip_by_variant = {r["pos"]: r["pip"] for r in out.to_dicts()}
     assert pip_by_variant[100] == pytest.approx(0.95)
     assert pip_by_variant[200] == pytest.approx(0.0)
-    # And critically — pip=0.0 is a real value, not null
+    # Critically — pip=0.0 is a real value, not null
     assert out.filter(pl.col("pip").is_null()).height == 0
 
 
 def test_merge_adds_tissue_column():
-    cs = parse_credible_sets(
-        _write_tsv_gz([_cs_row("chr1_100_A_T", "G", 0.95)], _CS_HEADER)
+    out = _do_merge(
+        cs_rows=[_cs_row("chr1_100_A_T", "G", 0.95)],
+        sumstats_rows=[_sumstats_row("chr1_100_A_T", "G", 0.015)],
+        tissue="muscle_skeletal",
     )
-    sumstats = extract_tested_variants(
-        _write_tsv_gz([_sumstats_row("chr1_100_A_T", "G", 0.015)], _SUMSTATS_HEADER)
-    )
-    out = merge_cs_and_sumstats(cs, sumstats, "muscle_skeletal").collect()
     assert (out["tissue"] == "muscle_skeletal").all()
 
 
 def test_merge_preserves_maf():
-    """MAF comes from sumstats (CS doesn't have MAF). Should appear in
-    output verbatim."""
-    cs = parse_credible_sets(
-        _write_tsv_gz([_cs_row("chr1_100_A_T", "G", 0.95)], _CS_HEADER)
+    """MAF comes from sumstats (CS doesn't have MAF)."""
+    out = _do_merge(
+        cs_rows=[_cs_row("chr1_100_A_T", "G", 0.95)],
+        sumstats_rows=[_sumstats_row("chr1_100_A_T", "G", 0.0154905)],
     )
-    sumstats = extract_tested_variants(
-        _write_tsv_gz([_sumstats_row("chr1_100_A_T", "G", 0.0154905)], _SUMSTATS_HEADER)
-    )
-    out = merge_cs_and_sumstats(cs, sumstats, "T").collect()
     assert out["maf"][0] == pytest.approx(0.0154905)
+
+
+def test_merge_collects_positive_genes():
+    """A variant tested against 3 genes, two of which cross pip_pos: the
+    `positive_genes` list contains both, sorted; the negative gene is
+    excluded."""
+    out = _do_merge(
+        cs_rows=[
+            _cs_row("chr1_100_A_T", "GENE_HIGH_1", 0.95),
+            _cs_row("chr1_100_A_T", "GENE_HIGH_2", 0.92),
+            _cs_row("chr1_100_A_T", "GENE_LOW", 0.005),
+        ],
+        sumstats_rows=[
+            _sumstats_row("chr1_100_A_T", "GENE_HIGH_1", 0.015),
+            _sumstats_row("chr1_100_A_T", "GENE_HIGH_2", 0.015),
+            _sumstats_row("chr1_100_A_T", "GENE_LOW", 0.015),
+            _sumstats_row("chr1_100_A_T", "GENE_NOT_IN_CS", 0.015),  # 0-filled
+        ],
+        biotype_pairs=[("GENE_HIGH_1", "pc"), ("GENE_HIGH_2", "pc"),
+                       ("GENE_LOW", "nc"), ("GENE_NOT_IN_CS", "nc")],
+    )
+    assert out.height == 1
+    row = out.to_dicts()[0]
+    assert row["pip"] == pytest.approx(0.95)
+    assert sorted(row["positive_genes"]) == ["GENE_HIGH_1", "GENE_HIGH_2"]
+
+
+def test_merge_collects_biotype_classes_only_for_positives():
+    """A variant with one pc-gene positive (pip > pip_pos) and one nc-gene
+    positive should produce `positive_biotype_classes = ['nc', 'pc']`.
+    Genes below pip_pos contribute neither to `positive_genes` nor to
+    `positive_biotype_classes`, regardless of their biotype."""
+    out = _do_merge(
+        cs_rows=[
+            _cs_row("chr1_100_A_T", "GENE_PC", 0.95),
+            _cs_row("chr1_100_A_T", "GENE_NC", 0.93),
+            _cs_row("chr1_100_A_T", "GENE_NC_LOW", 0.005),  # ignored: low pip
+        ],
+        sumstats_rows=[
+            _sumstats_row("chr1_100_A_T", "GENE_PC", 0.015),
+            _sumstats_row("chr1_100_A_T", "GENE_NC", 0.015),
+            _sumstats_row("chr1_100_A_T", "GENE_NC_LOW", 0.015),
+        ],
+        biotype_pairs=[("GENE_PC", "pc"), ("GENE_NC", "nc"),
+                       ("GENE_NC_LOW", "nc")],
+    )
+    row = out.to_dicts()[0]
+    assert sorted(row["positive_biotype_classes"]) == ["nc", "pc"]
+
+
+def test_merge_empty_positive_lists_for_pure_negative():
+    """A variant whose only gene has pip < pip_pos gets empty
+    positive_genes / positive_biotype_classes lists (not null)."""
+    out = _do_merge(
+        cs_rows=[_cs_row("chr1_100_A_T", "GENE_A", 0.005)],
+        sumstats_rows=[_sumstats_row("chr1_100_A_T", "GENE_A", 0.015)],
+    )
+    row = out.to_dicts()[0]
+    assert row["positive_genes"] == []
+    assert row["positive_biotype_classes"] == []
+    # And the variant's max(pip) reflects the low value
+    assert row["pip"] == pytest.approx(0.005)
+
+
+def test_merge_missing_gene_in_biotype_defaults_to_nc():
+    """A gene present in CS but not in the gene_biotype table should get
+    biotype_class='nc' (sane default for unannotated genes / lncRNAs etc.)."""
+    out = _do_merge(
+        cs_rows=[_cs_row("chr1_100_A_T", "ORPHAN_GENE", 0.95)],
+        sumstats_rows=[_sumstats_row("chr1_100_A_T", "ORPHAN_GENE", 0.015)],
+        # gene_biotype_df doesn't include ORPHAN_GENE → defaults to nc.
+        biotype_pairs=[("OTHER_GENE", "pc")],
+    )
+    row = out.to_dicts()[0]
+    assert row["positive_biotype_classes"] == ["nc"]
 
 
 # ---------- Integration: end-to-end labeling via label_variants_by_pip ----------
@@ -236,8 +330,9 @@ def _make_tissue_frame(
     sumstats_rows: list[tuple[str, str, float]],
     tissue: str,
 ) -> pl.DataFrame:
-    """Helper: build one tissue's merged (chrom, pos, ref, alt, pip, maf, tissue)
-    frame from inline data."""
+    """Helper: build one tissue's merged (chrom, pos, ref, alt, pip, maf,
+    positive_genes, positive_biotype_classes, tissue) frame from inline
+    data. All genes default to `pc` biotype."""
     cs_path = _write_tsv_gz(
         [_cs_row(v, g, pip) for v, g, pip in cs_rows], _CS_HEADER
     )
@@ -247,7 +342,13 @@ def _make_tissue_frame(
     )
     cs = parse_credible_sets(cs_path)
     sumstats = extract_tested_variants(sumstats_path)
-    return merge_cs_and_sumstats(cs, sumstats, tissue).collect()
+    return merge_cs_and_sumstats(
+        cs,
+        sumstats,
+        tissue,
+        gene_biotype_df=_gene_biotype_df(),
+        pip_pos_threshold=0.9,
+    ).collect()
 
 
 def test_integration_sumstats_only_variant_is_negative():
