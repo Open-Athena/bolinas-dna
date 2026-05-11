@@ -96,3 +96,27 @@ validation_tss_flank: 255
 validation_ncrna_biotypes:
   ["lncRNA", "miRNA", "snoRNA", "snRNA", "ribozyme", "scaRNA", "vault_RNA"]
 ccre_url: "https://downloads.wenglab.org/Registry-V4/GRCh38-cCREs.bed"
+
+# ===== Per-anchor region-type annotation (rule all_region_labels) =====
+# Labels every conservation-filtered anchor with exactly one of:
+#   cds  >  utr3  >  ncrna_exon  >  tss_region_and_utr5  >  ccre_non_promoter  >  background
+# tss_region_and_utr5 = (TSS ± tss_radius on *every* Ensembl transcript) ∪ 5' UTR
+# ncrna_exon          = get_exons(ann) − get_ensembl_protein_coding_exons(ann)
+# ccre_non_promoter   = ENCODE cCRE V4 with cre_class != "PLS" + ccre_flank bp
+#                       (so: dELS, pELS, CA, CA-CTCF, CA-TF, CA-H3K4me3, TF)
+# A window's label is the highest-priority region with any overlap, provided
+# its union-of-functional fraction is >= functional_threshold; otherwise
+# background.
+region_label_tss_radius: 256              # bp each side of every Ensembl TSS
+region_label_ccre_flank: 500              # bp each side of non-PLS cCRE
+region_label_functional_threshold: 0.20   # ≥20% functional bases to escape background
+# Priority order for label assignment. tss_region_and_utr5 is intentionally
+# near the bottom — it's the broadest / most geographic class, so more
+# specific exonic features should win when they happen to overlap.
+region_label_priority:
+  ["cds", "utr3", "ncrna_exon", "tss_region_and_utr5", "ccre_non_promoter"]
+# Per-region partition labels (one subset per label, plus background).
+# Emitted as subsets_def/<name>.query_names.txt — HF subset Parquets +
+# upload rules are intentionally deferred to a follow-up PR.
+region_label_subsets:
+  ["v3_cds", "v3_utr3", "v3_ncrna_exon", "v3_tss_region_and_utr5", "v3_ccre_non_promoter", "v3_bg"]
