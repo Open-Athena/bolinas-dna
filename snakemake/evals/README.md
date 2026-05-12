@@ -181,6 +181,13 @@ You need AWS credentials with S3 access:
 - **On EC2**: attach an IAM role with `AmazonS3FullAccess` to the instance.
 - **On your laptop**: run `aws configure` with an IAM user's access key.
 
+`ldscore_download` shells out to `aws s3 cp`, so install the `aws-cli` group
+to get the `aws` binary on `uv run`'s PATH:
+
+```bash
+uv sync --group aws-cli
+```
+
 ### Singularity (LD score)
 
 `ldscore.smk` runs Hail inside a Docker image via Singularity to convert the
