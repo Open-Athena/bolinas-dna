@@ -10,6 +10,7 @@ from bolinas.evals.conservation import (
     aggregate_conservation_metrics,
     score_variants_at_positions,
 )
+from bolinas.evals.metrics import GLOBAL_SUBSET, MACRO_AVG_SUBSET
 
 
 def test_conservation_tracks_keys():
@@ -141,7 +142,7 @@ def test_aggregate_conservation_metrics_nan_accounting(tmp_path):
     match_groups = [0, 0, 1, 1, 2, 2, 3, 3]
     p = _scored_parquet(tmp_path, "phyloP_241m", scores, labels, subsets, match_groups)
 
-    metrics, md = aggregate_conservation_metrics({"phyloP_241m": p})
+    metrics, md = aggregate_conservation_metrics({"phyloP_241m": p}, n_min=1)
 
     # Schema check.
     expected_cols = {
@@ -190,6 +191,32 @@ def test_aggregate_conservation_metrics_nan_accounting(tmp_path):
     assert "phyloP_241m" in md
 
 
+def test_aggregate_conservation_metrics_aggregate_row_nan_totals(tmp_path):
+    """n_nan and n_total on the aggregate rows. _global_ covers every
+    variant; _macro_avg_ covers only the qualifying subsets (n_pairs >= n_min).
+
+    Dataset: subset A has 4 pairs with 1 NaN; subset B has 1 pair with 1 NaN.
+    With n_min=2, only A qualifies for the macro row."""
+    scores = [np.nan, 0.1, 0.8, 0.2, 0.9, 0.1, 0.7, 0.3, np.nan, 0.5]
+    labels = [1, 0, 1, 0, 1, 0, 1, 0, 1, 0]
+    subsets = ["A", "A", "A", "A", "A", "A", "A", "A", "B", "B"]
+    match_groups = [0, 0, 1, 1, 2, 2, 3, 3, 4, 4]
+    p = _scored_parquet(tmp_path, "phyloP_241m", scores, labels, subsets, match_groups)
+
+    metrics, _ = aggregate_conservation_metrics({"phyloP_241m": p}, n_min=2)
+
+    g = metrics[metrics["subset"] == GLOBAL_SUBSET].iloc[0]
+    m = metrics[metrics["subset"] == MACRO_AVG_SUBSET].iloc[0]
+
+    # _global_: every variant counted.
+    assert int(g["n_nan"]) == 2  # one NaN in A, one in B
+    assert int(g["n_total"]) == 10
+
+    # _macro_avg_ (n_min=2): only A qualifies (4 pairs); B (1 pair) excluded.
+    assert int(m["n_nan"]) == 1  # only A's NaN
+    assert int(m["n_total"]) == 8  # only A's 8 variants
+
+
 def test_aggregate_conservation_metrics_multi_score_column_order(tmp_path):
     """Markdown columns appear in the order of parquet_paths.keys()."""
     scores = [0.7, 0.5, 0.3, 0.2]
@@ -207,7 +234,7 @@ def test_aggregate_conservation_metrics_multi_score_column_order(tmp_path):
             tmp_path, "phastCons_43p", scores, labels, subsets, match_groups
         ),
     }
-    _, md = aggregate_conservation_metrics(paths)
+    _, md = aggregate_conservation_metrics(paths, n_min=1)
 
     pos_100v = md.find("phyloP_100v")
     pos_241m = md.find("phyloP_241m")
@@ -225,7 +252,7 @@ def test_aggregate_conservation_metrics_no_global_or_mean_row(tmp_path):
     match_groups = [0, 0, 1, 1, 2, 2, 3, 3]
     p = _scored_parquet(tmp_path, "score1", scores, labels, subsets, match_groups)
 
-    _, md = aggregate_conservation_metrics({"score1": p})
+    _, md = aggregate_conservation_metrics({"score1": p}, n_min=1)
 
     # Split markdown into the two tables.
     pa_section, nan_section = md.split("### NaN counts")
@@ -250,7 +277,7 @@ def test_aggregate_conservation_metrics_value_formatting(tmp_path):
     subsets = ["A", "A", "A", "A"]
     match_groups = [0, 0, 1, 1]
     p = _scored_parquet(tmp_path, "score1", scores, labels, subsets, match_groups)
-    _, md = aggregate_conservation_metrics({"score1": p})
+    _, md = aggregate_conservation_metrics({"score1": p}, n_min=1)
     assert "1.000 ± 0.000" in md
 
 
