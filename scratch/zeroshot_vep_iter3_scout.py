@@ -119,6 +119,14 @@ def compute_downstream_scores(
     model.eval()
 
     genome = Genome(genome_path)
+    # Speedup: biofoundation.data.Genome stores chromosome sequences in a
+    # pandas Series, and recent pyarrow-backed Series make per-call lookup
+    # slow (py-spy showed Genome.__call__ dominating CPU time). Replace with
+    # a plain dict for O(1) python access. Same string content; same slicing.
+    if hasattr(genome, "_genome"):
+        genome._genome = {k: str(v) for k, v in dict(genome._genome).items()}
+        print(f"[iter3] converted Genome backing to dict ({len(genome._genome)} chroms)",
+              flush=True)
     n_prefix, n_suffix = _get_special_token_counts(tokenizer)
     assert n_suffix == 0
 
