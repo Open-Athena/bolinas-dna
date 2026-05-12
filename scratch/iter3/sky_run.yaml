@@ -1,0 +1,67 @@
+# SkyPilot task: iter-3 scout — downstream-effect scores on exp55-mammals.
+#
+# Single A10G run. Pulls the exp55-mammals checkpoint from GCS (or reuses
+# the one in S3 from iter 1), then computes 8 down_* scores per variant on
+# all 3 datasets (full subsets — analysis later restricts to tss_proximal
+# + 5_prime_UTR_variant since exp55 is the promoter model).
+#
+# Launch:
+#   sky launch scratch/iter3/sky_run.yaml -c iter3-scout
+
+name: iter3-scout
+
+resources:
+    infra: aws/us-east-2
+    accelerators: A10G:1
+    disk_size: 100
+    labels:
+        project: dna
+
+workdir: .
+
+file_mounts:
+    ~/.config/gcloud/application_default_credentials.json: ~/.config/gcloud/application_default_credentials.json
+
+setup: |
+    set -euxo pipefail
+    if ! command -v uv >/dev/null 2>&1; then
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+    fi
+    if ! command -v gcloud >/dev/null 2>&1; then
+        curl -fsSL https://sdk.cloud.google.com > /tmp/gcloud-install.sh
+        bash /tmp/gcloud-install.sh --disable-prompts --install-dir="$HOME"
+    fi
+    grep -q 'google-cloud-sdk/bin' "$HOME/.bashrc" || \
+        echo 'export PATH="$HOME/google-cloud-sdk/bin:$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+    export PATH="$HOME/google-cloud-sdk/bin:$HOME/.local/bin:$PATH"
+    export GOOGLE_APPLICATION_CREDENTIALS="$HOME/.config/gcloud/application_default_credentials.json"
+    uv sync
+    gcloud storage ls gs://marin-dna-us-central1/checkpoints/ | head -3 >/dev/null
+    # We'll pull results back via scp; no AWS CLI install needed.
+
+run: |
+    set -euxo pipefail
+    export PATH="$HOME/google-cloud-sdk/bin:$HOME/.local/bin:$PATH"
+    export GOOGLE_APPLICATION_CREDENTIALS="$HOME/.config/gcloud/application_default_credentials.json"
+    export WANDB_DISABLED=true
+
+    # Pull checkpoint + genome.
+    mkdir -p ~/iter3_data/checkpoint
+    gcloud storage cp -r 'gs://marin-dna-us-central1/checkpoints/exp55-mammals-r01-52f413/hf/step-16999/*' ~/iter3_data/checkpoint/
+    if [ ! -f ~/iter3_data/genome.fa.gz ]; then
+        wget -q -O ~/iter3_data/genome.fa.gz \
+            'http://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz'
+    fi
+
+    # Run scout. Output to ~/iter3_out — caller pulls via scp.
+    mkdir -p ~/iter3_out
+    uv run python scratch/zeroshot_vep_iter3_scout.py \
+        --checkpoint ~/iter3_data/checkpoint \
+        --genome ~/iter3_data/genome.fa.gz \
+        --window 256 \
+        --datasets mendelian_traits complex_traits eqtl \
+        --out-dir ~/iter3_out \
+        --batch-size 32
+
+    echo "[iter3] DONE. Files in ~/iter3_out:"
+    ls -la ~/iter3_out
