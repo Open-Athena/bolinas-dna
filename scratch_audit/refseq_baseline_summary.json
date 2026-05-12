@@ -1,0 +1,10 @@
+{
+  "dataset": "bolinas-dna/genomes-v5-genome_set-mammals-intervals-v1_255_128",
+  "n_rows_sampled": 200000,
+  "total_bases": 51000000,
+  "total_n_bases": 0,
+  "agg_n_frac": 0.0,
+  "agg_lower_frac": 0.1408269411764706,
+  "mean_lower_frac": 0.1408269411764706,
+  "mean_n_frac": 0.0
+}

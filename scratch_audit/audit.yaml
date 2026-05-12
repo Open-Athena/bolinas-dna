@@ -1,0 +1,53 @@
+name: zoonomia-v1-audit
+
+# Investigation cluster for zoonomia-v1-v1 N-stretch + repeat-masking audit.
+# Single SkyPilot instance reused across all `sky exec` iterations for the
+# investigation; teardown at session end.
+
+resources:
+    infra: aws/us-east-2
+    instance_type: c6id.2xlarge      # 8 vCPU, 16 GB RAM, ~470 GB NVMe — small box; this iteration only needs to extract sequences at projected coords from per-species FASTAs (HAL-derived 2bit vs NCBI Datasets genomic.fna). No polars scan on the 11 GB parquet.
+    disk_size: 150
+    labels:
+        project: dna
+
+workdir: .
+
+# Mount HF token + AWS creds from the launcher (read-only).
+file_mounts:
+    ~/.cache/huggingface: ~/.cache/huggingface
+
+setup: |
+    set -euxo pipefail
+
+    if [ ! -d "$HOME/miniforge3" ]; then
+        curl -fsSL -o /tmp/miniforge.sh https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
+        bash /tmp/miniforge.sh -b -p "$HOME/miniforge3"
+        rm /tmp/miniforge.sh
+    fi
+
+    if ! command -v uv >/dev/null 2>&1; then
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+    fi
+
+    grep -q 'miniforge3/bin' "$HOME/.bashrc" || \
+        echo 'export PATH="$HOME/miniforge3/bin:$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+
+    export PATH="$HOME/miniforge3/bin:$HOME/.local/bin:$PATH"
+    uv sync
+
+    # Conda env carrying kentUtils (twoBitToFa, twoBitInfo, faToTwoBit) +
+    # bedtools + python stack + RepeatMasker. Bioconda exposes kentUtils
+    # under per-binary names (ucsc-*); the umbrella `kentutils` package
+    # is *not* a valid bioconda name.
+    source "$HOME/miniconda3/etc/profile.d/conda.sh"
+    if ! conda env list | grep -q '^audit '; then
+        conda create -y -n audit -c conda-forge -c bioconda \
+            'python=3.11' polars pyarrow boto3 awscli datasets \
+            ucsc-twobittofa ucsc-twobitinfo ucsc-fatotwobit \
+            bedtools samtools repeatmasker
+    fi
+
+run: |
+    set -euxo pipefail
+    echo "Audit cluster ready. Use 'sky exec zoonomia-v1-audit <script>' for iterations."
