@@ -247,8 +247,14 @@ def _gh_patch_issue_body(issue_number: int, body: str) -> None:
 
 
 # The leaderboard table is the only contiguous block of pipe-delimited lines
-# anchored on "| method |" in the body. Other tables in <details> (Sizes,
-# Reproducibility) start with "| subset" or "| method | step" and won't match.
+# inside the Results section. We scope the replacement to that section (between
+# the ## Results header and the following horizontal rule) so the Reproducibility
+# table in <details> — which also begins with "| method |" — can never be
+# accidentally targeted, even if section order changes in future edits.
+RESULTS_SECTION_RE = re.compile(
+    r"(## Results — train split\n.*?)(\n---\n)",
+    re.DOTALL,
+)
 TABLE_RE = re.compile(
     r"\| method \|[^\n]*\n(?:\|[^\n]*\n)+",
     re.MULTILINE,
@@ -256,9 +262,14 @@ TABLE_RE = re.compile(
 
 
 def _replace_table(body: str, new_table: str) -> str:
-    if not TABLE_RE.search(body):
-        raise RuntimeError("could not find leaderboard table in issue body")
-    return TABLE_RE.sub(new_table + "\n", body, count=1)
+    section_match = RESULTS_SECTION_RE.search(body)
+    if section_match is None:
+        raise RuntimeError("could not find Results section in issue body")
+    section, sep = section_match.group(1), section_match.group(2)
+    if not TABLE_RE.search(section):
+        raise RuntimeError("could not find leaderboard table in Results section")
+    new_section = TABLE_RE.sub(new_table + "\n", section, count=1)
+    return body[: section_match.start()] + new_section + sep + body[section_match.end():]
 
 
 def _idempotent_replace(
