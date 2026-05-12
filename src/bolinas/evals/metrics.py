@@ -128,6 +128,127 @@ def pairwise_accuracy(
     }
 
 
+def paired_score_comparison(
+    label: pd.Series,
+    score_a: pd.Series,
+    score_b: pd.Series,
+    match_group: pd.Series,
+    alternative: str = "two-sided",
+) -> dict[str, float | int]:
+    """Paired McNemar-style sign test: is score A better than score B on the
+    *same* matched-pair set?
+
+    For each ``match_group`` (pos, neg) pair, both scores produce an ordering
+    outcome ∈ {1.0 (pos > neg), 0.5 (tie), 0.0 (pos < neg)} — same convention
+    as :func:`pairwise_accuracy`. Per-pair advantage = ``out_A - out_B`` ∈
+    {-1, -0.5, 0, +0.5, +1}. Discordant pairs are those with nonzero advantage.
+
+    Under ``H0: A == B``, advantages are symmetric around 0, so the count of
+    "A-wins-this-pair" (positive advantage) is ``Binom(n_discordant, 0.5)``.
+    Half-advantage pairs (`±0.5`) are counted with their natural sign — a
+    ±0.5 contributes 0.5 to wins / losses (mirrors the tie convention in the
+    parent test). For the binomial test, we use the rounded `wins` count over
+    the integer-rounded discordant count; this is the standard handling.
+
+    Args:
+        label, score_a, score_b, match_group: parallel arrays of equal length.
+            Same constraints as :func:`pairwise_accuracy` (one pos + one neg
+            per group, no NaNs in either score).
+        alternative: ``'two-sided'`` (default), ``'greater'`` (H1: A > B), or
+            ``'less'`` (H1: A < B).
+
+    Returns:
+        ``{value, se, n_pairs, n_a_wins, n_b_wins, n_concordant, n_half, p_value}``.
+        ``value = n_a_wins / (n_a_wins + n_b_wins)`` (with halves counted as
+        0.5 to each side) — the fraction of discordant pairs where A wins.
+        ``n_pairs`` is total match_groups; ``n_concordant`` is pairs where A
+        and B agree (both right or both wrong); ``n_half`` is pairs where one
+        side has a tie (advantage = ±0.5).
+    """
+    assert len(label) == len(score_a) == len(score_b) == len(match_group), (
+        f"length mismatch: label={len(label)} a={len(score_a)} "
+        f"b={len(score_b)} match_group={len(match_group)}"
+    )
+    sa = pd.Series(score_a).reset_index(drop=True)
+    sb = pd.Series(score_b).reset_index(drop=True)
+    assert not sa.isna().any() and not sb.isna().any(), "scores must not contain NaN"
+
+    df = pd.DataFrame({
+        "label": pd.Series(label).astype(int).reset_index(drop=True),
+        "a": sa,
+        "b": sb,
+        "match_group": pd.Series(match_group).reset_index(drop=True),
+    })
+    counts = df.groupby("match_group")["label"].agg(["sum", "count"])
+    bad = counts[(counts["sum"] != 1) | (counts["count"] != 2)]
+    assert bad.empty, (
+        f"paired_score_comparison expects exactly 1 pos + 1 neg per match_group; "
+        f"got {len(bad)} bad groups"
+    )
+
+    pos = df[df["label"] == 1].set_index("match_group")[["a", "b"]].sort_index()
+    neg = df[df["label"] == 0].set_index("match_group")[["a", "b"]].sort_index()
+    assert pos.index.equals(neg.index), "positive/negative match_group sets differ"
+
+    # outcome ∈ {0, 0.5, 1} per (match_group, score).
+    diff_a = pos["a"].values - neg["a"].values
+    diff_b = pos["b"].values - neg["b"].values
+    import numpy as _np
+    out_a = _np.where(diff_a > 0, 1.0, _np.where(diff_a < 0, 0.0, 0.5))
+    out_b = _np.where(diff_b > 0, 1.0, _np.where(diff_b < 0, 0.0, 0.5))
+    advantage = out_a - out_b  # ∈ {-1, -0.5, 0, +0.5, +1}
+
+    n_pairs = len(advantage)
+    full_wins_a = int((advantage == 1.0).sum())
+    full_wins_b = int((advantage == -1.0).sum())
+    half_wins_a = int((advantage == 0.5).sum())
+    half_wins_b = int((advantage == -0.5).sum())
+    n_concordant = int((advantage == 0).sum())
+    n_half = half_wins_a + half_wins_b
+    n_discordant_full = full_wins_a + full_wins_b
+    # Soft "wins" weighting halves at 0.5 each.
+    soft_wins_a = full_wins_a + 0.5 * half_wins_a
+    soft_wins_b = full_wins_b + 0.5 * half_wins_b
+    soft_n = soft_wins_a + soft_wins_b
+    if soft_n == 0:
+        value = 0.5
+        se = 0.0
+    else:
+        value = float(soft_wins_a / soft_n)
+        se = math.sqrt(value * (1 - value) / soft_n)
+
+    # Binomial p-value: use the integer-rounded full-advantage counts (ignore
+    # halves for the formal test — McNemar standard). If there are no full
+    # discordant pairs, fall back to the half counts as integer wins.
+    n_for_test = n_discordant_full if n_discordant_full > 0 else (half_wins_a + half_wins_b)
+    wins_for_test = full_wins_a if n_discordant_full > 0 else half_wins_a
+    if n_for_test == 0:
+        p_value = 1.0
+    else:
+        if alternative == "greater":
+            p_value = float(binom.sf(wins_for_test - 1, n_for_test, 0.5))
+        elif alternative == "less":
+            p_value = float(binom.cdf(wins_for_test, n_for_test, 0.5))
+        elif alternative == "two-sided":
+            extreme = max(wins_for_test, n_for_test - wins_for_test)
+            p_value = float(min(2.0 * binom.sf(extreme - 1, n_for_test, 0.5), 1.0))
+        else:
+            raise ValueError(
+                f"alternative must be 'two-sided', 'greater', or 'less'; got {alternative!r}"
+            )
+
+    return {
+        "value": float(value),
+        "se": float(se),
+        "n_pairs": int(n_pairs),
+        "n_a_wins": full_wins_a,
+        "n_b_wins": full_wins_b,
+        "n_concordant": n_concordant,
+        "n_half": n_half,
+        "p_value": float(p_value),
+    }
+
+
 def compute_pairwise_metrics(
     dataset: pd.DataFrame,
     scores: pd.DataFrame,

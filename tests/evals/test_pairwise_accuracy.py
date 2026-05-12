@@ -102,6 +102,81 @@ def test_pairwise_accuracy_p_value_one_sided_greater_wrong_sign_is_one():
     assert res["p_value"] == pytest.approx(1.0)
 
 
+def _frame3(label, score_a, score_b, match_group):
+    return (
+        pd.Series(label),
+        pd.Series(score_a, dtype=float),
+        pd.Series(score_b, dtype=float),
+        pd.Series(match_group),
+    )
+
+
+def test_paired_score_comparison_a_always_wins():
+    # 5 match_groups; A scores pos > neg every time; B scores neg > pos every time.
+    label = [1, 0] * 5
+    a = [1.0, 0.0] * 5  # A correct
+    b = [0.0, 1.0] * 5  # B wrong
+    mg = [i for i in range(5) for _ in range(2)]
+    from bolinas.evals.metrics import paired_score_comparison
+    res = paired_score_comparison(*_frame3(label, a, b, mg))
+    assert res["n_pairs"] == 5
+    assert res["n_a_wins"] == 5
+    assert res["n_b_wins"] == 0
+    assert res["n_concordant"] == 0
+    assert res["value"] == 1.0
+    # Two-sided p = 2 * (1/32) = 0.0625
+    assert res["p_value"] == pytest.approx(2 * (1 / 32))
+
+
+def test_paired_score_comparison_a_and_b_equal():
+    # Two scores produce identical orderings → all pairs concordant.
+    label = [1, 0] * 5
+    a = [0.9, 0.1] * 5
+    b = [0.8, 0.2] * 5  # different magnitudes but same orderings
+    mg = [i for i in range(5) for _ in range(2)]
+    from bolinas.evals.metrics import paired_score_comparison
+    res = paired_score_comparison(*_frame3(label, a, b, mg))
+    assert res["n_concordant"] == 5
+    assert res["n_a_wins"] == 0
+    assert res["n_b_wins"] == 0
+    assert res["p_value"] == 1.0  # all concordant — no signal
+
+
+def test_paired_score_comparison_one_sided_directional():
+    # 8 discordant pairs, 6 in A's favor → one-sided H1: A > B should be small.
+    # Construct: 6 pairs where A correct & B wrong, 2 where B correct & A wrong.
+    pairs = [
+        (1.0, 0.0),  # A correct
+        (1.0, 0.0),
+        (1.0, 0.0),
+        (1.0, 0.0),
+        (1.0, 0.0),
+        (1.0, 0.0),
+        (0.0, 1.0),  # B correct, A wrong
+        (0.0, 1.0),
+    ]
+    label, a, b, mg = [], [], [], []
+    for i, (out_a, out_b) in enumerate(pairs):
+        label.extend([1, 0])
+        a.extend([1.0 if out_a == 1 else 0.0, 0.0 if out_a == 1 else 1.0])
+        b.extend([1.0 if out_b == 1 else 0.0, 0.0 if out_b == 1 else 1.0])
+        mg.extend([i, i])
+    from bolinas.evals.metrics import paired_score_comparison
+    res = paired_score_comparison(*_frame3(label, a, b, mg), alternative="greater")
+    assert res["n_a_wins"] == 6
+    assert res["n_b_wins"] == 2
+    # P(X >= 6 | Binom(8, 0.5)) = C(8,6) + C(8,7) + C(8,8) all over 2^8
+    # = (28 + 8 + 1) / 256 = 37/256 ≈ 0.1445
+    assert res["p_value"] == pytest.approx(37 / 256)
+
+
+def test_paired_score_comparison_rejects_nan():
+    label, a, b, mg = _frame3([1, 0], [0.9, 0.1], [float("nan"), 0.2], [0, 0])
+    from bolinas.evals.metrics import paired_score_comparison
+    with pytest.raises(AssertionError, match="must not contain NaN"):
+        paired_score_comparison(label, a, b, mg)
+
+
 def test_pairwise_accuracy_rejects_unknown_alternative():
     label, score, mg = _frame([1, 0], [0.9, 0.1], [0, 0])
     with pytest.raises(ValueError, match="alternative"):
