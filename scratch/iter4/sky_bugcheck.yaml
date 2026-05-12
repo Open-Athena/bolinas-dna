@@ -40,9 +40,12 @@ run: |
     export GOOGLE_APPLICATION_CREDENTIALS="$HOME/.config/gcloud/application_default_credentials.json"
     export WANDB_DISABLED=true
 
-    mkdir -p ~/iter4_data/checkpoint
-    if [ ! -f ~/iter4_data/checkpoint/model.safetensors ]; then
-        gcloud storage cp -r 'gs://marin-dna-us-central1/checkpoints/exp55-mammals-r01-52f413/hf/step-16999/*' ~/iter4_data/checkpoint/
+    mkdir -p ~/iter4_data/exp55-mammals ~/iter4_data/exp58-mammals
+    if [ ! -f ~/iter4_data/exp55-mammals/model.safetensors ]; then
+        gcloud storage cp -r 'gs://marin-dna-us-central1/checkpoints/exp55-mammals-r01-52f413/hf/step-16999/*' ~/iter4_data/exp55-mammals/
+    fi
+    if [ ! -f ~/iter4_data/exp58-mammals/model.safetensors ]; then
+        gcloud storage cp -r 'gs://marin-dna-us-central1/checkpoints/exp58-mammals-r01-23d451/hf/step-16999/*' ~/iter4_data/exp58-mammals/
     fi
     if [ ! -f ~/iter4_data/genome.fa.gz ]; then
         wget -q -O ~/iter4_data/genome.fa.gz \
@@ -50,12 +53,16 @@ run: |
     fi
 
     mkdir -p ~/iter4_out
-    .venv/bin/python scratch/iter4_bugcheck.py \
-        --checkpoint ~/iter4_data/checkpoint \
-        --genome ~/iter4_data/genome.fa.gz \
-        --window 256 \
-        --n-variants 20 \
-        --out ~/iter4_out/iter4_bugcheck.parquet 2>&1 | tee ~/iter4_out/bugcheck.log
+    for model in exp55-mammals exp58-mammals; do
+        echo "=== Running bug-check for $model ==="
+        .venv/bin/python scratch/iter4_bugcheck.py \
+            --checkpoint ~/iter4_data/$model \
+            --genome ~/iter4_data/genome.fa.gz \
+            --window 256 \
+            --n-per-subset 10 \
+            --subsets 5_prime_UTR_variant,missense_variant,synonymous_variant,splicing \
+            --out ~/iter4_out/iter4_bugcheck_${model}.parquet 2>&1 | tee ~/iter4_out/bugcheck_${model}.log
+    done
 
     echo "[bugcheck] DONE."
     ls -la ~/iter4_out

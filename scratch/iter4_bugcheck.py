@@ -46,15 +46,27 @@ def main() -> int:
     ap.add_argument("--checkpoint", required=True)
     ap.add_argument("--genome", required=True)
     ap.add_argument("--window", type=int, default=256)
-    ap.add_argument("--n-variants", type=int, default=20)
+    ap.add_argument("--n-per-subset", type=int, default=10,
+                    help="Variants to sample per subset (stratified).")
+    ap.add_argument("--subsets", type=str,
+                    default="5_prime_UTR_variant,missense_variant,synonymous_variant,splicing",
+                    help="Comma-separated list of subset names to stratify across.")
+    ap.add_argument("--source-parquet", type=str,
+                    default="scratch/iter1/scores/exp55-mammals__win256__mendelian_traits.parquet",
+                    help="Where to read the variant list from (just need chrom/pos/ref/alt/subset).")
     ap.add_argument("--out", default="scratch/iter4/iter4_bugcheck.parquet")
     args = ap.parse_args()
 
-    # Use the iter-1 mendelian parquet directly to keep variants the same.
-    fwd = pd.read_parquet("scratch/iter1/scores/exp55-mammals__win256__mendelian_traits.parquet")
-    # Sample N variants from 5'UTR.
-    pool = fwd[fwd["subset"] == "5_prime_UTR_variant"].sample(args.n_variants, random_state=0)
-    print(f"[bugcheck] {len(pool)} 5'UTR variants picked", flush=True)
+    subsets = [s.strip() for s in args.subsets.split(",") if s.strip()]
+    # Use any iter-1 mendelian parquet to keep variants the same.
+    src = pd.read_parquet(args.source_parquet)
+    # Stratified sample.
+    pool = pd.concat([
+        src[src["subset"] == sub].sample(min(args.n_per_subset, (src["subset"] == sub).sum()), random_state=0)
+        for sub in subsets
+    ]).reset_index(drop=True)
+    print(f"[bugcheck] {len(pool)} variants picked across subsets {subsets}", flush=True)
+    print(f"[bugcheck] per-subset counts:\n{pool['subset'].value_counts().to_string()}", flush=True)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     tokenizer = AutoTokenizer.from_pretrained(args.checkpoint)
@@ -113,7 +125,8 @@ def main() -> int:
 
         records.append({
             "chrom": row["chrom"], "pos": int(row["pos"]),
-            "ref": row["ref"], "alt": row["alt"], "label": int(row["label"]),
+            "ref": row["ref"], "alt": row["alt"],
+            "subset": row["subset"], "label": int(row["label"]),
             **{f"fwd_logp_{nuc}": float(fwd_logp[i]) for i, nuc in enumerate(NUCLEOTIDES)},
             **{f"rc_logp_compl_{nuc}": float(rc_logp_complemented[i]) for i, nuc in enumerate(NUCLEOTIDES)},
         })
@@ -129,9 +142,10 @@ def main() -> int:
     print("\n=== Per-variant logp(nuc): FWD vs RC-complemented ===")
     print(df.to_string(index=False, float_format=lambda x: f"{x:.3f}"))
 
-    # Correlation: for each variant, correlation between fwd_logp[A,C,G,T] and rc_logp_compl[A,C,G,T]
-    print("\n=== Per-variant Pearson r between FWD and RC-complemented 4-vectors ===")
+    # For each variant compute per-variant Pearson r between fwd_logp[A,C,G,T]
+    # and rc_logp_compl[A,C,G,T], and per-variant MSE.
     rs = []
+    mses = []
     for _, r in df.iterrows():
         f = np.array([r[f"fwd_logp_{nuc}"] for nuc in NUCLEOTIDES])
         rc = np.array([r[f"rc_logp_compl_{nuc}"] for nuc in NUCLEOTIDES])
@@ -140,19 +154,34 @@ def main() -> int:
         else:
             r_val = np.nan
         rs.append(r_val)
-    rs = np.array(rs)
-    print(f"median Pearson = {np.nanmedian(rs):.3f}, mean = {np.nanmean(rs):.3f}, min = {np.nanmin(rs):.3f}, max = {np.nanmax(rs):.3f}")
-    print(f"Pearson distribution: {sorted([round(float(x), 3) for x in rs if not np.isnan(x)])}")
-
-    # MSE between fwd_logp and rc_logp_compl per variant — if model is RC-sym, should be ~0
-    print("\n=== Per-variant MSE between FWD logp and RC-complemented logp ===")
-    mses = []
-    for _, r in df.iterrows():
-        f = np.array([r[f"fwd_logp_{nuc}"] for nuc in NUCLEOTIDES])
-        rc = np.array([r[f"rc_logp_compl_{nuc}"] for nuc in NUCLEOTIDES])
         mses.append(float(np.mean((f - rc) ** 2)))
-    print(f"median MSE = {np.median(mses):.4f}, mean = {np.mean(mses):.4f}")
-    print(f"All MSEs: {[round(float(x), 4) for x in mses]}")
+    df["pearson_r_fwd_vs_rc_compl"] = rs
+    df["mse_fwd_vs_rc_compl"] = mses
+    # Re-write parquet with the per-variant diagnostics.
+    df.to_parquet(args.out, index=False)
+
+    print("\n=== Overall: Pearson FWD-vs-RC-complemented ===")
+    rs = np.array(rs)
+    print(f"median = {np.nanmedian(rs):.3f}, mean = {np.nanmean(rs):.3f}, "
+          f"min = {np.nanmin(rs):.3f}, max = {np.nanmax(rs):.3f}")
+
+    print("\n=== Per-subset summary (median Pearson, median MSE) ===")
+    by_subset = df.groupby("subset").agg(
+        n=("chrom", "size"),
+        median_pearson=("pearson_r_fwd_vs_rc_compl", "median"),
+        mean_pearson=("pearson_r_fwd_vs_rc_compl", "mean"),
+        median_mse=("mse_fwd_vs_rc_compl", "median"),
+        mean_mse=("mse_fwd_vs_rc_compl", "mean"),
+    ).reset_index()
+    print(by_subset.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
+
+    # Also: max absolute deviation between FWD and RC-complemented logp anywhere
+    print("\n=== Max |FWD - RC-complemented| logp across variants × nucleotides ===")
+    max_dev = max(
+        max(abs(r[f"fwd_logp_{nuc}"] - r[f"rc_logp_compl_{nuc}"]) for nuc in NUCLEOTIDES)
+        for _, r in df.iterrows()
+    )
+    print(f"max |Δlogp| = {max_dev:.4f}")
     return 0
 
 
