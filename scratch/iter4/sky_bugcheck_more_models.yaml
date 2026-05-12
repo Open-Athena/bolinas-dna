@@ -1,0 +1,80 @@
+# SkyPilot task: iter-4 bug-check expansion — RC scout for exp59-mammals + exp136-proj_v30.
+# Runs the same RC scout as iter-4 on the 3'UTR-focused (exp59) and enhancer-focused (exp136) models,
+# so we can compare joint-LLR FWD↔RC Pearson across all 4 published models.
+
+name: iter4-bugcheck-more
+
+resources:
+    infra: aws/us-east-2
+    accelerators: A10G:1
+    disk_size: 150
+    labels:
+        project: dna
+
+workdir: .
+
+file_mounts:
+    ~/.config/gcloud/application_default_credentials.json: ~/.config/gcloud/application_default_credentials.json
+
+setup: |
+    set -euxo pipefail
+    if ! command -v uv >/dev/null 2>&1; then
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+    fi
+    if ! command -v gcloud >/dev/null 2>&1; then
+        curl -fsSL https://sdk.cloud.google.com > /tmp/gcloud-install.sh
+        bash /tmp/gcloud-install.sh --disable-prompts --install-dir="$HOME"
+    fi
+    grep -q 'google-cloud-sdk/bin' "$HOME/.bashrc" || \
+        echo 'export PATH="$HOME/google-cloud-sdk/bin:$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+    export PATH="$HOME/google-cloud-sdk/bin:$HOME/.local/bin:$PATH"
+    export GOOGLE_APPLICATION_CREDENTIALS="$HOME/.config/gcloud/application_default_credentials.json"
+    uv sync
+    uv pip install --reinstall --no-deps torch==2.5.1+cu121 --index-url https://download.pytorch.org/whl/cu121
+    uv pip install --no-deps nvidia-nccl-cu12==2.21.5 nvidia-cublas-cu12==12.1.3.1 nvidia-cudnn-cu12==9.1.0.70
+    .venv/bin/python -c 'import torch; assert torch.cuda.is_available()'
+    gcloud storage ls gs://marin-dna-us-central1/checkpoints/ | head -3 >/dev/null
+
+run: |
+    set -euxo pipefail
+    export PATH="$HOME/google-cloud-sdk/bin:$HOME/.local/bin:$PATH"
+    export GOOGLE_APPLICATION_CREDENTIALS="$HOME/.config/gcloud/application_default_credentials.json"
+    export WANDB_DISABLED=true
+
+    mkdir -p ~/iter4_data/exp59-mammals ~/iter4_data/exp136-proj_v30
+    if [ ! -f ~/iter4_data/exp59-mammals/model.safetensors ]; then
+        gcloud storage cp -r 'gs://marin-dna-us-central1/checkpoints/exp59-mammals-r01-1d9235/hf/step-16999/*' ~/iter4_data/exp59-mammals/
+    fi
+    if [ ! -f ~/iter4_data/exp136-proj_v30/model.safetensors ]; then
+        gcloud storage cp -r 'gs://marin-us-central1/checkpoints/dna-bolinas-enhancer-curation-v0.1-proj_v30-6692f0/hf/step-9999/*' ~/iter4_data/exp136-proj_v30/
+    fi
+    if [ ! -f ~/iter4_data/genome.fa.gz ]; then
+        wget -q -O ~/iter4_data/genome.fa.gz \
+            'http://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz'
+    fi
+
+    mkdir -p ~/iter4_out
+
+    # exp59-mammals: 256 bp, no BOS (same as exp55/58).
+    echo "=== RC scout: exp59-mammals × win256 × mendelian ==="
+    .venv/bin/python scratch/zeroshot_vep_iter4_rc_scout.py \
+        --checkpoint ~/iter4_data/exp59-mammals \
+        --genome ~/iter4_data/genome.fa.gz \
+        --window 256 \
+        --dataset mendelian_traits \
+        --batch-size 16 \
+        --out ~/iter4_out/iter4_rc_exp59-mammals__win256__mendelian_traits.parquet
+
+    # exp136-proj_v30: 255 bp DNA + BOS (256 tokens total). Symmetric for odd W:
+    #   v_rc = W-1-W//2 = 127 = W//2 (since W is odd) — same FWD/RC variant index.
+    echo "=== RC scout: exp136-proj_v30 × win255 × mendelian ==="
+    .venv/bin/python scratch/zeroshot_vep_iter4_rc_scout.py \
+        --checkpoint ~/iter4_data/exp136-proj_v30 \
+        --genome ~/iter4_data/genome.fa.gz \
+        --window 255 \
+        --dataset mendelian_traits \
+        --batch-size 16 \
+        --out ~/iter4_out/iter4_rc_exp136-proj_v30__win255__mendelian_traits.parquet
+
+    echo "[bugcheck-more] DONE."
+    ls -la ~/iter4_out
