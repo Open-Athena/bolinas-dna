@@ -5,7 +5,12 @@ import math
 import pandas as pd
 import pytest
 
-from bolinas.evals.metrics import compute_pairwise_metrics, pairwise_accuracy
+from bolinas.evals.metrics import (
+    GLOBAL_SUBSET,
+    MACRO_AVG_SUBSET,
+    compute_pairwise_metrics,
+    pairwise_accuracy,
+)
 
 
 # ---- pairwise_accuracy ----------------------------------------------------
@@ -136,7 +141,8 @@ def test_pairwise_accuracy_rejects_nan_score():
 
 
 def test_compute_pairwise_metrics_per_subset():
-    """Stratifies by ``subset`` and returns one row per (subset, score)."""
+    """Stratifies by ``subset`` and returns one row per (subset, score), plus
+    aggregate ``_global_`` and ``_macro_avg_`` rows."""
     dataset = pd.DataFrame(
         {
             "label": [1, 0, 1, 0, 1, 0, 1, 0],
@@ -152,7 +158,7 @@ def test_compute_pairwise_metrics_per_subset():
         }
     )
     metrics = compute_pairwise_metrics(
-        dataset=dataset, scores=scores, score_columns=["score"]
+        dataset=dataset, scores=scores, score_columns=["score"], n_min=2
     )
     assert set(metrics.columns) == {
         "score_type",
@@ -162,7 +168,8 @@ def test_compute_pairwise_metrics_per_subset():
         "n_pairs",
         "n_ties",
     }
-    assert len(metrics) == 2  # 2 subsets x 1 score_column
+    # 2 subsets + _global_ + _macro_avg_, all for one score_column.
+    assert len(metrics) == 4
     by_subset = metrics.set_index("subset")["value"]
     assert by_subset["A"] == 1.0
     assert by_subset["B"] == 0.5
@@ -182,10 +189,12 @@ def test_compute_pairwise_metrics_multi_score_columns():
             "score_b": [0.1, 0.9, 0.2, 0.8],  # all losses -> 0.0
         }
     )
-    metrics = compute_pairwise_metrics(dataset=dataset, scores=scores)
-    by_score = metrics.set_index("score_type")["value"]
-    assert by_score["score_a"] == 1.0
-    assert by_score["score_b"] == 0.0
+    metrics = compute_pairwise_metrics(dataset=dataset, scores=scores, n_min=1)
+    # One per-subset row per score_type, plus _global_ and _macro_avg_ each.
+    assert len(metrics) == 6
+    per_subset = metrics[metrics["subset"] == "A"].set_index("score_type")["value"]
+    assert per_subset["score_a"] == 1.0
+    assert per_subset["score_b"] == 0.0
 
 
 def test_compute_pairwise_metrics_rejects_subset_straddle():
@@ -213,7 +222,7 @@ def test_compute_pairwise_metrics_default_score_columns():
         }
     )
     scores = pd.DataFrame({"foo": [0.9, 0.1], "bar": [0.1, 0.9]})
-    metrics = compute_pairwise_metrics(dataset=dataset, scores=scores)
+    metrics = compute_pairwise_metrics(dataset=dataset, scores=scores, n_min=1)
     assert set(metrics["score_type"]) == {"foo", "bar"}
 
 
@@ -224,3 +233,131 @@ def test_compute_pairwise_metrics_requires_match_group_column():
         compute_pairwise_metrics(
             dataset=dataset, scores=scores, score_columns=["score"]
         )
+
+
+# ---- aggregate rows (_global_ + _macro_avg_) ------------------------------
+
+
+def _two_subset_dataset(big_n: int = 40, small_n: int = 4):
+    """Synthetic 2-subset matched-pair frame with one large and one small
+    subset. Subset A: all wins. Subset B: alternating wins/losses (n must be
+    even for a clean 50/50 split; tests pass even n)."""
+    label, score, mg, subset = [], [], [], []
+    g = 0
+    for _ in range(big_n):  # subset A — all wins
+        label += [1, 0]
+        score += [0.9, 0.1]
+        mg += [g, g]
+        subset += ["A", "A"]
+        g += 1
+    for i in range(small_n):  # subset B — alternating wins/losses
+        win = i % 2 == 0
+        label += [1, 0]
+        score += [0.9, 0.1] if win else [0.1, 0.9]
+        mg += [g, g]
+        subset += ["B", "B"]
+        g += 1
+    return pd.DataFrame(
+        {"label": label, "subset": subset, "match_group": mg}
+    ), pd.DataFrame({"score": score})
+
+
+def test_global_row_matches_direct_pairwise_accuracy():
+    """The _global_ row must equal a direct pairwise_accuracy call on the
+    whole merged frame — same value, same SE, same n_pairs, same n_ties."""
+    dataset, scores = _two_subset_dataset(big_n=40, small_n=4)
+    metrics = compute_pairwise_metrics(
+        dataset=dataset, scores=scores, score_columns=["score"], n_min=30
+    )
+    direct = pairwise_accuracy(
+        label=dataset["label"],
+        score=scores["score"],
+        match_group=dataset["match_group"],
+    )
+    g = metrics[metrics["subset"] == GLOBAL_SUBSET].iloc[0]
+    assert g["value"] == pytest.approx(direct["value"])
+    assert g["se"] == pytest.approx(direct["se"])
+    assert int(g["n_pairs"]) == direct["n_pairs"]
+    assert int(g["n_ties"]) == direct["n_ties"]
+
+
+def test_macro_avg_unweighted_mean_when_all_subsets_qualify():
+    """When every subset has n_pairs >= n_min, macro_avg == arithmetic mean of
+    per-subset values (not n-weighted)."""
+    dataset, scores = _two_subset_dataset(big_n=40, small_n=30)
+    metrics = compute_pairwise_metrics(
+        dataset=dataset, scores=scores, score_columns=["score"], n_min=30
+    )
+    per_subset = metrics[~metrics["subset"].str.startswith("_")]
+    assert len(per_subset) == 2
+    macro = metrics[metrics["subset"] == MACRO_AVG_SUBSET].iloc[0]
+    assert macro["value"] == pytest.approx(per_subset["value"].mean())
+    # SE = sqrt(Σ SE²) / K
+    k = len(per_subset)
+    expected_se = math.sqrt((per_subset["se"] ** 2).sum()) / k
+    assert macro["se"] == pytest.approx(expected_se)
+    assert int(macro["n_pairs"]) == k
+
+
+def test_macro_avg_excludes_small_subset_but_global_includes_it():
+    """A subset with n < n_min is dropped from macro but still feeds global."""
+    dataset, scores = _two_subset_dataset(big_n=40, small_n=4)
+    metrics = compute_pairwise_metrics(
+        dataset=dataset, scores=scores, score_columns=["score"], n_min=30
+    )
+    macro = metrics[metrics["subset"] == MACRO_AVG_SUBSET].iloc[0]
+    a_row = metrics[metrics["subset"] == "A"].iloc[0]
+    # Only A qualifies (n=40); B (n=4) excluded.
+    assert int(macro["n_pairs"]) == 1
+    assert macro["value"] == pytest.approx(a_row["value"])
+    assert macro["se"] == pytest.approx(a_row["se"])
+    # Global covers all 44 pairs.
+    g = metrics[metrics["subset"] == GLOBAL_SUBSET].iloc[0]
+    assert int(g["n_pairs"]) == 44
+
+
+def test_macro_avg_asserts_when_no_subset_qualifies():
+    dataset = pd.DataFrame(
+        {
+            "label": [1, 0, 1, 0],
+            "subset": ["A", "A", "B", "B"],
+            "match_group": [0, 0, 1, 1],
+        }
+    )
+    scores = pd.DataFrame({"score": [0.9, 0.1, 0.8, 0.2]})
+    with pytest.raises(AssertionError, match="no subsets meet n_min"):
+        compute_pairwise_metrics(
+            dataset=dataset, scores=scores, score_columns=["score"], n_min=30
+        )
+
+
+def test_aggregates_emitted_per_score_column():
+    """Each score_col gets its own _global_ and _macro_avg_ row."""
+    dataset, _ = _two_subset_dataset(big_n=40, small_n=30)
+    # Two score columns: one all-wins, one all-losses.
+    n_total = len(dataset)
+    scores = pd.DataFrame(
+        {
+            "all_wins": [0.9 if dataset["label"].iloc[i] == 1 else 0.1 for i in range(n_total)],
+            "all_losses": [0.1 if dataset["label"].iloc[i] == 1 else 0.9 for i in range(n_total)],
+        }
+    )
+    metrics = compute_pairwise_metrics(
+        dataset=dataset, scores=scores, n_min=30
+    )
+    by_score_and_subset = metrics.set_index(["score_type", "subset"])["value"]
+    assert by_score_and_subset[("all_wins", GLOBAL_SUBSET)] == 1.0
+    assert by_score_and_subset[("all_wins", MACRO_AVG_SUBSET)] == 1.0
+    assert by_score_and_subset[("all_losses", GLOBAL_SUBSET)] == 0.0
+    assert by_score_and_subset[("all_losses", MACRO_AVG_SUBSET)] == 0.0
+
+
+def test_global_n_pairs_equals_total_pairs():
+    """Sanity: _global_'s n_pairs == sum of per-subset n_pairs."""
+    dataset, scores = _two_subset_dataset(big_n=40, small_n=4)
+    metrics = compute_pairwise_metrics(
+        dataset=dataset, scores=scores, score_columns=["score"], n_min=2
+    )
+    per_subset = metrics[~metrics["subset"].str.startswith("_")]
+    g = metrics[metrics["subset"] == GLOBAL_SUBSET].iloc[0]
+    assert int(g["n_pairs"]) == int(per_subset["n_pairs"].sum())

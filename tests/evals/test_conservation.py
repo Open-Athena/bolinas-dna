@@ -141,7 +141,7 @@ def test_aggregate_conservation_metrics_nan_accounting(tmp_path):
     match_groups = [0, 0, 1, 1, 2, 2, 3, 3]
     p = _scored_parquet(tmp_path, "phyloP_241m", scores, labels, subsets, match_groups)
 
-    metrics, md = aggregate_conservation_metrics({"phyloP_241m": p})
+    metrics, md = aggregate_conservation_metrics({"phyloP_241m": p}, n_min=1)
 
     # Schema check.
     expected_cols = {
@@ -207,7 +207,7 @@ def test_aggregate_conservation_metrics_multi_score_column_order(tmp_path):
             tmp_path, "phastCons_43p", scores, labels, subsets, match_groups
         ),
     }
-    _, md = aggregate_conservation_metrics(paths)
+    _, md = aggregate_conservation_metrics(paths, n_min=1)
 
     pos_100v = md.find("phyloP_100v")
     pos_241m = md.find("phyloP_241m")
@@ -225,7 +225,7 @@ def test_aggregate_conservation_metrics_no_global_or_mean_row(tmp_path):
     match_groups = [0, 0, 1, 1, 2, 2, 3, 3]
     p = _scored_parquet(tmp_path, "score1", scores, labels, subsets, match_groups)
 
-    _, md = aggregate_conservation_metrics({"score1": p})
+    _, md = aggregate_conservation_metrics({"score1": p}, n_min=1)
 
     # Split markdown into the two tables.
     pa_section, nan_section = md.split("### NaN counts")
@@ -250,7 +250,7 @@ def test_aggregate_conservation_metrics_value_formatting(tmp_path):
     subsets = ["A", "A", "A", "A"]
     match_groups = [0, 0, 1, 1]
     p = _scored_parquet(tmp_path, "score1", scores, labels, subsets, match_groups)
-    _, md = aggregate_conservation_metrics({"score1": p})
+    _, md = aggregate_conservation_metrics({"score1": p}, n_min=1)
     assert "1.000 ± 0.000" in md
 
 

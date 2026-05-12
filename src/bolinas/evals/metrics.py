@@ -88,16 +88,35 @@ def pairwise_accuracy(
     return {"value": float(value), "se": float(se), "n_pairs": int(n), "n_ties": ties}
 
 
+GLOBAL_SUBSET = "_global_"
+MACRO_AVG_SUBSET = "_macro_avg_"
+
+
 def compute_pairwise_metrics(
     dataset: pd.DataFrame,
     scores: pd.DataFrame,
     score_columns: list[str] | None = None,
+    n_min: int = 30,
 ) -> pd.DataFrame:
     """Compute PairwiseAccuracy + SE per ``subset`` for one or more score columns.
 
     Aligns ``dataset`` with ``scores`` by row index (assumes same order).
     Stratifies by the ``subset`` column — one row per (subset, score_column).
     Asserts no ``match_group`` straddles subsets.
+
+    Additionally emits two aggregate rows per ``score_col`` (sentinel subset
+    values; underscore-bracketed to avoid collision with real consequence-group
+    names which never start with ``_``):
+
+    - ``subset="_global_"``: PA over **all** ``match_group``s in the input,
+      regardless of subset size. Computed by a direct ``pairwise_accuracy``
+      call on the full frame — not by recombining per-subset values — so the
+      number is provably "score every pair, average". Same Wald SE.
+    - ``subset="_macro_avg_"``: unweighted mean of per-subset values across
+      subsets with ``n_pairs >= n_min``. SE = ``sqrt(Σ SE_s²) / K`` (SE of
+      the unweighted mean of K independent estimates). ``n_pairs`` on this
+      row is **repurposed** to record K, the count of qualifying subsets;
+      ``n_ties`` is the sum across qualifying subsets.
 
     Args:
         dataset: DataFrame with columns ``[label, subset, match_group]`` (and
@@ -106,6 +125,10 @@ def compute_pairwise_metrics(
             ``dataset``.
         score_columns: Score column names to evaluate. Defaults to all columns
             of ``scores``.
+        n_min: Minimum ``n_pairs`` per subset to include in the macro average.
+            Defaults to 30 (project-wide convention for the leaderboard
+            issues). Subsets below this threshold still contribute to the
+            global row.
 
     Returns:
         DataFrame with columns ``[score_type, subset, value, se, n_pairs,
@@ -131,6 +154,7 @@ def compute_pairwise_metrics(
     )
 
     rows: list[dict] = []
+    per_score_rows: dict[str, list[dict]] = {sc: [] for sc in score_columns}
     for subset_name, subset_df in merged.groupby("subset", sort=False):
         for score_col in score_columns:
             res = pairwise_accuracy(
@@ -138,16 +162,56 @@ def compute_pairwise_metrics(
                 score=subset_df[score_col],
                 match_group=subset_df["match_group"],
             )
-            rows.append(
-                {
-                    "score_type": score_col,
-                    "subset": str(subset_name),
-                    "value": res["value"],
-                    "se": res["se"],
-                    "n_pairs": res["n_pairs"],
-                    "n_ties": res["n_ties"],
-                }
-            )
+            row = {
+                "score_type": score_col,
+                "subset": str(subset_name),
+                "value": res["value"],
+                "se": res["se"],
+                "n_pairs": res["n_pairs"],
+                "n_ties": res["n_ties"],
+            }
+            rows.append(row)
+            per_score_rows[score_col].append(row)
+
+    for score_col in score_columns:
+        # Global: PA over every match_group, regardless of subset.
+        global_res = pairwise_accuracy(
+            label=merged["label"],
+            score=merged[score_col],
+            match_group=merged["match_group"],
+        )
+        rows.append(
+            {
+                "score_type": score_col,
+                "subset": GLOBAL_SUBSET,
+                "value": global_res["value"],
+                "se": global_res["se"],
+                "n_pairs": global_res["n_pairs"],
+                "n_ties": global_res["n_ties"],
+            }
+        )
+
+        # Macro avg: unweighted mean of per-subset PAs with n_pairs >= n_min.
+        qualifying = [r for r in per_score_rows[score_col] if r["n_pairs"] >= n_min]
+        assert qualifying, (
+            f"no subsets meet n_min={n_min} for score_type={score_col!r}; "
+            f"per-subset sizes: "
+            f"{ {r['subset']: r['n_pairs'] for r in per_score_rows[score_col]} }"
+        )
+        k = len(qualifying)
+        macro_value = sum(r["value"] for r in qualifying) / k
+        macro_se = math.sqrt(sum(r["se"] ** 2 for r in qualifying)) / k
+        rows.append(
+            {
+                "score_type": score_col,
+                "subset": MACRO_AVG_SUBSET,
+                "value": float(macro_value),
+                "se": float(macro_se),
+                "n_pairs": k,
+                "n_ties": sum(r["n_ties"] for r in qualifying),
+            }
+        )
+
     return pd.DataFrame(rows)
 
 

@@ -30,7 +30,11 @@ import numpy as np
 import pandas as pd
 import pyBigWig
 
-from bolinas.evals.metrics import compute_pairwise_metrics
+from bolinas.evals.metrics import (
+    GLOBAL_SUBSET,
+    MACRO_AVG_SUBSET,
+    compute_pairwise_metrics,
+)
 
 
 CONSERVATION_TRACKS: dict[str, str] = {
@@ -118,6 +122,7 @@ def score_variants_at_positions(
 
 def aggregate_conservation_metrics(
     parquet_paths: dict[str, str | Path],
+    n_min: int = 30,
 ) -> tuple[pd.DataFrame, str]:
     """Aggregate per-score scored-variant parquets into a metrics DataFrame
     and a markdown report.
@@ -135,11 +140,15 @@ def aggregate_conservation_metrics(
     Args:
         parquet_paths: mapping ``score_name -> parquet path``. Order is
             preserved in the markdown table.
+        n_min: forwarded to ``compute_pairwise_metrics`` — minimum subset
+            ``n_pairs`` for inclusion in the macro-average aggregate row.
 
     Returns:
         ``(metrics_df, markdown)`` where ``metrics_df`` has columns
         ``[score_type, score_name, subset, value, se, n_pairs, n_ties,
-        n_nan, n_total]``.
+        n_nan, n_total]``. Includes ``_global_`` and ``_macro_avg_`` aggregate
+        rows per score (used by downstream leaderboard rendering); these are
+        excluded from the markdown report, which stays per-subset.
     """
     assert parquet_paths, "parquet_paths must be non-empty"
 
@@ -164,10 +173,32 @@ def aggregate_conservation_metrics(
             dataset=df[list(REQUIRED_VARIANT_COLUMNS)],
             scores=df[["score"]].fillna(0),
             score_columns=["score"],
+            n_min=n_min,
         )
         m["score_name"] = score_name
-        m["n_nan"] = m["subset"].map(nan_per_subset).astype(int)
-        m["n_total"] = m["subset"].map(total_per_subset).astype(int)
+
+        # n_nan / n_total for aggregate rows: _global_ covers every variant;
+        # _macro_avg_ covers only the subsets that contribute (n_pairs >= n_min).
+        qualifying = set(
+            m.loc[
+                ~m["subset"].isin([GLOBAL_SUBSET, MACRO_AVG_SUBSET])
+                & (m["n_pairs"] >= n_min),
+                "subset",
+            ]
+        )
+        total_nan = int(df["score"].isna().sum())
+        total_rows = int(len(df))
+        qualifying_nan = int(df.loc[df["subset"].isin(qualifying), "score"].isna().sum())
+        qualifying_total = int(df["subset"].isin(qualifying).sum())
+
+        nan_map = {**nan_per_subset.to_dict(),
+                   GLOBAL_SUBSET: total_nan,
+                   MACRO_AVG_SUBSET: qualifying_nan}
+        total_map = {**total_per_subset.to_dict(),
+                     GLOBAL_SUBSET: total_rows,
+                     MACRO_AVG_SUBSET: qualifying_total}
+        m["n_nan"] = m["subset"].map(nan_map).astype(int)
+        m["n_total"] = m["subset"].map(total_map).astype(int)
         all_metrics.append(m)
 
     metrics = pd.concat(all_metrics, ignore_index=True)
@@ -183,6 +214,10 @@ def _build_markdown(metrics: pd.DataFrame, score_names: list[str]) -> str:
 
     NaN-counts table: per-subset NaN counts plus per-subset n_total.
     """
+    # Drop aggregate rows so this per-pipeline report stays per-subset. The
+    # aggregates still flow through to the returned metrics DataFrame (and
+    # downstream parquet), where leaderboard_gen.py picks them up.
+    metrics = metrics[~metrics["subset"].isin([GLOBAL_SUBSET, MACRO_AVG_SUBSET])]
 
     def _pivot(values_col: str) -> pd.DataFrame:
         return metrics.pivot_table(
