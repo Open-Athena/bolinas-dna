@@ -1,4 +1,4 @@
-🤖 **Iteration 4 — strand-handling exploration.** Scout: same 30 iter-1 scores but computed on the **reverse-complement** strand. Then compared FWD / RC / AVG (per-variant mean) per (score, subset). Commit [`4795e1b`](https://github.com/Open-Athena/bolinas-dna/commit/4795e1bfdca4b2e47b87c02eb9b9bb2847f5e5ce).
+🤖 **Iteration 4 — strand-handling exploration.** Scout: same 30 iter-1 scores but computed on the **reverse-complement** strand. Then compared FWD / RC / AVG (per-variant mean) per (score, subset). Commit [`5a2f4b6`](https://github.com/Open-Athena/bolinas-dna/commit/5a2f4b67865b6a7effb2c860a9a5045976a93b58).
 
 ## Setup
 
@@ -118,8 +118,8 @@ It goes both ways. AVG helps on some (score, subset) cells (+0.03 to +0.07) and 
 - **No paired test reaches significance after BH-FDR** across 240 cells × 3 comparisons; AVG has a small directional advantage in the discordant-pair means (0.514–0.558).
 - **Practical recommendation**: AVG is a safe but **conditional** improvement — when both strands provide independent useful signal (most embedding scores) it can help; when one strand is clearly dominant it can hurt. Skip AVG entirely for `_varpos`/`_lastpos_middle` scores where the two strands are not comparable.
 
-## Code @ [`4795e1b`](https://github.com/Open-Athena/bolinas-dna/commit/4795e1bfdca4b2e47b87c02eb9b9bb2847f5e5ce)
+## Code @ [`5a2f4b6`](https://github.com/Open-Athena/bolinas-dna/commit/5a2f4b67865b6a7effb2c860a9a5045976a93b58)
 
-- [`scratch/zeroshot_vep_iter4_rc_scout.py`](https://github.com/Open-Athena/bolinas-dna/blob/4795e1b/scratch/zeroshot_vep_iter4_rc_scout.py) — RC forward pass + 30 scores
-- [`scratch/zeroshot_vep_iter4_rc_analyze.py`](https://github.com/Open-Athena/bolinas-dna/blob/4795e1b/scratch/zeroshot_vep_iter4_rc_analyze.py) — FWD/RC/AVG comparison
-- [`scratch/iter4/`](https://github.com/Open-Athena/bolinas-dna/tree/4795e1b/scratch/iter4/) — parquets + analysis log
+- [`scratch/zeroshot_vep_iter4_rc_scout.py`](https://github.com/Open-Athena/bolinas-dna/blob/5a2f4b6/scratch/zeroshot_vep_iter4_rc_scout.py) — RC forward pass + 30 scores
+- [`scratch/zeroshot_vep_iter4_rc_analyze.py`](https://github.com/Open-Athena/bolinas-dna/blob/5a2f4b6/scratch/zeroshot_vep_iter4_rc_analyze.py) — FWD/RC/AVG comparison
+- [`scratch/iter4/`](https://github.com/Open-Athena/bolinas-dna/tree/5a2f4b6/scratch/iter4/) — parquets + analysis log
