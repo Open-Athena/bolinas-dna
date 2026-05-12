@@ -134,6 +134,46 @@ def summarize_family(df: pd.DataFrame, q_cutoff: float = 0.05) -> dict:
     }
 
 
+def summarize_at_three_levels(
+    df: pd.DataFrame, extra_group_cols: list[str] | None = None
+) -> dict[str, pd.DataFrame]:
+    """Return {global, per_dataset, per_dataset_subset} summary tables.
+
+    ``extra_group_cols``: prepend additional grouping columns (e.g. the pair
+    identifiers like ``score_a, score_b`` or ``dist_a, dist_b``) so the
+    summary breaks out by both the pair AND the breakdown axis.
+    """
+    extra = list(extra_group_cols or [])
+    out: dict[str, pd.DataFrame] = {}
+
+    # Global (collapses over everything except the pair identifiers).
+    if extra:
+        out["global"] = (
+            df.groupby(extra)
+            .apply(lambda g: pd.Series(summarize_family(g)), include_groups=False)
+            .reset_index()
+        )
+    else:
+        out["global"] = pd.DataFrame([summarize_family(df)])
+
+    # Per dataset.
+    by_ds_cols = extra + ["dataset"]
+    out["per_dataset"] = (
+        df.groupby(by_ds_cols)
+        .apply(lambda g: pd.Series(summarize_family(g)), include_groups=False)
+        .reset_index()
+    )
+
+    # Per (dataset, subset).
+    by_dss_cols = extra + ["dataset", "subset"]
+    out["per_dataset_subset"] = (
+        df.groupby(by_dss_cols)
+        .apply(lambda g: pd.Series(summarize_family(g)), include_groups=False)
+        .reset_index()
+    )
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Comparison families.
 # ---------------------------------------------------------------------------
@@ -204,6 +244,91 @@ def family_pool_pairwise(scored: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFra
         lambda g: pd.Series(summarize_family(g)), include_groups=False
     ).reset_index()
     return df, grouped
+
+
+LIKELIHOOD_SIGN_CORRECT = (
+    "minus_llr",
+    "abs_llr",
+    "minus_entropy",
+    "logp_ref",
+    "minus_logp_alt",
+)
+
+
+# Per-model "home" consequence subsets — the regions each model was designed to handle.
+HOME_SUBSETS: dict[str, tuple[str, ...]] = {
+    "exp55-mammals":   ("tss_proximal", "5_prime_UTR_variant"),               # promoter
+    "exp58-mammals":   ("missense_variant", "synonymous_variant", "splicing"), # CDS, mammals
+    "exp58-animals":   ("missense_variant", "synonymous_variant", "splicing"), # CDS, animals
+    "exp59-mammals":   ("3_prime_UTR_variant",),                               # downstream
+    "exp136-proj_v30": ("distal",),                                            # enhancer
+}
+
+
+def restrict_to_home(scored: pd.DataFrame) -> pd.DataFrame:
+    """Filter the per-variant scored DataFrame to (model, subset) pairs in HOME_SUBSETS."""
+    mask = pd.Series(False, index=scored.index)
+    for model, subsets in HOME_SUBSETS.items():
+        mask |= (scored["model"] == model) & (scored["subset"].isin(subsets))
+    return scored[mask].reset_index(drop=True)
+
+
+def family_likelihood_pairwise(scored: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Pairwise among the 5 sign-correct likelihood scores, for each (model,
+    window, dataset, subset). Answers "LLR vs abs(LLR) vs entropy vs logp_*?"."""
+    rows = []
+    for score_a, score_b in combinations(LIKELIHOOD_SIGN_CORRECT, 2):
+        sub_rows = compare_pair_across_cells(
+            scored,
+            score_a=score_a,
+            score_b=score_b,
+            cell_columns=["model", "window", "dataset", "subset"],
+            alternative="two-sided",
+        )
+        sub_rows["score_a"] = score_a
+        sub_rows["score_b"] = score_b
+        rows.append(sub_rows)
+    df = pd.concat(rows, ignore_index=True)
+    df["q_value"] = bh_adjust(df["p_value"].values)
+    summary = df.groupby(["score_a", "score_b"]).apply(
+        lambda g: pd.Series(summarize_family(g)), include_groups=False
+    ).reset_index()
+    return df, summary
+
+
+def family_distance_pairwise(scored: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Pairwise among {l2, cosine, minus_dot}, for each (pool, layer, model,
+    window, dataset, subset)."""
+    rows = []
+    for dist_a, dist_b in combinations(DISTANCES, 2):
+        for pool in POOLS:
+            for layer in LAYERS:
+                score_a = (
+                    f"embed_minus_dot_{pool}_{layer}" if dist_a == "dot"
+                    else f"embed_{dist_a}_{pool}_{layer}"
+                )
+                score_b = (
+                    f"embed_minus_dot_{pool}_{layer}" if dist_b == "dot"
+                    else f"embed_{dist_b}_{pool}_{layer}"
+                )
+                sub_rows = compare_pair_across_cells(
+                    scored,
+                    score_a=score_a,
+                    score_b=score_b,
+                    cell_columns=["model", "window", "dataset", "subset"],
+                    alternative="two-sided",
+                )
+                sub_rows["dist_a"] = dist_a
+                sub_rows["dist_b"] = dist_b
+                sub_rows["pool"] = pool
+                sub_rows["layer"] = layer
+                rows.append(sub_rows)
+    df = pd.concat(rows, ignore_index=True)
+    df["q_value"] = bh_adjust(df["p_value"].values)
+    summary = df.groupby(["dist_a", "dist_b"]).apply(
+        lambda g: pd.Series(summarize_family(g)), include_groups=False
+    ).reset_index()
+    return df, summary
 
 
 def family_window(scored: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -293,6 +418,86 @@ def family_likelihood_vs_embedding(scored: pd.DataFrame) -> tuple[pd.DataFrame, 
     return df, summary
 
 
+NATIVE_WINDOW: dict[str, int] = {
+    "exp55-mammals": 256,
+    "exp58-mammals": 256,
+    "exp58-animals": 256,
+    "exp59-mammals": 256,
+    "exp136-proj_v30": 255,
+}
+
+
+def family_home_model_vs_others(scored: pd.DataFrame) -> pd.DataFrame:
+    """For each home (model, subset) pair and each dataset, compare the home
+    model's best score (at its native window) against each other model's best
+    score (at that model's native window) on the same matched pairs.
+
+    "Best score" per (model, dataset, subset) is by PairwiseAccuracy.
+    """
+    from bolinas.evals.metrics import pairwise_accuracy
+    score_cols = list(SCORE_DIRECTIONS.keys())
+
+    def best_score_col(cell: pd.DataFrame) -> str:
+        return max(
+            score_cols,
+            key=lambda s: pairwise_accuracy(
+                cell["label"], cell[s], cell["match_group"]
+            )["value"],
+        )
+
+    records = []
+    home_pairs = [(m, s) for m, ss in HOME_SUBSETS.items() for s in ss]
+    for home_model, subset in home_pairs:
+        w_home = NATIVE_WINDOW[home_model]
+        for dataset in scored["dataset"].unique():
+            cell_home = scored[
+                (scored["model"] == home_model)
+                & (scored["window"] == w_home)
+                & (scored["dataset"] == dataset)
+                & (scored["subset"] == subset)
+            ]
+            if len(cell_home) == 0:
+                continue
+            s_home = best_score_col(cell_home)
+            for other_model in scored["model"].unique():
+                if other_model == home_model:
+                    continue
+                w_other = NATIVE_WINDOW[other_model]
+                cell_other = scored[
+                    (scored["model"] == other_model)
+                    & (scored["window"] == w_other)
+                    & (scored["dataset"] == dataset)
+                    & (scored["subset"] == subset)
+                ]
+                if len(cell_other) == 0:
+                    continue
+                s_other = best_score_col(cell_other)
+                # Align both cells on (match_group, label).
+                a = cell_home[["match_group", "label", s_home]].rename(columns={s_home: "score"})
+                b = cell_other[["match_group", "label", s_other]].rename(columns={s_other: "score"})
+                merged = a.merge(b, on=["match_group", "label"], suffixes=("_home", "_other"))
+                if len(merged) == 0:
+                    continue
+                res = paired_score_comparison(
+                    label=merged["label"],
+                    score_a=merged["score_home"],
+                    score_b=merged["score_other"],
+                    match_group=merged["match_group"],
+                    alternative="two-sided",
+                )
+                records.append({
+                    "subset": subset, "dataset": dataset,
+                    "home_model": home_model, "home_window": w_home, "home_score": s_home,
+                    "other_model": other_model, "other_window": w_other, "other_score": s_other,
+                    **res,
+                })
+    df = pd.DataFrame(records)
+    if len(df) == 0:
+        return df
+    df["q_value"] = bh_adjust(df["p_value"].values)
+    return df
+
+
 def family_leaderboard_baseline(scored: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Each non-leaderboard score vs the leaderboard score for that dataset.
     Leaderboard: minus_llr for mendelian, abs_llr for complex/eqtl."""
@@ -346,43 +551,116 @@ def main(argv: list[str] | None = None) -> int:
     out_dir = Path("scratch/iter1/paired")
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    print("\n=== 1. Last vs middle layer ===")
-    df_lm, sum_lm = family_last_vs_middle(scored)
-    df_lm.to_parquet(out_dir / "last_vs_middle.parquet", index=False)
-    print(sum_lm.to_string(index=False))
-    print()
-    print("Per-distance breakdown (last vs middle):")
-    breakdown_lm = df_lm.groupby("distance").apply(
-        lambda g: pd.Series(summarize_family(g)), include_groups=False
-    ).reset_index()
-    print(breakdown_lm.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
+    def emit(name: str, df: pd.DataFrame, extra: list[str] | None, out_filename: str):
+        df.to_parquet(out_dir / out_filename, index=False)
+        levels = summarize_at_three_levels(df, extra_group_cols=extra)
+        print(f"\n=== {name} ===")
+        print(f"-- global --")
+        print(levels["global"].to_string(index=False, float_format=lambda x: f"{x:.4f}"))
+        print(f"\n-- per dataset --")
+        print(levels["per_dataset"].to_string(index=False, float_format=lambda x: f"{x:.4f}"))
+        print(f"\n-- per (dataset, subset) --")
+        print(levels["per_dataset_subset"].to_string(index=False, float_format=lambda x: f"{x:.4f}"))
+        # Save the 3-level summaries.
+        levels["global"].to_parquet(out_dir / f"{out_filename}.global.parquet", index=False)
+        levels["per_dataset"].to_parquet(out_dir / f"{out_filename}.per_dataset.parquet", index=False)
+        levels["per_dataset_subset"].to_parquet(out_dir / f"{out_filename}.per_dataset_subset.parquet", index=False)
 
-    print("\n=== 2. Pool pairwise (flat / mean / varpos / lastpos) ===")
-    df_p, sum_p = family_pool_pairwise(scored)
-    df_p.to_parquet(out_dir / "pool_pairwise.parquet", index=False)
-    print(sum_p.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
+    print("\n========== 1. Last vs middle layer ==========")
+    df_lm, _ = family_last_vs_middle(scored)
+    emit("Last vs middle (overall)", df_lm, extra=None, out_filename="last_vs_middle.parquet")
+    print("\n-- by distance × layer comparison --")
+    emit("Last vs middle by distance", df_lm, extra=["distance"], out_filename="last_vs_middle_by_distance.parquet")
 
-    print("\n=== 3. Window pairwise (within each model) ===")
-    df_w, sum_w = family_window(scored)
-    df_w.to_parquet(out_dir / "window_pairwise.parquet", index=False)
-    print(sum_w.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
+    print("\n========== 2. Pool pairwise (flat / mean / varpos / lastpos) ==========")
+    df_p, _ = family_pool_pairwise(scored)
+    emit("Pool pairwise", df_p, extra=["pool_a", "pool_b"], out_filename="pool_pairwise.parquet")
 
-    print("\n=== 4. Best likelihood vs best embedding per cell ===")
-    df_le, sum_le = family_likelihood_vs_embedding(scored)
-    df_le.to_parquet(out_dir / "likelihood_vs_embedding.parquet", index=False)
-    print(sum_le.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
-    # Per-dataset breakdown.
-    per_ds = df_le.groupby("dataset").apply(
-        lambda g: pd.Series(summarize_family(g)), include_groups=False
-    ).reset_index()
-    print("Per-dataset breakdown:")
-    print(per_ds.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
+    print("\n========== 3. Distance pairwise (l2 / cosine / minus_dot) ==========")
+    df_d, _ = family_distance_pairwise(scored)
+    emit("Distance pairwise", df_d, extra=["dist_a", "dist_b"], out_filename="distance_pairwise.parquet")
 
-    print("\n=== 5. Each score vs leaderboard baseline ===")
-    df_lb, sum_lb, top_beats = family_leaderboard_baseline(scored)
+    print("\n========== 4. Likelihood pairwise ==========")
+    df_l, _ = family_likelihood_pairwise(scored)
+    emit("Likelihood pairwise", df_l, extra=["score_a", "score_b"], out_filename="likelihood_pairwise.parquet")
+
+    print("\n========== 5. Window pairwise (within each model) ==========")
+    df_w, _ = family_window(scored)
+    emit("Window pairwise", df_w, extra=["model", "window_a", "window_b"], out_filename="window_pairwise.parquet")
+
+    print("\n========== 6. Best likelihood vs best embedding per cell ==========")
+    df_le, _ = family_likelihood_vs_embedding(scored)
+    emit("Best likelihood vs best embedding", df_le, extra=None, out_filename="likelihood_vs_embedding.parquet")
+
+    # -------- HOME-SUBSET-RESTRICTED RE-RUNS --------
+    print("\n\n############################################################")
+    print("## HOME-SUBSET ANALYSIS — each model on its target consequence subsets")
+    print("############################################################")
+    print(f"HOME_SUBSETS = {dict(HOME_SUBSETS)}")
+    home = restrict_to_home(scored)
+    print(f"[home] {len(home)} rows after restriction (was {len(scored)})")
+    print(f"[home] cells: {home.groupby(['model','window','dataset','subset']).ngroups}")
+
+    print("\n========== 1H. Last vs middle (HOME) ==========")
+    df_lmh, _ = family_last_vs_middle(home)
+    emit("Last vs middle (HOME)", df_lmh, extra=None, out_filename="home_last_vs_middle.parquet")
+
+    print("\n========== 2H. Pool pairwise (HOME) ==========")
+    df_ph, _ = family_pool_pairwise(home)
+    emit("Pool pairwise (HOME)", df_ph, extra=["pool_a", "pool_b"], out_filename="home_pool_pairwise.parquet")
+
+    print("\n========== 3H. Distance pairwise (HOME) ==========")
+    df_dh, _ = family_distance_pairwise(home)
+    emit("Distance pairwise (HOME)", df_dh, extra=["dist_a", "dist_b"], out_filename="home_distance_pairwise.parquet")
+
+    print("\n========== 4H. Likelihood pairwise (HOME) ==========")
+    df_lh, _ = family_likelihood_pairwise(home)
+    emit("Likelihood pairwise (HOME)", df_lh, extra=["score_a", "score_b"], out_filename="home_likelihood_pairwise.parquet")
+
+    print("\n========== 5H. Window pairwise (HOME) ==========")
+    df_wh, _ = family_window(home)
+    emit("Window pairwise (HOME)", df_wh, extra=["model", "window_a", "window_b"], out_filename="home_window_pairwise.parquet")
+
+    print("\n========== 6H. Best likelihood vs best embedding (HOME) ==========")
+    df_leh, _ = family_likelihood_vs_embedding(home)
+    emit("Best likelihood vs best embedding (HOME)", df_leh, extra=None, out_filename="home_likelihood_vs_embedding.parquet")
+
+    print("\n========== 8. HOME vs OTHER models on each home subset ==========")
+    print("For each (home_model, home_subset, dataset), compare the home model's best score "
+          "(at its native window) against every OTHER model's best score (at its native window) "
+          "on the SAME matched pairs. value > 0.5 means HOME model wins discordant pairs more often.")
+    df_homevsother = family_home_model_vs_others(scored)
+    df_homevsother.to_parquet(out_dir / "home_vs_other.parquet", index=False)
+    print(f"-- summary per (subset, dataset) --")
+    if len(df_homevsother) > 0:
+        per_subset_ds = df_homevsother.groupby(["subset", "dataset"]).apply(
+            lambda g: pd.Series({
+                "n_other_models": len(g),
+                "n_home_wins": int(((g['q_value']<0.05) & (g['value']>0.5)).sum()),
+                "n_other_wins": int(((g['q_value']<0.05) & (g['value']<0.5)).sum()),
+                "indet": int((g['q_value']>=0.05).sum()),
+                "median_value": float(g['value'].median()),
+                "mean_value": float(g['value'].mean()),
+            }), include_groups=False
+        ).reset_index()
+        print(per_subset_ds.to_string(index=False, float_format=lambda x: f"{x:.3f}"))
+        print(f"\n-- significant losses for the home model (sorted) --")
+        losses = df_homevsother[(df_homevsother['q_value']<0.05) & (df_homevsother['value']<0.5)].sort_values('value')
+        if len(losses):
+            print(losses[['subset','dataset','home_model','home_score','other_model','other_score','value','q_value']].to_string(index=False, float_format=lambda x: f"{x:.3f}"))
+        else:
+            print("(none — home model is never significantly beaten on its home subset)")
+
+    print("\n========== 7. Each score vs leaderboard baseline ==========")
+    df_lb, _, top_beats = family_leaderboard_baseline(scored)
     df_lb.to_parquet(out_dir / "leaderboard_baseline.parquet", index=False)
-    print("Per-dataset summary (how often does a non-leaderboard score beat the leaderboard?):")
-    print(sum_lb.to_string(index=False))
+    levels = summarize_at_three_levels(df_lb, extra_group_cols=None)
+    print("-- global --")
+    print(levels["global"].to_string(index=False, float_format=lambda x: f"{x:.4f}"))
+    print("\n-- per dataset --")
+    print(levels["per_dataset"].to_string(index=False, float_format=lambda x: f"{x:.4f}"))
+    print("\n-- per (dataset, subset) --")
+    print(levels["per_dataset_subset"].to_string(index=False, float_format=lambda x: f"{x:.4f}"))
     print("\nTop scores that beat the leaderboard most often across cells:")
     print(top_beats.head(15).to_string(index=False))
 
