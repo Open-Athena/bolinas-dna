@@ -55,7 +55,7 @@ setup: |
     # Pin to the ADC we mounted; gcloud picks this up automatically.
     export GOOGLE_APPLICATION_CREDENTIALS="$HOME/.config/gcloud/application_default_credentials.json"
 
-    uv sync
+    uv sync --frozen
 
     # Smoke-test GCS access so a bad ADC fails fast in setup, not in a rule.
     gcloud storage ls gs://marin-us-central1/checkpoints/ | head -3 >/dev/null
