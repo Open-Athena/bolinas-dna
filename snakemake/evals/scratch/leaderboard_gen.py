@@ -135,25 +135,32 @@ def gather_methods(dataset: str) -> list[tuple[str, str | None, pl.DataFrame]]:
     return rows
 
 
+def _split_method(
+    df: pl.DataFrame,
+) -> tuple[pl.DataFrame, tuple[float, float, int], tuple[float, float, int]]:
+    """Split a method's metrics frame into per-subset rows, _global_, and
+    _macro_avg_ aggregate tuples (value, se, n)."""
+    per_sub = df.filter(~pl.col("subset").is_in([GLOBAL_SUBSET, MACRO_AVG_SUBSET]))
+    g = df.filter(pl.col("subset") == GLOBAL_SUBSET)
+    m = df.filter(pl.col("subset") == MACRO_AVG_SUBSET)
+    assert g.height == 1 and m.height == 1, (
+        f"expected one _global_ and one _macro_avg_ row, got {g.height}/{m.height}"
+    )
+    g_tup = (g[0, "value"], g[0, "se"], int(g[0, "n_pairs"]))
+    m_tup = (m[0, "value"], m[0, "se"], int(m[0, "n_pairs"]))
+    return per_sub, g_tup, m_tup
+
+
 def build_table(dataset: str) -> str:
     rows = gather_methods(dataset)
 
-    # Per-method aggregate rows (_global_ + _macro_avg_).
-    agg: dict[str, dict[str, tuple[float, float, int]]] = {}
-    for method, _, df in rows:
-        g = df.filter(pl.col("subset") == GLOBAL_SUBSET)
-        m = df.filter(pl.col("subset") == MACRO_AVG_SUBSET)
-        assert g.height == 1, f"{method}: expected 1 _global_ row, got {g.height}"
-        assert m.height == 1, f"{method}: expected 1 _macro_avg_ row, got {m.height}"
-        agg[method] = {
-            "global": (g[0, "value"], g[0, "se"], int(g[0, "n_pairs"])),
-            "macro": (m[0, "value"], m[0, "se"], int(m[0, "n_pairs"])),
-        }
+    # Pre-split each method once: per-subset rows + the two aggregate tuples.
+    methods = [
+        (method, comment, *_split_method(df)) for method, comment, df in rows
+    ]
 
-    # Per-subset coverage (excluding aggregate rows).
     subset_n: dict[str, int] = {}
-    for _, _, df in rows:
-        per_sub = df.filter(~pl.col("subset").is_in([GLOBAL_SUBSET, MACRO_AVG_SUBSET]))
+    for _, _, per_sub, _, _ in methods:
         for s, n in per_sub.select(["subset", "n_pairs"]).iter_rows():
             subset_n[s] = max(subset_n.get(s, 0), int(n))
     subsets = [
@@ -167,21 +174,17 @@ def build_table(dataset: str) -> str:
     # Per-subset cell values + per-column top (for bolding).
     cell_pa: dict[tuple[str, str], tuple[float, float]] = {}
     top_subset: dict[str, float] = {}
-    for method, _, df in rows:
-        per_sub = df.filter(~pl.col("subset").is_in([GLOBAL_SUBSET, MACRO_AVG_SUBSET]))
+    for method, _, per_sub, _, _ in methods:
         for s, v, se, _ in per_sub.iter_rows():
             if s in subsets:
                 cell_pa[(method, s)] = (v, se)
                 top_subset[s] = max(top_subset.get(s, -1.0), v)
 
-    # Per-column tops for the two aggregate columns.
-    top_global = max(agg[m]["global"][0] for m in agg)
-    top_macro = max(agg[m]["macro"][0] for m in agg)
+    top_global = max(g[0] for _, _, _, g, _ in methods)
+    top_macro = max(m[0] for _, _, _, _, m in methods)
 
-    # Aggregate column headers — these counts are the same across methods.
-    any_method = next(iter(agg))
-    global_n = agg[any_method]["global"][2]
-    macro_k = agg[any_method]["macro"][2]
+    # Aggregate-column counts are constant across methods (same match_groups).
+    _, _, _, (_, _, global_n), (_, _, macro_k) = methods[0]
 
     header_cols = [
         f"Global<br>(n={global_n})",
@@ -191,10 +194,8 @@ def build_table(dataset: str) -> str:
     sep = "|---|" + "|".join(["---"] * len(header_cols)) + "|"
     lines = [header, sep]
 
-    for method, comment, _ in rows:
+    for method, comment, _, (gv, gse, _), (mv, mse, _) in methods:
         label = method + (f" ({comment})" if comment else "")
-        gv, gse, _ = agg[method]["global"]
-        mv, mse, _ = agg[method]["macro"]
         cells = [
             f"**{fmt(gv, gse)}**" if gv >= top_global - 0.01 else fmt(gv, gse),
             f"**{fmt(mv, mse)}**" if mv >= top_macro - 0.01 else fmt(mv, mse),
@@ -260,10 +261,22 @@ def _replace_table(body: str, new_table: str) -> str:
     return TABLE_RE.sub(new_table + "\n", body, count=1)
 
 
+def _idempotent_replace(
+    body: str, old_variants: list[str], new_text: str, what: str
+) -> str:
+    """Replace the first matching variant in ``old_variants`` with ``new_text``,
+    or no-op if ``new_text`` is already present (prior PATCH). Raises if
+    neither anchor is found — fails loud so a future schema drift can't
+    silently skip the update."""
+    for old in old_variants:
+        if old in body:
+            return body.replace(old, new_text, 1)
+    if new_text in body:
+        return body
+    raise RuntimeError(f"could not locate {what}")
+
+
 def _update_intro_paragraph(body: str, global_n: int, macro_k: int) -> str:
-    """Update the paragraph just before the table to explain the two new
-    aggregate columns. Anchored on the exact pre-edit phrasing; idempotent
-    because the replacement no longer matches."""
     new_intro = (
         f"PairwiseAccuracy ± SE per method. Higher is better. Two leftmost "
         f"columns aggregate across the per-subset cells: **Global** = PA "
@@ -284,18 +297,10 @@ def _update_intro_paragraph(body: str, global_n: int, macro_k: int) -> str:
         "leaderboard datasets in this repo). Most consequence subsets in "
         "this dataset fall below that threshold — see Sizes for full breakdown.",
     ]
-    for old in old_variants:
-        if old in body:
-            return body.replace(old, new_intro, 1)
-    # Already updated on a prior PATCH — idempotent path.
-    if new_intro in body:
-        return body
-    raise RuntimeError("could not locate intro paragraph for update")
+    return _idempotent_replace(body, old_variants, new_intro, "intro paragraph")
 
 
 def _update_bold_rule(body: str) -> str:
-    """Generalize "per subset" → "per column" since aggregates are columns
-    too. Idempotent."""
     old = (
         "**Bold** = top method per subset, plus any method within **0.01** "
         "PairwiseAccuracy of the top."
@@ -304,11 +309,7 @@ def _update_bold_rule(body: str) -> str:
         "**Bold** = top method per column (including aggregates), plus any "
         "method within **0.01** PairwiseAccuracy of the top."
     )
-    if old in body:
-        return body.replace(old, new, 1)
-    if new in body:
-        return body
-    raise RuntimeError("could not locate bold-rule sentence for update")
+    return _idempotent_replace(body, [old], new, "bold-rule sentence")
 
 
 def _bump_last_updated(body: str, today: str) -> str:
