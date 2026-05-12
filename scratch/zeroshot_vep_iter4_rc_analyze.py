@@ -111,6 +111,20 @@ def main() -> int:
     variability = pd.DataFrame(var_records)
     variability.to_parquet(out_dir / "iter4_fwd_rc_variability.parquet", index=False)
 
+    # Pooled Pearson/Spearman across ALL variants per score (single number per score).
+    pooled_records = []
+    for score in final_names:
+        f = signed_fwd[score].values
+        r = signed_rc[score].values
+        pearson_r = float(pearsonr(f, r)[0]) if np.std(f) > 0 and np.std(r) > 0 else np.nan
+        spearman_r = float(spearmanr(f, r)[0]) if np.std(f) > 0 and np.std(r) > 0 else np.nan
+        pooled_records.append({
+            "score": score, "n_variants": len(f),
+            "pearson_r": pearson_r, "spearman_r": spearman_r,
+        })
+    pooled = pd.DataFrame(pooled_records).sort_values("pearson_r", ascending=False)
+    pooled.to_parquet(out_dir / "iter4_fwd_rc_variability_pooled.parquet", index=False)
+
     # ---- (C) Paired McNemar: AVG vs FWD, AVG vs RC, FWD vs RC ----
     paired_records = []
     for subset, sub_idx in merged.groupby("subset").groups.items():
@@ -155,6 +169,10 @@ def main() -> int:
                 "value": top["value"], "q": top["q_value"], "n_pairs": int(top["n_pairs"]),
             })
     print(pd.DataFrame(rows).to_string(index=False, float_format=lambda x: f"{x:.4f}"))
+
+    # Pooled Pearson per score (single number per score, across all variants).
+    print("\n=== Pooled FWD vs RC Pearson/Spearman per score (all 9820 variants) ===")
+    print(pooled.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
 
     # Variability: how correlated are FWD and RC?
     print("\n=== FWD vs RC variability — median Pearson / Spearman across the 30 scores, per subset ===")
