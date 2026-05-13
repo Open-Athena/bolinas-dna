@@ -28,7 +28,12 @@ rule compute_oof_predictions:
         n_splits=config["cv"]["n_splits"],
         n_splits_inner=config["cv"]["n_splits_inner"],
         mode=config["cv"]["mode"],
-    threads: 4
+    # `threads: 1`: most sklearn classifiers (LogReg/liblinear, LinearSVC, KNN)
+    # are single-threaded internally, so claiming more threads only blocks the
+    # snakemake scheduler from running other combos in parallel. With threads=1
+    # on the 4-vCPU SkyPilot node, snakemake fans out 4 combos at a time and
+    # the BFS sweep takes ~4× less wall-clock.
+    threads: 1
     run:
         # Guard against ineligible (recipe, dataset) combos (e.g. mean_delta on
         # complex_traits). Snakemake doesn't filter these from the wildcard
