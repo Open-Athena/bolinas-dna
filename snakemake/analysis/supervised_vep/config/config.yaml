@@ -1,0 +1,33 @@
+# Supervised VEP follow-up to #175 (tracked in #180).
+#
+# Iter-0: cache mean-pooled embeddings + zero-shot scalars + TraitGym
+# innerprod for exp166-p1B × {mendelian, complex_traits, eqtl} train splits.
+# Train split only — test held out for the eventual final-eval pass.
+
+input_hf_prefix: bolinas-dna/evals
+
+genome_url: http://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz
+
+# Train-only convention (matches #161 / #162 / #172 leaderboards).
+split: train
+
+datasets:
+  - name: mendelian_traits
+  - name: complex_traits
+  - name: eqtl
+
+# Single model for this investigation — the 1B zoonomia generalist from #175.
+# Model is loaded from HF Hub by id (no GCS download stage).
+#
+# `window_size: 255` = 255 bp DNA; the BOS token the tokenizer prepends makes
+# 256 total tokens per context.
+models:
+  - name: exp166-p1B
+    hf_repo: bolinas-dna/exp166-p1B-step-16398
+    window_size: 255
+
+inference:
+  batch_size: 16          # 1B Qwen3 at 256 tokens fits ~16 on A10G (24 GB).
+  num_workers: 4
+  data_transform_on_the_fly: true
+  torch_compile: false

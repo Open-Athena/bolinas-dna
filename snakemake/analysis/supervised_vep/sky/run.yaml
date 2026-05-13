@@ -1,0 +1,68 @@
+# SkyPilot task: supervised-VEP feature-cache (iter-0 of #180).
+#
+# Cache mean-pooled embeddings + zero-shot scalars + TraitGym innerprod for
+# exp166-p1B × {mendelian_traits, complex_traits, eqtl} train splits. Results
+# persist to s3://oa-bolinas/snakemake/analysis/supervised_vep/ via the
+# default-storage-provider in workflow/profiles/default/config.yaml.
+#
+# Model comes from HF Hub (bolinas-dna/exp166-p1B-step-16398), so this task
+# does not need GCS auth. Genome is wgetted from Ensembl.
+#
+# Launch:
+#   sky launch snakemake/analysis/supervised_vep/sky/run.yaml -c supervised-vep
+#
+# Re-run downstream stages only (once iter-1 rules land):
+#   sky exec supervised-vep snakemake/analysis/supervised_vep/sky/run.yaml \
+#     --env SNAKEMAKE_ARGS='--forcerun fit_classifier'
+
+name: supervised-vep
+
+resources:
+    infra: aws/us-east-2
+    accelerators: A10G:1
+    disk_size: 100
+    labels:
+        project: dna
+
+workdir: .
+
+envs:
+    SNAKEMAKE_ARGS: ""
+
+setup: |
+    set -euxo pipefail
+
+    if ! command -v uv >/dev/null 2>&1; then
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+    fi
+
+    grep -q '/.local/bin' "$HOME/.bashrc" || \
+        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+
+    export PATH="$HOME/.local/bin:$PATH"
+
+    uv sync --frozen
+
+    # Pin to the torch/cuda combo that exp166-p1B was tested with (per the
+    # iter-4 scout in #175 great-herschel branch).
+    uv pip install --reinstall --no-deps torch==2.5.1+cu121 \
+        --index-url https://download.pytorch.org/whl/cu121
+    uv pip install --no-deps \
+        nvidia-nccl-cu12==2.21.5 nvidia-cublas-cu12==12.1.3.1 \
+        nvidia-cudnn-cu12==9.1.0.70
+
+    .venv/bin/python -c 'import torch; assert torch.cuda.is_available()'
+
+run: |
+    set -euxo pipefail
+
+    export PATH="$HOME/.local/bin:$PATH"
+    export WANDB_DISABLED=true
+
+    cd snakemake/analysis/supervised_vep
+
+    uv run --project ../../.. snakemake \
+        --profile workflow/profiles/default \
+        --printshellcmds \
+        --rerun-incomplete \
+        $SNAKEMAKE_ARGS

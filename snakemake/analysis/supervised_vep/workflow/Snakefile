@@ -1,0 +1,26 @@
+"""Snakemake workflow: supervised VEP on top of gLM embeddings.
+
+Iter-0 (this commit) caches mean-pooled embeddings + zero-shot scalars +
+TraitGym innerprod for ``exp166-p1B`` × {mendelian, complex_traits, eqtl}
+train splits. Iter-1+ will add classifier-fit / scoring / metrics rules on
+top of the cache.
+
+Tracking: #180. Predecessor: #175.
+"""
+
+
+configfile: "config/config.yaml"
+
+
+include: "rules/common.smk"
+include: "rules/download.smk"
+include: "rules/features.smk"
+
+
+rule all:
+    input:
+        expand(
+            "results/features/{model}/{dataset}.parquet",
+            model=[m["name"] for m in config["models"]],
+            dataset=[d["name"] for d in config["datasets"]],
+        ),
