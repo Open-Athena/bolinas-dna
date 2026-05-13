@@ -459,6 +459,7 @@ dependencies = [
     { name = "transformers", version = "4.57.6", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform == 'darwin' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-tpu') or (sys_platform == 'linux' and extra != 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
     { name = "transformers", version = "5.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform == 'darwin' and extra != 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli')" },
     { name = "wandb", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
+    { name = "xgboost", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
     { name = "zstandard", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
 ]
 
@@ -530,6 +531,7 @@ requires-dist = [
     { name = "tqdm" },
     { name = "transformers" },
     { name = "wandb" },
+    { name = "xgboost" },
     { name = "zstandard" },
 ]
 provides-extras = ["tpu", "marin"]
@@ -2172,7 +2174,7 @@ wheels = [
 
 [[package]]
 name = "marin"
-version = "0.99.dev20260511"
+version = "0.99.dev20260513"
 source = { registry = "https://github.com/marin-community/marin/releases/expanded_assets/marin-latest" }
 dependencies = [
     { name = "backports-zstd", marker = "(sys_platform == 'darwin' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-tpu') or (sys_platform == 'linux' and extra != 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
@@ -2217,7 +2219,7 @@ dependencies = [
     { name = "warcio", marker = "(sys_platform == 'darwin' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-tpu') or (sys_platform == 'linux' and extra != 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
 ]
 wheels = [
-    { url = "https://github.com/marin-community/marin/releases/download/marin-latest/marin-0.99.dev20260511-py3-none-any.whl" },
+    { url = "https://github.com/marin-community/marin/releases/download/marin-latest/marin-0.99.dev20260513-py3-none-any.whl" },
 ]
 
 [package.optional-dependencies]
@@ -2231,7 +2233,7 @@ tpu = [
 
 [[package]]
 name = "marin-finelog"
-version = "0.99.dev20260511"
+version = "0.99.dev20260513"
 source = { registry = "https://github.com/marin-community/marin/releases/expanded_assets/marin-finelog-latest" }
 dependencies = [
     { name = "click", marker = "(sys_platform == 'darwin' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-tpu') or (sys_platform == 'linux' and extra != 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
@@ -2248,12 +2250,12 @@ dependencies = [
     { name = "zstandard", marker = "(sys_platform == 'darwin' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-tpu') or (sys_platform == 'linux' and extra != 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
 ]
 wheels = [
-    { url = "https://github.com/marin-community/marin/releases/download/marin-finelog-latest/marin_finelog-0.99.dev20260511-py3-none-any.whl" },
+    { url = "https://github.com/marin-community/marin/releases/download/marin-finelog-latest/marin_finelog-0.99.dev20260513-py3-none-any.whl" },
 ]
 
 [[package]]
 name = "marin-fray"
-version = "0.99.dev20260511"
+version = "0.99.dev20260513"
 source = { registry = "https://github.com/marin-community/marin/releases/expanded_assets/marin-fray-latest" }
 dependencies = [
     { name = "click", marker = "(sys_platform == 'darwin' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-tpu') or (sys_platform == 'linux' and extra != 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
@@ -2273,12 +2275,12 @@ dependencies = [
     { name = "zstandard", marker = "(sys_platform == 'darwin' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-tpu') or (sys_platform == 'linux' and extra != 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
 ]
 wheels = [
-    { url = "https://github.com/marin-community/marin/releases/download/marin-fray-latest/marin_fray-0.99.dev20260511-py3-none-any.whl" },
+    { url = "https://github.com/marin-community/marin/releases/download/marin-fray-latest/marin_fray-0.99.dev20260513-py3-none-any.whl" },
 ]
 
 [[package]]
 name = "marin-haliax"
-version = "0.99.dev20260511"
+version = "0.99.dev20260513"
 source = { registry = "https://github.com/marin-community/marin/releases/expanded_assets/marin-haliax-latest" }
 dependencies = [
     { name = "aqtp", marker = "(sys_platform == 'darwin' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-tpu') or (sys_platform == 'linux' and extra != 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
@@ -2289,12 +2291,12 @@ dependencies = [
     { name = "safetensors", version = "0.6.2", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform == 'darwin' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-tpu') or (sys_platform == 'linux' and extra != 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
 ]
 wheels = [
-    { url = "https://github.com/marin-community/marin/releases/download/marin-haliax-latest/marin_haliax-0.99.dev20260511-py3-none-any.whl" },
+    { url = "https://github.com/marin-community/marin/releases/download/marin-haliax-latest/marin_haliax-0.99.dev20260513-py3-none-any.whl" },
 ]
 
 [[package]]
 name = "marin-iris"
-version = "0.99.dev20260511"
+version = "0.99.dev20260513"
 source = { registry = "https://github.com/marin-community/marin/releases/expanded_assets/marin-iris-latest" }
 dependencies = [
     { name = "click", marker = "(sys_platform == 'darwin' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-tpu') or (sys_platform == 'linux' and extra != 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
@@ -2320,12 +2322,12 @@ dependencies = [
     { name = "zstandard", marker = "(sys_platform == 'darwin' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-tpu') or (sys_platform == 'linux' and extra != 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
 ]
 wheels = [
-    { url = "https://github.com/marin-community/marin/releases/download/marin-iris-latest/marin_iris-0.99.dev20260511-py3-none-any.whl" },
+    { url = "https://github.com/marin-community/marin/releases/download/marin-iris-latest/marin_iris-0.99.dev20260513-py3-none-any.whl" },
 ]
 
 [[package]]
 name = "marin-levanter"
-version = "0.99.dev20260511"
+version = "0.99.dev20260513"
 source = { registry = "https://github.com/marin-community/marin/releases/expanded_assets/marin-levanter-latest" }
 dependencies = [
     { name = "async-lru", marker = "(sys_platform == 'darwin' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-tpu') or (sys_platform == 'linux' and extra != 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
@@ -2367,7 +2369,7 @@ dependencies = [
     { name = "zstandard", marker = "(sys_platform == 'darwin' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-tpu') or (sys_platform == 'linux' and extra != 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
 ]
 wheels = [
-    { url = "https://github.com/marin-community/marin/releases/download/marin-levanter-latest/marin_levanter-0.99.dev20260511-py3-none-any.whl" },
+    { url = "https://github.com/marin-community/marin/releases/download/marin-levanter-latest/marin_levanter-0.99.dev20260513-py3-none-any.whl" },
 ]
 
 [package.optional-dependencies]
@@ -2379,7 +2381,7 @@ serve = [
 
 [[package]]
 name = "marin-rigging"
-version = "0.99.dev20260511"
+version = "0.99.dev20260513"
 source = { registry = "https://github.com/marin-community/marin/releases/expanded_assets/marin-rigging-latest" }
 dependencies = [
     { name = "fsspec", marker = "(sys_platform == 'darwin' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-tpu') or (sys_platform == 'linux' and extra != 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
@@ -2387,12 +2389,12 @@ dependencies = [
     { name = "s3fs", marker = "(sys_platform == 'darwin' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-tpu') or (sys_platform == 'linux' and extra != 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
 ]
 wheels = [
-    { url = "https://github.com/marin-community/marin/releases/download/marin-rigging-latest/marin_rigging-0.99.dev20260511-py3-none-any.whl" },
+    { url = "https://github.com/marin-community/marin/releases/download/marin-rigging-latest/marin_rigging-0.99.dev20260513-py3-none-any.whl" },
 ]
 
 [[package]]
 name = "marin-zephyr"
-version = "0.99.dev20260511"
+version = "0.99.dev20260513"
 source = { registry = "https://github.com/marin-community/marin/releases/expanded_assets/marin-zephyr-latest" }
 dependencies = [
     { name = "braceexpand", marker = "(sys_platform == 'darwin' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-tpu') or (sys_platform == 'linux' and extra != 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
@@ -2412,7 +2414,7 @@ dependencies = [
     { name = "zstandard", marker = "(sys_platform == 'darwin' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-tpu') or (sys_platform == 'linux' and extra != 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
 ]
 wheels = [
-    { url = "https://github.com/marin-community/marin/releases/download/marin-zephyr-latest/marin_zephyr-0.99.dev20260511-py3-none-any.whl" },
+    { url = "https://github.com/marin-community/marin/releases/download/marin-zephyr-latest/marin_zephyr-0.99.dev20260513-py3-none-any.whl" },
 ]
 
 [[package]]
@@ -4996,6 +4998,23 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/c8/a3/61f54ea74c6d797271aa8e312bb5e0c98ef0cf39110aac863f579f2b5a83/wrapt-2.2.0rc11-cp312-cp312-musllinux_1_2_riscv64.whl", hash = "sha256:b3c93ee7a1721234c00020662ecddab4fdd248fa8a2a12c9f0268c4bad085855", size = 158119, upload-time = "2026-04-24T10:16:54.622Z" },
     { url = "https://files.pythonhosted.org/packages/44/fc/4c36aaf560f273d53467a38fd91fda8ecc5aa5b4c96e495a9b33022d6daa/wrapt-2.2.0rc11-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:3ee95ef8d643ddc7fbb76d8a1bffde5bb8c0f8a707d821fa9e95fde76e870d5d", size = 167068, upload-time = "2026-04-24T10:16:40.351Z" },
     { url = "https://files.pythonhosted.org/packages/42/d9/bee80519aaf88101996d653050e6d78aa3a63d87d6f735fd63955414f7c9/wrapt-2.2.0rc11-py3-none-any.whl", hash = "sha256:48a0ea119e937ec94452b4b6a4301bb6a435f18262298e141cc49b7e495df782", size = 60936, upload-time = "2026-04-24T10:16:48.108Z" },
+]
+
+[[package]]
+name = "xgboost"
+version = "3.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
+    { name = "nvidia-nccl-cu12", marker = "sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
+    { name = "scipy", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/91/bb/1eb0242409d22db725d7a88088e6cfd6556829fb0736f9ff69aa9f1e9455/xgboost-3.2.0.tar.gz", hash = "sha256:99b0e9a2a64896cdaf509c5e46372d336c692406646d20f2af505003c0c5d70d", size = 1263936, upload-time = "2026-02-10T11:03:05.542Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2d/49/6e4cdd877c24adf56cb3586bc96d93d4dcd780b5ea1efb32e1ee0de08bae/xgboost-3.2.0-py3-none-macosx_10_15_x86_64.whl", hash = "sha256:2f661966d3e322536d9c448090a870fcba1e32ee5760c10b7c46bac7a342079a", size = 2507014, upload-time = "2026-02-10T10:50:57.44Z" },
+    { url = "https://files.pythonhosted.org/packages/93/f1/c09ef1add609453aa3ba5bafcd0d1c1a805c1263c0b60138ec968f8ec296/xgboost-3.2.0-py3-none-macosx_12_0_arm64.whl", hash = "sha256:eabbd40d474b8dbf6cb3536325f9150b9e6f0db32d18de9914fb3227d0bef5b7", size = 2328527, upload-time = "2026-02-10T10:51:17.502Z" },
+    { url = "https://files.pythonhosted.org/packages/96/9f/d9914a7b8df842832850b1a18e5f47aaa071c217cdd1da2ae9deb291018b/xgboost-3.2.0-py3-none-manylinux_2_28_aarch64.whl", hash = "sha256:852eabc6d3b3702a59bf78dbfdcd1cb9c4d3a3b6e5ed1f8781d8b9512354fdd2", size = 131100954, upload-time = "2026-02-10T11:02:42.704Z" },
+    { url = "https://files.pythonhosted.org/packages/79/98/679de17c2caa4fd3b0b4386ecf7377301702cb0afb22930a07c142fcb1d8/xgboost-3.2.0-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:99b4a6bbcb47212fec5cf5fbe12347215f073c08967431b0122cfbd1ee70312c", size = 131748579, upload-time = "2026-02-10T10:54:40.424Z" },
 ]
 
 [[package]]

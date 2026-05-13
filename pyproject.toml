@@ -25,6 +25,7 @@ dependencies = [
     "pyBigWig",
     "scikit-learn",
     "scipy",
+    "xgboost",
     "seaborn",
     "snakemake",
     "torch",

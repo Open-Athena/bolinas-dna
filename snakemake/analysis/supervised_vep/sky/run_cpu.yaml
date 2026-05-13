@@ -52,9 +52,12 @@ run: |
 
     # `--cores 16` matches the m7i.4xlarge vCPU count; OOF rule is threads=1
     # so snakemake fans out 16 sklearn combos in parallel.
+    # `--keep-going` so one bad (recipe, classifier) doesn't kill the rest of
+    # the sweep — we'd rather have a partial leaderboard than nothing.
     uv run --project ../../.. snakemake \
         --profile workflow/profiles/default \
         --cores 16 \
+        --keep-going \
         --printshellcmds \
         --rerun-incomplete \
         $SNAKEMAKE_ARGS
