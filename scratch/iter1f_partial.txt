@@ -1,0 +1,7 @@
+=== mendelian × sym_concat (D=3840) === std logreg wide C
+  macro=0.7074 ± 0.0199  global=0.7411  Cs=[np.float64(0.0001), np.float64(0.0001), np.float64(0.0001)]
+
+=== mendelian × abs_delta (D=1920) === std logreg wide C
+  macro=0.7234 ± 0.0193  global=0.7277  Cs=[np.float64(0.0001), np.float64(0.0001), np.float64(0.0001)]
+
+=== mendelian × mean_delta (D=5760) === std logreg wide C
