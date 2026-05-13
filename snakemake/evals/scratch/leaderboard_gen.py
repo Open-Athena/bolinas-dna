@@ -143,11 +143,17 @@ def gather_methods(dataset: str) -> list[tuple[str, str | None, pl.DataFrame]]:
         print(f"  ! alphagenome metrics missing for {dataset}: {exc}")
 
     # 4. gpn_star — calibrated variants only (uncalibrated numbers live in
-    # the #145 eval comment for reference). One row per model V/M/P.
+    # the #145 eval comment for reference). One row per model V/M/P. Catch
+    # only the S3 read so a present-but-malformed parquet fails loud rather
+    # than getting silently treated as "metrics missing".
     try:
         gs = pl.read_parquet(
             f"{S3}/snakemake/gpn_star_eval/results/metrics/{dataset}.parquet"
         )
+    except Exception as exc:  # noqa: BLE001
+        print(f"  ! gpn_star metrics missing for {dataset}: {exc}")
+        gs = None
+    if gs is not None:
         gs = gs.filter(pl.col("score_type") == SCORE_TYPE["gpn_star"][dataset]).filter(
             pl.col("split") == SPLIT
         )
@@ -159,8 +165,6 @@ def gather_methods(dataset: str) -> list[tuple[str, str | None, pl.DataFrame]]:
                 f"no GPN-Star-{model} rows for {dataset!r} in metrics parquet"
             )
             rows.append((f"`GPN-Star-{model}`", None, df))
-    except Exception as exc:  # noqa: BLE001
-        print(f"  ! gpn_star metrics missing for {dataset}: {exc}")
 
     return rows
 
@@ -402,16 +406,18 @@ def patch_issue(dataset: str, table_md: str) -> None:
     new_body = _update_intro_paragraph(new_body, global_n, macro_k)
     new_body = _update_bold_rule(new_body)
     new_body = _bump_last_updated(new_body, str(date.today()))
+    # Hardcoded dates on changelog entries (matching the date the change
+    # actually landed) so re-runs of this script don't re-add the entry with
+    # today's date each time — idempotency relies on the entry text being
+    # stable across runs.
     new_body = _prepend_changelog_entry(
         new_body,
-        f"- **{date.today()}** — added `Global` (PA across all pairs, "
+        f"- **2026-05-12** — added `Global` (PA across all pairs, "
         f"n={global_n}) and `Macro Avg` (unweighted PA over n≥30 subsets, "
         f"{macro_k} subsets) aggregate columns. Implemented as new "
         f"`_global_` / `_macro_avg_` rows in `compute_pairwise_metrics` "
         f"(`src/bolinas/evals/metrics.py`); all 3 metric pipelines re-run.",
     )
-    # GPN-Star addition + sort-by-Global change cycle. Hardcoded date so
-    # idempotency holds across future runs of this script.
     calibrated = SCORE_TYPE["gpn_star"][dataset]
     raw = calibrated.replace("_calibrated", "")
     new_body = _prepend_changelog_entry(

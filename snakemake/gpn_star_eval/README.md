@@ -67,8 +67,8 @@ results/
 
 ## Usage
 
-Pure CPU, ~10 seconds wallclock for all 3 datasets. Network: ~12 MB
-(downloads 9 prediction parquets from the pinned gist).
+Pure CPU, ~20 s wallclock for all 3 datasets. Network: ~12 MB (downloads
+9 prediction parquets from the pinned gist).
 
 ```bash
 cd snakemake/gpn_star_eval

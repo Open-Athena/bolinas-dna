@@ -21,8 +21,15 @@ rule compute_metrics:
         for col in SCORE_COLUMNS:
             assert col in df.columns, f"input scores parquet missing column {col!r}"
 
+        expected_models = {f"GPN-Star-{m}" for m in MODELS}
+        assert set(df["model"].unique()) == expected_models, (
+            f"unexpected model set in scores parquet: "
+            f"{set(df['model'].unique())} vs {expected_models}"
+        )
+
         per_model = []
-        for model in sorted(df["model"].unique()):
+        for m in MODELS:
+            model = f"GPN-Star-{m}"
             sub = df[df["model"] == model]
             metrics = compute_pairwise_metrics(
                 dataset=sub[list(REQUIRED_VARIANT_COLUMNS)],
