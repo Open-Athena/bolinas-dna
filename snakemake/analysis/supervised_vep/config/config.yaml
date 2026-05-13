@@ -31,3 +31,42 @@ inference:
   num_workers: 4
   data_transform_on_the_fly: true
   torch_compile: false
+
+# Iter-1 supervised-CV settings.
+#
+# `mode` controls the classifier hparam grids:
+#   "bfs"     — minimal grid (one value per knob) for the first-pass sweep
+#   "refine"  — wide grids; only invoke this after BFS identifies top cells
+#
+# Recipes apply to all 3 datasets when symmetric, mendelian-only when
+# asymmetric (the pipeline filters automatically via
+# `is_recipe_dataset_compatible`).
+cv:
+  n_splits: 3
+  n_splits_inner: 3
+  mode: bfs
+
+recipes:
+  # Symmetric (apply to all 3 datasets).
+  - abs_delta
+  - prod
+  - sym_concat
+  - traitgym_innerprod
+  - abs_delta_plus_scalars
+  # Asymmetric (mendelian_traits only).
+  - mean_delta
+  - mean_concat_plus_llr
+
+classifiers:
+  - logreg_l2
+  - linearsvc
+  - knn
+  - xgboost
+  - pairwise_logreg
+
+# Zero-shot baseline scores reported alongside the supervised OOF metrics so
+# the leaderboard shows the "no-supervised-head" row for direct comparison.
+baseline_scores:
+  - minus_llr
+  - abs_llr
+  - embed_last_l2
