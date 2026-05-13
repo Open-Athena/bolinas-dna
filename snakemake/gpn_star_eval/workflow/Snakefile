@@ -1,0 +1,24 @@
+"""Snakemake workflow: GPN-Star (V/M/P) baseline on matched-pair eval datasets.
+
+Pulls externally-produced GPN-Star prediction parquets (songlab-cal/TraitGym
+`bolinas_pack_predictions` rule, pinned to a gist via
+``bolinas.evals.gpn_star.GPN_STAR_GIST_BASE``), row-aligns with the HF eval
+dataset's train split, computes PairwiseAccuracy ± SE per consequence subset.
+Train split only.
+"""
+
+
+configfile: "config/config.yaml"
+
+
+include: "rules/common.smk"
+include: "rules/score.smk"
+include: "rules/metrics.smk"
+
+
+rule all:
+    input:
+        expand(
+            "results/metrics/{dataset}.parquet",
+            dataset=DATASETS,
+        ),
