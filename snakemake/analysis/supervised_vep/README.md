@@ -44,17 +44,23 @@ Dry-run first (CLAUDE.md):
 uv run snakemake --profile workflow/profiles/default --dry-run
 ```
 
-Local invocation is not recommended — the 1B forward pass needs a GPU. Use
-SkyPilot:
+Two SkyPilot tasks for the two phases:
 
 ```bash
+# iter-0: feature cache (GPU). 1× A10G, ~25 min for exp166-p1B × 3 datasets.
 sky launch snakemake/analysis/supervised_vep/sky/run.yaml -c supervised-vep
+
+# iter-1+: classifier sweep (CPU-only sklearn). 16 vCPU, ~15-30 min.
+sky launch snakemake/analysis/supervised_vep/sky/run_cpu.yaml -c supervised-vep-cpu
 ```
+
+Tear down the GPU cluster once iter-0 has uploaded the feature cache to S3 —
+iter-1+ doesn't need it.
 
 Re-run on the same cluster after a code change:
 
 ```bash
-sky exec supervised-vep snakemake/analysis/supervised_vep/sky/run.yaml
+sky exec supervised-vep-cpu snakemake/analysis/supervised_vep/sky/run_cpu.yaml
 ```
 
 ## Iter-1 outputs (downstream of the cache)

@@ -1,0 +1,60 @@
+# SkyPilot task: supervised-VEP iter-1+ CPU sweep (sklearn classifiers).
+#
+# Iter-0 produced the feature cache on a GPU node (1B model forward passes).
+# Iter-1+ is pure CPU sklearn work — train classifiers on the cached features
+# via 3-fold chrom-grouped CV. No GPU needed; many vCPUs are the bottleneck.
+#
+# Launch:
+#   sky launch snakemake/analysis/supervised_vep/sky/run_cpu.yaml -c supervised-vep-cpu
+#
+# Re-exec iterations on the same cluster:
+#   sky exec supervised-vep-cpu snakemake/analysis/supervised_vep/sky/run_cpu.yaml
+#
+# m7i.4xlarge: 16 vCPU, 64 GB RAM, ~$0.81/hr in us-east-2.
+# snakemake fan-out: rule `compute_oof_predictions` uses threads=1, so
+# `--cores 16` runs 16 OOF combos in parallel — matches the box.
+
+name: supervised-vep-cpu
+
+resources:
+    infra: aws/us-east-2
+    cpus: 16+              # m7i.4xlarge or equivalent
+    memory: 32+
+    disk_size: 50
+    labels:
+        project: dna
+
+workdir: .
+
+envs:
+    SNAKEMAKE_ARGS: ""
+
+setup: |
+    set -euxo pipefail
+
+    if ! command -v uv >/dev/null 2>&1; then
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+    fi
+
+    grep -q '/.local/bin' "$HOME/.bashrc" || \
+        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+
+    export PATH="$HOME/.local/bin:$PATH"
+
+    uv sync --frozen
+
+run: |
+    set -euxo pipefail
+
+    export PATH="$HOME/.local/bin:$PATH"
+
+    cd snakemake/analysis/supervised_vep
+
+    # `--cores 16` matches the m7i.4xlarge vCPU count; OOF rule is threads=1
+    # so snakemake fans out 16 sklearn combos in parallel.
+    uv run --project ../../.. snakemake \
+        --profile workflow/profiles/default \
+        --cores 16 \
+        --printshellcmds \
+        --rerun-incomplete \
+        $SNAKEMAKE_ARGS
