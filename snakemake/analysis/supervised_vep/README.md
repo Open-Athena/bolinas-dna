@@ -57,9 +57,42 @@ Re-run on the same cluster after a code change:
 sky exec supervised-vep snakemake/analysis/supervised_vep/sky/run.yaml
 ```
 
+## Iter-1 outputs (downstream of the cache)
+
+```
+results/predictions/{model}/{dataset}/{recipe}/{classifier}.parquet
+results/fold_records/{model}/{dataset}/{recipe}/{classifier}.json
+results/metrics/{model}/{dataset}/{recipe}/{classifier}.parquet
+results/baseline_metrics/{model}/{dataset}.parquet
+results/leaderboard.parquet
+```
+
+The leaderboard is one long-form table with columns `model, dataset, recipe,
+classifier, family, score_type, subset, value, se, n_pairs, n_ties`. Filter by
+`family` to compare:
+
+* `family = "supervised"` — OOF predictions from a classifier (`recipe ×
+  classifier` columns name the recipe).
+* `family = "baseline"` — zero-shot scores (`minus_llr`, `abs_llr`,
+  `embed_last_l2`).
+
+Asymmetric recipes (`mean_delta`, `mean_concat_plus_llr`) are filtered to
+mendelian_traits only — `complex_traits` and `eqtl` have no biological ref/alt
+direction.
+
+## Iter-1 sweep modes
+
+`cv.mode: bfs` (default) — minimal hparam grid per classifier (one value per
+knob). Use for the first-pass sweep across all (recipe, classifier) cells.
+
+`cv.mode: refine` — wide grids. Use once BFS identifies the top performers
+and you want the *best* hparams for those cells. Hparam-boundary flagging is
+written into the fold-records JSON; if the chosen value sits at the grid
+edge, widen the grid in `src/bolinas/supervised/classifiers.py` before
+reading too much into the result.
+
 ## Status
 
-* iter-0 (this commit): pipeline scaffold + `compute_features` rule. Library
-  code in `src/bolinas/supervised/`. Tests in `tests/supervised/`.
-* iter-1+: classifier-fit + scoring + metrics rules (chrom-grouped CV, OOF
-  predictions through `compute_pairwise_metrics`).
+* iter-0: pipeline scaffold + `compute_features` rule.
+* iter-1: classifier-fit + scoring + metrics + leaderboard rules.
+* iter-2+: LoRA fine-tuning (separate pipeline / module).
