@@ -64,6 +64,17 @@ classifiers:
   - xgboost
   - pairwise_logreg
 
+# (recipe, classifier) cells to skip for specific datasets in the iter-1 BFS
+# sweep. LinearSVC with the default solver converges very slowly on the
+# bigger mendelian recipes (D=3840-5760, n_train≈6500); 1h+ wall-clock per
+# combo isn't worth the BFS slot. Revisit in iter-1b with `dual=True` and/or
+# a tighter `max_iter` if these cells turn out interesting from the other
+# classifiers.
+skip_combos:
+  - {dataset: mendelian_traits, recipe: mean_concat_plus_llr, classifier: linearsvc}
+  - {dataset: mendelian_traits, recipe: mean_delta, classifier: linearsvc}
+  - {dataset: mendelian_traits, recipe: sym_concat, classifier: linearsvc}
+
 # Zero-shot baseline scores reported alongside the supervised OOF metrics so
 # the leaderboard shows the "no-supervised-head" row for direct comparison.
 baseline_scores:

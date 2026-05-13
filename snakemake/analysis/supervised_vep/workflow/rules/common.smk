@@ -33,6 +33,18 @@ MODELS = [m["name"] for m in config["models"]]
 RECIPES = list(config.get("recipes", []))
 CLASSIFIERS = list(config.get("classifiers", []))
 
+# Explicit (dataset, recipe, classifier) cells to skip — escape hatch for BFS
+# iterations where a specific combo is known-too-slow. See config comment for
+# `skip_combos` for current entries and rationale.
+SKIP_COMBOS = {
+    (item["dataset"], item["recipe"], item["classifier"])
+    for item in config.get("skip_combos", []) or []
+}
+
+
+def is_combo_skipped(dataset: str, recipe: str, classifier: str) -> bool:
+    return (dataset, recipe, classifier) in SKIP_COMBOS
+
 
 def valid_dataset_recipe_pairs():
     """Yield ``(dataset, recipe)`` for combos the pipeline should run."""
@@ -48,9 +60,9 @@ def metric_targets():
     for m in MODELS:
         for d, r in valid_dataset_recipe_pairs():
             for c in CLASSIFIERS:
-                out.append(
-                    f"results/metrics/{m}/{d}/{r}/{c}.parquet"
-                )
+                if is_combo_skipped(d, r, c):
+                    continue
+                out.append(f"results/metrics/{m}/{d}/{r}/{c}.parquet")
     return out
 
 
