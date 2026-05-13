@@ -444,6 +444,7 @@ dependencies = [
     { name = "numpy", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
     { name = "openpyxl", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
     { name = "pandas", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
+    { name = "peft", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
     { name = "polars", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
     { name = "polars-bio", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
     { name = "pyarrow", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
@@ -517,6 +518,7 @@ requires-dist = [
     { name = "numpy" },
     { name = "openpyxl" },
     { name = "pandas" },
+    { name = "peft" },
     { name = "polars" },
     { name = "polars-bio" },
     { name = "pyarrow", specifier = ">=21.0.0" },
@@ -3125,6 +3127,30 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/fa/2a/52a8da6fe965dea6192eb716b357558e103aea0a1e9a8352ad575a8406ca/pathvalidate-3.3.1.tar.gz", hash = "sha256:b18c07212bfead624345bb8e1d6141cdcf15a39736994ea0b94035ad2b1ba177", size = 63262, upload-time = "2025-06-15T09:07:20.736Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9a/70/875f4a23bfc4731703a5835487d0d2fb999031bd415e7d17c0ae615c18b7/pathvalidate-3.3.1-py3-none-any.whl", hash = "sha256:5263baab691f8e1af96092fa5137ee17df5bdfbd6cff1fcac4d6ef4bc2e1735f", size = 24305, upload-time = "2025-06-15T09:07:19.117Z" },
+]
+
+[[package]]
+name = "peft"
+version = "0.19.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "accelerate", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
+    { name = "huggingface-hub", version = "0.36.2", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform == 'darwin' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-tpu') or (sys_platform == 'linux' and extra != 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
+    { name = "huggingface-hub", version = "1.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform == 'darwin' and extra != 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli')" },
+    { name = "numpy", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
+    { name = "packaging", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
+    { name = "psutil", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
+    { name = "pyyaml", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
+    { name = "safetensors", version = "0.6.2", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform == 'darwin' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-tpu') or (sys_platform == 'linux' and extra != 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
+    { name = "safetensors", version = "0.8.0rc0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform == 'darwin' and extra != 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli')" },
+    { name = "torch", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
+    { name = "tqdm", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
+    { name = "transformers", version = "4.57.6", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform == 'darwin' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-tpu') or (sys_platform == 'linux' and extra != 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
+    { name = "transformers", version = "5.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform == 'darwin' and extra != 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/86/cf/037f1e3d5186496c05513a6754639e2dab3038a05f384284d49a9bd06a2d/peft-0.19.1.tar.gz", hash = "sha256:0d97542fe96dcdaa20d3b81c06f26f988618f416a73544ab23c3618ccb674a40", size = 763738, upload-time = "2026-04-16T15:46:45.105Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e8/b6/f54d676ed93cc2dd2234c3b172ea9c8c3d7d29361e66b1b23dec57a67465/peft-0.19.1-py3-none-any.whl", hash = "sha256:2113f72a81621b5913ef28f9022204c742df111890c5f49d812716a4a301e356", size = 680692, upload-time = "2026-04-16T15:46:42.886Z" },
 ]
 
 [[package]]

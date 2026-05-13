@@ -75,6 +75,25 @@ skip_combos:
   - {dataset: mendelian_traits, recipe: mean_delta, classifier: linearsvc}
   - {dataset: mendelian_traits, recipe: sym_concat, classifier: linearsvc}
 
+# Iter-2 LoRA fine-tuning settings.
+#
+# Architecture: no head — score is `||flat(last_ref) − flat(last_alt)||₂`,
+# LoRA adapters on q_proj/v_proj are the only learnable parameters. Symmetric
+# by construction → same architecture for all 3 datasets.
+#
+# Conservative starting hparams for the phase-0 sanity (small rank,
+# moderate dropout, few epochs) so overfitting is contained and visible
+# from epoch 1 → 2.
+lora:
+  rank: 4
+  alpha: 16
+  dropout: 0.1
+  target_modules: [q_proj, v_proj]
+  epochs: 2
+  lr: 1.0e-4
+  batch_size: 8
+  margin: 1.0
+
 # Zero-shot baseline scores reported alongside the supervised OOF metrics so
 # the leaderboard shows the "no-supervised-head" row for direct comparison.
 baseline_scores:

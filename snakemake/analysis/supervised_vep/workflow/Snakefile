@@ -18,8 +18,26 @@ include: "rules/common.smk"
 include: "rules/download.smk"
 include: "rules/features.smk"
 include: "rules/supervised.smk"
+include: "rules/lora.smk"
 
 
 rule all:
     input:
         "results/leaderboard.parquet",
+
+
+rule lora_complex_traits:
+    """Iter-2 sanity target: LoRA on complex_traits (smallest dataset)."""
+    input:
+        "results/lora_metrics/exp166-p1B/complex_traits.parquet",
+        "results/lora_oof/exp166-p1B/complex_traits.parquet",
+
+
+rule lora_all:
+    """Iter-2 full sweep: LoRA on all 3 datasets."""
+    input:
+        expand(
+            "results/lora_metrics/{model}/{dataset}.parquet",
+            model=[m["name"] for m in config["models"]],
+            dataset=[d["name"] for d in config["datasets"]],
+        ),

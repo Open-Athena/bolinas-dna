@@ -23,6 +23,7 @@ dependencies = [
     "polars-bio",
     "pyarrow>=21.0.0",
     "pyBigWig",
+    "peft",
     "scikit-learn",
     "scipy",
     "xgboost",
