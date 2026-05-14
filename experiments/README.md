@@ -51,6 +51,12 @@ for the full iris CLI surface (`iris job logs`, `iris job stop`, `iris job summa
 `iris task exec`, etc.) — that's the source of truth and what to consult when
 this README drifts.
 
+## wandb run names
+
+Set wandb run names with a `dna-exp<N>` prefix, where `<N>` is the experiment
+number from the issue/directory (e.g. `dna-exp42-baseline-vs-tuned`). Lets runs
+be filtered by experiment in the wandb UI.
+
 ## Lessons we learned the hard way (failure → fix)
 
 These are anchored to specific failure messages so they survive iris/marin

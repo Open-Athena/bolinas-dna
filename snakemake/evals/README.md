@@ -61,7 +61,7 @@ design that this replaces, three things changed:
   (= tiered_v1 with `LOG_LOCAL` for distal). Apply via
   `add_tiered_maf_bin(df, scheme, ...)`.
 
-Per-dataset matching retention (n_pos / matched / %) is tracked in [issue #156](https://github.com/Open-Athena/bolinas-dna/issues/156).
+Per-dataset matching retention statistics are tracked in [issue #156](https://github.com/Open-Athena/bolinas-dna/issues/156).
 
 Per-dataset specifics:
 
