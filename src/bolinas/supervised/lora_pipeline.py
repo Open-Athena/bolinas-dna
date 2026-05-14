@@ -39,6 +39,9 @@ def fit_predict_one_fold(
     lora_dropout: float = 0.1,
     lora_target_modules: tuple[str, ...] = ("q_proj", "v_proj"),
     normalize: bool = False,
+    use_head: bool = False,
+    head_hidden_div: int = 4,
+    head_dropout: float = 0.1,
     epochs: int = 1,
     lr: float = 1e-4,
     batch_size: int = 2,
@@ -98,6 +101,9 @@ def fit_predict_one_fold(
             target_modules=tuple(lora_target_modules),
         ),
         normalize=normalize,
+        use_head=use_head,
+        head_hidden_div=head_hidden_div,
+        head_dropout=head_dropout,
     )
     n_trainable = model.trainable_parameters()
     print(f"[fit_predict_one_fold] LoRA trainable params: {n_trainable:,}")

@@ -64,17 +64,20 @@ class PairwiseVepLora(nn.Module):
         torch_dtype: torch.dtype = torch.bfloat16,
         gradient_checkpointing: bool = True,
         normalize: bool = False,
+        use_head: bool = False,
+        head_hidden_div: int = 4,
+        head_dropout: float = 0.1,
     ) -> None:
-        """If ``normalize=True``, L2-normalize the flattened hidden state to
-        the unit sphere before taking the pairwise distance. Score then lives
-        in ``[0, 2]``, so margin in ``{0.1, 0.5, 1.0}`` is sensible (FaceNet
-        territory). At LoRA init the ranking is preserved but the absolute
-        score is no longer identical to the frozen `embed_last_l2` baseline.
+        """Two scoring architectures controlled by ``use_head``:
 
-        With ``normalize=False`` (default), the score is the raw L2 distance
-        across all `L*D` entries — matches the frozen baseline exactly at
-        init but margin must be picked relative to the dataset-specific
-        natural score scale (~100-200 here).
+        ``use_head=False`` (default): score = pairwise L2 distance over the
+        flattened ``L*D`` hidden state. With ``normalize=True``, the flattened
+        vector is L2-normalized to the unit sphere first → score ∈ [0, 2].
+
+        ``use_head=True``: mean-pool last hidden state, then score = MLP head
+        on the symmetric feature ``|alt_pool − ref_pool|``. The MLP is
+        ``D → D/head_hidden_div → 1`` with GELU + dropout. LoRA-init no longer
+        matches the frozen ``embed_last_l2`` baseline (head is random at init).
         """
         super().__init__()
         backbone = AutoModelForCausalLM.from_pretrained(
@@ -93,12 +96,32 @@ class PairwiseVepLora(nn.Module):
         )
         self.backbone = get_peft_model(backbone, peft_config)
         self.normalize = normalize
+        self.use_head = use_head
+        if use_head:
+            D = backbone.config.hidden_size
+            self.head = nn.Sequential(
+                nn.Linear(D, max(D // head_hidden_div, 16)),
+                nn.GELU(),
+                nn.Dropout(head_dropout),
+                nn.Linear(max(D // head_hidden_div, 16), 1),
+            )
+        else:
+            self.head = None
 
     def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
         B = input_ids.shape[0]
         flat = rearrange(input_ids, "B V L -> (B V) L")
         out = self.backbone(input_ids=flat, output_hidden_states=True)
         last = out.hidden_states[-1]  # [B*2, L, D]
+
+        if self.use_head:
+            # Mean-pool over positions → [B*2, D], then symmetric |alt - ref| → MLP → scalar.
+            pooled = last.mean(dim=1)  # [B*2, D]
+            pooled = rearrange(pooled, "(B V) D -> B V D", B=B)
+            feat = (pooled[:, 1] - pooled[:, 0]).abs().float()  # [B, D] in fp32 for the head
+            return self.head(feat).squeeze(-1)
+
+        # No-head: flat L2 distance (optionally normalized).
         last = rearrange(last, "(B V) L D -> B V (L D)", B=B)  # flatten L,D
         if self.normalize:
             last = F.normalize(last, p=2, dim=-1)
