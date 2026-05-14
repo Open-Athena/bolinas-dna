@@ -233,11 +233,11 @@ def compute_variant_score_bundle(
     # Detect var_pos at the token level; this is BOS-aware automatically.
     diff = input_ids[:, 0] != input_ids[:, 1]  # [B, L]
     assert diff.any(dim=-1).all(), "found rows with identical ref/alt input_ids"
-    var_pos_each = diff.float().argmax(dim=-1)  # [B]
-    p = int(var_pos_each[0].item())
-    assert (var_pos_each == p).all(), (
+    var_pos = diff.float().argmax(dim=-1)  # [B]
+    p = int(var_pos[0].item())
+    assert (var_pos == p).all(), (
         f"prefix-sharing requires constant var_pos within the batch; got "
-        f"unique values {var_pos_each.unique().tolist()}"
+        f"unique values {var_pos.unique().tolist()}"
     )
     assert 0 < p < L - 1, (
         f"variant at token position {p} of length-{L} sequence has no shared "
@@ -273,7 +273,7 @@ def compute_variant_score_bundle(
     log_prob = rearrange(log_prob, "(B V) -> B V", B=B)
     llr = log_prob[:, 1] - log_prob[:, 0]  # alt - ref
 
-    next_token_jsd_mean = _compute_next_token_jsd_mean(logits, input_ids, nuc_token_ids)
+    next_token_jsd_mean = _compute_next_token_jsd_mean(logits, var_pos, nuc_token_ids)
 
     return torch.stack([llr, next_token_jsd_mean], dim=1)
 
@@ -312,7 +312,7 @@ def _repeat_interleave_kv_cache(past_kv: Any, n: int) -> Any:
 
 def _compute_next_token_jsd_mean(
     logits: Float[Tensor, "Bx2 L V"],
-    input_ids: Int[Tensor, "B 2 L"],
+    var_pos: Int[Tensor, " B"],
     nuc_token_ids: Int[Tensor, " 4"],
 ) -> Float[Tensor, " B"]:
     """Mean per-position 4-nuc next-token JSD over downstream positions.
@@ -320,17 +320,13 @@ def _compute_next_token_jsd_mean(
     For each batch row, compute the Jensen-Shannon divergence between the
     REF and ALT next-token distributions (restricted to A/C/G/T) at every
     position whose left context includes the variant, then average.
-    """
-    B, _, L = input_ids.shape
 
-    # SNV invariants: exactly one differing position per row, not at the last
-    # position (since logits[L-1] predicts off the end and is dropped).
-    diff = input_ids[:, 0] != input_ids[:, 1]  # [B, L]
-    assert diff.any(dim=-1).all(), "found rows with identical ref/alt input_ids"
-    var_pos = diff.float().argmax(dim=-1)  # [B]
-    assert (var_pos < L - 1).all(), (
-        f"variant at last position has no downstream prediction; var_pos={var_pos.tolist()}"
-    )
+    ``var_pos`` is the per-row token-level variant position; the caller
+    derives it once from the input_ids diff and passes it in (callers that
+    need it for prefix-sharing also use the same value).
+    """
+    BV2, L, _ = logits.shape
+    B = BV2 // 2
 
     # Restrict to 4-nuc softmax + cast to fp32 (bf16 log_softmax has the
     # same rounding-error issue flagged in _logits_to_logprobs).
@@ -354,5 +350,5 @@ def _compute_next_token_jsd_mean(
     # the _logits_to_logprobs convention (predicts off the end).
     pos = torch.arange(L, device=jsd_per_pos.device)
     mask = (pos.unsqueeze(0) >= var_pos.unsqueeze(1)) & (pos.unsqueeze(0) <= L - 2)
-    n_pos = mask.sum(dim=-1).float()  # > 0 by the assertion above
+    n_pos = mask.sum(dim=-1).float()  # > 0 by caller's assertion
     return (jsd_per_pos * mask).sum(dim=-1) / n_pos
