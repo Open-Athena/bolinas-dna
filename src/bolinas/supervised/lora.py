@@ -60,11 +60,17 @@ class PairwiseVepLora(nn.Module):
         self,
         backbone_id: str,
         lora: LoraConfigSpec = LoraConfigSpec(),
+        *,
+        torch_dtype: torch.dtype = torch.bfloat16,
+        gradient_checkpointing: bool = True,
     ) -> None:
         super().__init__()
         backbone = AutoModelForCausalLM.from_pretrained(
-            backbone_id, trust_remote_code=True
+            backbone_id, trust_remote_code=True, torch_dtype=torch_dtype
         )
+        if gradient_checkpointing:
+            backbone.gradient_checkpointing_enable()
+            backbone.enable_input_require_grads()
         peft_config = LoraConfig(
             r=lora.rank,
             lora_alpha=lora.alpha,

@@ -91,17 +91,22 @@ Driven by 0–2 results:
 
 # Current findings
 
-### Headline per dataset (macro PairwiseAccuracy, train-split, 3-fold chrom-grouped OOF)
+### Best-so-far per dataset (PairwiseAccuracy, train-split, 3-fold chrom-grouped OOF)
 
-| dataset | best recipe so far | macro PA | beats zero-shot `embed_last_l2`? |
-|---|---|---:|:---|
-| `mendelian_traits` | `rank-mean(embed_last_l2, minus_llr)` (no training, just rank-average) | **0.7682** ± 0.018 | **+0.027** ✓ |
-| `complex_traits` | `embed_last_l2` alone (zero-shot) | **0.6541** ± 0.032 | tie ✓ (no supervised beats it) |
-| `eqtl` | `embed_last_l2` alone (zero-shot) | **0.5360** ± 0.022 | tie (best supervised `sym_concat × knn` 0.5781 wins macro by +0.04 but loses on the biggest subset `distal`) |
+This table is updated as new best recipes are found. Both **macro** PA (unweighted mean of per-subset PA for subsets with n_pairs ≥ 30) and **global** PA (single PA over all matched pairs in the train split) are reported, with deltas against both the **LLR-protocol baseline** (the leaderboard default: `minus_llr` for mendelian, `abs_llr` for complex_traits / eqtl) and the alternative zero-shot **`embed_last_l2`** (flattened ref-vs-alt L2 distance, identified in #175 §1 as competitive).
 
-### Three findings driving the story
+| dataset | best recipe so far | macro PA | global PA | Δ macro vs LLR | Δ global vs LLR | Δ macro vs `embed_last_l2` | Δ global vs `embed_last_l2` |
+|---|---|---:|---:|---:|---:|---:|---:|
+| `mendelian_traits` | **`logreg_l2(embed_last_l2, minus_llr)`** wide C | **0.7750** ± 0.018 | **0.7462** ± 0.006 | +0.058 vs `minus_llr` (0.7175) | +0.011 vs `minus_llr` (0.7350) | +0.034 vs `embed_last_l2` (0.7408) | +0.024 vs `embed_last_l2` (0.7225) |
+| `complex_traits` | zero-shot `embed_last_l2` (untrained) | **0.6541** ± 0.032 | **0.5824** ± 0.021 | +0.061 vs `abs_llr` (0.5927) | +0.047 vs `abs_llr` (0.5355) | — (= baseline) | — (= baseline) |
+| `eqtl` | zero-shot `embed_last_l2` (untrained) | **0.5360** ± 0.022 | **0.5306** ± 0.010 | +0.013 vs `abs_llr` (0.5225) | +0.008 vs `abs_llr` (0.5230) | — (= baseline) | — (= baseline) |
 
-1. **High-D supervised on mean-pooled embeddings is dominated by the zero-shot scalar.** Iter-1's 82 (dataset × recipe × classifier) BFS combos on D=1920+ pooled features lose to `embed_last_l2` on 2/3 datasets and tie on the third. A single-feature OOF on `embed_last_l2` reproduces the zero-shot number bit-identically — confirming that the extra D=1920+ features in iter-1's pool-based recipes are *dilution*, not *additional signal*.
+Baseline numbers were computed by running each cached zero-shot scalar through `compute_pairwise_metrics` directly on the train split, so they're drop-in comparable to #161 / #162 / #172.
+
+### Four findings driving the story
+
+1. **Iter-1's BFS supervised cells were C-undertuned, not capacity-limited.** With wide C grids, the same pair-aware classifier on the same `sym_concat` mendelian recipe lifts from 0.524 (iter-1 BFS, C=1.0) to **0.7164** (iter-1e, C=1e-4) — a +0.193 macro PA gain from a single hyperparameter. Standard logreg with wide C on the 2-scalar mendelian recipe achieves the current champion 0.7750.
+2. **High-D supervised on mean-pooled embeddings is still dominated by the zero-shot scalar.** Even with proper C tuning, the high-D recipes (D=1920+) don't reach the 2-scalar champion. A single-feature OOF on `embed_last_l2` reproduces the zero-shot number bit-identically — confirming that the extra D dims in pool-based recipes are *dilution*, not *additional signal*.
 2. **Low-dim composites of zero-shot scalars do beat zero-shot on mendelian.** A pure rank-mean of two scalars (`embed_last_l2`, `minus_llr`) lifts mendelian macro PA by +0.027 — better than any iter-1 supervised cell. The win comes from across-the-board per-subset gains (missense +0.023, splicing +0.051, synonymous +0.121, …).
 3. **The same composite *hurts* on complex_traits and eqtl** because `minus_llr` is near-noise on those datasets (their zero-shot LLR macros are ~0.51-0.59, close to chance). Adding it to a composite drags `embed_last_l2` down by 0.03-0.05 on the biggest subsets.
 
@@ -116,12 +121,12 @@ Driven by 0–2 results:
 - [x] **iter-0**: feature cache built (mean-pooled ref/alt + TraitGym innerprod + zero-shot scalars) for `exp166-p1B` × 3 datasets. [`#180 comment 4444428353`](https://github.com/Open-Athena/bolinas-dna/issues/180#issuecomment-4444428353).
 - [x] **iter-1**: 82 (recipe × classifier) supervised combos through chrom-grouped 3-fold OOF. **Negative result**: high-D supervised underperforms zero-shot on 2/3 datasets. [`#180 comment 4445512959`](https://github.com/Open-Athena/bolinas-dna/issues/180#issuecomment-4445512959).
 - [x] **iter-1b**: single-feature OOF + low-dim rank-mean / LogReg of zero-shot scalars. **Positive result on mendelian**: `rank-mean(embed_last_l2, minus_llr) = 0.7682` beats both zero-shot and every iter-1 cell. [`#180 comment 4445555064`](https://github.com/Open-Athena/bolinas-dna/issues/180#issuecomment-4445555064).
-- [ ] **iter-1c (optional, cheap)**: tiny chrom-grouped LogReg on the 5-6 zero-shot scalars only (no high-D blocks); compare against rank-mean. Should match-or-beat on mendelian, not regress on complex / eqtl.
-- [ ] **iter-2**: LoRA fine-tuning of `exp166-p1B` with pair-aware ranking loss. The frozen-embedding ceiling on complex / eqtl is the binding constraint; only a learned backbone can plausibly raise it.
+- [x] **iter-1c/d/e**: pair-aware deep-dive + wide C grids. **Iter-1 BFS was C-undertuned**; pair-aware on high-D mendelian × `sym_concat` jumps 0.524 → 0.7164 with proper C. New mendelian champion: `logreg(embed_last_l2, minus_llr)` wide C = **0.7750**. Pair-aware ties std logreg in the low-dim regime; high-D std-logreg-with-wide-C still untested. [`#180 comment 4445776202`](https://github.com/Open-Athena/bolinas-dna/issues/180#issuecomment-4445776202).
+- [ ] **iter-1f (optional, cheap)**: std logreg with wide C on high-D recipes (sym_concat, abs_delta, mean_delta). Tests whether pair-aware has residual advantage at high-D or whether wide-C tuning alone closes the iter-1 gap.
+- [ ] **iter-2**: LoRA fine-tuning of `exp166-p1B` with pair-aware ranking loss. The frozen-embedding ceiling on complex / eqtl (0.6541 / 0.5360 macro PA — already matched by zero-shot `embed_last_l2`) is the binding constraint; only a learned backbone can plausibly raise it.
 
 # Tracking
 
 Description = current state. Comments = append-only iteration log with commit-pinned permalinks. Pipeline README (under `snakemake/analysis/supervised_vep/`, once created) = how-to-run only.
 
 Reference: closed predecessor #175.
-

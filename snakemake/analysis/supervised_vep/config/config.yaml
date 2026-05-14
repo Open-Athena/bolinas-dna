@@ -91,7 +91,8 @@ lora:
   target_modules: [q_proj, v_proj]
   epochs: 2
   lr: 1.0e-4
-  batch_size: 8
+  batch_size: 2          # batch=8 OOM'd on A10G/22GB with fp32; bf16 + grad ckpt
+                         # bring this back up later if memory allows.
   margin: 1.0
 
 # Zero-shot baseline scores reported alongside the supervised OOF metrics so
