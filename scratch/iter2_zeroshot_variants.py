@@ -40,10 +40,7 @@ HF_DATASET = "bolinas-dna/evals_complex_traits"
 SPLIT = "train"
 BACKBONE = "bolinas-dna/exp166-p1B-step-16398"
 WINDOW = 255
-GENOME_PATH = (
-    "/home/ubuntu/sky_workdir/snakemake/analysis/supervised_vep/.snakemake/storage/"
-    "s3/oa-bolinas/snakemake/analysis/supervised_vep/results/genome.fa.gz"
-)
+GENOME_PATH = "/home/ubuntu/genome.fa.gz"  # stable cluster-local copy (not in snakemake storage cache)
 BATCH_SIZE = 8
 DEVICE = "cuda"
 

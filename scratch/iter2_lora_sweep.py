@@ -22,10 +22,7 @@ import pandas as pd
 from bolinas.supervised.lora_pipeline import fit_predict_one_fold
 
 
-GENOME_PATH = (
-    "/home/ubuntu/sky_workdir/snakemake/analysis/supervised_vep/.snakemake/storage/"
-    "s3/oa-bolinas/snakemake/analysis/supervised_vep/results/genome.fa.gz"
-)  # snakemake-storage-backend cache from iter-0
+GENOME_PATH = "/home/ubuntu/genome.fa.gz"  # stable cluster-local copy (not in snakemake storage cache)
 HF_DATASET = "bolinas-dna/evals_complex_traits"
 SPLIT = "train"
 BACKBONE = "bolinas-dna/exp166-p1B-step-16398"
