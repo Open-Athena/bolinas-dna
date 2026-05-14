@@ -28,19 +28,19 @@ to chr1, and gates on ``zrs_sanity_check``.
 """
 
 
-from bolinas.projection.filter import filter_length, filter_single_chrom_strand
-from bolinas.projection.hal import (
+from bolinas.pipelines.projection.filter import filter_length, filter_single_chrom_strand
+from bolinas.pipelines.projection.hal import (
     attach_src_size,
     parse_halliftover_bed,
     run_halliftover,
 )
-from bolinas.projection.resize import resize_dataframe
-from bolinas.projection.sequence import (
+from bolinas.pipelines.projection.resize import resize_dataframe
+from bolinas.pipelines.projection.sequence import (
     attach_sequences_to_parquet,
     parquet_to_bed6,
     parse_bedtools_getfasta_output,
 )
-from bolinas.projection.subset import filter_to_subset
+from bolinas.pipelines.projection.subset import filter_to_subset
 
 
 # Two cCREs from SCREEN Registry V4 inside the canonical ZRS limb enhancer

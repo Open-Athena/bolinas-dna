@@ -4,7 +4,7 @@ import pandas as pd
 
 from datasets import load_dataset
 
-from bolinas.evals.conservation import (
+from bolinas.pipelines.evals.conservation import (
     CONSERVATION_TRACKS,
     REQUIRED_VARIANT_COLUMNS,
     aggregate_conservation_metrics,

@@ -13,11 +13,16 @@ Schemes tested:
   tiered_v3     = uniform 10bin everywhere except missense/synon/splicing →
                   5bin (cushion the missense pair-count drop in complex)
 """
+
 import os
 
 for var in (
-    "POLARS_MAX_THREADS", "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS",
-    "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS",
+    "POLARS_MAX_THREADS",
+    "OMP_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+    "VECLIB_MAXIMUM_THREADS",
 ):
     os.environ.setdefault(var, "1")
 
@@ -28,25 +33,42 @@ import boto3
 import polars as pl
 from scipy.stats import binomtest
 
-from bolinas.evals.matching import MAF_BIN_EDGES, bin_feature, match_features
+from bolinas.pipelines.evals.matching import MAF_BIN_EDGES, bin_feature, match_features
 
 
 CAT_BASE = [
-    "chrom", "consequence_final",
-    "tss_closest_pc_gene_id", "tss_closest_nc_gene_id",
-    "exon_closest_pc_gene_id", "exon_closest_nc_gene_id",
+    "chrom",
+    "consequence_final",
+    "tss_closest_pc_gene_id",
+    "tss_closest_nc_gene_id",
+    "exon_closest_pc_gene_id",
+    "exon_closest_nc_gene_id",
 ]
 CONT_BASE = [
-    "distance_tss_pc", "distance_tss_nc",
-    "distance_exon_pc", "distance_exon_nc",
+    "distance_tss_pc",
+    "distance_tss_nc",
+    "distance_exon_pc",
+    "distance_exon_nc",
     "MAF",
 ]
 
 # Bin granularity tiers (right-closed, log-spaced).
 BINS_20 = MAF_BIN_EDGES  # iter 24 — 20 buckets
-BINS_10 = [0.0, 0.0005, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.15, 0.2, 0.5]   # 10 buckets
-BINS_5  = [0.0, 0.001, 0.01, 0.05, 0.2, 0.5]                                   # 5 buckets
-BINS_3  = [0.0, 0.01, 0.05, 0.5]                                               # 3 buckets
+BINS_10 = [
+    0.0,
+    0.0005,
+    0.002,
+    0.005,
+    0.01,
+    0.02,
+    0.05,
+    0.1,
+    0.15,
+    0.2,
+    0.5,
+]  # 10 buckets
+BINS_5 = [0.0, 0.001, 0.01, 0.05, 0.2, 0.5]  # 5 buckets
+BINS_3 = [0.0, 0.01, 0.05, 0.5]  # 3 buckets
 
 
 # Subset → bin edges. Subsets not listed get no MAF_bin column entry (label
@@ -58,19 +80,33 @@ SCHEMES: dict[str, dict[str, list[float]]] = {
     "uniform_20bin": {  # iter 26
         s: BINS_20
         for s in (
-            "distal", "tss_proximal", "non_coding_transcript_exon_variant",
-            "3_prime_UTR_variant", "5_prime_UTR_variant",
-            "missense_variant", "synonymous_variant", "splicing",
-            "mature_miRNA_variant", "stop_retained_variant", "coding_sequence_variant",
+            "distal",
+            "tss_proximal",
+            "non_coding_transcript_exon_variant",
+            "3_prime_UTR_variant",
+            "5_prime_UTR_variant",
+            "missense_variant",
+            "synonymous_variant",
+            "splicing",
+            "mature_miRNA_variant",
+            "stop_retained_variant",
+            "coding_sequence_variant",
         )
     },
     "uniform_10bin": {  # iter 27
         s: BINS_10
         for s in (
-            "distal", "tss_proximal", "non_coding_transcript_exon_variant",
-            "3_prime_UTR_variant", "5_prime_UTR_variant",
-            "missense_variant", "synonymous_variant", "splicing",
-            "mature_miRNA_variant", "stop_retained_variant", "coding_sequence_variant",
+            "distal",
+            "tss_proximal",
+            "non_coding_transcript_exon_variant",
+            "3_prime_UTR_variant",
+            "5_prime_UTR_variant",
+            "missense_variant",
+            "synonymous_variant",
+            "splicing",
+            "mature_miRNA_variant",
+            "stop_retained_variant",
+            "coding_sequence_variant",
         )
     },
     "tiered_v1": {
@@ -128,14 +164,28 @@ def add_subset_bin(df: pl.DataFrame, scheme: dict[str, list[float]]) -> pl.DataF
         # don't collide across subsets within polars' partition_by (even though
         # consequence_final already separates them, defensively prefixing keeps
         # the bin labels self-describing in any inspection of the matched table).
-        bin_expr = pl.format("{}:{}", pl.lit(subset[:8]), bin_feature("MAF", edges, right_closed=True))
-        expr = pl.when(pl.col("consequence_group") == subset).then(bin_expr).otherwise(expr)
+        bin_expr = pl.format(
+            "{}:{}", pl.lit(subset[:8]), bin_feature("MAF", edges, right_closed=True)
+        )
+        expr = (
+            pl.when(pl.col("consequence_group") == subset)
+            .then(bin_expr)
+            .otherwise(expr)
+        )
     return df.with_columns(expr.alias("MAF_bin"))
 
 
 def pa_p(V: pl.DataFrame, feature: str) -> tuple[float, int, float]:
-    pos = V.filter(pl.col("label")).select(["match_group", feature]).rename({feature: "pos"})
-    neg = V.filter(~pl.col("label")).select(["match_group", feature]).rename({feature: "neg"})
+    pos = (
+        V.filter(pl.col("label"))
+        .select(["match_group", feature])
+        .rename({feature: "pos"})
+    )
+    neg = (
+        V.filter(~pl.col("label"))
+        .select(["match_group", feature])
+        .rename({feature: "neg"})
+    )
     paired = pos.join(neg, on="match_group", how="inner")
     n = paired.height
     if n == 0:
@@ -187,7 +237,9 @@ for dataset in ("complex_traits", "eqtl"):
         matched = match_features(
             V.filter(pl.col("label")),
             V.filter(~pl.col("label")),
-            CONT_BASE, cat, k=1,
+            CONT_BASE,
+            cat,
+            k=1,
         )
         del V
         gc.collect()
@@ -200,7 +252,10 @@ for dataset in ("complex_traits", "eqtl"):
             pa, _, p = pa_p(sub, "MAF")
             pa_table[s][scheme_name] = pa
             p_table[s][scheme_name] = p
-        print(f"  scheme={scheme_name:18s}  total={n_total:6d}  ({time.time() - t0:5.1f}s)", flush=True)
+        print(
+            f"  scheme={scheme_name:18s}  total={n_total:6d}  ({time.time() - t0:5.1f}s)",
+            flush=True,
+        )
 
     schemes = list(SCHEMES.keys())
     print(f"\n--- {dataset}: matched pair count per (subset, scheme) ---")
@@ -223,10 +278,12 @@ for dataset in ("complex_traits", "eqtl"):
         line = f"{s[:24]:25s}"
         for sch in schemes:
             pa = pa_table[s][sch]
-            line += f"  {pa:14.3f}" if pa == pa else f"             NaN"
+            line += f"  {pa:14.3f}" if pa == pa else "             NaN"
         print(line)
 
-    print(f"\n--- {dataset}: MAF p-value per (subset, scheme) — '★' = Bonferroni-significant ---")
+    print(
+        f"\n--- {dataset}: MAF p-value per (subset, scheme) — '★' = Bonferroni-significant ---"
+    )
     bonf = 0.05 / len(subsets)
     print(f"  Bonferroni threshold = {bonf:.2e}")
     print(f"{'subset':25s}" + "".join(f"  {s:>14}" for s in schemes))
@@ -235,7 +292,7 @@ for dataset in ("complex_traits", "eqtl"):
         for sch in schemes:
             p = p_table[s][sch]
             if p != p:
-                line += f"             NaN"
+                line += "             NaN"
             else:
                 star = "★" if p < bonf else " "
                 line += f"        {p:6.0e}{star}"

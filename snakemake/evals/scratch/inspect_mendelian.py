@@ -7,7 +7,9 @@ distribution, and source distribution.
 import polars as pl
 
 
-PATH = "s3://oa-bolinas/snakemake/evals/results/dataset_unsplit/mendelian_traits.parquet"
+PATH = (
+    "s3://oa-bolinas/snakemake/evals/results/dataset_unsplit/mendelian_traits.parquet"
+)
 
 
 def main() -> None:
@@ -24,7 +26,9 @@ def main() -> None:
     # Strict 1:1 invariant
     n_pos = V.filter(pl.col("label")).height
     n_neg = V.filter(~pl.col("label")).height
-    print(f"n_pos: {n_pos}, n_neg: {n_neg}, ratio: {n_neg / n_pos if n_pos else float('nan'):.3f}")
+    print(
+        f"n_pos: {n_pos}, n_neg: {n_neg}, ratio: {n_neg / n_pos if n_pos else float('nan'):.3f}"
+    )
     assert n_pos == n_neg, "expected strict 1:1 matching"
     print()
 

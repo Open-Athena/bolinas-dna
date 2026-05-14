@@ -120,6 +120,7 @@ def fetch_runs() -> pd.DataFrame:
 # Annotation helpers
 # ---------------------------------------------------------------------------
 
+
 def _correlation_subtitle(df: pd.DataFrame) -> str:
     """Return a compact correlation string with one-sided p-values (positive direction)."""
     if len(df) < 3:
@@ -131,7 +132,9 @@ def _correlation_subtitle(df: pd.DataFrame) -> str:
     spearman_p = spearman_p_two / 2 if spearman_r > 0 else 1 - spearman_p_two / 2
     r_star = " (*)" if pearson_p < SIGNIFICANCE_THRESHOLD else ""
     rho_star = " (*)" if spearman_p < SIGNIFICANCE_THRESHOLD else ""
-    return "\n".join([f"$r$ = {pearson_r:.2f}{r_star}", f"$\\rho$ = {spearman_r:.2f}{rho_star}"])
+    return "\n".join(
+        [f"$r$ = {pearson_r:.2f}{r_star}", f"$\\rho$ = {spearman_r:.2f}{rho_star}"]
+    )
 
 
 CORNERS = [
@@ -187,6 +190,7 @@ def _annotate_correlation(ax: plt.Axes, df: pd.DataFrame) -> None:
 # ---------------------------------------------------------------------------
 # Facet helpers
 # ---------------------------------------------------------------------------
+
 
 def _facet_mask(
     df: pd.DataFrame,
@@ -255,7 +259,9 @@ def _add_facet_sigmoid_fits(
                 x_fit = np.linspace(x.min(), x.max(), 200)
                 ax.plot(x_fit, _sigmoid(x_fit, *popt), color="C3", linewidth=1.5)
             except Exception:
-                logger.warning("Sigmoid fit failed for facet row=%s col=%s", row_val, col_val)
+                logger.warning(
+                    "Sigmoid fit failed for facet row=%s col=%s", row_val, col_val
+                )
 
 
 def _finalize_facetgrid(g: sns.FacetGrid, output_path: Path, *, ylabel: str) -> None:
@@ -273,6 +279,7 @@ def _finalize_facetgrid(g: sns.FacetGrid, output_path: Path, *, ylabel: str) -> 
 # ---------------------------------------------------------------------------
 # Plot functions
 # ---------------------------------------------------------------------------
+
 
 def plot_by_leakage_filter(df: pd.DataFrame, output_path: Path, *, ylabel: str) -> None:
     """Two panels: left = no filter, right = leakage filter."""
@@ -296,10 +303,16 @@ def plot_by_leakage_filter(df: pd.DataFrame, output_path: Path, *, ylabel: str) 
         edgecolor="none",
     )
     _add_facet_sigmoid_fits(
-        g, df, col="leakage filter", col_order=LEAKAGE_FILTER_ORDER,
+        g,
+        df,
+        col="leakage filter",
+        col_order=LEAKAGE_FILTER_ORDER,
     )
     _add_facet_correlations(
-        g, df, col="leakage filter", col_order=LEAKAGE_FILTER_ORDER,
+        g,
+        df,
+        col="leakage filter",
+        col_order=LEAKAGE_FILTER_ORDER,
     )
     _finalize_facetgrid(g, output_path, ylabel=ylabel)
 
@@ -328,20 +341,29 @@ def plot_by_run(df: pd.DataFrame, output_path: Path, *, ylabel: str) -> None:
         edgecolor="none",
     )
     _add_facet_sigmoid_fits(
-        g, df,
-        row="dataset", row_order=DATASET_ORDER,
-        col="model size", col_order=MODEL_SIZE_ORDER,
+        g,
+        df,
+        row="dataset",
+        row_order=DATASET_ORDER,
+        col="model size",
+        col_order=MODEL_SIZE_ORDER,
     )
     _add_facet_correlations(
-        g, df,
-        row="dataset", row_order=DATASET_ORDER,
-        col="model size", col_order=MODEL_SIZE_ORDER,
+        g,
+        df,
+        row="dataset",
+        row_order=DATASET_ORDER,
+        col="model size",
+        col_order=MODEL_SIZE_ORDER,
     )
     _finalize_facetgrid(g, output_path, ylabel=ylabel)
 
 
 def plot_by_dataset_and_leakage_filter(
-    df: pd.DataFrame, output_path: Path, *, ylabel: str,
+    df: pd.DataFrame,
+    output_path: Path,
+    *,
+    ylabel: str,
 ) -> None:
     """Row=dataset, col=leakage filter. Marker size for model size, viridis for step."""
     g = sns.relplot(
@@ -366,14 +388,20 @@ def plot_by_dataset_and_leakage_filter(
         edgecolor="none",
     )
     _add_facet_sigmoid_fits(
-        g, df,
-        row="dataset", row_order=DATASET_ORDER,
-        col="leakage filter", col_order=LEAKAGE_FILTER_ORDER,
+        g,
+        df,
+        row="dataset",
+        row_order=DATASET_ORDER,
+        col="leakage filter",
+        col_order=LEAKAGE_FILTER_ORDER,
     )
     _add_facet_correlations(
-        g, df,
-        row="dataset", row_order=DATASET_ORDER,
-        col="leakage filter", col_order=LEAKAGE_FILTER_ORDER,
+        g,
+        df,
+        row="dataset",
+        row_order=DATASET_ORDER,
+        col="leakage filter",
+        col_order=LEAKAGE_FILTER_ORDER,
     )
     _finalize_facetgrid(g, output_path, ylabel=ylabel)
 
@@ -382,7 +410,10 @@ def plot_by_dataset_and_leakage_filter(
 # Sigmoid fitting
 # ---------------------------------------------------------------------------
 
-def _sigmoid(x: np.ndarray, lower: float, upper: float, k: float, x0: float) -> np.ndarray:
+
+def _sigmoid(
+    x: np.ndarray, lower: float, upper: float, k: float, x0: float
+) -> np.ndarray:
     """Increasing sigmoid: lower at low x, upper at high x."""
     return lower + (upper - lower) / (1 + np.exp(np.clip(-k * (x - x0), -500, 500)))
 
@@ -399,6 +430,7 @@ def _fit_sigmoid(x: np.ndarray, y: np.ndarray) -> np.ndarray:
 # ---------------------------------------------------------------------------
 # Data loading
 # ---------------------------------------------------------------------------
+
 
 def load_data(*, refresh: bool = False) -> pd.DataFrame:
     """Load data from cache if available, otherwise fetch from W&B."""
@@ -437,9 +469,13 @@ def main() -> None:
             print(f"No data for task {task}")
             continue
         task_dir = OUTPUT_DIR / task
-        plot_by_leakage_filter(task_df, task_dir / "by_leakage_filter.svg", ylabel=ylabel)
+        plot_by_leakage_filter(
+            task_df, task_dir / "by_leakage_filter.svg", ylabel=ylabel
+        )
         plot_by_dataset_and_leakage_filter(
-            task_df, task_dir / "by_dataset_and_leakage_filter.svg", ylabel=ylabel,
+            task_df,
+            task_dir / "by_dataset_and_leakage_filter.svg",
+            ylabel=ylabel,
         )
         for lf in LEAKAGE_FILTER_ORDER:
             lf_df = task_df[task_df["leakage filter"] == lf]

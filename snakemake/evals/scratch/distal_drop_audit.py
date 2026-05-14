@@ -16,14 +16,18 @@ Audit on the local /tmp dataset_all parquet:
 import os
 
 for var in (
-    "POLARS_MAX_THREADS", "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS",
-    "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS",
+    "POLARS_MAX_THREADS",
+    "OMP_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+    "VECLIB_MAXIMUM_THREADS",
 ):
     os.environ.setdefault(var, "1")
 
 import polars as pl
 
-from bolinas.evals.matching import (
+from bolinas.pipelines.evals.matching import (
     BIN_NA,
     EXON_DIST_BIN_EDGES,
     MAF_BIN_EDGES,
@@ -105,15 +109,11 @@ print(
 
 # 3. Drop one categorical column at a time and re-check, to see which is the
 #    bottleneck.
-print(
-    f"\n--- single-column drop experiments (pos rows that gain a matching neg) ---"
-)
+print("\n--- single-column drop experiments (pos rows that gain a matching neg) ---")
 baseline_lost = n_pos_lost
 for drop_col in CAT:
     cat_drop = [c for c in CAT if c != drop_col]
-    neg_keys_d = (
-        neg.select(cat_drop).unique().with_columns(_has=pl.lit(True))
-    )
+    neg_keys_d = neg.select(cat_drop).unique().with_columns(_has=pl.lit(True))
     pos_d = pos.join(neg_keys_d, on=cat_drop, how="left")
     lost_d = pos_d.filter(pl.col("_has").is_null()).height
     rescued = baseline_lost - lost_d

@@ -27,12 +27,12 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from bolinas.conservation.calibration import calibrate_to_match_proportion
-from bolinas.conservation.histogram import (
+from bolinas.pipelines.conservation.calibration import calibrate_to_match_proportion
+from bolinas.pipelines.conservation.histogram import (
     PhylopHistogram,
     build_histogram_for_chrom,
 )
-from bolinas.evals.conservation import CONSERVATION_TRACKS
+from bolinas.pipelines.evals.conservation import CONSERVATION_TRACKS
 
 
 REFERENCE_TRACK = "phyloP_241m"

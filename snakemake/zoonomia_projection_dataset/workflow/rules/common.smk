@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 import polars as pl
 
-from bolinas.evals.conservation import CONSERVATION_TRACKS
+from bolinas.pipelines.evals.conservation import CONSERVATION_TRACKS
 
 
 def _git_commit_sha() -> str:
@@ -69,7 +69,7 @@ STANDARD_CHROMS = list(config["standard_chroms"])
 
 # Sanity-check: track must be in the registry.
 assert "phyloP_447m" in CONSERVATION_TRACKS, (
-    "phyloP_447m must be present in bolinas.evals.conservation.CONSERVATION_TRACKS"
+    "phyloP_447m must be present in bolinas.pipelines.evals.conservation.CONSERVATION_TRACKS"
 )
 
 

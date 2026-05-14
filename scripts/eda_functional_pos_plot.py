@@ -84,7 +84,13 @@ def fetch_runs() -> pd.DataFrame:
         model_size = parts[1].upper()
 
         history = run.scan_history(
-            keys=[LOSS_KEY, FUNCTIONAL_LOSS_KEY, NONFUNCTIONAL_LOSS_KEY, *auprc_keys, "_step"]
+            keys=[
+                LOSS_KEY,
+                FUNCTIONAL_LOSS_KEY,
+                NONFUNCTIONAL_LOSS_KEY,
+                *auprc_keys,
+                "_step",
+            ]
         )
         seen_steps: set[int] = set()
         for row in history:
@@ -148,7 +154,9 @@ def load_data(*, refresh: bool = False) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 
-def _sigmoid(x: np.ndarray, lower: float, upper: float, k: float, x0: float) -> np.ndarray:
+def _sigmoid(
+    x: np.ndarray, lower: float, upper: float, k: float, x0: float
+) -> np.ndarray:
     """Increasing sigmoid: lower at low x, upper at high x."""
     return lower + (upper - lower) / (1 + np.exp(np.clip(-k * (x - x0), -500, 500)))
 
@@ -177,7 +185,9 @@ def _correlation_subtitle(df: pd.DataFrame, xcol: str) -> str:
     spearman_p = spearman_p_two / 2 if spearman_r > 0 else 1 - spearman_p_two / 2
     r_star = " (*)" if pearson_p < SIGNIFICANCE_THRESHOLD else ""
     rho_star = " (*)" if spearman_p < SIGNIFICANCE_THRESHOLD else ""
-    return "\n".join([f"$r$ = {pearson_r:.2f}{r_star}", f"$\\rho$ = {spearman_r:.2f}{rho_star}"])
+    return "\n".join(
+        [f"$r$ = {pearson_r:.2f}{r_star}", f"$\\rho$ = {spearman_r:.2f}{rho_star}"]
+    )
 
 
 CORNERS = [
@@ -323,7 +333,9 @@ def main() -> None:
     sns.set_theme(style="ticks", context="paper", font_scale=1.2)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--refresh", action="store_true", help="Re-fetch from W&B instead of cache")
+    parser.add_argument(
+        "--refresh", action="store_true", help="Re-fetch from W&B instead of cache"
+    )
     args = parser.parse_args()
 
     df = load_data(refresh=args.refresh)

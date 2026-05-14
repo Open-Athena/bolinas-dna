@@ -21,7 +21,8 @@ import sys  # noqa: E402
 
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
-from biofoundation.data import Genome, _get_variant_window  # noqa: E402
+from bolinas.data.genome import Genome  # noqa: E402
+from bolinas.data.transforms import _get_variant_window  # noqa: E402
 from datasets import load_dataset  # noqa: E402
 from evo2 import Evo2  # noqa: E402
 

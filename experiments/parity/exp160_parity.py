@@ -56,7 +56,7 @@ from levanter.utils.mesh import MeshConfig
 # src/bolinas/evals/lm_eval. Importing DNALmDatasetFormat triggers the
 # @LmDatasetFormatBase.register_subclass("dna") decorator at module load,
 # so "dna" is a valid format choice anywhere downstream.
-from bolinas.evals.lm_eval.task_configs import TRAITGYM_MENDELIAN_V2_255
+from bolinas.pipelines.evals.lm_eval.task_configs import TRAITGYM_MENDELIAN_V2_255
 from bolinas.levanter.defaults import dna_effective_seq_len
 from bolinas.levanter.formats import DNALmDatasetFormat
 
@@ -241,7 +241,7 @@ def _build_optimizer() -> AdamConfig:
 
 
 def _eval_harness_config() -> LmEvalHarnessConfig:
-    # Importing ``bolinas.evals.lm_eval.task_configs`` (above) loads the
+    # Importing ``bolinas.pipelines.evals.lm_eval.task_configs`` (above) loads the
     # package and runs its ``_install_task_manager_patch()`` side effect,
     # which monkeypatches ``lm_eval.tasks.TaskManager`` so it always includes
     # the bolinas-dna custom-task directory on its search path. Marin's

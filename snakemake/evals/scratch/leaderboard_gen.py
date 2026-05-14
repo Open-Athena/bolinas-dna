@@ -25,6 +25,7 @@ Outputs three markdown chunks ready to drop into the leaderboard issues. With
 `--patch-issues`, surgically PATCHes the bodies of #161/#162/#172 instead of
 relying on manual paste.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -35,8 +36,8 @@ from datetime import date
 
 import polars as pl
 
-from bolinas.evals.gpn_star import GPN_STAR_MODELS, GPN_STAR_SCORE_COLUMN
-from bolinas.evals.metrics import GLOBAL_SUBSET, MACRO_AVG_SUBSET
+from bolinas.pipelines.evals.gpn_star import GPN_STAR_MODELS, GPN_STAR_SCORE_COLUMN
+from bolinas.pipelines.evals.metrics import GLOBAL_SUBSET, MACRO_AVG_SUBSET
 
 # Per-dataset score_type per pipeline.
 SCORE_TYPE = {
@@ -49,7 +50,7 @@ SCORE_TYPE = {
     "alphagenome": "alphagenome_max_l2",
     # GPN-Star ships with both calibrated and uncalibrated variants in the
     # metrics parquet; the leaderboard renders the calibrated one (see
-    # `bolinas.evals.gpn_star.GPN_STAR_SCORE_COLUMN`).
+    # `bolinas.pipelines.evals.gpn_star.GPN_STAR_SCORE_COLUMN`).
     "gpn_star": GPN_STAR_SCORE_COLUMN,
 }
 
@@ -189,9 +190,7 @@ def build_table(dataset: str) -> str:
     rows = gather_methods(dataset)
 
     # Pre-split each method once: per-subset rows + the two aggregate tuples.
-    methods = [
-        (method, comment, *_split_method(df)) for method, comment, df in rows
-    ]
+    methods = [(method, comment, *_split_method(df)) for method, comment, df in rows]
 
     # Sort by Global PA descending so the top of the table = current best
     # method on the headline aggregate. Python's sort is stable, so methods
@@ -275,9 +274,13 @@ def _gh_patch_issue_body(issue_number: int, body: str) -> None:
     bodies aren't subject to shell-quoting or form-encoding fragility."""
     subprocess.run(
         [
-            "gh", "api", "-X", "PATCH",
+            "gh",
+            "api",
+            "-X",
+            "PATCH",
             f"repos/{REPO}/issues/{issue_number}",
-            "--input", "-",
+            "--input",
+            "-",
         ],
         input=json.dumps({"body": body}),
         check=True,
@@ -309,7 +312,9 @@ def _replace_table(body: str, new_table: str) -> str:
     if not TABLE_RE.search(section):
         raise RuntimeError("could not find leaderboard table in Results section")
     new_section = TABLE_RE.sub(new_table + "\n", section, count=1)
-    return body[: section_match.start()] + new_section + sep + body[section_match.end():]
+    return (
+        body[: section_match.start()] + new_section + sep + body[section_match.end() :]
+    )
 
 
 def _idempotent_replace(

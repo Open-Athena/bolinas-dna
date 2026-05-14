@@ -1,4 +1,27 @@
+ci:
+  # https://pre-commit.ci — auto-updates hook revs and auto-fixes ruff /
+  # ruff-format / etc. on PRs. ``skip`` keeps it from running hooks that
+  # need the project venv (mypy via ``uv run``) or that have a
+  # pre-existing parse failure on ``run:`` blocks (snakefmt — tracked
+  # separately, run locally with care).
+  autoupdate_schedule: monthly
+  skip: [mypy, snakefmt]
+
 repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+        # lm-evaluation-harness task configs use the framework's custom
+        # ``!function`` tag — valid for it but not for PyYAML's default
+        # SafeLoader. Skip them; structure is checked when lm-eval parses.
+        exclude: ^src/bolinas/pipelines/evals/lm_eval/.*\.yaml$
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.14.9
     hooks:
@@ -11,3 +34,17 @@ repos:
     hooks:
       - id: snakefmt
         files: (Snakefile|\.smk)$
+
+  - repo: local
+    hooks:
+      # Runs mypy from the project's uv-managed venv so it sees real
+      # transitive types. Config (target, flags) lives in pyproject.toml
+      # under [tool.mypy]. `pass_filenames: false` so mypy always scans
+      # the whole tree on any python change in src/bolinas/ — partial
+      # mypy runs miss cross-file issues.
+      - id: mypy
+        name: mypy
+        entry: uv run mypy
+        language: system
+        pass_filenames: false
+        files: ^src/bolinas/.*\.py$

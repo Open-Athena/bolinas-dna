@@ -9,11 +9,12 @@ description = "DNA training dataset creation and genomic interval utilities"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "bioframe",
-    "biofoundation @ git+https://github.com/Open-Athena/biofoundation.git",
     "biopython>=1.85",
     "cyvcf2",
     "datasets",
+    "einops",
     "huggingface_hub",
+    "jaxtyping",
     "liftover",
     "matplotlib",
     "numpy",
@@ -23,6 +24,7 @@ dependencies = [
     "polars-bio",
     "pyarrow>=21.0.0",
     "pyBigWig",
+    "pyfaidx>=0.8.0",
     "scikit-learn",
     "scipy",
     "seaborn",
@@ -30,7 +32,7 @@ dependencies = [
     "torch",
     "tqdm",
     "tokenizers",
-    "transformers",
+    "transformers[torch]",
     "zstandard",
     "snakemake-storage-plugin-s3>=0.3.6",
     "wandb",
@@ -73,6 +75,7 @@ marin = [
 
 [dependency-groups]
 dev = [
+    "mypy>=1.18.0",
     "pre-commit>=4.3.0",
     "ruff>=0.12.11",
     "pytest>=7.0.0",
@@ -165,5 +168,21 @@ allow-direct-references = true
 packages = ["src/bolinas"]
 
 [tool.ruff.lint]
-# Add any project-specific lint rules here
-ignore = []
+# jaxtyping uses string annotations like ``Int[Tensor, "B L"]`` that ruff's
+# F722 parser rejects; suppress for the whole project.
+ignore = ["F722"]
+
+[tool.ruff.lint.per-file-ignores]
+# Scratch / one-off audit scripts pin thread-affinity env vars *before*
+# importing polars/numpy, so imports legitimately live below module-top
+# logic. Don't fight it.
+"snakemake/evals/scratch/*.py" = ["E402"]
+
+[tool.mypy]
+# Lax baseline: many transitive deps (lightning, torchmetrics, datasets,
+# polars-bio, bioframe, cyvcf2, …) have no stubs. Don't gate the project
+# on missing stubs. `strict_optional` off matches the existing code's
+# implicit-None tolerance — tighten incrementally.
+files = "src/bolinas"
+ignore_missing_imports = true
+strict_optional = false

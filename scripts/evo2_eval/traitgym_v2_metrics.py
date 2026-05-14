@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from bolinas.evals.metrics import compute_metrics
+from bolinas.pipelines.evals.metrics import compute_metrics
 
 
 # Canonical display order for known models. Parquets for any other models
@@ -30,15 +30,22 @@ MODELS = [
     "evo2_40b_base",
 ]
 SCORE_TYPES = ["minus_llr", "abs_llr"]
-REQUIRED_COLS = ["chrom", "pos", "ref", "alt", "label", "subset", "minus_llr", "abs_llr"]
+REQUIRED_COLS = [
+    "chrom",
+    "pos",
+    "ref",
+    "alt",
+    "label",
+    "subset",
+    "minus_llr",
+    "abs_llr",
+]
 
 
 def _metrics_for_model(predictions_path: Path, model_name: str) -> pd.DataFrame:
     df = pd.read_parquet(predictions_path)
     missing = [c for c in REQUIRED_COLS if c not in df.columns]
-    assert not missing, (
-        f"{predictions_path} missing required columns: {missing}"
-    )
+    assert not missing, f"{predictions_path} missing required columns: {missing}"
     dataset = df[["chrom", "pos", "ref", "alt", "label", "subset"]].copy()
     scores = df[["minus_llr", "abs_llr"]].copy()
     metrics = compute_metrics(
@@ -69,7 +76,9 @@ def _build_markdown(metrics: pd.DataFrame, model_order: list[str]) -> str:
         aggfunc="first",
     )
     # Ordering: global first, then subsets sorted by n_pos descending
-    order = ["global"] + [s for s in coverage.sort_values("n_pos", ascending=False).index if s != "global"]
+    order = ["global"] + [
+        s for s in coverage.sort_values("n_pos", ascending=False).index if s != "global"
+    ]
     pivot = pivot.reindex(order)
     cols = [m for m in model_order if m in pivot.columns]
     pivot = pivot[cols]
@@ -100,8 +109,12 @@ def main() -> None:
         help="Directory containing {model}_{split}.parquet files.",
     )
     p.add_argument("--split", default="train")
-    p.add_argument("--output-metrics", default="results/evo2_traitgym_v2/metrics.parquet")
-    p.add_argument("--output-markdown", default="results/evo2_traitgym_v2/results_table.md")
+    p.add_argument(
+        "--output-metrics", default="results/evo2_traitgym_v2/metrics.parquet"
+    )
+    p.add_argument(
+        "--output-markdown", default="results/evo2_traitgym_v2/results_table.md"
+    )
     args = p.parse_args()
 
     pred_dir = Path(args.predictions_dir)

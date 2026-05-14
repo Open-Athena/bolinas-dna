@@ -34,7 +34,7 @@ rule eqtl_parse_per_tissue:
     for variants crossing `pip_pos_threshold` in some gene. The 0-fill is
     the load-bearing sentinel that makes downstream `label_variants_by_pip`
     produce a negative label for "tested but no signal" variants — see
-    `bolinas.evals.catalogue_parser` docstring.
+    `bolinas.pipelines.evals.catalogue_parser` docstring.
 
     Output: ~50–400 MB per tissue (depends on tissue sample size + cis-window
     variant density). Cached on S3 so subsequent rule firings are no-ops.
@@ -50,7 +50,7 @@ rule eqtl_parse_per_tissue:
         import subprocess
         import tempfile
 
-        from bolinas.evals.catalogue_parser import (
+        from bolinas.pipelines.evals.catalogue_parser import (
             collapse_gene_biotype,
             extract_tested_variants,
             merge_cs_and_sumstats,

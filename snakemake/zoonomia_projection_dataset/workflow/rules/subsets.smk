@@ -16,7 +16,7 @@ rule derive_subset_v2_tss_mrna:
     conda:
         "../envs/bioinformatics.yaml"
     run:
-        from bolinas.projection.tss import write_mrna_tss_band_bed
+        from bolinas.pipelines.projection.tss import write_mrna_tss_band_bed
 
         n_band = write_mrna_tss_band_bed(input.gtf, params.flank, output.band)
         assert n_band > 30_000, f"unexpectedly few mRNA TSS bands: {n_band}"

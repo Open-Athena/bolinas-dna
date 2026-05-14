@@ -11,6 +11,7 @@ the prior Finucane-sourced numbers. Expected (per plan §verification):
 Reads from S3 directly. Run after `sky launch -y -c eqtl-catalogue ...`
 finishes. Local-only quick analysis script — feel free to delete.
 """
+
 from __future__ import annotations
 
 import polars as pl
@@ -35,25 +36,38 @@ def main() -> None:
     agg = pl.read_parquet(f"{S3_PREFIX}/eqtl/aggregated.parquet")
     n_pos = agg.filter(pl.col("label")).height
     n_neg = agg.filter(~pl.col("label")).height
-    print(f"=== aggregated.parquet ===")
+    print("=== aggregated.parquet ===")
     print(f"  total: {agg.height:,} variants")
     print(f"  pos:  {n_pos:,} ({n_pos / FINUCANE_AGGREGATED['pos']:.1f}× Finucane)")
     print(f"  neg:  {n_neg:,} ({n_neg / FINUCANE_AGGREGATED['neg']:.1f}× Finucane)")
     print()
     print("  PIP histogram:")
-    for lo, hi in [(0, 1e-6), (1e-6, 0.001), (0.001, 0.005), (0.005, 0.01), (0.01, 0.1), (0.1, 0.5), (0.5, 0.9), (0.9, 1.01)]:
+    for lo, hi in [
+        (0, 1e-6),
+        (1e-6, 0.001),
+        (0.001, 0.005),
+        (0.005, 0.01),
+        (0.01, 0.1),
+        (0.1, 0.5),
+        (0.5, 0.9),
+        (0.9, 1.01),
+    ]:
         n = agg.filter((pl.col("pip") >= lo) & (pl.col("pip") < hi)).height
         print(f"    [{lo:.6f}, {hi:.6f}): {n:>12,}")
     print()
     print("  Sanity asserts:")
-    assert agg.filter((~pl.col("label")) & (pl.col("pip") >= 0.01)).height == 0, "negatives must have pip < 0.01"
-    assert agg.filter((pl.col("label")) & (pl.col("pip") <= 0.9)).height == 0, "positives must have pip > 0.9"
+    assert agg.filter((~pl.col("label")) & (pl.col("pip") >= 0.01)).height == 0, (
+        "negatives must have pip < 0.01"
+    )
+    assert agg.filter((pl.col("label")) & (pl.col("pip") <= 0.9)).height == 0, (
+        "positives must have pip > 0.9"
+    )
     print("    ✓ no negative with pip >= 0.01")
     print("    ✓ no positive with pip <= 0.9")
 
     print()
     ds = pl.read_parquet(f"{S3_PREFIX}/dataset_unsplit/eqtl.parquet")
-    print(f"=== dataset_unsplit/eqtl.parquet ===")
+    print("=== dataset_unsplit/eqtl.parquet ===")
     print(f"  total: {ds.height:,}")
     print(f"  pos:   {ds.filter(pl.col('label')).height:,}")
     print(f"  neg:   {ds.filter(~pl.col('label')).height:,}")
@@ -63,7 +77,9 @@ def main() -> None:
     by_mg = ds.group_by("match_group").agg(pl.col("label").n_unique().alias("n_labels"))
     bad = by_mg.filter(pl.col("n_labels") != 2).height
     assert bad == 0, f"{bad} match_groups don't have exactly 1 True + 1 False"
-    print(f"  ✓ pairing invariant: all {by_mg.height:,} match_groups have 1 pos + 1 neg")
+    print(
+        f"  ✓ pairing invariant: all {by_mg.height:,} match_groups have 1 pos + 1 neg"
+    )
 
     # Train-only per-subset (for direct comparison with leaderboard #172)
     odd_chroms = [str(i) for i in range(1, 23, 2)] + ["X"]

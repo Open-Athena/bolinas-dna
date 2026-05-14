@@ -19,11 +19,16 @@ no MAF column.
 
 Sweep n_quantiles ∈ {2, 4, 8, 16, 32} for both reference variants.
 """
+
 import os
 
 for var in (
-    "POLARS_MAX_THREADS", "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS",
-    "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS",
+    "POLARS_MAX_THREADS",
+    "OMP_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+    "VECLIB_MAXIMUM_THREADS",
 ):
     os.environ.setdefault(var, "1")
 
@@ -34,17 +39,22 @@ import boto3
 import polars as pl
 from scipy.stats import binomtest
 
-from bolinas.evals.matching import match_features
+from bolinas.pipelines.evals.matching import match_features
 
 
 CAT_BASE = [
-    "chrom", "consequence_final",
-    "tss_closest_pc_gene_id", "tss_closest_nc_gene_id",
-    "exon_closest_pc_gene_id", "exon_closest_nc_gene_id",
+    "chrom",
+    "consequence_final",
+    "tss_closest_pc_gene_id",
+    "tss_closest_nc_gene_id",
+    "exon_closest_pc_gene_id",
+    "exon_closest_nc_gene_id",
 ]
 CONT_BASE = [
-    "distance_tss_pc", "distance_tss_nc",
-    "distance_exon_pc", "distance_exon_nc",
+    "distance_tss_pc",
+    "distance_tss_nc",
+    "distance_exon_pc",
+    "distance_exon_nc",
     "MAF",
 ]
 N_QUANTILES_GRID = [2, 4, 8, 16, 32]
@@ -75,14 +85,26 @@ def add_local_q_bin_neg(df: pl.DataFrame, n_q: int) -> pl.DataFrame:
     df = df.join(edges, on=CAT_BASE, how="left")
     bucket = pl.lit(f"q{n_q - 1}")
     for i in reversed(range(n_q - 1)):
-        bucket = pl.when(pl.col("MAF") <= pl.col(f"_e{i}")).then(pl.lit(f"q{i}")).otherwise(bucket)
+        bucket = (
+            pl.when(pl.col("MAF") <= pl.col(f"_e{i}"))
+            .then(pl.lit(f"q{i}"))
+            .otherwise(bucket)
+        )
     df = df.with_columns(bucket.alias("MAF_local_q_bin"))
     return df.drop([f"_e{i}" for i in range(n_q - 1)])
 
 
 def pa_p(V: pl.DataFrame, feature: str) -> tuple[float, int, float]:
-    pos = V.filter(pl.col("label")).select(["match_group", feature]).rename({feature: "pos"})
-    neg = V.filter(~pl.col("label")).select(["match_group", feature]).rename({feature: "neg"})
+    pos = (
+        V.filter(pl.col("label"))
+        .select(["match_group", feature])
+        .rename({feature: "pos"})
+    )
+    neg = (
+        V.filter(~pl.col("label"))
+        .select(["match_group", feature])
+        .rename({feature: "neg"})
+    )
     paired = pos.join(neg, on="match_group", how="inner")
     n = paired.height
     if n == 0:
@@ -131,8 +153,8 @@ for dataset in ("complex_traits", "eqtl"):
     # No-bin baseline (for reference / Pareto comparison).
     scheme_names = (
         ["no_bin"]
-        + [f"j_q{n}" for n in N_QUANTILES_GRID]   # joint-quantile
-        + [f"n_q{n}" for n in N_QUANTILES_GRID]   # neg-only quantile
+        + [f"j_q{n}" for n in N_QUANTILES_GRID]  # joint-quantile
+        + [f"n_q{n}" for n in N_QUANTILES_GRID]  # neg-only quantile
     )
     for scheme in scheme_names:
         t0 = time.time()
@@ -150,7 +172,9 @@ for dataset in ("complex_traits", "eqtl"):
         matched = match_features(
             V.filter(pl.col("label")),
             V.filter(~pl.col("label")),
-            CONT_BASE, cat, k=1,
+            CONT_BASE,
+            cat,
+            k=1,
         )
         if scheme != "no_bin":
             del V
@@ -166,7 +190,9 @@ for dataset in ("complex_traits", "eqtl"):
             p_table[s][scheme] = p
         elapsed = time.time() - t0
         times[scheme] = elapsed
-        print(f"  scheme={scheme:7s}  total={n_total:6d}  ({elapsed:5.1f}s)", flush=True)
+        print(
+            f"  scheme={scheme:7s}  total={n_total:6d}  ({elapsed:5.1f}s)", flush=True
+        )
 
     # --- print 3 tables ---
     print(f"\n--- {dataset}: matched pair count per (subset, scheme) ---")
@@ -189,19 +215,23 @@ for dataset in ("complex_traits", "eqtl"):
         line = f"{s[:24]:25s}"
         for sch in scheme_names:
             pa = pa_table[s][sch]
-            line += f"  {pa:7.3f}" if pa == pa else f"      NaN"
+            line += f"  {pa:7.3f}" if pa == pa else "      NaN"
         print(line)
 
-    print(f"\n--- {dataset}: MAF p-value per (subset, scheme) — '★' = Bonferroni-significant ---")
+    print(
+        f"\n--- {dataset}: MAF p-value per (subset, scheme) — '★' = Bonferroni-significant ---"
+    )
     bonf = 0.05 / len(subsets)
-    print(f"  Bonferroni threshold (per scheme, MAF only across {len(subsets)} subsets) = {bonf:.2e}")
+    print(
+        f"  Bonferroni threshold (per scheme, MAF only across {len(subsets)} subsets) = {bonf:.2e}"
+    )
     print(f"{'subset':25s}" + "".join(f"  {s:>7}" for s in scheme_names))
     for s in subsets:
         line = f"{s[:24]:25s}"
         for sch in scheme_names:
             p = p_table[s][sch]
             if p != p:
-                line += f"      NaN"
+                line += "      NaN"
             else:
                 star = "★" if p < bonf else " "
                 line += f"  {p:6.0e}{star}"

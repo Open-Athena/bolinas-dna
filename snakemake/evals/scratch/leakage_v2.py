@@ -10,7 +10,6 @@ Reports PA + p-value with Bonferroni-flavored thresholds so we can see at a
 glance which (subset, feature) pairs still leak.
 """
 
-import math
 from pathlib import Path
 
 import polars as pl

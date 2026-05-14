@@ -33,7 +33,7 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 from datasets import load_dataset  # noqa: E402
 
-from bolinas.evals.evo2 import (  # noqa: E402
+from bolinas.pipelines.evals.evo2 import (  # noqa: E402
     EVO2_MODEL_CHOICES,
     compute_evo2_llr,
     scores_dataframe,
@@ -59,14 +59,26 @@ def main() -> None:
         help="Output parquet path. Defaults to results/evo2_traitgym_v2/{model}_{split}.parquet",
     )
     p.add_argument("--window-size", type=int, default=8192)
-    p.add_argument("--batch-size", type=int, default=None,
-                   help="Per-device eval batch size. If omitted, auto-tune "
-                        "by OOM-descent from --tune-start.")
-    p.add_argument("--tune-start", type=int, default=64,
-                   help="Starting batch size for OOM-descent tuning.")
+    p.add_argument(
+        "--batch-size",
+        type=int,
+        default=None,
+        help="Per-device eval batch size. If omitted, auto-tune "
+        "by OOM-descent from --tune-start.",
+    )
+    p.add_argument(
+        "--tune-start",
+        type=int,
+        default=64,
+        help="Starting batch size for OOM-descent tuning.",
+    )
     p.add_argument("--num-workers", type=int, default=8)
-    p.add_argument("--limit", type=int, default=None,
-                   help="Only score the first N variants. Smoke-test flag.")
+    p.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Only score the first N variants. Smoke-test flag.",
+    )
     args = p.parse_args()
 
     if args.output is None:
