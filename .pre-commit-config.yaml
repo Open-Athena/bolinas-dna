@@ -1,4 +1,27 @@
+ci:
+  # https://pre-commit.ci — auto-updates hook revs and auto-fixes ruff /
+  # ruff-format / etc. on PRs. ``skip`` keeps it from running hooks that
+  # need the project venv (mypy via ``uv run``) or that hit the network
+  # (snakefmt installs its own; usually fine, but skip to keep the CI
+  # surface minimal).
+  autoupdate_schedule: monthly
+  skip: [mypy]
+
 repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+        # lm-evaluation-harness task configs use the framework's custom
+        # ``!function`` tag — valid for it but not for PyYAML's default
+        # SafeLoader. Skip them; structure is checked when lm-eval parses.
+        exclude: ^src/bolinas/pipelines/evals/lm_eval/.*\.yaml$
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.14.9
     hooks:

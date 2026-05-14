@@ -11,7 +11,7 @@ rule download_genome_and_annotation:
         "../envs/bioinformatics.yaml"
     shell:
         """
-        mkdir -p {params.tmp_dir} && cd {params.tmp_dir} && 
+        mkdir -p {params.tmp_dir} && cd {params.tmp_dir} &&
         datasets download genome accession {wildcards.g} --include genome,gtf \
         && unzip ncbi_dataset.zip && cd - && faToTwoBit {params.genome_path} {output[0]} \
         && gzip -c {params.annotation_path} > {output[1]} \

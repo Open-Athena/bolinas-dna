@@ -1008,7 +1008,7 @@ custom_plots:
     models:
       - model: exp37-genomes-v4-genome_set-animals-intervals-v1_256_128-r02-4e2580
         title: "TSS +- 256"
-      - model: exp42-promoter_2048_v2-r01-ec24fd 
+      - model: exp42-promoter_2048_v2-r01-ec24fd
         title: "TSS +- 2048"
     n_cols: 3
     dataset_subsets:
