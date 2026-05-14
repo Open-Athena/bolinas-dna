@@ -35,8 +35,8 @@ from datetime import date
 
 import polars as pl
 
-from bolinas.evals.gpn_star import GPN_STAR_MODELS, GPN_STAR_SCORE_COLUMN
-from bolinas.evals.metrics import GLOBAL_SUBSET, MACRO_AVG_SUBSET
+from bolinas.pipelines.evals.gpn_star import GPN_STAR_MODELS, GPN_STAR_SCORE_COLUMN
+from bolinas.pipelines.evals.metrics import GLOBAL_SUBSET, MACRO_AVG_SUBSET
 
 # Per-dataset score_type per pipeline.
 SCORE_TYPE = {
@@ -49,7 +49,7 @@ SCORE_TYPE = {
     "alphagenome": "alphagenome_max_l2",
     # GPN-Star ships with both calibrated and uncalibrated variants in the
     # metrics parquet; the leaderboard renders the calibrated one (see
-    # `bolinas.evals.gpn_star.GPN_STAR_SCORE_COLUMN`).
+    # `bolinas.pipelines.evals.gpn_star.GPN_STAR_SCORE_COLUMN`).
     "gpn_star": GPN_STAR_SCORE_COLUMN,
 }
 

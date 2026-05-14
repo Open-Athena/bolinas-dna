@@ -11,7 +11,7 @@ import os, time, psutil
 import polars as pl
 import yaml
 
-from bolinas.evals.trait_intervals import build_dataset
+from bolinas.pipelines.evals.trait_intervals import build_dataset
 
 LOG_PATH = "/tmp/af_sweep.log"
 _log_fh = open(LOG_PATH, "w")

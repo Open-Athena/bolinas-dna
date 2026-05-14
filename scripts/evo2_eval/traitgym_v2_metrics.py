@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from bolinas.evals.metrics import compute_metrics
+from bolinas.pipelines.evals.metrics import compute_metrics
 
 
 # Canonical display order for known models. Parquets for any other models

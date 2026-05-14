@@ -28,7 +28,7 @@ import boto3
 import polars as pl
 from scipy.stats import binomtest
 
-from bolinas.evals.matching import MAF_BIN_EDGES, bin_feature, match_features
+from bolinas.pipelines.evals.matching import MAF_BIN_EDGES, bin_feature, match_features
 
 
 CAT_BASE = [

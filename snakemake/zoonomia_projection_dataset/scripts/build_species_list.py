@@ -23,7 +23,7 @@ Sources, in priority order for assembly quality:
    refer to a *different* assembly than what is in the HAL — useful for
    ranking but not for sequence extraction.
 
-Family dedup policy: see :func:`bolinas.projection.taxonomy.dedup_by_family`.
+Family dedup policy: see :func:`bolinas.pipelines.projection.taxonomy.dedup_by_family`.
 ``Homo_sapiens``, ``Mus_musculus``, and ``Bos_taurus`` are force-included
 (belt-and-suspenders; the natural ranking already picks them).
 
@@ -50,7 +50,7 @@ from urllib.parse import quote
 
 import openpyxl
 
-from bolinas.projection.taxonomy import (
+from bolinas.pipelines.projection.taxonomy import (
     LeafMeta,
     dedup_by_family,
     normalize_zoonomia_leaf,

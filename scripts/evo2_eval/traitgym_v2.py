@@ -33,7 +33,7 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 from datasets import load_dataset  # noqa: E402
 
-from bolinas.evals.evo2 import (  # noqa: E402
+from bolinas.pipelines.evals.evo2 import (  # noqa: E402
     EVO2_MODEL_CHOICES,
     compute_evo2_llr,
     scores_dataframe,

@@ -8,9 +8,9 @@ from cyvcf2 import VCF
 from datasets import Dataset
 from huggingface_hub import HfApi
 
-from bolinas.evals.labeling import label_variants_by_pip
-from bolinas.evals.materialize import materialize_sequences
-from bolinas.evals.matching import (
+from bolinas.pipelines.evals.labeling import label_variants_by_pip
+from bolinas.pipelines.evals.materialize import materialize_sequences
+from bolinas.pipelines.evals.matching import (
     BIN_NA,
     CAT_BASE,
     EXON_DIST_BIN_EDGES,
@@ -23,14 +23,14 @@ from bolinas.evals.matching import (
     bin_feature,
     match_features,
 )
-from bolinas.evals.trait_intervals import (
+from bolinas.pipelines.evals.trait_intervals import (
     add_exon,
     add_tss,
     build_dataset,
     get_exon,
     get_tss,
 )
-from bolinas.evals.variants import (
+from bolinas.pipelines.evals.variants import (
     COORDINATES,
     NUCLEOTIDES,
     attach_per_chrom_consequences,

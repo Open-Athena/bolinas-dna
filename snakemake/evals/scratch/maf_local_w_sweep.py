@@ -31,7 +31,7 @@ import boto3
 import polars as pl
 from scipy.stats import binomtest
 
-from bolinas.evals.matching import match_features
+from bolinas.pipelines.evals.matching import match_features
 
 
 CAT_BASE = [
