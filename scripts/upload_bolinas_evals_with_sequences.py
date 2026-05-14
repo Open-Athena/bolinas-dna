@@ -9,13 +9,10 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
-import sys
 import gzip
 import shutil
 import urllib.request
 from pathlib import Path
-from typing import Iterable
 
 from datasets import DatasetDict, load_dataset
 
@@ -29,7 +26,9 @@ _GENOME_PATH = None
 
 
 class FastaRecord:
-    def __init__(self, name: str, length: int, offset: int, line_blen: int, line_len: int):
+    def __init__(
+        self, name: str, length: int, offset: int, line_blen: int, line_len: int
+    ):
         self.name = name
         self.length = length
         self.offset = offset
@@ -56,7 +55,9 @@ class FastaIndex:
             for line in handle:
                 if not line.strip():
                     continue
-                name, length, offset, line_blen, line_len = line.rstrip("\n").split("\t")
+                name, length, offset, line_blen, line_len = line.rstrip("\n").split(
+                    "\t"
+                )
                 records[name] = FastaRecord(
                     name=name,
                     length=int(length),
@@ -83,12 +84,16 @@ class FastaIndex:
             line_len = None
             seq_offset = None
             while True:
-                pos = handle.tell()
                 line = handle.readline()
                 if not line:
                     break
                 if line.startswith(b">"):
-                    if name is not None and seq_offset is not None and line_blen is not None and line_len is not None:
+                    if (
+                        name is not None
+                        and seq_offset is not None
+                        and line_blen is not None
+                        and line_len is not None
+                    ):
                         records[name] = FastaRecord(
                             name=name,
                             length=seq_len,
@@ -113,7 +118,12 @@ class FastaIndex:
                     line_len = raw_len
                 seq_len += len(stripped)
 
-            if name is not None and seq_offset is not None and line_blen is not None and line_len is not None:
+            if (
+                name is not None
+                and seq_offset is not None
+                and line_blen is not None
+                and line_len is not None
+            ):
                 records[name] = FastaRecord(
                     name=name,
                     length=seq_len,
@@ -357,7 +367,12 @@ def main() -> int:
             LOG.info("Dry run: skipping upload for %s", dataset_name)
             continue
 
-        LOG.info("Uploading %s to %s (config: %s)", dataset_name, args.target_repo, dataset_name)
+        LOG.info(
+            "Uploading %s to %s (config: %s)",
+            dataset_name,
+            args.target_repo,
+            dataset_name,
+        )
         processed.push_to_hub(args.target_repo, config_name=dataset_name)
 
     return 0

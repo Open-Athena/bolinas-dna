@@ -153,9 +153,7 @@ def _utr_from_exons_and_cds(ann: pl.DataFrame, *, side: str) -> GenomicSet:
     )
 
 
-def get_ensembl_ncrna_exons(
-    ann: pl.DataFrame, *, biotypes: list[str]
-) -> GenomicSet:
+def get_ensembl_ncrna_exons(ann: pl.DataFrame, *, biotypes: list[str]) -> GenomicSet:
     """ncRNA exons restricted to ``biotypes`` (Ensembl-flavored vocabulary).
 
     Mirrors the spirit of ``bolinas.data.utils._filter_ncrna_exons`` but
@@ -177,21 +175,15 @@ def get_ensembl_ncrna_exons(
             .str.extract(r'gene_biotype "(.*?)"')
             .alias("gene_biotype"),
             pl.col("attribute").str.contains(r'pseudo "true"').alias("is_pseudo"),
-            pl.col("attribute")
-            .str.contains(r'partial "true"')
-            .alias("is_partial"),
+            pl.col("attribute").str.contains(r'partial "true"').alias("is_partial"),
         )
         .filter(pl.col("transcript_biotype").is_in(list(biotypes)))
         .filter(~pl.col("is_pseudo").fill_null(False))
         .filter(~pl.col("is_partial").fill_null(False))
         .filter(
-            ~pl.col("transcript_biotype")
-            .fill_null("")
-            .str.contains("(?i)pseudogenic")
+            ~pl.col("transcript_biotype").fill_null("").str.contains("(?i)pseudogenic")
         )
-        .filter(
-            ~pl.col("gene_biotype").fill_null("").str.contains("(?i)pseudogene")
-        )
+        .filter(~pl.col("gene_biotype").fill_null("").str.contains("(?i)pseudogene"))
         .select(["chrom", "start", "end"])
     )
 
@@ -336,8 +328,7 @@ def build_cre_region(
         classes = list(ENHANCER_CRE_CLASSES)
     else:
         raise ValueError(
-            f"unknown cCRE-derived recipe: {recipe!r} "
-            f"(expected one of {CRE_RECIPES})"
+            f"unknown cCRE-derived recipe: {recipe!r} (expected one of {CRE_RECIPES})"
         )
     df = pl.read_parquet(cre_parquet).filter(pl.col("cre_class").is_in(classes))
     intervals = GenomicSet(df.select(["chrom", "start", "end"]))
@@ -408,15 +399,13 @@ def case_encode_sequences(
         bw_chroms = set(bw.chroms())
         for fasta_id, seq in zip(ids, seqs):
             assert len(seq) == window_size, (
-                f"{fasta_id}: sequence length {len(seq)} != window_size "
-                f"{window_size}"
+                f"{fasta_id}: sequence length {len(seq)} != window_size {window_size}"
             )
             chrom, coords = fasta_id.rsplit(":", 1)
             start_str, end_str = coords.split("-")
             start, end = int(start_str), int(end_str)
             assert end - start == window_size, (
-                f"{fasta_id}: coord span {end - start} != window_size "
-                f"{window_size}"
+                f"{fasta_id}: coord span {end - start} != window_size {window_size}"
             )
             bw_chrom = _bw_chrom(chrom, chrom_prefix)
             if bw_chrom not in bw_chroms:
@@ -454,7 +443,7 @@ def case_encode_sequences(
 _RECIPE_BLURBS: dict[str, str] = {
     "val_cds": (
         "Protein-coding sequence from Ensembl release {ensembl_release}, "
-        "restricted to canonical transcripts (`tag \"{canonical_tag}\"`). Each "
+        'restricted to canonical transcripts (`tag "{canonical_tag}"`). Each '
         "canonical CDS region is extended by 20 bp on each side (captures "
         "splice signal at exon boundaries), then expanded to a minimum length "
         "of 255 bp."
@@ -462,18 +451,18 @@ _RECIPE_BLURBS: dict[str, str] = {
     "val_utr5": (
         "5' UTR (untranslated region upstream of CDS) from Ensembl release "
         "{ensembl_release} protein_coding canonical transcripts (`tag "
-        "\"{canonical_tag}\"`). Each canonical 5' UTR region is extended by "
+        '"{canonical_tag}"`). Each canonical 5\' UTR region is extended by '
         "20 bp on each side, then expanded to a minimum length of 255 bp."
     ),
     "val_utr3": (
         "3' UTR (untranslated region downstream of CDS) from Ensembl release "
         "{ensembl_release} protein_coding canonical transcripts (`tag "
-        "\"{canonical_tag}\"`). Each canonical 3' UTR region is extended by "
+        '"{canonical_tag}"`). Each canonical 3\' UTR region is extended by '
         "20 bp on each side, then expanded to a minimum length of 255 bp."
     ),
     "val_ncrna": (
         "Non-coding RNA exons from Ensembl release {ensembl_release}, "
-        "restricted to canonical transcripts (`tag \"{canonical_tag}\"`) of "
+        'restricted to canonical transcripts (`tag "{canonical_tag}"`) of '
         "functional ncRNA biotypes ({ncrna_biotypes_md}). Each canonical "
         "ncRNA exon region is extended by 20 bp on each side, then expanded "
         "to a minimum length of 255 bp. Pseudogene and partial-transcript "
@@ -492,7 +481,7 @@ _RECIPE_BLURBS: dict[str, str] = {
     "val_tss_pc": (
         "Gene-centric promoter / proximal 5' UTR probe: ±255 bp band around "
         "each canonical protein_coding transcript's TSS, as annotated in "
-        "Ensembl r{ensembl_release} (`tag \"{canonical_tag}\"`). One anchor "
+        'Ensembl r{ensembl_release} (`tag "{canonical_tag}"`). One anchor '
         "per gene, ~19k canonical TSSes, tiled into 255 bp windows. No "
         "subtraction (CDS contamination only happens for very-short 5' UTR "
         "genes; consistent with `val_promoter`'s unsubtracted policy). "
@@ -659,4 +648,3 @@ deterministic per-locus rows.)
   ([`hg38.phyloP447way.bw`](https://hgdownload.soe.ucsc.edu/goldenPath/hg38/phyloP447way/hg38.phyloP447way.bw))
 """
     Path(output_path).write_text(body)
-

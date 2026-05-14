@@ -5,7 +5,7 @@ from __future__ import annotations
 from functools import partial
 from typing import Any
 
-from biofoundation.data import Genome
+from bolinas.data.genome import Genome
 from datasets import Dataset
 
 

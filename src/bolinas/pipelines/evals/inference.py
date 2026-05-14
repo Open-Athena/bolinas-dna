@@ -4,11 +4,11 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from biofoundation.data import Genome
-from biofoundation.inference import run_llr_and_embedding_distance
-from biofoundation.model.adapters.hf import HFCausalLMWithEmbeddings, HFTokenizer
 from datasets import Dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
+
+from bolinas.data.genome import Genome
+from bolinas.model.runner import run_llr_and_embedding_distance
 
 
 def compute_variant_scores(
@@ -51,13 +51,12 @@ def compute_variant_scores(
     # Load genome reference
     genome = Genome(genome_path)
 
-    # Load tokenizer and model
-    tokenizer = HFTokenizer(AutoTokenizer.from_pretrained(checkpoint_path))
-    model = HFCausalLMWithEmbeddings(
-        AutoModelForCausalLM.from_pretrained(
-            checkpoint_path,
-            trust_remote_code=True,
-        )
+    # Load tokenizer and model. AutoTokenizer and AutoModelForCausalLM
+    # satisfy the duck-typed interface that bolinas.model.runner expects.
+    tokenizer = AutoTokenizer.from_pretrained(checkpoint_path)
+    model = AutoModelForCausalLM.from_pretrained(
+        checkpoint_path,
+        trust_remote_code=True,
     )
 
     # Convert pandas DataFrame to HuggingFace Dataset

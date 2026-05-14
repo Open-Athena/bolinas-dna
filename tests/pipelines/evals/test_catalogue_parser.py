@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import gzip
 import tempfile
-from pathlib import Path
 
 import polars as pl
 import pytest
@@ -39,36 +38,86 @@ def _write_tsv_gz(rows: list[list[str]], header: list[str]) -> str:
 
 # Header schemas — must match real Catalogue files (verified on QTD000116).
 _CS_HEADER = [
-    "molecular_trait_id", "gene_id", "cs_id", "variant", "rsid", "cs_size",
-    "pip", "pvalue", "beta", "se", "z", "cs_min_r2", "region",
+    "molecular_trait_id",
+    "gene_id",
+    "cs_id",
+    "variant",
+    "rsid",
+    "cs_size",
+    "pip",
+    "pvalue",
+    "beta",
+    "se",
+    "z",
+    "cs_min_r2",
+    "region",
 ]
 _SUMSTATS_HEADER = [
-    "molecular_trait_id", "chromosome", "position", "ref", "alt", "variant",
-    "ma_samples", "maf", "pvalue", "beta", "se", "type", "ac", "an", "r2",
-    "molecular_trait_object_id", "gene_id", "median_tpm", "rsid",
+    "molecular_trait_id",
+    "chromosome",
+    "position",
+    "ref",
+    "alt",
+    "variant",
+    "ma_samples",
+    "maf",
+    "pvalue",
+    "beta",
+    "se",
+    "type",
+    "ac",
+    "an",
+    "r2",
+    "molecular_trait_object_id",
+    "gene_id",
+    "median_tpm",
+    "rsid",
 ]
 
 
-def _cs_row(
-    variant: str, gene: str, pip: float, cs_index: int = 1
-) -> list[str]:
+def _cs_row(variant: str, gene: str, pip: float, cs_index: int = 1) -> list[str]:
     """Build one credible-set row."""
     return [
-        gene, gene, f"{gene}_L{cs_index}", variant, ".", "1",
-        f"{pip}", "1e-8", "0.5", "0.1", "5.0", "0.6", "chr1:1-2000000",
+        gene,
+        gene,
+        f"{gene}_L{cs_index}",
+        variant,
+        ".",
+        "1",
+        f"{pip}",
+        "1e-8",
+        "0.5",
+        "0.1",
+        "5.0",
+        "0.6",
+        "chr1:1-2000000",
     ]
 
 
-def _sumstats_row(
-    variant: str, gene: str, maf: float
-) -> list[str]:
+def _sumstats_row(variant: str, gene: str, maf: float) -> list[str]:
     """Build one sumstats row. Parse chrom/pos/ref/alt from variant for the
     explicit columns Catalogue ships."""
     chrom, pos, ref, alt = variant.removeprefix("chr").split("_")
     return [
-        gene, chrom, pos, ref, alt, variant,
-        "18", f"{maf}", "1e-3", "0.3", "0.2", "SNP", "18", "1162", "NA",
-        gene, gene, "3.227", ".",
+        gene,
+        chrom,
+        pos,
+        ref,
+        alt,
+        variant,
+        "18",
+        f"{maf}",
+        "1e-3",
+        "0.3",
+        "0.2",
+        "SNP",
+        "18",
+        "1162",
+        "NA",
+        gene,
+        gene,
+        "3.227",
+        ".",
     ]
 
 
@@ -110,10 +159,17 @@ def _gene_biotype_df(pairs: list[tuple[str, str]] | None = None) -> pl.DataFrame
     """Build a `(gene_id, biotype_class)` frame. Defaults to all-`pc` for the
     test fixture gene names. Tests covering biotype-class aggregation pass
     custom pairs."""
-    pairs = pairs or [("ENSG00000000001", "pc"), ("GENE_A", "pc"), ("GENE_B", "pc"),
-                      ("GENE_C", "pc"), ("G", "pc"), ("GENE_NC", "nc")]
-    return pl.DataFrame({"gene_id": [p[0] for p in pairs],
-                         "biotype_class": [p[1] for p in pairs]})
+    pairs = pairs or [
+        ("ENSG00000000001", "pc"),
+        ("GENE_A", "pc"),
+        ("GENE_B", "pc"),
+        ("GENE_C", "pc"),
+        ("G", "pc"),
+        ("GENE_NC", "nc"),
+    ]
+    return pl.DataFrame(
+        {"gene_id": [p[0] for p in pairs], "biotype_class": [p[1] for p in pairs]}
+    )
 
 
 # ---------- parse_credible_sets ----------
@@ -199,9 +255,7 @@ def _do_merge(
 ) -> pl.DataFrame:
     """Test helper: write CS + sumstats TSVs, call the parsers + merge."""
     cs = parse_credible_sets(_write_tsv_gz(cs_rows, _CS_HEADER))
-    sumstats = extract_tested_variants(
-        _write_tsv_gz(sumstats_rows, _SUMSTATS_HEADER)
-    )
+    sumstats = extract_tested_variants(_write_tsv_gz(sumstats_rows, _SUMSTATS_HEADER))
     return merge_cs_and_sumstats(
         cs,
         sumstats,
@@ -219,7 +273,7 @@ def test_merge_zero_fills_variants_outside_cs():
         cs_rows=[_cs_row("chr1_100_A_T", "GENE_A", 0.95)],
         sumstats_rows=[
             _sumstats_row("chr1_100_A_T", "GENE_A", 0.015),  # in CS
-            _sumstats_row("chr1_200_C_G", "GENE_A", 0.05),   # tested, not in CS
+            _sumstats_row("chr1_200_C_G", "GENE_A", 0.05),  # tested, not in CS
         ],
     ).sort(["chrom", "pos"])
     # After per-variant aggregation, each variant gets max(pip) across its genes.
@@ -264,8 +318,12 @@ def test_merge_collects_positive_genes():
             _sumstats_row("chr1_100_A_T", "GENE_LOW", 0.015),
             _sumstats_row("chr1_100_A_T", "GENE_NOT_IN_CS", 0.015),  # 0-filled
         ],
-        biotype_pairs=[("GENE_HIGH_1", "pc"), ("GENE_HIGH_2", "pc"),
-                       ("GENE_LOW", "nc"), ("GENE_NOT_IN_CS", "nc")],
+        biotype_pairs=[
+            ("GENE_HIGH_1", "pc"),
+            ("GENE_HIGH_2", "pc"),
+            ("GENE_LOW", "nc"),
+            ("GENE_NOT_IN_CS", "nc"),
+        ],
     )
     assert out.height == 1
     row = out.to_dicts()[0]
@@ -289,8 +347,7 @@ def test_merge_collects_biotype_classes_only_for_positives():
             _sumstats_row("chr1_100_A_T", "GENE_NC", 0.015),
             _sumstats_row("chr1_100_A_T", "GENE_NC_LOW", 0.015),
         ],
-        biotype_pairs=[("GENE_PC", "pc"), ("GENE_NC", "nc"),
-                       ("GENE_NC_LOW", "nc")],
+        biotype_pairs=[("GENE_PC", "pc"), ("GENE_NC", "nc"), ("GENE_NC_LOW", "nc")],
     )
     row = out.to_dicts()[0]
     assert sorted(row["positive_biotype_classes"]) == ["nc", "pc"]
@@ -388,9 +445,7 @@ def _make_tissue_frame(
     """Helper: build one tissue's merged (chrom, pos, ref, alt, pip, maf,
     positive_genes, positive_biotype_classes, tissue) frame from inline
     data. All genes default to `pc` biotype."""
-    cs_path = _write_tsv_gz(
-        [_cs_row(v, g, pip) for v, g, pip in cs_rows], _CS_HEADER
-    )
+    cs_path = _write_tsv_gz([_cs_row(v, g, pip) for v, g, pip in cs_rows], _CS_HEADER)
     sumstats_path = _write_tsv_gz(
         [_sumstats_row(v, g, maf) for v, g, maf in sumstats_rows],
         _SUMSTATS_HEADER,
@@ -540,22 +595,32 @@ def test_integration_eqtl_extra_aggs_explode_pattern():
     pip_pos = 0.9
     # Variant 1: positive in two tissues, different but overlapping eGenes.
     # Variant 2: negative in both (empty positive_genes lists).
-    t1 = pl.DataFrame({
-        "chrom": ["1", "1"], "pos": [100, 200],
-        "ref": ["A", "C"], "alt": ["T", "G"],
-        "pip": [0.95, 0.001], "maf": [0.05, 0.10],
-        "positive_genes": [["GENE_A", "GENE_B"], []],
-        "positive_biotype_classes": [["pc", "nc"], []],
-        "tissue": ["t1", "t1"],
-    })
-    t2 = pl.DataFrame({
-        "chrom": ["1", "1"], "pos": [100, 200],
-        "ref": ["A", "C"], "alt": ["T", "G"],
-        "pip": [0.92, 0.005], "maf": [0.05, 0.10],
-        "positive_genes": [["GENE_B", "GENE_C"], []],
-        "positive_biotype_classes": [["pc"], []],
-        "tissue": ["t2", "t2"],
-    })
+    t1 = pl.DataFrame(
+        {
+            "chrom": ["1", "1"],
+            "pos": [100, 200],
+            "ref": ["A", "C"],
+            "alt": ["T", "G"],
+            "pip": [0.95, 0.001],
+            "maf": [0.05, 0.10],
+            "positive_genes": [["GENE_A", "GENE_B"], []],
+            "positive_biotype_classes": [["pc", "nc"], []],
+            "tissue": ["t1", "t1"],
+        }
+    )
+    t2 = pl.DataFrame(
+        {
+            "chrom": ["1", "1"],
+            "pos": [100, 200],
+            "ref": ["A", "C"],
+            "alt": ["T", "G"],
+            "pip": [0.92, 0.005],
+            "maf": [0.05, 0.10],
+            "positive_genes": [["GENE_B", "GENE_C"], []],
+            "positive_biotype_classes": [["pc"], []],
+            "tissue": ["t2", "t2"],
+        }
+    )
     combined = pl.concat([t1, t2])
     out = label_variants_by_pip(
         combined,
@@ -564,9 +629,26 @@ def test_integration_eqtl_extra_aggs_explode_pattern():
         use_null_pip_guard=False,
         extra_aggs=[
             pl.col("maf").mean().alias("MAF"),
-            pl.col("tissue").filter(pl.col("pip") > pip_pos).unique().sort().str.join(",").alias("tissues"),
-            pl.col("positive_genes").explode().drop_nulls().unique().sort().str.join(",").alias("genes"),
-            pl.col("positive_biotype_classes").explode().drop_nulls().unique().sort().str.join(",").alias("biotype_classes"),
+            pl.col("tissue")
+            .filter(pl.col("pip") > pip_pos)
+            .unique()
+            .sort()
+            .str.join(",")
+            .alias("tissues"),
+            pl.col("positive_genes")
+            .explode()
+            .drop_nulls()
+            .unique()
+            .sort()
+            .str.join(",")
+            .alias("genes"),
+            pl.col("positive_biotype_classes")
+            .explode()
+            .drop_nulls()
+            .unique()
+            .sort()
+            .str.join(",")
+            .alias("biotype_classes"),
         ],
     ).sort("pos")
     rows = out.to_dicts()

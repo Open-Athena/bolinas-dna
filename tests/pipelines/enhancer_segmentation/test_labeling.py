@@ -3,7 +3,9 @@
 import numpy as np
 import pandas as pd
 
-from bolinas.pipelines.enhancer_segmentation.labeling import label_windows_by_bin_overlap
+from bolinas.pipelines.enhancer_segmentation.labeling import (
+    label_windows_by_bin_overlap,
+)
 
 BIN_SIZE = 128
 NUM_BINS = 128

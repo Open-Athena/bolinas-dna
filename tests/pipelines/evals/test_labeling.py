@@ -11,7 +11,6 @@ boundary values.
 from __future__ import annotations
 
 import polars as pl
-import pytest
 
 from bolinas.pipelines.evals.labeling import label_variants_by_pip
 
@@ -34,8 +33,7 @@ def labels_only(df: pl.DataFrame | pl.LazyFrame) -> dict[tuple, bool]:
     if isinstance(df, pl.LazyFrame):
         df = df.collect()
     return {
-        (r["chrom"], r["pos"], r["ref"], r["alt"]): r["label"]
-        for r in df.to_dicts()
+        (r["chrom"], r["pos"], r["ref"], r["alt"]): r["label"] for r in df.to_dicts()
     }
 
 
@@ -44,9 +42,7 @@ def labels_only(df: pl.DataFrame | pl.LazyFrame) -> dict[tuple, bool]:
 
 def test_single_positive():
     """max(pip) > pip_pos_threshold → True."""
-    rows = make_rows(
-        [{"chrom": "1", "pos": 100, "ref": "A", "alt": "G", "pip": 0.95}]
-    )
+    rows = make_rows([{"chrom": "1", "pos": 100, "ref": "A", "alt": "G", "pip": 0.95}])
     out = label_variants_by_pip(
         rows,
         pip_pos_threshold=POS,
@@ -58,9 +54,7 @@ def test_single_positive():
 
 def test_single_negative():
     """max(pip) < pip_neg_threshold → False."""
-    rows = make_rows(
-        [{"chrom": "1", "pos": 100, "ref": "A", "alt": "G", "pip": 0.005}]
-    )
+    rows = make_rows([{"chrom": "1", "pos": 100, "ref": "A", "alt": "G", "pip": 0.005}])
     out = label_variants_by_pip(
         rows,
         pip_pos_threshold=POS,
@@ -72,9 +66,7 @@ def test_single_negative():
 
 def test_single_intermediate_excluded():
     """max(pip) ∈ [pip_neg, pip_pos] → label None → filtered out."""
-    rows = make_rows(
-        [{"chrom": "1", "pos": 100, "ref": "A", "alt": "G", "pip": 0.5}]
-    )
+    rows = make_rows([{"chrom": "1", "pos": 100, "ref": "A", "alt": "G", "pip": 0.5}])
     out = label_variants_by_pip(
         rows,
         pip_pos_threshold=POS,
@@ -459,9 +451,7 @@ def test_lazyframe_input_returns_lazyframe():
 
 
 def test_dataframe_input_returns_dataframe():
-    rows = make_rows(
-        [{"chrom": "1", "pos": 100, "ref": "A", "alt": "G", "pip": 0.95}]
-    )
+    rows = make_rows([{"chrom": "1", "pos": 100, "ref": "A", "alt": "G", "pip": 0.95}])
     out = label_variants_by_pip(
         rows,
         pip_pos_threshold=POS,
@@ -520,9 +510,7 @@ def test_empty_input():
 def test_null_guard_does_not_leak_internal_column():
     """The internal ``_any_null_pip`` helper column should not appear in
     the output."""
-    rows = make_rows(
-        [{"chrom": "1", "pos": 100, "ref": "A", "alt": "G", "pip": 0.95}]
-    )
+    rows = make_rows([{"chrom": "1", "pos": 100, "ref": "A", "alt": "G", "pip": 0.95}])
     out = label_variants_by_pip(
         rows,
         pip_pos_threshold=POS,

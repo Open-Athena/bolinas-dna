@@ -1091,9 +1091,7 @@ def test_genomic_set_resize_empty_set():
 
 def test_genomic_set_resize_invalid_target_size():
     """Test resize with non-positive target_size raises ValueError."""
-    gs = GenomicSet(
-        pd.DataFrame({"chrom": ["chr1"], "start": [100], "end": [200]})
-    )
+    gs = GenomicSet(pd.DataFrame({"chrom": ["chr1"], "start": [100], "end": [200]}))
     with pytest.raises(ValueError, match="target_size must be positive"):
         gs.resize(target_size=0)
     with pytest.raises(ValueError, match="target_size must be positive"):
@@ -2523,18 +2521,14 @@ def test_filter_not_overlapping_empty_self():
 
 def test_genomic_list_preserves_overlapping_intervals():
     """Overlapping intervals are NOT merged."""
-    data = pd.DataFrame(
-        {"chrom": ["chr1", "chr1"], "start": [0, 40], "end": [80, 120]}
-    )
+    data = pd.DataFrame({"chrom": ["chr1", "chr1"], "start": [0, 40], "end": [80, 120]})
     gl = GenomicList(data)
     assert len(gl) == 2
     assert gl._data["start"].tolist() == [0, 40]
 
 
 def test_genomic_list_init_from_polars():
-    data = pl.DataFrame(
-        {"chrom": ["chr1", "chr1"], "start": [0, 40], "end": [80, 120]}
-    )
+    data = pl.DataFrame({"chrom": ["chr1", "chr1"], "start": [0, 40], "end": [80, 120]})
     gl = GenomicList(data)
     assert len(gl) == 2
 
@@ -2577,11 +2571,13 @@ def test_genomic_list_filter_size():
 def test_genomic_list_filter_not_overlapping():
     """Intervals overlapping an exon set are dropped; others kept."""
     intervals = pd.DataFrame(
-        {"chrom": ["chr1", "chr1", "chr1"], "start": [0, 100, 300], "end": [50, 200, 400]}
+        {
+            "chrom": ["chr1", "chr1", "chr1"],
+            "start": [0, 100, 300],
+            "end": [50, 200, 400],
+        }
     )
-    exons = GenomicSet(
-        pd.DataFrame({"chrom": ["chr1"], "start": [120], "end": [150]})
-    )
+    exons = GenomicSet(pd.DataFrame({"chrom": ["chr1"], "start": [120], "end": [150]}))
     result = GenomicList(intervals).filter_not_overlapping(exons)
     assert len(result) == 2
     assert result._data["start"].tolist() == [0, 300]
@@ -2609,13 +2605,9 @@ def test_genomic_list_filter_within():
 
 def test_genomic_list_filter_within_partial_coverage():
     """Interval spanning a gap in defined regions is dropped."""
-    intervals = pd.DataFrame(
-        {"chrom": ["chr1"], "start": [50], "end": [250]}
-    )
+    intervals = pd.DataFrame({"chrom": ["chr1"], "start": [50], "end": [250]})
     defined = GenomicSet(
-        pd.DataFrame(
-            {"chrom": ["chr1", "chr1"], "start": [0, 200], "end": [100, 300]}
-        )
+        pd.DataFrame({"chrom": ["chr1", "chr1"], "start": [0, 200], "end": [100, 300]})
     )
     result = GenomicList(intervals).filter_within(defined)
     # 50-250 spans the gap 100-200, coverage = 50 + 50 = 100 < 200
@@ -2623,18 +2615,14 @@ def test_genomic_list_filter_within_partial_coverage():
 
 
 def test_genomic_list_filter_within_empty():
-    intervals = pd.DataFrame(
-        {"chrom": ["chr1"], "start": [10], "end": [30]}
-    )
+    intervals = pd.DataFrame({"chrom": ["chr1"], "start": [10], "end": [30]})
     empty_regions = GenomicSet(pd.DataFrame({"chrom": [], "start": [], "end": []}))
     result = GenomicList(intervals).filter_within(empty_regions)
     assert len(result) == 0
 
 
 def test_genomic_list_write_bed(tmp_path):
-    data = pd.DataFrame(
-        {"chrom": ["chr1", "chr2"], "start": [10, 20], "end": [50, 80]}
-    )
+    data = pd.DataFrame({"chrom": ["chr1", "chr2"], "start": [10, 20], "end": [50, 80]})
     path = str(tmp_path / "out.bed")
     GenomicList(data).write_bed(path)
     written = pd.read_csv(path, sep="\t", header=None, names=["chrom", "start", "end"])

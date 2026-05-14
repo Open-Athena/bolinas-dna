@@ -9,6 +9,7 @@ output should be byte-identical to `results/dataset_unsplit/{name}.parquet`.
 
 Single-threaded (kernel thrashes BLAS at 16 threads on 12M-row scale).
 """
+
 import os
 
 # Cap every thread source BEFORE importing numpy / sklearn / scipy / polars.
@@ -101,9 +102,8 @@ for name in DATASETS:
     del V
     gc.collect()
     stamp(f"before match_features (pos={pos_V.height} neg={neg_V.height})")
-    matched = (
-        match_features(pos_V, neg_V, cont, cat, k=1)
-        .with_columns(subset=pl.col("consequence_group"))
+    matched = match_features(pos_V, neg_V, cont, cat, k=1).with_columns(
+        subset=pl.col("consequence_group")
     )
     del pos_V, neg_V
     gc.collect()

@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 import torch
 from alphagenome_pytorch.utils.sequence import sequence_to_onehot
-from biofoundation.data import Genome
+from bolinas.data.genome import Genome
 
 from bolinas.pipelines.enhancer_segmentation.model import EnhancerSegmenter
 

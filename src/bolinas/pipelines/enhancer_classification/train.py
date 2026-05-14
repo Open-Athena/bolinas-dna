@@ -123,9 +123,7 @@ def main() -> None:
     )
 
     # Capture W&B run ID before training finalizes it
-    wandb_logger = next(
-        (lg for lg in loggers if isinstance(lg, WandbLogger)), None
-    )
+    wandb_logger = next((lg for lg in loggers if isinstance(lg, WandbLogger)), None)
     wandb_run_id: str | None = None
     if wandb_logger is not None:
         wandb_run_id = wandb_logger.experiment.id
@@ -163,9 +161,7 @@ def main() -> None:
         labels = subset["label"].to_numpy()
         probs = expit(subset["logit"].to_numpy())
         if len(np.unique(labels)) == 2:
-            per_species[f"val_auroc/{genome}"] = float(
-                roc_auc_score(labels, probs)
-            )
+            per_species[f"val_auroc/{genome}"] = float(roc_auc_score(labels, probs))
             per_species[f"val_auprc/{genome}"] = float(
                 average_precision_score(labels, probs)
             )

@@ -102,8 +102,15 @@ def score_variants_gpn_star(
     for col in ("chrom", "pos", "ref", "alt"):
         assert col in hf_df.columns, f"hf_df missing column {col!r}"
     for col in (
-        "chrom", "pos", "ref", "alt", "split",
-        "llr", "abs_llr", "llr_calibrated", "abs_llr_calibrated",
+        "chrom",
+        "pos",
+        "ref",
+        "alt",
+        "split",
+        "llr",
+        "abs_llr",
+        "llr_calibrated",
+        "abs_llr_calibrated",
     ):
         assert col in predictions.columns, f"predictions missing column {col!r}"
 

@@ -47,7 +47,7 @@ def lift_hg19_to_hg38(V: pl.DataFrame) -> pl.DataFrame:
                 ref = reverse_complement(ref)
                 alt = reverse_complement(alt)
             return {"chrom": chrom, "pos": pos, "ref": ref, "alt": alt}
-        except:
+        except Exception:
             return {
                 "chrom": row["chrom"],
                 "pos": -1,

@@ -5,7 +5,10 @@ from pathlib import Path
 
 import torch
 
-from bolinas.pipelines.enhancer_classification.model import ENCODER_OUTPUT_DIM, EnhancerClassifier
+from bolinas.pipelines.enhancer_classification.model import (
+    ENCODER_OUTPUT_DIM,
+    EnhancerClassifier,
+)
 
 SEQ_LEN = 255
 BATCH = 2

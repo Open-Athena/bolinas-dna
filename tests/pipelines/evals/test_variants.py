@@ -231,30 +231,63 @@ class TestAttachPerChromConsequences:
         if rows:
             pl.DataFrame(rows).write_parquet(path)
         else:
-            pl.DataFrame(schema={"chrom": pl.String, "pos": pl.Int64, "ref": pl.String,
-                                 "alt": pl.String, "consequence": pl.String}).write_parquet(path)
+            pl.DataFrame(
+                schema={
+                    "chrom": pl.String,
+                    "pos": pl.Int64,
+                    "ref": pl.String,
+                    "alt": pl.String,
+                    "consequence": pl.String,
+                }
+            ).write_parquet(path)
         return str(path)
 
     def test_joins_consequences_per_chrom(self, tmp_path) -> None:
-        V = pl.DataFrame({
-            "chrom": ["1", "1", "2"],
-            "pos": [100, 200, 100],
-            "ref": ["A", "C", "G"],
-            "alt": ["T", "G", "A"],
-            "label": [True, False, True],
-        })
+        V = pl.DataFrame(
+            {
+                "chrom": ["1", "1", "2"],
+                "pos": [100, 200, 100],
+                "ref": ["A", "C", "G"],
+                "alt": ["T", "G", "A"],
+                "label": [True, False, True],
+            }
+        )
         cons_1 = self._write_chrom_parquet(
-            tmp_path, "1",
+            tmp_path,
+            "1",
             [
-                {"chrom": "1", "pos": 100, "ref": "A", "alt": "T", "consequence": "missense"},
-                {"chrom": "1", "pos": 200, "ref": "C", "alt": "G", "consequence": "synonymous"},
+                {
+                    "chrom": "1",
+                    "pos": 100,
+                    "ref": "A",
+                    "alt": "T",
+                    "consequence": "missense",
+                },
+                {
+                    "chrom": "1",
+                    "pos": 200,
+                    "ref": "C",
+                    "alt": "G",
+                    "consequence": "synonymous",
+                },
             ],
         )
         cons_2 = self._write_chrom_parquet(
-            tmp_path, "2",
-            [{"chrom": "2", "pos": 100, "ref": "G", "alt": "A", "consequence": "intron"}],
+            tmp_path,
+            "2",
+            [
+                {
+                    "chrom": "2",
+                    "pos": 100,
+                    "ref": "G",
+                    "alt": "A",
+                    "consequence": "intron",
+                }
+            ],
         )
-        out = attach_per_chrom_consequences(V, [cons_1, cons_2], ["1", "2"]).sort(["chrom", "pos"])
+        out = attach_per_chrom_consequences(V, [cons_1, cons_2], ["1", "2"]).sort(
+            ["chrom", "pos"]
+        )
         assert out["consequence"].to_list() == ["missense", "synonymous", "intron"]
         # Original columns preserved
         assert out["label"].to_list() == [True, False, True]
@@ -265,7 +298,8 @@ class TestAttachPerChromConsequences:
         raise (because the loop skips it before scanning)."""
         V = pl.DataFrame({"chrom": ["1"], "pos": [100], "ref": ["A"], "alt": ["T"]})
         cons_1 = self._write_chrom_parquet(
-            tmp_path, "1",
+            tmp_path,
+            "1",
             [{"chrom": "1", "pos": 100, "ref": "A", "alt": "T", "consequence": "x"}],
         )
         out = attach_per_chrom_consequences(
@@ -277,10 +311,17 @@ class TestAttachPerChromConsequences:
     def test_missing_variant_gets_null_consequence(self, tmp_path) -> None:
         """Left-join semantics: a variant in V with no row in the per-chrom
         consequences parquet gets null consequence cols, not dropped."""
-        V = pl.DataFrame({"chrom": ["1", "1"], "pos": [100, 200],
-                          "ref": ["A", "C"], "alt": ["T", "G"]})
+        V = pl.DataFrame(
+            {
+                "chrom": ["1", "1"],
+                "pos": [100, 200],
+                "ref": ["A", "C"],
+                "alt": ["T", "G"],
+            }
+        )
         cons_1 = self._write_chrom_parquet(
-            tmp_path, "1",
+            tmp_path,
+            "1",
             [{"chrom": "1", "pos": 100, "ref": "A", "alt": "T", "consequence": "x"}],
         )
         out = attach_per_chrom_consequences(V, [cons_1], ["1"]).sort("pos")

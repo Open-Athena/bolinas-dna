@@ -56,9 +56,7 @@ class Genome:
                         if subset_chroms is None or rec.id in subset_chroms
                     }
                 )
-            self._chrom_sizes = {
-                chrom: len(seq) for chrom, seq in self._genome.items()
-            }
+            self._chrom_sizes = {chrom: len(seq) for chrom, seq in self._genome.items()}
 
     @property
     def chroms(self) -> dict[str, int]:
@@ -101,9 +99,7 @@ class Genome:
                 f"start {start} is out of range for chromosome {chrom} (size {chrom_size})"
             )
         if end < 0:
-            raise ValueError(
-                f"end {end} must be non-negative for chromosome {chrom}"
-            )
+            raise ValueError(f"end {end} must be non-negative for chromosome {chrom}")
 
         clamped_start = max(start, 0)
         clamped_end = min(end, chrom_size)

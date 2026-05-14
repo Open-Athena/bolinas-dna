@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import polars as pl
 
-from bolinas.pipelines.projection.filter import filter_length, filter_single_chrom_strand
+from bolinas.pipelines.projection.filter import (
+    filter_length,
+    filter_single_chrom_strand,
+)
 
 
 def _records(rows: list[dict]) -> pl.DataFrame:

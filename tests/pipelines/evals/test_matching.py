@@ -16,7 +16,6 @@ from bolinas.pipelines.evals.matching import (
     LOG_LOCAL_N,
     MAF_BIN_EDGES,
     MAF_BIN_EDGES_5,
-    MAF_BIN_EDGES_10,
     MAF_BIN_EDGES_20,
     MAF_TIERED_LOG8_DISTAL_ONLY,
     MAF_TIERED_V1,
@@ -335,7 +334,9 @@ class TestMatchFeaturesEdgeCases:
         # the iter-33 semi-join both require it). Make sure the failure mode
         # is a clear AssertionError, not a buried polars-internal exception.
         pos = make_variants(2, feat=[1.0, 5.0])
-        neg = make_variants(5, chrom="1", start_pos=200, feat=[1.1, 1.2, 5.1, 5.2, 99.0])
+        neg = make_variants(
+            5, chrom="1", start_pos=200, feat=[1.1, 1.2, 5.1, 5.2, 99.0]
+        )
         with pytest.raises(AssertionError, match="categorical_features"):
             match_features(pos, neg, ["feat"], [], k=1)
 
@@ -642,16 +643,16 @@ class TestAddSubsetDistanceBins:
         out = add_subset_distance_bins(self._frame())
         rows = {r["consequence_group"]: r for r in out.to_dicts()}
         assert rows["tss_proximal"]["distance_tss_nc_bin"] == "b0"  # 25 ∈ [0, 50)
-        assert rows["non_coding_transcript_exon_variant"]["distance_tss_nc_bin"] == BIN_NA
+        assert (
+            rows["non_coding_transcript_exon_variant"]["distance_tss_nc_bin"] == BIN_NA
+        )
         assert rows["distal"]["distance_tss_nc_bin"] == BIN_NA
         assert rows["splicing"]["distance_tss_nc_bin"] == BIN_NA
 
     def test_opt_in_bins_ncrna_with_wider_edges(self) -> None:
         """`include_ncrna_tss_nc_bin=True` adds the ncRNA bin without
         affecting other subsets."""
-        out = add_subset_distance_bins(
-            self._frame(), include_ncrna_tss_nc_bin=True
-        )
+        out = add_subset_distance_bins(self._frame(), include_ncrna_tss_nc_bin=True)
         rows = {r["consequence_group"]: r for r in out.to_dicts()}
         # tss_proximal still uses the narrower TSS_DIST_BIN_EDGES (cap at 1 kb)
         assert rows["tss_proximal"]["distance_tss_nc_bin"] == "b0"  # 25 ∈ [0, 50)
@@ -662,8 +663,12 @@ class TestAddSubsetDistanceBins:
         assert rows["distal"]["distance_tss_nc_bin"] == BIN_NA
         assert rows["splicing"]["distance_tss_nc_bin"] == BIN_NA
         # The opt-in flag must NOT affect the other two bin columns.
-        assert rows["non_coding_transcript_exon_variant"]["distance_tss_pc_bin"] == BIN_NA
-        assert rows["non_coding_transcript_exon_variant"]["distance_exon_pc_bin"] == BIN_NA
+        assert (
+            rows["non_coding_transcript_exon_variant"]["distance_tss_pc_bin"] == BIN_NA
+        )
+        assert (
+            rows["non_coding_transcript_exon_variant"]["distance_exon_pc_bin"] == BIN_NA
+        )
 
     def test_ncrna_edges_match_constant(self) -> None:
         """NCRNA_TSS_NC_DIST_BIN_EDGES is [0, 200, 1000, 5000] — pin both
@@ -693,8 +698,10 @@ class TestAddTieredMafBin:
             {
                 "MAF": [0.001, 0.05, 0.001, 0.05, 0.5],
                 "consequence_group": [
-                    "missense_variant", "missense_variant",  # 5bin range scheme
-                    "distal", "distal",                       # 20bin scheme
+                    "missense_variant",
+                    "missense_variant",  # 5bin range scheme
+                    "distal",
+                    "distal",  # 20bin scheme
                     "distal",
                 ],
             }
@@ -743,8 +750,10 @@ class TestAddTieredMafBin:
             {
                 "MAF": [0.001, 0.05, 0.0001, 0.4],
                 "consequence_group": [
-                    "missense_variant", "missense_variant",  # global edges
-                    "distal", "distal",                       # log_local
+                    "missense_variant",
+                    "missense_variant",  # global edges
+                    "distal",
+                    "distal",  # log_local
                 ],
                 "chrom": ["A", "A", "A", "A"],
             }
@@ -752,7 +761,9 @@ class TestAddTieredMafBin:
         scheme = {"missense_variant": MAF_BIN_EDGES_5, "distal": LOG_LOCAL}
         out = add_tiered_maf_bin(df, scheme, log_local_group_cols=["chrom"])
         labels = out["MAF_bin"].to_list()
-        assert labels[0].startswith("missense:") and labels[0].split(":")[1].startswith("b")
+        assert labels[0].startswith("missense:") and labels[0].split(":")[1].startswith(
+            "b"
+        )
         assert labels[1].startswith("missense:")
         assert labels[2].startswith("ll:")
         assert labels[3].startswith("ll:")
@@ -781,8 +792,10 @@ class TestAddTieredMafBin:
             {
                 "MAF": [None, 0.05, None, 0.05],
                 "consequence_group": [
-                    "missense_variant", "missense_variant",   # fixed-edge
-                    "distal", "distal",                        # LOG_LOCAL
+                    "missense_variant",
+                    "missense_variant",  # fixed-edge
+                    "distal",
+                    "distal",  # LOG_LOCAL
                 ],
                 "chrom": ["A", "A", "A", "A"],
             },
@@ -824,7 +837,11 @@ class TestAddTieredMafBin:
 
     def test_empty_dataframe_through_helper(self) -> None:
         df = pl.DataFrame(
-            schema={"MAF": pl.Float64, "consequence_group": pl.String, "chrom": pl.String}
+            schema={
+                "MAF": pl.Float64,
+                "consequence_group": pl.String,
+                "chrom": pl.String,
+            }
         )
         out = add_tiered_maf_bin(
             df,
@@ -839,10 +856,17 @@ class TestAddTieredMafBin:
         # is in MAF_TIERED_V1, and MAF_TIERED_LOG8_DISTAL_ONLY differs only by
         # `distal`.
         expected = {
-            "distal", "tss_proximal", "non_coding_transcript_exon_variant",
-            "3_prime_UTR_variant", "5_prime_UTR_variant", "missense_variant",
-            "synonymous_variant", "splicing", "mature_miRNA_variant",
-            "stop_retained_variant", "coding_sequence_variant",
+            "distal",
+            "tss_proximal",
+            "non_coding_transcript_exon_variant",
+            "3_prime_UTR_variant",
+            "5_prime_UTR_variant",
+            "missense_variant",
+            "synonymous_variant",
+            "splicing",
+            "mature_miRNA_variant",
+            "stop_retained_variant",
+            "coding_sequence_variant",
         }
         assert set(MAF_TIERED_V1.keys()) == expected
         assert set(MAF_TIERED_LOG8_DISTAL_ONLY.keys()) == expected

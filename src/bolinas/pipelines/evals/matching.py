@@ -32,8 +32,27 @@ EXON_DIST_BIN_EDGES = [0, 5, 20, 30]
 NCRNA_TSS_NC_DIST_BIN_EDGES = [0, 200, 1000, 5000]
 # Three MAF bin granularities used by the per-subset tiered scheme.
 MAF_BIN_EDGES_20 = [
-    0.0, 0.0005, 0.001, 0.0015, 0.002, 0.0025, 0.003, 0.0035, 0.004,
-    0.005, 0.007, 0.01, 0.015, 0.02, 0.03, 0.05, 0.07, 0.1, 0.15, 0.2, 0.5,
+    0.0,
+    0.0005,
+    0.001,
+    0.0015,
+    0.002,
+    0.0025,
+    0.003,
+    0.0035,
+    0.004,
+    0.005,
+    0.007,
+    0.01,
+    0.015,
+    0.02,
+    0.03,
+    0.05,
+    0.07,
+    0.1,
+    0.15,
+    0.2,
+    0.5,
 ]
 MAF_BIN_EDGES_10 = [0.0, 0.0005, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.15, 0.2, 0.5]
 MAF_BIN_EDGES_5 = [0.0, 0.001, 0.01, 0.05, 0.2, 0.5]
@@ -146,9 +165,8 @@ def add_subset_distance_bins(
             distance-to-nc-TSS range than tss_proximal). Off by default to
             keep mendelian/complex iter-33 outputs byte-equivalent.
     """
-    tss_nc_bin_expr = (
-        pl.when(pl.col("consequence_group") == "tss_proximal")
-        .then(bin_feature("distance_tss_nc", TSS_DIST_BIN_EDGES))
+    tss_nc_bin_expr = pl.when(pl.col("consequence_group") == "tss_proximal").then(
+        bin_feature("distance_tss_nc", TSS_DIST_BIN_EDGES)
     )
     if include_ncrna_tss_nc_bin:
         tss_nc_bin_expr = tss_nc_bin_expr.when(
@@ -219,9 +237,7 @@ def add_tiered_maf_bin(
     needs_log = any(v == LOG_LOCAL for v in scheme.values())
     if needs_log:
         if log_local_group_cols is None:
-            raise ValueError(
-                "log_local_group_cols required when scheme uses LOG_LOCAL"
-            )
+            raise ValueError("log_local_group_cols required when scheme uses LOG_LOCAL")
         log_maf = pl.col("MAF").clip(1e-10, 1.0).log10()
         df = df.with_columns(
             log_maf.min().over(log_local_group_cols).alias("_lo"),

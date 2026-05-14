@@ -35,22 +35,50 @@ def test_score_variants_happy_path() -> None:
     preds = _preds(
         [
             # train rows, in HF order
-            {"chrom": "1", "pos": 100, "ref": "A", "alt": "T", "split": "train",
-             "llr": -2.0, "abs_llr": 2.0,
-             "llr_calibrated": -1.5, "abs_llr_calibrated": 0.5},
-            {"chrom": "1", "pos": 200, "ref": "G", "alt": "C", "split": "train",
-             "llr": 1.0, "abs_llr": 1.0,
-             "llr_calibrated": 0.7, "abs_llr_calibrated": -0.3},
+            {
+                "chrom": "1",
+                "pos": 100,
+                "ref": "A",
+                "alt": "T",
+                "split": "train",
+                "llr": -2.0,
+                "abs_llr": 2.0,
+                "llr_calibrated": -1.5,
+                "abs_llr_calibrated": 0.5,
+            },
+            {
+                "chrom": "1",
+                "pos": 200,
+                "ref": "G",
+                "alt": "C",
+                "split": "train",
+                "llr": 1.0,
+                "abs_llr": 1.0,
+                "llr_calibrated": 0.7,
+                "abs_llr_calibrated": -0.3,
+            },
             # one test row to confirm filtering
-            {"chrom": "2", "pos": 99, "ref": "A", "alt": "G", "split": "test",
-             "llr": 0.0, "abs_llr": 0.0,
-             "llr_calibrated": 0.0, "abs_llr_calibrated": 0.0},
+            {
+                "chrom": "2",
+                "pos": 99,
+                "ref": "A",
+                "alt": "G",
+                "split": "test",
+                "llr": 0.0,
+                "abs_llr": 0.0,
+                "llr_calibrated": 0.0,
+                "abs_llr_calibrated": 0.0,
+            },
         ]
     )
     out = score_variants_gpn_star(hf, preds, split="train")
     assert list(out.columns) == [
-        "llr", "abs_llr", "llr_calibrated", "abs_llr_calibrated",
-        "minus_llr", "minus_llr_calibrated",
+        "llr",
+        "abs_llr",
+        "llr_calibrated",
+        "abs_llr_calibrated",
+        "minus_llr",
+        "minus_llr_calibrated",
     ]
     assert out.shape == (2, 6)
     # minus_* derived correctly
@@ -65,12 +93,28 @@ def test_score_variants_row_count_mismatch() -> None:
     hf = _hf([{"chrom": "1", "pos": 100, "ref": "A", "alt": "T"}])
     preds = _preds(
         [
-            {"chrom": "1", "pos": 100, "ref": "A", "alt": "T", "split": "train",
-             "llr": 0.0, "abs_llr": 0.0,
-             "llr_calibrated": 0.0, "abs_llr_calibrated": 0.0},
-            {"chrom": "1", "pos": 200, "ref": "G", "alt": "C", "split": "train",
-             "llr": 0.0, "abs_llr": 0.0,
-             "llr_calibrated": 0.0, "abs_llr_calibrated": 0.0},
+            {
+                "chrom": "1",
+                "pos": 100,
+                "ref": "A",
+                "alt": "T",
+                "split": "train",
+                "llr": 0.0,
+                "abs_llr": 0.0,
+                "llr_calibrated": 0.0,
+                "abs_llr_calibrated": 0.0,
+            },
+            {
+                "chrom": "1",
+                "pos": 200,
+                "ref": "G",
+                "alt": "C",
+                "split": "train",
+                "llr": 0.0,
+                "abs_llr": 0.0,
+                "llr_calibrated": 0.0,
+                "abs_llr_calibrated": 0.0,
+            },
         ]
     )
     with pytest.raises(AssertionError, match="row count mismatch"):
@@ -86,13 +130,29 @@ def test_score_variants_row_alignment_mismatch() -> None:
     )
     preds = _preds(
         [
-            {"chrom": "1", "pos": 100, "ref": "A", "alt": "T", "split": "train",
-             "llr": 0.0, "abs_llr": 0.0,
-             "llr_calibrated": 0.0, "abs_llr_calibrated": 0.0},
+            {
+                "chrom": "1",
+                "pos": 100,
+                "ref": "A",
+                "alt": "T",
+                "split": "train",
+                "llr": 0.0,
+                "abs_llr": 0.0,
+                "llr_calibrated": 0.0,
+                "abs_llr_calibrated": 0.0,
+            },
             # pos 300 instead of 200 → alignment breaks at index 1
-            {"chrom": "1", "pos": 300, "ref": "G", "alt": "C", "split": "train",
-             "llr": 0.0, "abs_llr": 0.0,
-             "llr_calibrated": 0.0, "abs_llr_calibrated": 0.0},
+            {
+                "chrom": "1",
+                "pos": 300,
+                "ref": "G",
+                "alt": "C",
+                "split": "train",
+                "llr": 0.0,
+                "abs_llr": 0.0,
+                "llr_calibrated": 0.0,
+                "abs_llr_calibrated": 0.0,
+            },
         ]
     )
     with pytest.raises(AssertionError, match="row alignment broken at index 1"):
@@ -103,9 +163,17 @@ def test_score_variants_nan_score() -> None:
     hf = _hf([{"chrom": "1", "pos": 100, "ref": "A", "alt": "T"}])
     preds = _preds(
         [
-            {"chrom": "1", "pos": 100, "ref": "A", "alt": "T", "split": "train",
-             "llr": math.nan, "abs_llr": 1.0,
-             "llr_calibrated": 0.0, "abs_llr_calibrated": 0.0},
+            {
+                "chrom": "1",
+                "pos": 100,
+                "ref": "A",
+                "alt": "T",
+                "split": "train",
+                "llr": math.nan,
+                "abs_llr": 1.0,
+                "llr_calibrated": 0.0,
+                "abs_llr_calibrated": 0.0,
+            },
         ]
     )
     with pytest.raises(AssertionError, match="NaN"):
@@ -115,16 +183,27 @@ def test_score_variants_nan_score() -> None:
 def test_score_variants_chrom_dtype_string_vs_object() -> None:
     """HF chrom may be pandas StringDtype while predictions has object/str;
     both sides get cast to str inside, so the alignment assert should pass."""
-    hf = pd.DataFrame({
-        "chrom": pd.array(["1"], dtype="string"),
-        "pos": [100], "ref": ["A"], "alt": ["T"],
-    })
-    preds = pd.DataFrame({
-        "chrom": ["1"], "pos": [100], "ref": ["A"], "alt": ["T"],
-        "split": ["train"],
-        "llr": [-1.0], "abs_llr": [1.0],
-        "llr_calibrated": [-0.5], "abs_llr_calibrated": [0.5],
-    })
+    hf = pd.DataFrame(
+        {
+            "chrom": pd.array(["1"], dtype="string"),
+            "pos": [100],
+            "ref": ["A"],
+            "alt": ["T"],
+        }
+    )
+    preds = pd.DataFrame(
+        {
+            "chrom": ["1"],
+            "pos": [100],
+            "ref": ["A"],
+            "alt": ["T"],
+            "split": ["train"],
+            "llr": [-1.0],
+            "abs_llr": [1.0],
+            "llr_calibrated": [-0.5],
+            "abs_llr_calibrated": [0.5],
+        }
+    )
     out = score_variants_gpn_star(hf, preds, split="train")
     assert len(out) == 1
     assert out["minus_llr"].iloc[0] == 1.0
@@ -136,12 +215,28 @@ def test_score_variants_split_filter_test() -> None:
     hf = _hf([{"chrom": "X", "pos": 5, "ref": "T", "alt": "G"}])
     preds = _preds(
         [
-            {"chrom": "1", "pos": 1, "ref": "A", "alt": "C", "split": "train",
-             "llr": 0.0, "abs_llr": 0.0,
-             "llr_calibrated": 0.0, "abs_llr_calibrated": 0.0},
-            {"chrom": "X", "pos": 5, "ref": "T", "alt": "G", "split": "test",
-             "llr": -3.0, "abs_llr": 3.0,
-             "llr_calibrated": -2.5, "abs_llr_calibrated": 2.5},
+            {
+                "chrom": "1",
+                "pos": 1,
+                "ref": "A",
+                "alt": "C",
+                "split": "train",
+                "llr": 0.0,
+                "abs_llr": 0.0,
+                "llr_calibrated": 0.0,
+                "abs_llr_calibrated": 0.0,
+            },
+            {
+                "chrom": "X",
+                "pos": 5,
+                "ref": "T",
+                "alt": "G",
+                "split": "test",
+                "llr": -3.0,
+                "abs_llr": 3.0,
+                "llr_calibrated": -2.5,
+                "abs_llr_calibrated": 2.5,
+            },
         ]
     )
     out = score_variants_gpn_star(hf, preds, split="test")
@@ -151,9 +246,19 @@ def test_score_variants_split_filter_test() -> None:
 def test_score_variants_missing_hf_column() -> None:
     hf = _hf([{"chrom": "1", "pos": 100, "ref": "A"}])  # no alt
     preds = _preds(
-        [{"chrom": "1", "pos": 100, "ref": "A", "alt": "T", "split": "train",
-          "llr": 0.0, "abs_llr": 0.0,
-          "llr_calibrated": 0.0, "abs_llr_calibrated": 0.0}]
+        [
+            {
+                "chrom": "1",
+                "pos": 100,
+                "ref": "A",
+                "alt": "T",
+                "split": "train",
+                "llr": 0.0,
+                "abs_llr": 0.0,
+                "llr_calibrated": 0.0,
+                "abs_llr_calibrated": 0.0,
+            }
+        ]
     )
     with pytest.raises(AssertionError, match="hf_df missing column 'alt'"):
         score_variants_gpn_star(hf, preds, split="train")
@@ -161,10 +266,23 @@ def test_score_variants_missing_hf_column() -> None:
 
 def test_score_variants_missing_pred_column() -> None:
     hf = _hf([{"chrom": "1", "pos": 100, "ref": "A", "alt": "T"}])
-    preds = _preds([{"chrom": "1", "pos": 100, "ref": "A", "alt": "T",
-                     "split": "train", "llr": 0.0, "abs_llr": 0.0,
-                     "llr_calibrated": 0.0}])  # no abs_llr_calibrated
-    with pytest.raises(AssertionError, match="predictions missing column 'abs_llr_calibrated'"):
+    preds = _preds(
+        [
+            {
+                "chrom": "1",
+                "pos": 100,
+                "ref": "A",
+                "alt": "T",
+                "split": "train",
+                "llr": 0.0,
+                "abs_llr": 0.0,
+                "llr_calibrated": 0.0,
+            }
+        ]
+    )  # no abs_llr_calibrated
+    with pytest.raises(
+        AssertionError, match="predictions missing column 'abs_llr_calibrated'"
+    ):
         score_variants_gpn_star(hf, preds, split="train")
 
 

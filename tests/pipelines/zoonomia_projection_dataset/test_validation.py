@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import polars as pl
 import pyBigWig
@@ -182,10 +181,7 @@ def _coding_transcript_rows(
     strand: str,
 ) -> list[str]:
     """Build a minimal protein_coding transcript: one exon + nested CDS."""
-    attrs = (
-        f'transcript_id "{transcript_id}"; '
-        'transcript_biotype "protein_coding";'
-    )
+    attrs = f'transcript_id "{transcript_id}"; transcript_biotype "protein_coding";'
     return [
         _gtf_row(chrom, "exon", exon_start_1based, exon_end_1based, strand, attrs),
         _gtf_row(chrom, "CDS", cds_start_1based, cds_end_1based, strand, attrs),
@@ -447,9 +443,7 @@ def test_build_annotation_region_no_cross_recipe_subtraction(tmp_path: Path) -> 
     canonical = filter_to_canonical_transcripts(ann)
 
     # Defined region covers the whole locus: [0, 4000)
-    defined = GenomicSet(
-        pd.DataFrame({"chrom": ["1"], "start": [0], "end": [4000]})
-    )
+    defined = GenomicSet(pd.DataFrame({"chrom": ["1"], "start": [0], "end": [4000]}))
 
     cds_region = build_annotation_region(
         "val_cds",
@@ -562,9 +556,7 @@ def test_build_annotation_region_val_cds_drops_noncanonical(
     )
     ann = load_annotation(str(gtf))
     canonical = filter_to_canonical_transcripts(ann)
-    defined = GenomicSet(
-        pd.DataFrame({"chrom": ["1"], "start": [0], "end": [25_000]})
-    )
+    defined = GenomicSet(pd.DataFrame({"chrom": ["1"], "start": [0], "end": [25_000]}))
     cds_region = build_annotation_region(
         "val_cds",
         canonical,
@@ -611,9 +603,7 @@ def test_build_tss_band_region_plus_strand(tmp_path: Path) -> None:
     )
     ann = load_annotation(str(gtf))
     canonical = filter_to_canonical_transcripts(ann)
-    defined = GenomicSet(
-        pd.DataFrame({"chrom": ["1"], "start": [0], "end": [10_000]})
-    )
+    defined = GenomicSet(pd.DataFrame({"chrom": ["1"], "start": [0], "end": [10_000]}))
     band = build_tss_band_region(canonical, defined, flank=255)
     df = band.to_pandas()
     assert len(df) == 1
@@ -649,9 +639,7 @@ def test_build_tss_band_region_minus_strand(tmp_path: Path) -> None:
     )
     ann = load_annotation(str(gtf))
     canonical = filter_to_canonical_transcripts(ann)
-    defined = GenomicSet(
-        pd.DataFrame({"chrom": ["1"], "start": [0], "end": [10_000]})
-    )
+    defined = GenomicSet(pd.DataFrame({"chrom": ["1"], "start": [0], "end": [10_000]}))
     band = build_tss_band_region(canonical, defined, flank=255)
     df = band.to_pandas()
     assert len(df) == 1
@@ -739,9 +727,7 @@ def test_build_annotation_region_unknown_recipe_raises(tmp_path: Path) -> None:
     )
     ann = load_annotation(str(gtf))
     canonical = filter_to_canonical_transcripts(ann)
-    defined = GenomicSet(
-        pd.DataFrame({"chrom": ["1"], "start": [0], "end": [4000]})
-    )
+    defined = GenomicSet(pd.DataFrame({"chrom": ["1"], "start": [0], "end": [4000]}))
     with pytest.raises(ValueError, match="unknown filter\\+flank\\+expand recipe"):
         build_annotation_region(
             "val_promoter",  # cre recipe, not annotation
@@ -783,9 +769,7 @@ def test_build_cre_region_promoter_keeps_pls_only(tmp_path: Path) -> None:
             ("1", 5000, 5200, "DNase-H3K4me3"),
         ],
     )
-    defined = GenomicSet(
-        pd.DataFrame({"chrom": ["1"], "start": [0], "end": [10_000]})
-    )
+    defined = GenomicSet(pd.DataFrame({"chrom": ["1"], "start": [0], "end": [10_000]}))
     region = build_cre_region("val_promoter", cre, defined)
     df = region.to_pandas()
     # Single PLS, resized to 255 bp → midpoint 1100, [1100-127, 1100+128) = [973, 1228).
@@ -804,9 +788,7 @@ def test_build_cre_region_enhancer_keeps_pels_dels(tmp_path: Path) -> None:
             ("1", 4000, 4200, "CA-CTCF"),
         ],
     )
-    defined = GenomicSet(
-        pd.DataFrame({"chrom": ["1"], "start": [0], "end": [10_000]})
-    )
+    defined = GenomicSet(pd.DataFrame({"chrom": ["1"], "start": [0], "end": [10_000]}))
     region = build_cre_region("val_enhancer", cre, defined)
     df = region.to_pandas()
     # 2 ELS regions, each resized to 255 bp.
@@ -825,16 +807,12 @@ def test_build_cre_region_enhancer_subtracts_exons(tmp_path: Path) -> None:
             ("1", 9000, 9200, "dELS"),
         ],
     )
-    defined = GenomicSet(
-        pd.DataFrame({"chrom": ["1"], "start": [0], "end": [20_000]})
-    )
+    defined = GenomicSet(pd.DataFrame({"chrom": ["1"], "start": [0], "end": [20_000]}))
     # Exon mask: [4500, 5300) — overlaps the pELS, not the dELS
     exon_mask = GenomicSet(
         pd.DataFrame({"chrom": ["1"], "start": [4500], "end": [5300]})
     )
-    region = build_cre_region(
-        "val_enhancer", cre, defined, subtract=exon_mask
-    )
+    region = build_cre_region("val_enhancer", cre, defined, subtract=exon_mask)
     df = region.to_pandas()
     # Only the dELS survives. The pELS resize [4973, 5228) was wholly inside
     # exon mask [4500, 5300) and gets fully subtracted.
@@ -857,9 +835,7 @@ def test_build_cre_region_promoter_no_subtract_keeps_all(tmp_path: Path) -> None
             ("1", 5000, 5200, "PLS"),
         ],
     )
-    defined = GenomicSet(
-        pd.DataFrame({"chrom": ["1"], "start": [0], "end": [20_000]})
-    )
+    defined = GenomicSet(pd.DataFrame({"chrom": ["1"], "start": [0], "end": [20_000]}))
     region = build_cre_region("val_promoter", cre, defined)
     df = region.to_pandas()
     assert len(df) == 1
@@ -881,15 +857,11 @@ def test_build_cre_region_promoter_subtracts_cds_when_given(tmp_path: Path) -> N
             ("1", 9000, 9200, "PLS"),
         ],
     )
-    defined = GenomicSet(
-        pd.DataFrame({"chrom": ["1"], "start": [0], "end": [20_000]})
-    )
+    defined = GenomicSet(pd.DataFrame({"chrom": ["1"], "start": [0], "end": [20_000]}))
     cds_mask = GenomicSet(
         pd.DataFrame({"chrom": ["1"], "start": [4500], "end": [5300]})
     )
-    region = build_cre_region(
-        "val_promoter", cre, defined, subtract=cds_mask
-    )
+    region = build_cre_region("val_promoter", cre, defined, subtract=cds_mask)
     df = region.to_pandas()
     # Only the second PLS (9000-9200) survives; the first was wholly inside
     # the CDS mask.
@@ -900,9 +872,7 @@ def test_build_cre_region_promoter_subtracts_cds_when_given(tmp_path: Path) -> N
 
 def test_build_cre_region_unknown_recipe_raises(tmp_path: Path) -> None:
     cre = _make_cre_parquet(tmp_path, [("1", 1000, 1200, "PLS")])
-    defined = GenomicSet(
-        pd.DataFrame({"chrom": ["1"], "start": [0], "end": [10_000]})
-    )
+    defined = GenomicSet(pd.DataFrame({"chrom": ["1"], "start": [0], "end": [10_000]}))
     with pytest.raises(ValueError, match="unknown cCRE-derived recipe"):
         build_cre_region("val_cds", cre, defined)
 
@@ -947,8 +917,7 @@ def test_subsample_over_cap_does_not_resort() -> None:
     chroms = out["chrom"].to_list()
     grouped = chroms == sorted(chroms)
     assert not grouped, (
-        "subsample_deterministic re-sorted by chrom; rows came out grouped: "
-        f"{chroms}"
+        f"subsample_deterministic re-sorted by chrom; rows came out grouped: {chroms}"
     )
 
 
@@ -1019,9 +988,7 @@ def test_case_encode_above_threshold_uppercase(
     fa = tmp_path / "seq.fa"
     # 30-bp sequence at chr1:[0, 30) where bigWig is 2.0
     _write_fasta(fa, [("1:0-30", "acgtacgtacgtacgtacgtacgtacgtac")])
-    df = case_encode_sequences(
-        fa, synthetic_bigwig, threshold=1.0, window_size=30
-    )
+    df = case_encode_sequences(fa, synthetic_bigwig, threshold=1.0, window_size=30)
     assert len(df) == 1
     seq = df["seq"][0]
     # All bases uppercase because phyloP_447m = 2.0 >= 1.0
@@ -1035,22 +1002,16 @@ def test_case_encode_below_threshold_lowercase(
     fa = tmp_path / "seq.fa"
     # 40-bp sequence at chr1:[60, 100) where bigWig is -1.0
     _write_fasta(fa, [("1:60-100", "ACGT" * 10)])
-    df = case_encode_sequences(
-        fa, synthetic_bigwig, threshold=1.0, window_size=40
-    )
+    df = case_encode_sequences(fa, synthetic_bigwig, threshold=1.0, window_size=40)
     seq = df["seq"][0]
     assert seq == seq.lower()
 
 
-def test_case_encode_nan_lowercase(
-    tmp_path: Path, synthetic_bigwig: Path
-) -> None:
+def test_case_encode_nan_lowercase(tmp_path: Path, synthetic_bigwig: Path) -> None:
     fa = tmp_path / "seq.fa"
     # 30-bp sequence at chr1:[30, 60) where bigWig is NaN throughout
     _write_fasta(fa, [("1:30-60", "ACGT" * 7 + "AC")])
-    df = case_encode_sequences(
-        fa, synthetic_bigwig, threshold=1.0, window_size=30
-    )
+    df = case_encode_sequences(fa, synthetic_bigwig, threshold=1.0, window_size=30)
     seq = df["seq"][0]
     # NaN >= threshold is False → lowercase everywhere
     assert seq == seq.lower()
@@ -1062,9 +1023,7 @@ def test_case_encode_threshold_inclusive(
     """Value exactly at threshold counts as conserved (>= semantics)."""
     fa = tmp_path / "seq.fa"
     _write_fasta(fa, [("1:0-30", "acgt" * 7 + "ac")])
-    df = case_encode_sequences(
-        fa, synthetic_bigwig, threshold=2.0, window_size=30
-    )
+    df = case_encode_sequences(fa, synthetic_bigwig, threshold=2.0, window_size=30)
     seq = df["seq"][0]
     assert seq == seq.upper()
 
@@ -1075,9 +1034,7 @@ def test_case_encode_unknown_chrom_lowercase(
     """When the chrom is missing from the bigWig, fall back to all-lowercase."""
     fa = tmp_path / "seq.fa"
     _write_fasta(fa, [("99:0-30", "ACGT" * 7 + "AC")])
-    df = case_encode_sequences(
-        fa, synthetic_bigwig, threshold=1.0, window_size=30
-    )
+    df = case_encode_sequences(fa, synthetic_bigwig, threshold=1.0, window_size=30)
     seq = df["seq"][0]
     assert seq == seq.lower()
 
@@ -1088,14 +1045,10 @@ def test_case_encode_chrom_already_prefixed(
     """Both ``"1"`` and ``"chr1"`` resolve to the bigWig chrom."""
     fa1 = tmp_path / "bare.fa"
     _write_fasta(fa1, [("1:0-30", "acgt" * 7 + "ac")])
-    df1 = case_encode_sequences(
-        fa1, synthetic_bigwig, threshold=1.0, window_size=30
-    )
+    df1 = case_encode_sequences(fa1, synthetic_bigwig, threshold=1.0, window_size=30)
     fa2 = tmp_path / "prefixed.fa"
     _write_fasta(fa2, [("chr1:0-30", "acgt" * 7 + "ac")])
-    df2 = case_encode_sequences(
-        fa2, synthetic_bigwig, threshold=1.0, window_size=30
-    )
+    df2 = case_encode_sequences(fa2, synthetic_bigwig, threshold=1.0, window_size=30)
     assert df1["seq"][0] == df2["seq"][0]
 
 
@@ -1105,9 +1058,7 @@ def test_case_encode_id_format_chrom_colon_start_dash_end(
     """Output id matches the FASTA header (which is ``chrom:start-end``)."""
     fa = tmp_path / "seq.fa"
     _write_fasta(fa, [("1:0-30", "ACGT" * 7 + "AC")])
-    df = case_encode_sequences(
-        fa, synthetic_bigwig, threshold=1.0, window_size=30
-    )
+    df = case_encode_sequences(fa, synthetic_bigwig, threshold=1.0, window_size=30)
     assert df["id"][0] == "1:0-30"
 
 
@@ -1118,9 +1069,7 @@ def test_case_encode_window_size_mismatch_assertion(
     fa = tmp_path / "seq.fa"
     _write_fasta(fa, [("1:0-30", "ACGT")])  # 4 bp seq
     with pytest.raises(AssertionError, match="sequence length"):
-        case_encode_sequences(
-            fa, synthetic_bigwig, threshold=1.0, window_size=30
-        )
+        case_encode_sequences(fa, synthetic_bigwig, threshold=1.0, window_size=30)
 
 
 # ----------------------------------------------------------------------------
@@ -1148,9 +1097,7 @@ def _readme_kwargs(**overrides):
 def test_write_hf_readme_includes_permalink(tmp_path: Path) -> None:
     out = tmp_path / "README.md"
     sha = "abcdef0123456789abcdef0123456789abcdef00"
-    write_hf_readme(
-        "val_cds", out, **_readme_kwargs(commit_sha=sha)
-    )
+    write_hf_readme("val_cds", out, **_readme_kwargs(commit_sha=sha))
     body = out.read_text()
     assert (
         f"https://github.com/Open-Athena/bolinas-dna/tree/{sha}/snakemake/zoonomia_projection_dataset"

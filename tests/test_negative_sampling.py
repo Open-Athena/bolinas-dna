@@ -59,15 +59,19 @@ def test_match_by_gc_repeat_basic():
     # Positives: GC ~0.5, repeat ~0.3, all on chr1
     pos_seqs = pd.Series(
         [_make_seq(rng, gc=0.5, repeat=0.3, length=100) for _ in range(n_pos)],
-        index=[f"1:{i*200}-{i*200+100}" for i in range(n_pos)],
+        index=[f"1:{i * 200}-{i * 200 + 100}" for i in range(n_pos)],
     )
     # Candidates: wide range of GC and repeat, all on chr1
     cand_seqs = pd.Series(
         [
-            _make_seq(rng, gc=rng.uniform(0.2, 0.8), repeat=rng.uniform(0.0, 0.8), length=100)
+            _make_seq(
+                rng, gc=rng.uniform(0.2, 0.8), repeat=rng.uniform(0.0, 0.8), length=100
+            )
             for _ in range(n_cand)
         ],
-        index=[f"1:{(i+n_pos)*200}-{(i+n_pos)*200+100}" for i in range(n_cand)],
+        index=[
+            f"1:{(i + n_pos) * 200}-{(i + n_pos) * 200 + 100}" for i in range(n_cand)
+        ],
     )
 
     indices = match_by_gc_repeat(pos_seqs, cand_seqs, seed=42)
@@ -101,12 +105,19 @@ def test_match_by_gc_repeat_preserves_chrom_distribution():
     for chrom in chroms:
         for i in range(n_per_chrom):
             pos_seqs_list.append(_make_seq(rng, gc=0.5, repeat=0.2, length=100))
-            pos_index.append(f"{chrom}:{i*300}-{i*300+100}")
+            pos_index.append(f"{chrom}:{i * 300}-{i * 300 + 100}")
         for i in range(n_per_chrom * oversample):
             cand_seqs_list.append(
-                _make_seq(rng, gc=rng.uniform(0.2, 0.8), repeat=rng.uniform(0.0, 0.8), length=100)
+                _make_seq(
+                    rng,
+                    gc=rng.uniform(0.2, 0.8),
+                    repeat=rng.uniform(0.0, 0.8),
+                    length=100,
+                )
             )
-            cand_index.append(f"{chrom}:{(i+n_per_chrom)*300}-{(i+n_per_chrom)*300+100}")
+            cand_index.append(
+                f"{chrom}:{(i + n_per_chrom) * 300}-{(i + n_per_chrom) * 300 + 100}"
+            )
 
     pos_seqs = pd.Series(pos_seqs_list, index=pos_index)
     cand_seqs = pd.Series(cand_seqs_list, index=cand_index)
@@ -115,7 +126,9 @@ def test_match_by_gc_repeat_preserves_chrom_distribution():
 
     # Check that each matched negative is on the same chromosome as its positive
     pos_chroms = pd.Series(pos_index).str.split(":").str[0].to_numpy()
-    matched_chroms = pd.Series(cand_seqs.index[indices]).str.split(":").str[0].to_numpy()
+    matched_chroms = (
+        pd.Series(cand_seqs.index[indices]).str.split(":").str[0].to_numpy()
+    )
     np.testing.assert_array_equal(pos_chroms, matched_chroms)
 
 
@@ -128,11 +141,13 @@ def test_match_by_gc_repeat_all_matched_via_bins():
     # Both positives and candidates in a narrow GC/repeat range, single chrom
     pos_seqs = pd.Series(
         [_make_seq(rng, gc=0.45, repeat=0.2, length=100) for _ in range(n_pos)],
-        index=[f"1:{i*200}-{i*200+100}" for i in range(n_pos)],
+        index=[f"1:{i * 200}-{i * 200 + 100}" for i in range(n_pos)],
     )
     cand_seqs = pd.Series(
         [_make_seq(rng, gc=0.45, repeat=0.2, length=100) for _ in range(n_cand)],
-        index=[f"1:{(i+n_pos)*200}-{(i+n_pos)*200+100}" for i in range(n_cand)],
+        index=[
+            f"1:{(i + n_pos) * 200}-{(i + n_pos) * 200 + 100}" for i in range(n_cand)
+        ],
     )
 
     indices = match_by_gc_repeat(pos_seqs, cand_seqs, seed=0)

@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import pytest
-from biofoundation.data import Genome as BFGenome
+from bolinas.data.genome import Genome as BFGenome
 
 from bolinas.pipelines.enhancer_classification.genome import Genome
 
@@ -108,7 +108,12 @@ class TestBackendEquivalence:
         ],
     )
     def test_forward_strand(
-        self, fasta_genome: Genome, twobit_genome: Genome, chrom: str, start: int, end: int
+        self,
+        fasta_genome: Genome,
+        twobit_genome: Genome,
+        chrom: str,
+        start: int,
+        end: int,
     ) -> None:
         assert fasta_genome(chrom, start, end) == twobit_genome(chrom, start, end)
 
@@ -161,4 +166,6 @@ class TestBiofoundationEquivalence:
         end: int,
         strand: str,
     ) -> None:
-        assert our_genome(chrom, start, end, strand) == bf_genome(chrom, start, end, strand)
+        assert our_genome(chrom, start, end, strand) == bf_genome(
+            chrom, start, end, strand
+        )

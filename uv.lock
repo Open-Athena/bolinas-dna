@@ -351,24 +351,6 @@ wheels = [
 ]
 
 [[package]]
-name = "biofoundation"
-version = "0.1.0"
-source = { git = "https://github.com/Open-Athena/biofoundation.git#81afbe5a1df5473de5b016e5b6f3a4a35bbc6078" }
-dependencies = [
-    { name = "bioframe", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
-    { name = "biopython", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
-    { name = "datasets", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
-    { name = "einops", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
-    { name = "jaxtyping", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
-    { name = "numpy", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
-    { name = "pandas", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
-    { name = "pyarrow", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
-    { name = "scikit-learn", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
-    { name = "transformers", version = "4.57.6", source = { registry = "https://pypi.org/simple" }, extra = ["torch"], marker = "(sys_platform == 'darwin' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-tpu') or (sys_platform == 'linux' and extra != 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
-    { name = "transformers", version = "5.8.0", source = { registry = "https://pypi.org/simple" }, extra = ["torch"], marker = "(sys_platform == 'darwin' and extra != 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli')" },
-]
-
-[[package]]
 name = "bioframe"
 version = "0.8.0"
 source = { registry = "https://pypi.org/simple" }
@@ -432,13 +414,14 @@ name = "bolinas"
 version = "0.0.1"
 source = { editable = "." }
 dependencies = [
-    { name = "biofoundation", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
     { name = "bioframe", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
     { name = "biopython", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
     { name = "cyvcf2", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
     { name = "datasets", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
+    { name = "einops", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
     { name = "huggingface-hub", version = "0.36.2", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform == 'darwin' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-tpu') or (sys_platform == 'linux' and extra != 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
     { name = "huggingface-hub", version = "1.14.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform == 'darwin' and extra != 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli')" },
+    { name = "jaxtyping", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
     { name = "liftover", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
     { name = "matplotlib", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
     { name = "numpy", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
@@ -457,8 +440,8 @@ dependencies = [
     { name = "tokenizers", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
     { name = "torch", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
     { name = "tqdm", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
-    { name = "transformers", version = "4.57.6", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform == 'darwin' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-tpu') or (sys_platform == 'linux' and extra != 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
-    { name = "transformers", version = "5.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform == 'darwin' and extra != 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli')" },
+    { name = "transformers", version = "4.57.6", source = { registry = "https://pypi.org/simple" }, extra = ["torch"], marker = "(sys_platform == 'darwin' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'extra-7-bolinas-tpu') or (sys_platform == 'linux' and extra != 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
+    { name = "transformers", version = "5.8.0", source = { registry = "https://pypi.org/simple" }, extra = ["torch"], marker = "(sys_platform == 'darwin' and extra != 'extra-7-bolinas-marin') or (sys_platform == 'linux' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli')" },
     { name = "wandb", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
     { name = "zstandard", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-7-bolinas-marin' and extra == 'group-7-bolinas-aws-cli') or (extra == 'extra-7-bolinas-tpu' and extra == 'group-7-bolinas-aws-cli')" },
 ]
@@ -499,12 +482,13 @@ enhancer-classification = [
 
 [package.metadata]
 requires-dist = [
-    { name = "biofoundation", git = "https://github.com/Open-Athena/biofoundation.git" },
     { name = "bioframe" },
     { name = "biopython", specifier = ">=1.85" },
     { name = "cyvcf2" },
     { name = "datasets" },
+    { name = "einops" },
     { name = "huggingface-hub" },
+    { name = "jaxtyping" },
     { name = "liftover" },
     { name = "lm-eval", marker = "extra == 'marin'", git = "https://github.com/stanford-crfm/lm-evaluation-harness.git?rev=d5e3391f22cde186c827674d5c3ec7c5f4fe0cab" },
     { name = "marin", marker = "extra == 'marin'" },
@@ -530,7 +514,7 @@ requires-dist = [
     { name = "tokenizers" },
     { name = "torch" },
     { name = "tqdm" },
-    { name = "transformers" },
+    { name = "transformers", extras = ["torch"] },
     { name = "wandb" },
     { name = "zstandard" },
 ]

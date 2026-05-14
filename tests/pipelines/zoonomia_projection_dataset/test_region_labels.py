@@ -220,9 +220,7 @@ def synth(tmp_path):
     windows_path = tmp_path / "windows.bed"
     _write_synthetic_windows_bed(windows_path)
     # Whole-chrom defined region (no N gaps in the synthetic genome).
-    defined = GenomicSet(
-        pl.DataFrame({"chrom": ["1"], "start": [0], "end": [200_000]})
-    )
+    defined = GenomicSet(pl.DataFrame({"chrom": ["1"], "start": [0], "end": [200_000]}))
     return {
         "gtf": gtf_path,
         "cre": cre_path,
@@ -244,12 +242,17 @@ def _row(df: pl.DataFrame, name: str) -> dict:
 
 def test_priority_and_threshold_cases(synth):
     beds = build_region_beds(
-        synth["gtf"], synth["cre"], synth["defined"],
-        tss_radius=256, ccre_flank=500,
+        synth["gtf"],
+        synth["cre"],
+        synth["defined"],
+        tss_radius=256,
+        ccre_flank=500,
     )
     df = label_windows(
-        synth["windows"], beds,
-        functional_threshold=0.20, priority=list(REGION_LABELS),
+        synth["windows"],
+        beds,
+        functional_threshold=0.20,
+        priority=list(REGION_LABELS),
     )
 
     # Window 100% in CDS
@@ -321,12 +324,17 @@ def test_priority_and_threshold_cases(synth):
 
 def test_partition_invariant(synth):
     beds = build_region_beds(
-        synth["gtf"], synth["cre"], synth["defined"],
-        tss_radius=256, ccre_flank=500,
+        synth["gtf"],
+        synth["cre"],
+        synth["defined"],
+        tss_radius=256,
+        ccre_flank=500,
     )
     df = label_windows(
-        synth["windows"], beds,
-        functional_threshold=0.20, priority=list(REGION_LABELS),
+        synth["windows"],
+        beds,
+        functional_threshold=0.20,
+        priority=list(REGION_LABELS),
     )
     valid_labels = set(REGION_LABELS) | {BACKGROUND_LABEL}
     assert set(df["label"].unique().to_list()) <= valid_labels
@@ -339,19 +347,29 @@ def test_priority_permutation_changes_label_not_fracs(synth):
     """Shuffling `priority` re-routes ambiguous windows but per-region
     fracs (and functional_frac) must be unchanged."""
     beds = build_region_beds(
-        synth["gtf"], synth["cre"], synth["defined"],
-        tss_radius=256, ccre_flank=500,
+        synth["gtf"],
+        synth["cre"],
+        synth["defined"],
+        tss_radius=256,
+        ccre_flank=500,
     )
     default = label_windows(
-        synth["windows"], beds,
-        functional_threshold=0.20, priority=list(REGION_LABELS),
+        synth["windows"],
+        beds,
+        functional_threshold=0.20,
+        priority=list(REGION_LABELS),
     )
     # Promote tss_region_and_utr5 above cds.
     alt = label_windows(
-        synth["windows"], beds,
+        synth["windows"],
+        beds,
         functional_threshold=0.20,
         priority=[
-            "tss_region_and_utr5", "cds", "utr3", "ncrna_exon", "ccre_non_promoter",
+            "tss_region_and_utr5",
+            "cds",
+            "utr3",
+            "ncrna_exon",
+            "ccre_non_promoter",
         ],
     )
     # Frac columns unchanged
@@ -401,24 +419,25 @@ def test_multi_chrom_alignment(tmp_path):
 
     # Defined for both chroms.
     defined = GenomicSet(
-        pl.DataFrame(
-            {"chrom": ["1", "2"], "start": [0, 0], "end": [100_000, 100_000]}
-        )
+        pl.DataFrame({"chrom": ["1", "2"], "start": [0, 0], "end": [100_000, 100_000]})
     )
 
     # Windows on BOTH chroms, each entirely in their chrom's CDS.
     windows_bed = tmp_path / "windows.bed"
-    windows_bed.write_text(
-        "1\t1100\t1355\tw_chr1_cds\n"
-        "2\t8100\t8355\tw_chr2_cds\n"
-    )
+    windows_bed.write_text("1\t1100\t1355\tw_chr1_cds\n2\t8100\t8355\tw_chr2_cds\n")
 
     beds = build_region_beds(
-        gtf_path, cre_path, defined, tss_radius=256, ccre_flank=500,
+        gtf_path,
+        cre_path,
+        defined,
+        tss_radius=256,
+        ccre_flank=500,
     )
     df = label_windows(
-        windows_bed, beds,
-        functional_threshold=0.20, priority=list(REGION_LABELS),
+        windows_bed,
+        beds,
+        functional_threshold=0.20,
+        priority=list(REGION_LABELS),
     )
 
     # Both windows must be labelled `cds` with cds_frac == 1.0.
@@ -437,19 +456,35 @@ def test_refseq_gtf_rejected(tmp_path):
     """Synthetic RefSeq-style GTF (transcript_biotype "mRNA") must crash."""
     refseq_rows = [
         _gtf_row(
-            "1", "gene", 1000, 2000, "+",
+            "1",
+            "gene",
+            1000,
+            2000,
+            "+",
             {"gene_id": "geneA", "gene_biotype": "mRNA"},
         ),
         _gtf_row(
-            "1", "transcript", 1000, 2000, "+",
+            "1",
+            "transcript",
+            1000,
+            2000,
+            "+",
             {"gene_id": "geneA", "transcript_id": "txA", "transcript_biotype": "mRNA"},
         ),
         _gtf_row(
-            "1", "exon", 1000, 2000, "+",
+            "1",
+            "exon",
+            1000,
+            2000,
+            "+",
             {"gene_id": "geneA", "transcript_id": "txA", "transcript_biotype": "mRNA"},
         ),
         _gtf_row(
-            "1", "CDS", 1200, 1800, "+",
+            "1",
+            "CDS",
+            1200,
+            1800,
+            "+",
             {"gene_id": "geneA", "transcript_id": "txA", "transcript_biotype": "mRNA"},
         ),
     ]
@@ -459,9 +494,7 @@ def test_refseq_gtf_rejected(tmp_path):
     pl.DataFrame(
         {"chrom": ["1"], "start": [3000], "end": [3500], "cre_class": ["dELS"]}
     ).write_parquet(cre_path)
-    defined = GenomicSet(
-        pl.DataFrame({"chrom": ["1"], "start": [0], "end": [10_000]})
-    )
+    defined = GenomicSet(pl.DataFrame({"chrom": ["1"], "start": [0], "end": [10_000]}))
     with pytest.raises(AssertionError, match="protein_coding"):
         build_region_beds(
             refseq_path, cre_path, defined, tss_radius=256, ccre_flank=500
@@ -471,24 +504,33 @@ def test_refseq_gtf_rejected(tmp_path):
 def test_threshold_validates_range(synth):
     """functional_threshold must be in [0, 1]."""
     beds = build_region_beds(
-        synth["gtf"], synth["cre"], synth["defined"],
-        tss_radius=256, ccre_flank=500,
+        synth["gtf"],
+        synth["cre"],
+        synth["defined"],
+        tss_radius=256,
+        ccre_flank=500,
     )
     with pytest.raises(AssertionError):
         label_windows(
-            synth["windows"], beds,
-            functional_threshold=1.5, priority=list(REGION_LABELS),
+            synth["windows"],
+            beds,
+            functional_threshold=1.5,
+            priority=list(REGION_LABELS),
         )
 
 
 def test_priority_must_be_permutation(synth):
     beds = build_region_beds(
-        synth["gtf"], synth["cre"], synth["defined"],
-        tss_radius=256, ccre_flank=500,
+        synth["gtf"],
+        synth["cre"],
+        synth["defined"],
+        tss_radius=256,
+        ccre_flank=500,
     )
     with pytest.raises(AssertionError, match="permutation"):
         label_windows(
-            synth["windows"], beds,
+            synth["windows"],
+            beds,
             functional_threshold=0.20,
             priority=["cds", "utr3", "ncrna_exon"],  # missing two
         )
@@ -534,11 +576,24 @@ def _write_synth_composition_tsv(path: Path) -> int:
     bg_intronic = 54_141
     bg_intergenic = 77_615 - 54_141
     rows.append(
-        ("background_intronic", bg_intronic, None, None, None, None, bg_intronic / n_total)
+        (
+            "background_intronic",
+            bg_intronic,
+            None,
+            None,
+            None,
+            None,
+            bg_intronic / n_total,
+        )
     )
     rows.append(
         (
-            "background_intergenic", bg_intergenic, None, None, None, None,
+            "background_intergenic",
+            bg_intergenic,
+            None,
+            None,
+            None,
+            None,
             bg_intergenic / n_total,
         )
     )
@@ -589,8 +644,11 @@ def test_write_subset_hf_readme_renders_per_subset_card(
         tss_radius=256,
         ccre_flank=500,
         priority=[
-            "cds", "utr3", "ncrna_exon",
-            "tss_region_and_utr5", "ccre_non_promoter",
+            "cds",
+            "utr3",
+            "ncrna_exon",
+            "tss_region_and_utr5",
+            "ccre_non_promoter",
         ],
         composition_tsv=composition_tsv,
         n_samples=n_samples,
@@ -612,7 +670,10 @@ def test_write_subset_hf_readme_renders_per_subset_card(
     assert f"{n_total:,}" in body
     assert f"{n_samples:,}" in body
     # Priority chain (background appended)
-    assert "`cds` > `utr3` > `ncrna_exon` > `tss_region_and_utr5` > `ccre_non_promoter` > `background`" in body
+    assert (
+        "`cds` > `utr3` > `ncrna_exon` > `tss_region_and_utr5` > `ccre_non_promoter` > `background`"
+        in body
+    )
     # YAML tags minimal (biology/genomics/DNA only — no extras).
     front_matter, _, _ = body.partition("---\n\n")
     assert front_matter.count("- ") == 3, (
@@ -623,7 +684,10 @@ def test_write_subset_hf_readme_renders_per_subset_card(
         link = f"https://huggingface.co/datasets/bolinas-dna/zoonomia-v1-{other}"
         if other == subset:
             # Cross-link to v1 / v2 is allowed, but no self-link.
-            assert f"-v1-{subset}](https://huggingface.co/datasets/bolinas-dna/zoonomia-v1-{subset})" not in body.split("Five sibling v3 subsets")[1]
+            assert (
+                f"-v1-{subset}](https://huggingface.co/datasets/bolinas-dna/zoonomia-v1-{subset})"
+                not in body.split("Five sibling v3 subsets")[1]
+            )
         else:
             assert link in body, f"missing sibling link for {other}"
 
@@ -638,11 +702,22 @@ def test_write_subset_hf_readme_v3_specific_placeholders(
 
     out_tss = tmp_path / "tss.md"
     write_subset_hf_readme(
-        "v3_tss_region_and_utr5", out_tss,
-        commit_sha="a" * 40, hf_owner="bolinas-dna", pipeline_version="v1",
-        ensembl_release=115, functional_threshold=0.20,
-        tss_radius=999, ccre_flank=500,
-        priority=["cds", "utr3", "ncrna_exon", "tss_region_and_utr5", "ccre_non_promoter"],
+        "v3_tss_region_and_utr5",
+        out_tss,
+        commit_sha="a" * 40,
+        hf_owner="bolinas-dna",
+        pipeline_version="v1",
+        ensembl_release=115,
+        functional_threshold=0.20,
+        tss_radius=999,
+        ccre_flank=500,
+        priority=[
+            "cds",
+            "utr3",
+            "ncrna_exon",
+            "tss_region_and_utr5",
+            "ccre_non_promoter",
+        ],
         composition_tsv=composition_tsv,
         n_samples=1,
     )
@@ -650,11 +725,22 @@ def test_write_subset_hf_readme_v3_specific_placeholders(
 
     out_ccre = tmp_path / "ccre.md"
     write_subset_hf_readme(
-        "v3_ccre_non_promoter", out_ccre,
-        commit_sha="a" * 40, hf_owner="bolinas-dna", pipeline_version="v1",
-        ensembl_release=115, functional_threshold=0.20,
-        tss_radius=256, ccre_flank=777,
-        priority=["cds", "utr3", "ncrna_exon", "tss_region_and_utr5", "ccre_non_promoter"],
+        "v3_ccre_non_promoter",
+        out_ccre,
+        commit_sha="a" * 40,
+        hf_owner="bolinas-dna",
+        pipeline_version="v1",
+        ensembl_release=115,
+        functional_threshold=0.20,
+        tss_radius=256,
+        ccre_flank=777,
+        priority=[
+            "cds",
+            "utr3",
+            "ncrna_exon",
+            "tss_region_and_utr5",
+            "ccre_non_promoter",
+        ],
         composition_tsv=composition_tsv,
         n_samples=1,
     )
@@ -669,10 +755,20 @@ def test_write_subset_hf_readme_rejects_unknown_subset(
         write_subset_hf_readme(
             "v3_bogus",
             tmp_path / "bogus.md",
-            commit_sha="a" * 40, hf_owner="bolinas-dna", pipeline_version="v1",
-            ensembl_release=115, functional_threshold=0.20,
-            tss_radius=256, ccre_flank=500,
-            priority=["cds", "utr3", "ncrna_exon", "tss_region_and_utr5", "ccre_non_promoter"],
+            commit_sha="a" * 40,
+            hf_owner="bolinas-dna",
+            pipeline_version="v1",
+            ensembl_release=115,
+            functional_threshold=0.20,
+            tss_radius=256,
+            ccre_flank=500,
+            priority=[
+                "cds",
+                "utr3",
+                "ncrna_exon",
+                "tss_region_and_utr5",
+                "ccre_non_promoter",
+            ],
             composition_tsv=composition_tsv,
             n_samples=1,
         )
@@ -701,10 +797,20 @@ def test_write_subset_hf_readme_requires_complete_composition(
         write_subset_hf_readme(
             "v3_cds",
             tmp_path / "out.md",
-            commit_sha="a" * 40, hf_owner="bolinas-dna", pipeline_version="v1",
-            ensembl_release=115, functional_threshold=0.20,
-            tss_radius=256, ccre_flank=500,
-            priority=["cds", "utr3", "ncrna_exon", "tss_region_and_utr5", "ccre_non_promoter"],
+            commit_sha="a" * 40,
+            hf_owner="bolinas-dna",
+            pipeline_version="v1",
+            ensembl_release=115,
+            functional_threshold=0.20,
+            tss_radius=256,
+            ccre_flank=500,
+            priority=[
+                "cds",
+                "utr3",
+                "ncrna_exon",
+                "tss_region_and_utr5",
+                "ccre_non_promoter",
+            ],
             composition_tsv=incomplete,
             n_samples=1,
         )

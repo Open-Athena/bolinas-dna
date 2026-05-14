@@ -188,15 +188,21 @@ def aggregate_conservation_metrics(
         )
         total_nan = int(df["score"].isna().sum())
         total_rows = int(len(df))
-        qualifying_nan = int(df.loc[df["subset"].isin(qualifying), "score"].isna().sum())
+        qualifying_nan = int(
+            df.loc[df["subset"].isin(qualifying), "score"].isna().sum()
+        )
         qualifying_total = int(df["subset"].isin(qualifying).sum())
 
-        nan_map = {**nan_per_subset.to_dict(),
-                   GLOBAL_SUBSET: total_nan,
-                   MACRO_AVG_SUBSET: qualifying_nan}
-        total_map = {**total_per_subset.to_dict(),
-                     GLOBAL_SUBSET: total_rows,
-                     MACRO_AVG_SUBSET: qualifying_total}
+        nan_map = {
+            **nan_per_subset.to_dict(),
+            GLOBAL_SUBSET: total_nan,
+            MACRO_AVG_SUBSET: qualifying_nan,
+        }
+        total_map = {
+            **total_per_subset.to_dict(),
+            GLOBAL_SUBSET: total_rows,
+            MACRO_AVG_SUBSET: qualifying_total,
+        }
         m["n_nan"] = m["subset"].map(nan_map).astype(int)
         m["n_total"] = m["subset"].map(total_map).astype(int)
         all_metrics.append(m)

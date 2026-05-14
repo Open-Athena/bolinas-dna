@@ -3,10 +3,13 @@
 from pathlib import Path
 
 import pytest
-from biofoundation.data import Genome
+from bolinas.data.genome import Genome
 from datasets import Dataset
 
-from bolinas.pipelines.evals.materialize import _add_eval_harness_fields, materialize_sequences
+from bolinas.pipelines.evals.materialize import (
+    _add_eval_harness_fields,
+    materialize_sequences,
+)
 
 FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures"
 

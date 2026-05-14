@@ -23,7 +23,9 @@ import polars as pl
 import torch
 from torch.utils.data import DataLoader
 
-from bolinas.pipelines.enhancer_classification.genome_window_dataset import GenomeWindowDataset
+from bolinas.pipelines.enhancer_classification.genome_window_dataset import (
+    GenomeWindowDataset,
+)
 from bolinas.pipelines.enhancer_segmentation.model import EnhancerSegmenter
 
 logger = logging.getLogger(__name__)

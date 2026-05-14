@@ -179,8 +179,8 @@ def build_region_beds(
     assert len(ccre_df) > 0, (
         f"no non-PLS cCREs in {cre_parquet} — wrong file or unexpected schema?"
     )
-    ccre_non_promoter = (
-        GenomicSet(ccre_df.select(["chrom", "start", "end"])).add_flank(ccre_flank)
+    ccre_non_promoter = GenomicSet(ccre_df.select(["chrom", "start", "end"])).add_flank(
+        ccre_flank
     )
 
     gene_body = get_ensembl_gene_body(ann)
@@ -226,10 +226,9 @@ def _coverage_bp(windows: pd.DataFrame, region: pd.DataFrame) -> np.ndarray:
         if chrom_region is None or len(chrom_region) == 0:
             continue
         orig_idx = sub.index.to_numpy()  # Capture BEFORE bf.coverage mutates sub.index.
-        cov = (
-            bf.coverage(sub.copy(), chrom_region, return_input=False)["coverage"]
-            .to_numpy()
-        )
+        cov = bf.coverage(sub.copy(), chrom_region, return_input=False)[
+            "coverage"
+        ].to_numpy()
         out[orig_idx] = cov
     return out
 
@@ -366,7 +365,7 @@ _SUBSET_BLURBS: dict[str, str] = {
     "v3_utr3": (
         "3' untranslated region — Ensembl r{ensembl_release} "
         "protein-coding transcripts' 3' UTR (`get_ensembl_3_prime_utr`, "
-        "filtered to `transcript_biotype \"protein_coding\"`). "
+        'filtered to `transcript_biotype "protein_coding"`). '
         "Second-priority class: wins over `ncrna_exon`, "
         "`tss_region_and_utr5`, and `ccre_non_promoter` when overlapping, "
         "but cedes to `cds`."
@@ -388,7 +387,7 @@ _SUBSET_BLURBS: dict[str, str] = {
         "TSS-proximity band."
     ),
     "v3_ccre_non_promoter": (
-        "ENCODE cCRE V4 non-promoter classes — `cre_class != \"PLS\"` "
+        'ENCODE cCRE V4 non-promoter classes — `cre_class != "PLS"` '
         "(so: dELS, pELS, CA, CA-CTCF, CA-TF, CA-H3K4me3, TF), extended by "
         "{ccre_flank} bp on each side. PLS is **excluded** because "
         "PLS-overlapping anchors near an annotated TSS are already "
@@ -454,8 +453,7 @@ def write_subset_hf_readme(
     """
     if subset not in _SUBSET_TO_LABEL:
         raise ValueError(
-            f"unknown subset {subset!r}; expected one of "
-            f"{sorted(_SUBSET_TO_LABEL)}"
+            f"unknown subset {subset!r}; expected one of {sorted(_SUBSET_TO_LABEL)}"
         )
 
     label = _SUBSET_TO_LABEL[subset]
@@ -478,9 +476,7 @@ def write_subset_hf_readme(
         ccre_flank=ccre_flank,
     )
 
-    priority_str = " > ".join(
-        f"`{p}`" for p in list(priority) + [BACKGROUND_LABEL]
-    )
+    priority_str = " > ".join(f"`{p}`" for p in list(priority) + [BACKGROUND_LABEL])
     sibling_links = "\n".join(
         f"- [`{hf_owner}/zoonomia-{pipeline_version}-{s}`]"
         f"(https://huggingface.co/datasets/{hf_owner}/zoonomia-{pipeline_version}-{s})"

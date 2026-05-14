@@ -3,7 +3,7 @@ import pandas as pd
 import polars as pl
 from pathlib import Path
 
-from biofoundation.data import Genome
+from bolinas.data.genome import Genome
 from cyvcf2 import VCF
 from datasets import Dataset
 from huggingface_hub import HfApi
@@ -39,7 +39,6 @@ from bolinas.pipelines.evals.variants import (
     filter_snp,
     lift_hg19_to_hg38,
 )
-
 
 CHROMS = [str(i) for i in range(1, 23)] + ["X", "Y"]
 SPLIT_CHROMS = {

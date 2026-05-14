@@ -94,7 +94,9 @@ class EnhancerClassifier(L.LightningModule):
         return loss
 
     def on_before_optimizer_step(self, optimizer: torch.optim.Optimizer) -> None:
-        grad_norm = torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=float("inf"))
+        grad_norm = torch.nn.utils.clip_grad_norm_(
+            self.parameters(), max_norm=float("inf")
+        )
         self.log("grad_norm", grad_norm, on_step=True, prog_bar=False)
 
     def on_validation_epoch_start(self) -> None:

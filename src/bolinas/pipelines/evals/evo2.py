@@ -1,26 +1,32 @@
-"""Evo2 inference wrappers via biofoundation's run_llr_clm / run_ll_clm.
+"""Evo2 inference wrappers reusing bolinas.model.runner.
 
-Thin wrappers around the Evo2CausalLM + Evo2Tokenizer adapters:
+Provides:
 
 - ``compute_evo2_llr`` — per-variant log-likelihood ratio (alt - ref) over a
   genome-anchored window. Used by issue #131's TraitGym VEP eval.
 - ``compute_evo2_ll`` — per-sequence log-likelihood with case-based breakdown
-  (uppercase=phyloP-functional, lowercase=non-functional), via biofoundation's
-  PR #18 ``run_ll_clm``. Used by the LL-gap follow-up eval.
+  (uppercase=phyloP-functional, lowercase=non-functional). Used by the LL-gap
+  follow-up eval.
+
+Evo2 quack-wrappers live here (not in ``bolinas.model.*``): they shim Evo2's
+native API into the duck-typed interface that ``bolinas.model.runner``
+expects (a callable returning an object with ``.logits``, plus a tokenizer
+with ``.encode/.bos_token_id/.eos_token_id``). Core stays HF-only.
 
 Note: the LOCAL_RANK -> CUDA_VISIBLE_DEVICES guard from
-biofoundation/examples/evo2_llr.py MUST run before importing torch / evo2 /
-biofoundation. Do it at the top of the entry script, not here.
+biofoundation/examples/evo2_llr.py MUST run before importing torch / evo2.
+Do it at the top of the entry script, not here.
 """
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from types import SimpleNamespace
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
+import torch.nn as nn
 
 if TYPE_CHECKING:
-    from biofoundation.model.adapters.evo2 import Evo2CausalLM, Evo2Tokenizer
     from datasets import Dataset
 
 
@@ -37,8 +43,60 @@ EVO2_MODEL_CHOICES: tuple[str, ...] = (
 )
 
 
+class _Evo2QuackModel(nn.Module):
+    """Wrap Evo2 so it satisfies ``bolinas.model.runner``'s duck-typed model
+    interface: ``model(input_ids)`` returns an object with ``.logits``.
+
+    Also handles sharded (multi-GPU) Vortex models where the embedding layer
+    can land on a non-``cuda:0`` device — routes ``input_ids`` to the embed
+    device on entry and logits back to the caller's device on exit.
+    """
+
+    def __init__(self, evo2_model: Any):
+        super().__init__()
+        self._model = evo2_model
+        try:
+            self._embed_device = evo2_model.model.embedding_layer.weight.device
+        except AttributeError:
+            self._embed_device = None
+
+    def forward(self, input_ids: Any, **kwargs: Any) -> SimpleNamespace:
+        caller_device = input_ids.device
+        if self._embed_device is not None and input_ids.device != self._embed_device:
+            input_ids = input_ids.to(self._embed_device)
+        # Evo2 returns (outputs, embeddings) tuple; outputs[0] is logits.
+        outputs, _ = self._model(input_ids)
+        logits = outputs[0]
+        if logits.device != caller_device:
+            logits = logits.to(caller_device)
+        return SimpleNamespace(logits=logits)
+
+
+class _Evo2QuackTokenizer:
+    """Wrap vortex's ``CharLevelTokenizer`` so it satisfies
+    ``bolinas.data.transforms``'s duck-typed tokenizer interface.
+
+    CharLevelTokenizer has no BOS/EOS — we expose them as ``None``, which
+    ``_get_special_token_counts`` handles correctly (counts=0).
+    """
+
+    def __init__(self, char_tokenizer: Any):
+        self._t = char_tokenizer
+
+    def encode(self, text: str) -> list[int]:
+        return list(map(int, self._t.tokenize(text)))
+
+    @property
+    def bos_token_id(self) -> int | None:
+        return None
+
+    @property
+    def eos_token_id(self) -> int | None:
+        return None
+
+
 def find_max_batch_size(
-    model: "Evo2CausalLM",
+    model: nn.Module,
     window_size: int = 8192,
     start: int = 64,
     vocab_size: int = 512,
@@ -61,8 +119,7 @@ def find_max_batch_size(
 
     # For sharded Vortex models (40B on 2 GPUs) the embedding layer may live
     # on a non-cuda:0 device. Send the probe input to whichever device the
-    # first parameter is on, matching what biofoundation's Trainer pathway
-    # does at inference time.
+    # first parameter is on, matching what the inference pathway does.
     try:
         probe_device = next(model.parameters()).device
     except StopIteration:
@@ -91,36 +148,18 @@ def find_max_batch_size(
 
 def _load_evo2_for_inference(
     model_name: str,
-) -> tuple["Evo2CausalLM", "Evo2Tokenizer"]:
-    """Construct ``(model, tokenizer)`` ready for biofoundation inference.
+) -> tuple[_Evo2QuackModel, _Evo2QuackTokenizer]:
+    """Construct ``(model, tokenizer)`` ready for ``bolinas.model.runner``.
 
-    Wraps the Evo2CausalLM ``forward`` so input_ids are routed to the
-    embedding layer's device and logits are returned on the caller's device.
-    On a single GPU this is a no-op; on a sharded Vortex model (40B across
-    multiple GPUs) the embedding layer can land on a non-cuda:0 device and
-    the logits emerge on the last shard's device — biofoundation's scoring
-    code expects them collocated, so we shim the boundary here.
+    Both wrappers shim Evo2 into the HF-shaped duck-typed interface that
+    ``bolinas.model.runner.run_llr_clm`` / ``run_ll_clm`` expect; the model
+    wrapper also handles sharded multi-GPU device routing transparently.
     """
-    from biofoundation.model.adapters.evo2 import Evo2CausalLM, Evo2Tokenizer
     from evo2 import Evo2
 
     _model = Evo2(model_name)
-    model = Evo2CausalLM(_model)
-
-    _embed_device = _model.model.embedding_layer.weight.device
-    _orig_forward = model.forward
-
-    def _sharded_forward(input_ids):
-        caller_device = input_ids.device
-        if input_ids.device != _embed_device:
-            input_ids = input_ids.to(_embed_device)
-        logits = _orig_forward(input_ids)
-        if logits.device != caller_device:
-            logits = logits.to(caller_device)
-        return logits
-
-    model.forward = _sharded_forward
-    tokenizer = Evo2Tokenizer(_model.tokenizer)
+    model = _Evo2QuackModel(_model)
+    tokenizer = _Evo2QuackTokenizer(_model.tokenizer)
     return model, tokenizer
 
 
@@ -155,9 +194,10 @@ def compute_evo2_llr(
         1-D float numpy array of LLR values (alt_logprob - ref_logprob),
         length equal to ``len(dataset)``.
     """
-    from biofoundation.data import Genome
-    from biofoundation.inference import run_llr_clm
     from datasets import Dataset
+
+    from bolinas.data.genome import Genome
+    from bolinas.model.runner import run_llr_clm
 
     genome_path = Path(genome_path)
     assert genome_path.exists(), f"genome not found: {genome_path}"
@@ -218,7 +258,7 @@ def compute_evo2_ll(
     """Compute per-sequence log-likelihood (with case-based breakdown) using
     an Evo2 checkpoint.
 
-    Wraps biofoundation's ``run_ll_clm`` (PR #18). The dataset's ``seq``
+    Wraps ``bolinas.model.runner.run_ll_clm``. The dataset's ``seq``
     column drives ``transform_ll_clm``, which uppercases before tokenizing
     and emits an ``is_upper`` mask aligned to source positions; the
     downstream ``compute_ll_clm`` slices that mask to target positions and
@@ -250,7 +290,7 @@ def compute_evo2_ll(
         token-level on the *target* positions (length ``L-1`` after the
         causal shift). Aggregate across rows with ``aggregate_ll_gap``.
     """
-    from biofoundation.inference import run_ll_clm
+    from bolinas.model.runner import run_ll_clm
 
     model, tokenizer = _load_evo2_for_inference(model_name)
 
@@ -281,8 +321,7 @@ def compute_evo2_ll(
     if pred.ndim == 1 and pred.shape[0] == len(dataset) * 4:
         print(
             f"[evo2] WARNING: run_ll_clm returned flat shape {pred.shape}, "
-            f"reshaping to ({len(dataset)}, 4). If this recurs, file an "
-            f"issue against biofoundation."
+            f"reshaping to ({len(dataset)}, 4). If this recurs, investigate."
         )
         pred = pred.reshape(len(dataset), 4)
     assert pred.ndim == 2 and pred.shape == (len(dataset), 4), (
@@ -296,8 +335,8 @@ def aggregate_ll_gap(pred: np.ndarray) -> dict[str, float]:
     """Collapse a ``[N, 4]`` per-row LL prediction into dataset-wide
     token-weighted means and the LL gap.
 
-    Per biofoundation's PR #18 example: cast to fp64 *before* summing —
-    fp32 accumulation drift over ~10^6 target tokens is non-trivial.
+    Cast to fp64 *before* summing — fp32 accumulation drift over ~10^6
+    target tokens is non-trivial.
 
     Args:
         pred: ``[N, 4]`` of ``(ll_sum_upper, ll_sum_lower, n_upper, n_lower)``.
@@ -305,9 +344,8 @@ def aggregate_ll_gap(pred: np.ndarray) -> dict[str, float]:
     Returns:
         Dict with ``LL_all``, ``LL_upper``, ``LL_lower``, ``gap``,
         ``n_upper``, ``n_lower``. ``LL_*`` are mean log-likelihoods per
-        target token (negative; closer to 0 is better — biofoundation's
-        ``compute_ll_clm`` returns raw ``log p``, not NLL). The gap follows
-        biofoundation's example convention: ``gap = LL_upper - LL_lower``,
+        target token (negative; closer to 0 is better — ``compute_ll_clm``
+        returns raw ``log p``, not NLL). ``gap = LL_upper - LL_lower``,
         positive when uppercase (functional) bases are easier to predict
         than lowercase.
     """

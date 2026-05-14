@@ -41,7 +41,9 @@ from __future__ import annotations
 import polars as pl
 
 
-def _parse_variant_id(variant_col: pl.Expr) -> tuple[pl.Expr, pl.Expr, pl.Expr, pl.Expr]:
+def _parse_variant_id(
+    variant_col: pl.Expr,
+) -> tuple[pl.Expr, pl.Expr, pl.Expr, pl.Expr]:
     """Parse a Catalogue ``variant`` string into ``(chrom, pos, ref, alt)`` exprs.
 
     Format: ``chr{chrom}_{pos}_{ref}_{alt}``. Indel ref/alt may have multiple
@@ -97,9 +99,8 @@ def parse_credible_sets(path: str) -> pl.DataFrame:
         f"parse_credible_sets: {n_bad} rows in {path} have malformed `variant` "
         f"strings (expected `chr{{c}}_{{pos}}_{{ref}}_{{alt}}`)"
     )
-    return (
-        parsed.group_by(["chrom", "pos", "ref", "alt", "gene_id"])
-        .agg(pl.col("pip").max())
+    return parsed.group_by(["chrom", "pos", "ref", "alt", "gene_id"]).agg(
+        pl.col("pip").max()
     )
 
 

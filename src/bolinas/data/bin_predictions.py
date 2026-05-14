@@ -35,7 +35,9 @@ def top_quantile_bins_to_windows(
     Returns:
         GenomicSet of resized, possibly-merged windows.
     """
-    assert 0.0 < top_quantile <= 1.0, f"top_quantile must be in (0, 1], got {top_quantile}"
+    assert 0.0 < top_quantile <= 1.0, (
+        f"top_quantile must be in (0, 1], got {top_quantile}"
+    )
     assert target_size > 0, f"target_size must be positive, got {target_size}"
     required = {"chrom", "bin_start", "bin_end", "logit"}
     missing = required - set(bin_logits.columns)

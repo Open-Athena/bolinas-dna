@@ -338,13 +338,15 @@ def test_aggregates_emitted_per_score_column():
     n_total = len(dataset)
     scores = pd.DataFrame(
         {
-            "all_wins": [0.9 if dataset["label"].iloc[i] == 1 else 0.1 for i in range(n_total)],
-            "all_losses": [0.1 if dataset["label"].iloc[i] == 1 else 0.9 for i in range(n_total)],
+            "all_wins": [
+                0.9 if dataset["label"].iloc[i] == 1 else 0.1 for i in range(n_total)
+            ],
+            "all_losses": [
+                0.1 if dataset["label"].iloc[i] == 1 else 0.9 for i in range(n_total)
+            ],
         }
     )
-    metrics = compute_pairwise_metrics(
-        dataset=dataset, scores=scores, n_min=30
-    )
+    metrics = compute_pairwise_metrics(dataset=dataset, scores=scores, n_min=30)
     by_score_and_subset = metrics.set_index(["score_type", "subset"])["value"]
     assert by_score_and_subset[("all_wins", GLOBAL_SUBSET)] == 1.0
     assert by_score_and_subset[("all_wins", MACRO_AVG_SUBSET)] == 1.0

@@ -16,11 +16,16 @@ Schemes:
   tiered_log8_distal_only  = log_local_8 for distal only, tiered_v1 elsewhere
   tiered_log8_global       = log_local_8 for everything (sanity reference)
 """
+
 import os
 
 for var in (
-    "POLARS_MAX_THREADS", "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS",
-    "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS",
+    "POLARS_MAX_THREADS",
+    "OMP_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+    "VECLIB_MAXIMUM_THREADS",
 ):
     os.environ.setdefault(var, "1")
 
@@ -35,20 +40,25 @@ from bolinas.pipelines.evals.matching import MAF_BIN_EDGES, bin_feature, match_f
 
 
 CAT_BASE = [
-    "chrom", "consequence_final",
-    "tss_closest_pc_gene_id", "tss_closest_nc_gene_id",
-    "exon_closest_pc_gene_id", "exon_closest_nc_gene_id",
+    "chrom",
+    "consequence_final",
+    "tss_closest_pc_gene_id",
+    "tss_closest_nc_gene_id",
+    "exon_closest_pc_gene_id",
+    "exon_closest_nc_gene_id",
 ]
 CONT_BASE = [
-    "distance_tss_pc", "distance_tss_nc",
-    "distance_exon_pc", "distance_exon_nc",
+    "distance_tss_pc",
+    "distance_tss_nc",
+    "distance_exon_pc",
+    "distance_exon_nc",
     "MAF",
 ]
 
 BINS_20 = MAF_BIN_EDGES
 BINS_10 = [0.0, 0.0005, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.15, 0.2, 0.5]
-BINS_5  = [0.0, 0.001, 0.01, 0.05, 0.2, 0.5]
-BINS_3  = [0.0, 0.01, 0.05, 0.5]
+BINS_5 = [0.0, 0.001, 0.01, 0.05, 0.2, 0.5]
+BINS_3 = [0.0, 0.01, 0.05, 0.5]
 
 LOG_LOCAL_N = 8
 LOG_LOCAL = "log_local"  # sentinel string in scheme dicts
@@ -100,16 +110,25 @@ SCHEMES: dict[str, dict[str, list[float] | str]] = {
     "tiered_log8_global": {  # sanity ref: log_local_8 everywhere
         s: LOG_LOCAL
         for s in (
-            "distal", "tss_proximal", "non_coding_transcript_exon_variant",
-            "3_prime_UTR_variant", "5_prime_UTR_variant",
-            "missense_variant", "synonymous_variant", "splicing",
-            "mature_miRNA_variant", "stop_retained_variant", "coding_sequence_variant",
+            "distal",
+            "tss_proximal",
+            "non_coding_transcript_exon_variant",
+            "3_prime_UTR_variant",
+            "5_prime_UTR_variant",
+            "missense_variant",
+            "synonymous_variant",
+            "splicing",
+            "mature_miRNA_variant",
+            "stop_retained_variant",
+            "coding_sequence_variant",
         )
     },
 }
 
 
-def add_hybrid_bin(df: pl.DataFrame, scheme: dict[str, list[float] | str]) -> pl.DataFrame:
+def add_hybrid_bin(
+    df: pl.DataFrame, scheme: dict[str, list[float] | str]
+) -> pl.DataFrame:
     """Per-row MAF_bin column, choosing between global edges and log_local_8
     based on row's consequence_group.
     """
@@ -140,7 +159,11 @@ def add_hybrid_bin(df: pl.DataFrame, scheme: dict[str, list[float] | str]) -> pl
                 pl.lit(subset[:8]),
                 bin_feature("MAF", val, right_closed=True),
             )
-        expr = pl.when(pl.col("consequence_group") == subset).then(bin_expr).otherwise(expr)
+        expr = (
+            pl.when(pl.col("consequence_group") == subset)
+            .then(bin_expr)
+            .otherwise(expr)
+        )
 
     df = df.with_columns(expr.alias("MAF_bin"))
     if needs_log_local:
@@ -149,8 +172,16 @@ def add_hybrid_bin(df: pl.DataFrame, scheme: dict[str, list[float] | str]) -> pl
 
 
 def pa_p(V: pl.DataFrame, feature: str) -> tuple[float, int, float]:
-    pos = V.filter(pl.col("label")).select(["match_group", feature]).rename({feature: "pos"})
-    neg = V.filter(~pl.col("label")).select(["match_group", feature]).rename({feature: "neg"})
+    pos = (
+        V.filter(pl.col("label"))
+        .select(["match_group", feature])
+        .rename({feature: "pos"})
+    )
+    neg = (
+        V.filter(~pl.col("label"))
+        .select(["match_group", feature])
+        .rename({feature: "neg"})
+    )
     paired = pos.join(neg, on="match_group", how="inner")
     n = paired.height
     if n == 0:
@@ -205,7 +236,9 @@ for dataset in ("complex_traits", "eqtl"):
         matched = match_features(
             V.filter(pl.col("label")),
             V.filter(~pl.col("label")),
-            CONT_BASE, cat, k=1,
+            CONT_BASE,
+            cat,
+            k=1,
         )
         del V
         gc.collect()
@@ -218,7 +251,10 @@ for dataset in ("complex_traits", "eqtl"):
             pa, _, p = pa_p(sub, "MAF")
             pa_table[s][scheme_name] = pa
             p_table[s][scheme_name] = p
-        print(f"  scheme={scheme_name:25s}  total={n_total:6d}  ({time.time() - t0:5.1f}s)", flush=True)
+        print(
+            f"  scheme={scheme_name:25s}  total={n_total:6d}  ({time.time() - t0:5.1f}s)",
+            flush=True,
+        )
 
     schemes = list(SCHEMES.keys())
     print(f"\n--- {dataset}: matched pair count per (subset, scheme) ---")
@@ -241,10 +277,12 @@ for dataset in ("complex_traits", "eqtl"):
         line = f"{s[:24]:25s}"
         for sch in schemes:
             pa = pa_table[s][sch]
-            line += f"  {pa:23.3f}" if pa == pa else f"                      NaN"
+            line += f"  {pa:23.3f}" if pa == pa else "                      NaN"
         print(line)
 
-    print(f"\n--- {dataset}: MAF p-value per (subset, scheme) — '★' = Bonferroni-significant ---")
+    print(
+        f"\n--- {dataset}: MAF p-value per (subset, scheme) — '★' = Bonferroni-significant ---"
+    )
     bonf = 0.05 / len(subsets)
     print(f"  Bonferroni threshold = {bonf:.2e}")
     print(f"{'subset':25s}" + "".join(f"  {s:>23}" for s in schemes))
@@ -253,7 +291,7 @@ for dataset in ("complex_traits", "eqtl"):
         for sch in schemes:
             p = p_table[s][sch]
             if p != p:
-                line += f"                      NaN"
+                line += "                      NaN"
             else:
                 star = "★" if p < bonf else " "
                 line += f"                {p:6.0e}{star}"
