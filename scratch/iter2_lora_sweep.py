@@ -32,14 +32,18 @@ BACKBONE = "bolinas-dna/exp166-p1B-step-16398"
 WINDOW = 255
 FOLD = 0  # always use fold 0 — sweep is for hparam comparison, not OOF.
 
-# (label, hparam overrides — others stay at the function defaults)
+# Pass 1: sweep MARGIN only (everything else fixed).
+# Iter-0 stats show `embed_last_l2` mean on complex_traits is ~109, so
+# margin=1 leaves nearly every correct pair at ~zero loss → no gradient on
+# already-correct pairs. Try margins ~ {1, 10, 50, 100, 200} to find where
+# the "training pressure" zone lines up with the actual score distribution.
+COMMON = dict(lora_rank=4, lr=1e-4, batch_size=2, epochs=1)
 CONFIGS = [
-    ("base",         dict(lora_rank=4, lr=1e-4, batch_size=2, margin=1.0, epochs=1)),
-    ("low_lr",       dict(lora_rank=4, lr=3e-5, batch_size=2, margin=1.0, epochs=1)),
-    ("very_low_lr",  dict(lora_rank=4, lr=1e-5, batch_size=2, margin=1.0, epochs=1)),
-    ("rank2",        dict(lora_rank=2, lr=1e-4, batch_size=2, margin=1.0, epochs=1)),
-    ("margin50",     dict(lora_rank=4, lr=1e-4, batch_size=2, margin=50.0, epochs=1)),
-    ("batch4",       dict(lora_rank=4, lr=1e-4, batch_size=4, margin=1.0, epochs=1)),
+    ("margin1",     dict(**COMMON, margin=1.0)),
+    ("margin10",    dict(**COMMON, margin=10.0)),
+    ("margin50",    dict(**COMMON, margin=50.0)),
+    ("margin100",   dict(**COMMON, margin=100.0)),
+    ("margin200",   dict(**COMMON, margin=200.0)),
 ]
 
 
