@@ -215,6 +215,94 @@ def _format_subset_md(sub_table: pd.DataFrame, ds: str) -> str:
     return "\n".join(lines)
 
 
+def _render_dataset_comment(metrics: pd.DataFrame, ds: str) -> str:
+    g = _global_table(metrics, ds)
+    sub = _per_subset_table(metrics, ds)
+    llr_name = LLR_BY_DATASET[ds]
+
+    # Identify best ensemble (max of pooled + macro)
+    ens_cols = ["mean_rank", "min_rank", "max_rank", "geomean_rank",
+                "harmonic_rank", "rrf_k60", "zscore_mean"]
+    ens_rows = g[g["score"].isin(ens_cols)]
+    best_pool = ens_rows.loc[ens_rows["pooled"].idxmax()]
+    best_macro = ens_rows.loc[ens_rows["macro"].idxmax()]
+    base_pool = g[g["score"] == llr_name].iloc[0]["pooled"]
+    base_macro = g[g["score"] == llr_name].iloc[0]["macro"]
+    emb_pool = g[g["score"] == EMBED].iloc[0]["pooled"]
+    emb_macro = g[g["score"] == EMBED].iloc[0]["macro"]
+
+    lines = []
+    lines.append(f"🤖 **exp166-p1B (FWD+RC AVG) — {ds}.** LLR-family default vs `embed_l2_flat_last` vs 7 ensembles of the two. Both pooled and macro PairwiseAccuracy.")
+    lines.append("")
+    lines.append("## Global (pooled + macro)")
+    lines.append("")
+    lines.append(_format_global_md(g, ds))
+    lines.append("")
+    lines.append(f"- Best ensemble (pooled): `{best_pool['score']}` = **{best_pool['pooled']:.4f}** vs `{llr_name}` {base_pool:.4f} (Δ {best_pool['pooled']-base_pool:+.4f}), vs `{EMBED}` {emb_pool:.4f} (Δ {best_pool['pooled']-emb_pool:+.4f}).")
+    lines.append(f"- Best ensemble (macro): `{best_macro['score']}` = **{best_macro['macro']:.4f}** vs `{llr_name}` {base_macro:.4f} (Δ {best_macro['macro']-base_macro:+.4f}), vs `{EMBED}` {emb_macro:.4f} (Δ {best_macro['macro']-emb_macro:+.4f}).")
+    lines.append("")
+    lines.append("## Per-subset PA")
+    lines.append("")
+    lines.append(_format_subset_md(sub, ds))
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _render_summary_comment(metrics: pd.DataFrame) -> str:
+    """Cross-dataset summary: 1 row per (dataset × score) → pooled, macro."""
+    lines = ["🤖 **Iter-5 summary — exp166-p1B FWD+RC AVG, 3 datasets × 9 scores.**\n"]
+    lines.append("Columns: pooled PA / macro PA per dataset. Cells highlighted **bold** for the best ensemble per dataset/metric.\n")
+
+    score_order = ["LLR-default", "embed_l2_flat_last",
+                   "mean_rank", "min_rank", "max_rank", "geomean_rank",
+                   "harmonic_rank", "rrf_k60", "zscore_mean"]
+
+    # Build wide table
+    per_ds_tables = {ds: _global_table(metrics, ds).set_index("score") for ds in DATASETS}
+    # Determine best ensemble per dataset × metric
+    ens_cols = ["mean_rank", "min_rank", "max_rank", "geomean_rank",
+                "harmonic_rank", "rrf_k60", "zscore_mean"]
+    best_pool = {ds: per_ds_tables[ds].loc[ens_cols]["pooled"].idxmax() for ds in DATASETS}
+    best_macro = {ds: per_ds_tables[ds].loc[ens_cols]["macro"].idxmax() for ds in DATASETS}
+
+    header = "| score | " + " | ".join(f"{ds} pooled | {ds} macro" for ds in DATASETS) + " |"
+    sep = "|---|" + "---:|---:|" * len(DATASETS)
+    lines.append(header)
+    lines.append(sep)
+
+    for s in score_order:
+        row = [s]
+        for ds in DATASETS:
+            llr_name = LLR_BY_DATASET[ds]
+            actual_score = llr_name if s == "LLR-default" else s
+            try:
+                pooled = per_ds_tables[ds].loc[actual_score, "pooled"]
+                macro = per_ds_tables[ds].loc[actual_score, "macro"]
+            except KeyError:
+                row.extend(["—", "—"])
+                continue
+            pooled_s = f"**{pooled:.4f}**" if (s != "LLR-default" and s != EMBED and s == best_pool[ds]) else f"{pooled:.4f}"
+            macro_s = f"**{macro:.4f}**" if (s != "LLR-default" and s != EMBED and s == best_macro[ds]) else f"{macro:.4f}"
+            row.extend([pooled_s, macro_s])
+        if s == "LLR-default":
+            label = "`minus_llr` / `abs_llr`*"
+            row[0] = label
+        elif s == EMBED:
+            row[0] = f"`{EMBED}`"
+        else:
+            row[0] = f"`{s}`"
+        lines.append("| " + " | ".join(row) + " |")
+    lines.append("")
+    lines.append("*`minus_llr` for mendelian, `abs_llr` for complex_traits & eqtl.*")
+    lines.append("")
+    lines.append("**Caveats**:")
+    lines.append("- Ranks computed within `(dataset, subset)` (matched pairs are subset-local).")
+    lines.append("- Pooled PA = single PairwiseAccuracy over all match-pairs concatenated; macro = unweighted mean of per-subset PAs.")
+    lines.append("- All 7 ensembles use only the 2 base scores. `mean_rank` is iter-2's `rk_minus_llr_plus_l2flat_last` formula (sum is monotone-equivalent to mean).")
+    lines.append("- `rrf_k60` uses rank-from-top (`n+1-r`) so standard \"rank 1 = best\" semantics apply; PA direction reproduced via `PA(x).value + PA(-x).value == 1` cross-check.")
+    return "\n".join(lines)
+
+
 def main() -> int:
     out_dir = Path("scratch/iter5")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -237,7 +325,7 @@ def main() -> int:
     metrics.to_parquet(out_dir / "iter5_metrics_exp166_p1B_rcavg.parquet", index=False)
     print(f"\n[iter5] wrote {out_dir / 'iter5_metrics_exp166_p1B_rcavg.parquet'}", flush=True)
 
-    # Build per-dataset markdown
+    # Local report (kept for debug — full per-dataset + per-subset)
     md_path = out_dir / "iter5_report.md"
     md_lines = ["# Iter-5: exp166-p1B FWD+RC AVG — LLR + embed_l2_flat_last + ensembles\n"]
     for ds in DATASETS:
@@ -250,6 +338,18 @@ def main() -> int:
     md = "\n".join(md_lines)
     md_path.write_text(md)
     print(f"[iter5] wrote {md_path}", flush=True)
+
+    # GitHub-ready per-dataset comments (one per dataset) + summary
+    for ds in DATASETS:
+        comment = _render_dataset_comment(metrics, ds)
+        cpath = out_dir / f"iter5_comment_{ds}.md"
+        cpath.write_text(comment)
+        print(f"[iter5] wrote {cpath}", flush=True)
+
+    summary = _render_summary_comment(metrics)
+    spath = out_dir / "iter5_comment_summary.md"
+    spath.write_text(summary)
+    print(f"[iter5] wrote {spath}", flush=True)
 
     # Stdout summary
     for ds in DATASETS:
