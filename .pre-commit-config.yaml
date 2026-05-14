@@ -1,11 +1,11 @@
 ci:
   # https://pre-commit.ci — auto-updates hook revs and auto-fixes ruff /
   # ruff-format / etc. on PRs. ``skip`` keeps it from running hooks that
-  # need the project venv (mypy via ``uv run``) or that hit the network
-  # (snakefmt installs its own; usually fine, but skip to keep the CI
-  # surface minimal).
+  # need the project venv (mypy via ``uv run``) or that have a
+  # pre-existing parse failure on ``run:`` blocks (snakefmt — tracked
+  # separately, run locally with care).
   autoupdate_schedule: monthly
-  skip: [mypy]
+  skip: [mypy, snakefmt]
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
