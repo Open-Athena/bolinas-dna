@@ -1,0 +1,67 @@
+# SkyPilot task: iter-5 RC strand on exp166-p1B for complex_traits + eqtl.
+# Mendelian RC was already done in iter-4; this fills the missing two datasets so
+# we can compute FWD+RC AVG across all 3.
+#
+# Mirrors scratch/iter4/sky_exp166_1b_three_datasets.yaml but with --strand rc.
+
+name: iter5-exp166-1b-rc
+
+resources:
+    infra: aws/us-east-2
+    accelerators: A10G:1
+    disk_size: 100
+    labels:
+        project: dna
+
+workdir: .
+
+setup: |
+    set -euxo pipefail
+    if ! command -v uv >/dev/null 2>&1; then
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+    fi
+    grep -q '/.local/bin' "$HOME/.bashrc" || \
+        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+    export PATH="$HOME/.local/bin:$PATH"
+    uv sync
+    uv pip install --reinstall --no-deps torch==2.5.1+cu121 --index-url https://download.pytorch.org/whl/cu121
+    uv pip install --no-deps nvidia-nccl-cu12==2.21.5 nvidia-cublas-cu12==12.1.3.1 nvidia-cudnn-cu12==9.1.0.70
+    .venv/bin/python -c 'import torch; assert torch.cuda.is_available()'
+
+run: |
+    set -euxo pipefail
+    export PATH="$HOME/.local/bin:$PATH"
+    export WANDB_DISABLED=true
+
+    mkdir -p ~/iter5_data
+    if [ ! -f ~/iter5_data/genome.fa.gz ]; then
+        wget -q -O ~/iter5_data/genome.fa.gz \
+            'http://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz'
+    fi
+
+    mkdir -p ~/iter5_out
+
+    echo "=== exp166-p1B RC bf16, complex_traits, win=255 ==="
+    .venv/bin/python scratch/zeroshot_vep_iter4_precision_scout.py \
+        --checkpoint bolinas-dna/exp166-p1B-step-16398 \
+        --genome ~/iter5_data/genome.fa.gz \
+        --window 255 \
+        --dataset complex_traits \
+        --batch-size 4 \
+        --strand rc \
+        --dtype bf16 \
+        --out ~/iter5_out/iter5_rc_exp166-p1B__win255__complex_traits.parquet
+
+    echo "=== exp166-p1B RC bf16, eqtl, win=255 ==="
+    .venv/bin/python scratch/zeroshot_vep_iter4_precision_scout.py \
+        --checkpoint bolinas-dna/exp166-p1B-step-16398 \
+        --genome ~/iter5_data/genome.fa.gz \
+        --window 255 \
+        --dataset eqtl \
+        --batch-size 4 \
+        --strand rc \
+        --dtype bf16 \
+        --out ~/iter5_out/iter5_rc_exp166-p1B__win255__eqtl.parquet
+
+    echo "[iter5-exp166-1b-rc] DONE."
+    ls -la ~/iter5_out/iter5_rc_exp166-p1B*
