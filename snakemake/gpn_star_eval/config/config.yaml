@@ -1,0 +1,25 @@
+input_hf_prefix: bolinas-dna/evals
+split: train
+
+datasets:
+  - mendelian_traits
+  - complex_traits
+  - eqtl
+
+# GPN-Star model variants (3 in current set). Model decoding lives in
+# `bolinas.evals.gpn_star.GPN_STAR_MODEL_INFO`; source URLs are derived via
+# `bolinas.evals.gpn_star.predictions_url`.
+models:
+  - V
+  - M
+  - P
+
+# Score columns evaluated against `compute_pairwise_metrics`. The 4 entries
+# below produce both the leaderboard-convention column (calibrated) and its
+# uncalibrated counterpart per dataset, so the same metrics parquet powers
+# both the live leaderboards and the #145 eval comment's parallel reporting.
+score_columns:
+  - minus_llr
+  - abs_llr
+  - minus_llr_calibrated
+  - abs_llr_calibrated

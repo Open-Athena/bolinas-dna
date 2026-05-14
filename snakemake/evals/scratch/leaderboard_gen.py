@@ -4,6 +4,8 @@ Pulls per-(method, dataset, subset) PairwiseAccuracy + SE from S3:
   - conservation_eval: 7 conservation tracks
   - evals_v2: 5 model checkpoints
   - alphagenome_eval: AlphaGenome variant scorer
+  - gpn_star_eval: GPN-Star V/M/P (calibrated variants; predictions
+    scored externally by TraitGym)
 
 Combines into one table per dataset. n_pairs ≥ 30 cutoff for per-subset
 columns. Two aggregate columns are prepended:
@@ -12,6 +14,9 @@ columns. Two aggregate columns are prepended:
     row written by `compute_pairwise_metrics`.
   - Macro Avg: unweighted mean of per-subset PAs over n≥30 subsets. Sourced
     from the `_macro_avg_` row.
+
+Methods are sorted by `Global` PA descending so the best-overall method
+appears at the top of each table.
 
 Bolding rule (top method per column, plus any within 0.01 of the top) applies
 to every column including the aggregates.
@@ -30,6 +35,7 @@ from datetime import date
 
 import polars as pl
 
+from bolinas.evals.gpn_star import GPN_STAR_MODELS, GPN_STAR_SCORE_COLUMN
 from bolinas.evals.metrics import GLOBAL_SUBSET, MACRO_AVG_SUBSET
 
 # Per-dataset score_type per pipeline.
@@ -41,6 +47,10 @@ SCORE_TYPE = {
     },
     "conservation": "score",
     "alphagenome": "alphagenome_max_l2",
+    # GPN-Star ships with both calibrated and uncalibrated variants in the
+    # metrics parquet; the leaderboard renders the calibrated one (see
+    # `bolinas.evals.gpn_star.GPN_STAR_SCORE_COLUMN`).
+    "gpn_star": GPN_STAR_SCORE_COLUMN,
 }
 
 EVALS_V2_MODELS = [
@@ -132,6 +142,30 @@ def gather_methods(dataset: str) -> list[tuple[str, str | None, pl.DataFrame]]:
     except Exception as exc:  # noqa: BLE001
         print(f"  ! alphagenome metrics missing for {dataset}: {exc}")
 
+    # 4. gpn_star — calibrated variants only (uncalibrated numbers live in
+    # the #145 eval comment for reference). One row per model V/M/P. Catch
+    # only the S3 read so a present-but-malformed parquet fails loud rather
+    # than getting silently treated as "metrics missing".
+    try:
+        gs = pl.read_parquet(
+            f"{S3}/snakemake/gpn_star_eval/results/metrics/{dataset}.parquet"
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"  ! gpn_star metrics missing for {dataset}: {exc}")
+        gs = None
+    if gs is not None:
+        gs = gs.filter(pl.col("score_type") == SCORE_TYPE["gpn_star"][dataset]).filter(
+            pl.col("split") == SPLIT
+        )
+        for model in GPN_STAR_MODELS:
+            df = gs.filter(pl.col("model") == f"GPN-Star-{model}").select(
+                ["subset", "value", "se", "n_pairs"]
+            )
+            assert df.height > 0, (
+                f"no GPN-Star-{model} rows for {dataset!r} in metrics parquet"
+            )
+            rows.append((f"`GPN-Star-{model}`", None, df))
+
     return rows
 
 
@@ -158,6 +192,12 @@ def build_table(dataset: str) -> str:
     methods = [
         (method, comment, *_split_method(df)) for method, comment, df in rows
     ]
+
+    # Sort by Global PA descending so the top of the table = current best
+    # method on the headline aggregate. Python's sort is stable, so methods
+    # tied on Global keep their insertion order (conservation → evals_v2 →
+    # AlphaGenome → GPN-Star).
+    methods.sort(key=lambda m: -m[3][0])
 
     subset_n: dict[str, int] = {}
     for _, _, per_sub, _, _ in methods:
@@ -366,13 +406,30 @@ def patch_issue(dataset: str, table_md: str) -> None:
     new_body = _update_intro_paragraph(new_body, global_n, macro_k)
     new_body = _update_bold_rule(new_body)
     new_body = _bump_last_updated(new_body, str(date.today()))
+    # Hardcoded dates on changelog entries (matching the date the change
+    # actually landed) so re-runs of this script don't re-add the entry with
+    # today's date each time — idempotency relies on the entry text being
+    # stable across runs.
     new_body = _prepend_changelog_entry(
         new_body,
-        f"- **{date.today()}** — added `Global` (PA across all pairs, "
+        f"- **2026-05-12** — added `Global` (PA across all pairs, "
         f"n={global_n}) and `Macro Avg` (unweighted PA over n≥30 subsets, "
         f"{macro_k} subsets) aggregate columns. Implemented as new "
         f"`_global_` / `_macro_avg_` rows in `compute_pairwise_metrics` "
         f"(`src/bolinas/evals/metrics.py`); all 3 metric pipelines re-run.",
+    )
+    calibrated = SCORE_TYPE["gpn_star"][dataset]
+    raw = calibrated.replace("_calibrated", "")
+    new_body = _prepend_changelog_entry(
+        new_body,
+        f"- **2026-05-13** — added `GPN-Star-V`, `GPN-Star-M`, `GPN-Star-P` "
+        f"(calibrated variants only; score column `{calibrated}`). Source "
+        f"predictions: [#145 comment](https://github.com/Open-Athena/bolinas-dna/issues/145#issuecomment-4444680280); "
+        f"evaluation + uncalibrated `{raw}` numbers: "
+        f"[#145 comment](https://github.com/Open-Athena/bolinas-dna/issues/145#issuecomment-4444856709). "
+        f"Pipeline = TraitGym at commit `05135727`. Existing rows re-sorted "
+        f"by `Global` PA descending (top of table = current best) — values "
+        f"unchanged.",
     )
 
     if new_body == body:
