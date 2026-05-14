@@ -35,7 +35,9 @@ rule lora_fit_predict_one_fold:
         epochs=config["lora"]["epochs"],
         lr=config["lora"]["lr"],
         batch_size=config["lora"]["batch_size"],
+        grad_accum_steps=config["lora"].get("grad_accum_steps", 1),
         margin=config["lora"]["margin"],
+        normalize=config["lora"].get("normalize", False),
     threads: 4
     run:
         import json
@@ -54,6 +56,8 @@ rule lora_fit_predict_one_fold:
             lora_alpha=params.lora_alpha,
             lora_dropout=params.lora_dropout,
             lora_target_modules=tuple(params.lora_target_modules),
+            normalize=params.normalize,
+            grad_accum_steps=params.grad_accum_steps,
             epochs=params.epochs,
             lr=params.lr,
             batch_size=params.batch_size,

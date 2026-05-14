@@ -85,15 +85,16 @@ skip_combos:
 # moderate dropout, few epochs) so overfitting is contained and visible
 # from epoch 1 → 2.
 lora:
-  rank: 4
+  rank: 16                # sweep#2 winner: rank=16 had cleanest inner_val signal (+0.017)
   alpha: 16
   dropout: 0.1
   target_modules: [q_proj, v_proj]
-  epochs: 2
+  epochs: 1               # 1 epoch only; 2 epochs overfit in early sanity
   lr: 1.0e-4
-  batch_size: 2          # batch=8 OOM'd on A10G/22GB with fp32; bf16 + grad ckpt
-                         # bring this back up later if memory allows.
-  margin: 1.0
+  batch_size: 2           # batch=8 OOM'd on fp32; this is fine with bf16+ckpt
+  grad_accum_steps: 1
+  margin: 50.0            # unnormalized score scale ~100-200, margin=1 left zero gradient
+  normalize: false        # unnormalized variant won sweep#1
 
 # Zero-shot baseline scores reported alongside the supervised OOF metrics so
 # the leaderboard shows the "no-supervised-head" row for direct comparison.
