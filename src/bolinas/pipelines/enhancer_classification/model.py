@@ -90,7 +90,9 @@ class EnhancerClassifier(L.LightningModule):
         logits = self(x)
         loss = self.loss_fn(logits, y)
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
-        self.log("lr", self.optimizers().param_groups[0]["lr"], prog_bar=True)
+        optimizer = self.optimizers()
+        assert not isinstance(optimizer, list)
+        self.log("lr", optimizer.param_groups[0]["lr"], prog_bar=True)
         return loss
 
     def on_before_optimizer_step(self, optimizer: torch.optim.Optimizer) -> None:
@@ -115,21 +117,21 @@ class EnhancerClassifier(L.LightningModule):
         self.log("val_loss", loss, prog_bar=True, sync_dist=True)
 
     def on_validation_epoch_end(self) -> None:
-        self.log("val_auroc", self.val_auroc.compute(), prog_bar=True, sync_dist=True)
-        self.log("val_auprc", self.val_auprc.compute(), prog_bar=True, sync_dist=True)
+        self.log("val_auroc", self.val_auroc.compute(), prog_bar=True, sync_dist=True)  # type: ignore[func-returns-value]
+        self.log("val_auprc", self.val_auprc.compute(), prog_bar=True, sync_dist=True)  # type: ignore[func-returns-value]
         self.val_auroc.reset()
         self.val_auprc.reset()
 
-    def configure_optimizers(self) -> dict:
+    def configure_optimizers(self) -> dict:  # type: ignore[override]
         optimizer = torch.optim.AdamW(
             self.parameters(),
-            lr=self.hparams.learning_rate,
-            weight_decay=self.hparams.weight_decay,
+            lr=self.hparams["learning_rate"],
+            weight_decay=self.hparams["weight_decay"],
         )
-        num_steps = self.hparams.num_training_steps
+        num_steps = self.hparams["num_training_steps"]
         if num_steps is None:
             raise ValueError("num_training_steps must be set for LR scheduling")
-        num_warmup = int(self.hparams.warmup_fraction * num_steps)
+        num_warmup = int(self.hparams["warmup_fraction"] * num_steps)
         scheduler = get_cosine_schedule_with_warmup(
             optimizer,
             num_warmup_steps=num_warmup,

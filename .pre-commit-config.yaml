@@ -11,3 +11,17 @@ repos:
     hooks:
       - id: snakefmt
         files: (Snakefile|\.smk)$
+
+  - repo: local
+    hooks:
+      # Runs mypy from the project's uv-managed venv so it sees real
+      # transitive types. Config (target, flags) lives in pyproject.toml
+      # under [tool.mypy]. `pass_filenames: false` so mypy always scans
+      # the whole tree on any python change in src/bolinas/ — partial
+      # mypy runs miss cross-file issues.
+      - id: mypy
+        name: mypy
+        entry: uv run mypy
+        language: system
+        pass_filenames: false
+        files: ^src/bolinas/.*\.py$

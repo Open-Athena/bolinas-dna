@@ -199,7 +199,7 @@ def main() -> None:
         n_transformer_layers=args.n_transformer_layers,
     )
 
-    model = torch.compile(model)
+    model = torch.compile(model)  # type: ignore[assignment]
 
     loggers = [
         CSVLogger(output_dir, name="logs"),

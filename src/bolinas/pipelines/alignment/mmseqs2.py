@@ -23,7 +23,7 @@ MMSEQS2_HITS_COLS: list[str] = [
     "tcov",
 ]
 
-MMSEQS2_HITS_SCHEMA: dict[str, pl.DataType] = {
+MMSEQS2_HITS_SCHEMA: dict[str, type[pl.DataType] | pl.DataType] = {
     "query": pl.Utf8,
     "target": pl.Utf8,
     "tstart": pl.Int64,
@@ -38,7 +38,7 @@ MMSEQS2_HITS_SCHEMA: dict[str, pl.DataType] = {
 # Output of `project_hits_to_intervals`: 0-based half-open target coords plus
 # the bit score carried through so best_hit_per_query can rank without a
 # second pass.
-PROJECTED_SCHEMA: dict[str, pl.DataType] = {
+PROJECTED_SCHEMA: dict[str, type[pl.DataType] | pl.DataType] = {
     "query": pl.Utf8,
     "chrom": pl.Utf8,
     "start": pl.Int64,

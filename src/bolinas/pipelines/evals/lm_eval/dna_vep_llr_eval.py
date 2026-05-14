@@ -112,7 +112,9 @@ class DnaVepLlrEvalTask(Task):
     DATASET_PATH = None
     DATASET_NAME = None
 
-    def __init__(self, data_dir=None, cache_dir=None, download_mode=None, config=None):
+    def __init__(
+        self, data_dir=None, cache_dir=None, download_mode=None, config=None
+    ) -> None:
         # Task.__init__ calls self.download() BEFORE setting self._config,
         # and wraps the config dict via TaskConfig({**config}) which doesn't
         # correctly populate fields (passes the dict as the first positional
@@ -140,7 +142,7 @@ class DnaVepLlrEvalTask(Task):
         )
 
     @property
-    def task_name(self):
+    def task_name(self) -> str:
         """Required by lm-eval's get_subtask_list (only defined on ConfigurableTask by default)."""
         return self._task_name
 

@@ -4,6 +4,7 @@ Ported from TraitGym (commit e59d612e9; src/traitgym/matching.py).
 """
 
 import warnings
+from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
@@ -93,7 +94,7 @@ MAF_TIERED_LOG8_DISTAL_ONLY: dict[str, list[float] | str] = {
 
 def bin_feature(
     feature: str,
-    edges: list[float],
+    edges: Sequence[float],
     *,
     right_closed: bool = False,
 ) -> pl.Expr:
@@ -169,10 +170,10 @@ def add_subset_distance_bins(
         bin_feature("distance_tss_nc", TSS_DIST_BIN_EDGES)
     )
     if include_ncrna_tss_nc_bin:
-        tss_nc_bin_expr = tss_nc_bin_expr.when(
+        tss_nc_bin_expr = tss_nc_bin_expr.when(  # type: ignore[assignment]
             pl.col("consequence_group") == "non_coding_transcript_exon_variant"
         ).then(bin_feature("distance_tss_nc", NCRNA_TSS_NC_DIST_BIN_EDGES))
-    tss_nc_bin_expr = tss_nc_bin_expr.otherwise(pl.lit(BIN_NA)).alias(
+    tss_nc_bin_expr = tss_nc_bin_expr.otherwise(pl.lit(BIN_NA)).alias(  # type: ignore[assignment]
         "distance_tss_nc_bin"
     )
 
@@ -265,7 +266,8 @@ def add_tiered_maf_bin(
 
     expr = pl.lit("UNKNOWN")
     for subset, val in scheme.items():
-        if val == LOG_LOCAL:
+        if isinstance(val, str):
+            assert val == LOG_LOCAL
             bin_expr = log_local_label
         else:
             bin_expr = pl.format(

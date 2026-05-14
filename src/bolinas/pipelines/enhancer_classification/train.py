@@ -100,7 +100,7 @@ def main() -> None:
         mlp_hidden_dim=args.mlp_hidden_dim,
     )
 
-    model = torch.compile(model)
+    model = torch.compile(model)  # type: ignore[assignment]
 
     loggers = [
         CSVLogger(output_dir, name="logs"),

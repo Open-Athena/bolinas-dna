@@ -133,7 +133,7 @@ def plot_models_comparison(
     output_path: str | Path,
     score_type: str | None = None,
     dataset_subset_score_map: dict[tuple[str, str], str] | None = None,
-    figsize: tuple[int, int] | None = None,
+    figsize: tuple[float, float] | None = None,
     models_filter: list[str] | None = None,
     dataset_subsets_filter: list[tuple[str, str]] | None = None,
     baseline_data: dict[tuple[str, str], dict[str, float]] | None = None,

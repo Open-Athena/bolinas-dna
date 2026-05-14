@@ -26,7 +26,7 @@ HALLIFTOVER_BED_COLUMNS: list[str] = [
     "t_strand",
 ]
 
-HALLIFTOVER_BED_SCHEMA: dict[str, pl.DataType] = {
+HALLIFTOVER_BED_SCHEMA: dict[str, type[pl.DataType] | pl.DataType] = {
     "t_chrom": pl.Utf8,
     "t_start": pl.Int64,
     "t_end": pl.Int64,

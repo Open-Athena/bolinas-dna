@@ -91,7 +91,10 @@ def attach_sequences_to_parquet(
     df = pl.read_parquet(proj_parquet)
     out = Path(out_parquet)
     out.parent.mkdir(parents=True, exist_ok=True)
-    extended_schema = {**df.schema, "sequence": pl.Utf8}
+    extended_schema: dict[str, type[pl.DataType] | pl.DataType] = {
+        **df.schema,
+        "sequence": pl.Utf8,
+    }
     if df.is_empty():
         assert len(sequences) == 0
         pl.DataFrame(schema=extended_schema).write_parquet(out)

@@ -61,7 +61,7 @@ def predict_genome(
     )
     model.to(device)
     model.eval()
-    model = torch.compile(model)
+    model = torch.compile(model)  # type: ignore[assignment]
 
     dataset = GenomeWindowDataset(genome_path, windows)
     dataloader = DataLoader(
@@ -84,7 +84,7 @@ def predict_genome(
     elapsed = time.perf_counter() - t0
 
     assert predictions is not None
-    all_logits = np.concatenate([p.float().numpy() for p in predictions])
+    all_logits = np.concatenate([p.float().numpy() for p in predictions])  # type: ignore[union-attr]
 
     logger.info(
         "Predicted %d windows in %.1fs (%.0f windows/sec)",

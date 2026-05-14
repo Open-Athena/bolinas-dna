@@ -89,7 +89,7 @@ def predict_genome(
     model.to(device)
     model.eval()
     if torch.cuda.is_available():
-        model = torch.compile(model)
+        model = torch.compile(model)  # type: ignore[assignment]
 
     dataset = GenomeWindowDataset(genome_path, windows)
     dataloader = DataLoader(
@@ -113,7 +113,7 @@ def predict_genome(
 
     if predictions is None:
         raise RuntimeError("trainer.predict returned None")
-    all_logits = np.concatenate([p.float().numpy() for p in predictions])
+    all_logits = np.concatenate([p.float().numpy() for p in predictions])  # type: ignore[union-attr]
     num_bins = all_logits.shape[1]
     if num_bins != expected_num_bins:
         raise ValueError(

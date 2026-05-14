@@ -75,6 +75,7 @@ marin = [
 
 [dependency-groups]
 dev = [
+    "mypy>=1.18.0",
     "pre-commit>=4.3.0",
     "ruff>=0.12.11",
     "pytest>=7.0.0",
@@ -176,3 +177,12 @@ ignore = ["F722"]
 # importing polars/numpy, so imports legitimately live below module-top
 # logic. Don't fight it.
 "snakemake/evals/scratch/*.py" = ["E402"]
+
+[tool.mypy]
+# Lax baseline: many transitive deps (lightning, torchmetrics, datasets,
+# polars-bio, bioframe, cyvcf2, …) have no stubs. Don't gate the project
+# on missing stubs. `strict_optional` off matches the existing code's
+# implicit-None tolerance — tighten incrementally.
+files = "src/bolinas"
+ignore_missing_imports = true
+strict_optional = false
