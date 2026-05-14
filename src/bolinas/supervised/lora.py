@@ -348,7 +348,7 @@ def predict_scores(
     out: list[np.ndarray] = []
     for input_ids in loader:
         input_ids = input_ids.to(device)
-        scores = model(input_ids).cpu().numpy()
+        scores = model(input_ids).float().cpu().numpy()
         out.append(scores)
     return np.concatenate(out)
 
