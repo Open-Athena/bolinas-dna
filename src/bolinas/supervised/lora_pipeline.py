@@ -34,14 +34,15 @@ def fit_predict_one_fold(
     genome_path: str | Path,
     fold: int,
     n_splits: int = 3,
-    lora_rank: int = 8,
+    lora_rank: int = 4,
     lora_alpha: int = 16,
-    lora_dropout: float = 0.05,
+    lora_dropout: float = 0.1,
     lora_target_modules: tuple[str, ...] = ("q_proj", "v_proj"),
-    epochs: int = 3,
+    normalize: bool = True,
+    epochs: int = 1,
     lr: float = 1e-4,
-    batch_size: int = 8,
-    margin: float = 1.0,
+    batch_size: int = 2,
+    margin: float = 0.5,
     num_workers: int = 2,
     seed: int = 0,
     device: str = "cuda",
@@ -95,6 +96,7 @@ def fit_predict_one_fold(
             dropout=lora_dropout,
             target_modules=tuple(lora_target_modules),
         ),
+        normalize=normalize,
     )
     n_trainable = model.trainable_parameters()
     print(f"[fit_predict_one_fold] LoRA trainable params: {n_trainable:,}")

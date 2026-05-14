@@ -32,18 +32,17 @@ BACKBONE = "bolinas-dna/exp166-p1B-step-16398"
 WINDOW = 255
 FOLD = 0  # always use fold 0 — sweep is for hparam comparison, not OOF.
 
-# Pass 1: sweep MARGIN only (everything else fixed).
-# Iter-0 stats show `embed_last_l2` mean on complex_traits is ~109, so
-# margin=1 leaves nearly every correct pair at ~zero loss → no gradient on
-# already-correct pairs. Try margins ~ {1, 10, 50, 100, 200} to find where
-# the "training pressure" zone lines up with the actual score distribution.
-COMMON = dict(lora_rank=4, lr=1e-4, batch_size=2, epochs=1)
+# Pass 1: with `normalize=True` (score ∈ [0, 2]), sweep MARGIN over canonical
+# metric-learning values {0.1, 0.5, 1.0}. Plus one unnormalized control with
+# margin=50 (the only value of the unnormalized scale that's likely to give
+# meaningful gradient on already-correct pairs).
 CONFIGS = [
-    ("margin1",     dict(**COMMON, margin=1.0)),
-    ("margin10",    dict(**COMMON, margin=10.0)),
-    ("margin50",    dict(**COMMON, margin=50.0)),
-    ("margin100",   dict(**COMMON, margin=100.0)),
-    ("margin200",   dict(**COMMON, margin=200.0)),
+    # Normalized variants — canonical hparam range.
+    ("norm_m01",   dict(lora_rank=4, lr=1e-4, batch_size=2, epochs=1, margin=0.1, normalize=True)),
+    ("norm_m05",   dict(lora_rank=4, lr=1e-4, batch_size=2, epochs=1, margin=0.5, normalize=True)),
+    ("norm_m1",    dict(lora_rank=4, lr=1e-4, batch_size=2, epochs=1, margin=1.0, normalize=True)),
+    # Unnormalized control with margin matched to score scale (~100).
+    ("nonorm_m50", dict(lora_rank=4, lr=1e-4, batch_size=2, epochs=1, margin=50.0, normalize=False)),
 ]
 
 
