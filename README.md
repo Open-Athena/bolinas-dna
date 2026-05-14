@@ -19,7 +19,8 @@ Tracked as GitHub issues. See the
 uv sync
 ```
 
-Optional installs (all opt-in):
+<details>
+<summary>Optional installs (all opt-in)</summary>
 
 | Selector | Purpose |
 |---|---|
@@ -36,6 +37,8 @@ also pass `--extra tpu`:
 ```bash
 uv sync --extra marin --extra tpu
 ```
+
+</details>
 
 ## Development
 
@@ -61,9 +64,9 @@ Join the [Marin Discord](https://discord.gg/J9CTk7pqcM); bolinas-dna discussion 
 
 ## Citation
 
-If you use datasets, models, or experiments from this repo, please cite:
+If you find datasets, models, or experiments from this repo useful, please cite:
 
-> Bolinas-DNA: open development of genomic language models. Open-Athena, 2026.
+> Bolinas-DNA: open development of genomic language models. Open Athena, 2026.
 > https://github.com/Open-Athena/bolinas-dna
 
 BibTeX:
@@ -71,7 +74,7 @@ BibTeX:
 ```bibtex
 @misc{bolinas-dna,
   title  = {Bolinas-DNA: open development of genomic language models},
-  author = {{Open-Athena}},
+  author = {{Open Athena}},
   year   = {2026},
   url    = {https://github.com/Open-Athena/bolinas-dna},
 }
