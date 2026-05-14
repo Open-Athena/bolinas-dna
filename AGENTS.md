@@ -28,7 +28,7 @@ The codebase has three main components:
 1. **Python Library** (`src/bolinas/`) - Python logic for all pipelines lives here, including pipeline-specific modules. See **Research Code Values** above for why, and for how Snakemake rules should relate to it.
 
 2. **Pipelines** (`snakemake/`) - Data processing workflows implemented in Snakemake
-   - Read the pipeline's README before working on it — each `snakemake/<pipeline>/` has its own. If you change pipeline behaviour, update the README in the same PR so the next human or agent can onboard from it. Pipeline READMEs describe **how to run** the pipeline; experimental results belong in GitHub issues, not in the README.
+   - Read the pipeline's README before working on it — each `snakemake/<pipeline>/` has its own. If you change pipeline behaviour, update the README in the same PR so the next human or agent can onboard from it.
    - Always dry-run first (`-n` / `--dry-run`) before any real invocation.
    - Stop before reruns of steps the changes you made for this task did not intentionally touch. If the dry-run shows Snakemake planning to rerun an upstream or unrelated step — retriggered by a timestamp change, an unrelated code edit, `--rerun-triggers` defaults, etc. — stop and ask before running. Default assumption: such reruns are unintended and potentially expensive (training, genome downloads, large bedtools jobs).
    - Invoke as `uv run snakemake …` from the repo root, not bare `snakemake`.
@@ -43,7 +43,7 @@ The codebase has three main components:
 - **Bioinformatics tools**: Use Conda for external CLI tools (bedtools, twoBitToFa, etc.)
 - **Testing**: Run `uv run pytest` before committing
 - **Code quality**: Pre-commit hooks enforce ruff formatting and linting
-- **Documentation**: Before merging a PR, make sure all the relevant READMEs are updated.
+- **Documentation**: Before merging a PR, make sure all the relevant READMEs are updated. READMEs describe how to run or use a thing, not what was found — experimental results (tables, leaderboards, key findings, per-genome stats, etc.) belong in the GitHub issue tracking that work, not in any README. Results drift; READMEs shouldn't.
 - **Where to run.** For quick work (small data, smoke tests, dev iteration), run locally on the current node — but first check system load (`uptime` / `cat /proc/loadavg`); multiple agent sessions share this small instance. Be careful about parallelizing local subprocesses: it has crashed the instance more than once (requiring reboot). Cap parallel jobs conservatively (rule of thumb: `nproc/2` or less). For heavy work (training, large-scale evals, anything GPU-bound), launch on SkyPilot. Always confirm with the user before launching SkyPilot resources — they're not free.
 - **Babysit new jobs early.** First time running a script / config / cluster combination? Check actively within the first few minutes rather than passively waiting. Look for: progress rate sane (a common silent failure is CPU fallback when GPU was expected), device count matches what you asked for, no immediate OOM / mount errors / auth failures. Notifiers fire on completion or timeout — they don't tell you the run spent 4 hours on CPU.
 
