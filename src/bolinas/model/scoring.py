@@ -176,26 +176,48 @@ def compute_variant_score_bundle(
     input_ids: Int[Tensor, "B 2 L"],
     nuc_token_ids: Int[Tensor, " 4"],
 ) -> Float[Tensor, "B 2"]:
-    """Compute LLR and per-position next-token JSD in one forward pass.
+    """Compute LLR and per-position next-token JSD using prefix-sharing.
+
+    For each (ref, alt) pair the input_ids are identical at every position
+    *before* the variant and differ only at ``var_pos`` onward (SNV
+    invariant). The shared prefix is forwarded once with ``use_cache=True``;
+    the divergent suffixes (one for ref, one for alt) are forwarded with
+    the cached prefix as past key/values. Roughly halves the prefix's
+    forward-pass FLOPs (≈25% wall-clock saving on a 1B Qwen3 with the
+    variant at the window center), same idea lm-eval-harness and inference
+    servers like vLLM use.
+
+    Token-level ``var_pos`` is inferred from the input_ids diff, which
+    automatically accounts for any BOS the tokenizer prepends — and any
+    EOS appended at the end is irrelevant since the variant lands well
+    before the suffix end. Even and odd ``window_size`` are both fine
+    (``transform_llr_clm`` controls the in-sequence pos; the token-level
+    pos is just that plus ``n_prefix``).
+
+    Within a single inference batch ``var_pos`` is constant by
+    construction (every variant lands at ``window_size // 2`` for FWD or
+    ``window_size - 1 - window_size // 2`` for RC, plus ``n_prefix``;
+    ``window_size`` is a per-checkpoint constant). We assert this so a
+    batched dataset that violated the assumption would fail loud rather
+    than silently produce stitched-together logits from mismatched splits.
 
     The JSD column (``next_token_jsd_mean``, called ``down_jsd_mean`` in
     Open-Athena/bolinas-dna#175) is the per-position 4-nucleotide softmax
     Jensen-Shannon divergence between REF-context and ALT-context next-token
     predictions, averaged over the AR positions where the variant is in
-    context (i.e. ``var_pos <= t <= L-2``). Computed from the same logits as
-    LLR — no extra forward pass and no extra activation memory.
+    context (i.e. ``var_pos <= t <= L-2``). Computed from the stitched
+    logits — same numerical path as the un-optimized kernel.
 
-    Embedding-distance columns from earlier revisions of this kernel are
-    dropped: ``output_hidden_states=True`` keeps every layer's activation
-    alive (~2.6 GB at batch=64×2, L=256, hidden=1920 for the 1B Qwen3),
-    crowding out batch-size headroom on a 24 GB A10G. JSD has Spearman
-    ρ≈0.90 with the last-layer L2 within-subset on mendelian (#175
-    conclusion 9), so the signal is largely preserved in this slimmer
-    bundle.
+    Embedding-distance columns are dropped (#175 conclusion 9: JSD has
+    Spearman ρ ≈ 0.90 with last-layer L2 within mendelian subsets, so the
+    signal is largely preserved without the activation-memory cost).
 
     Args:
-        model: HF-shaped causal LM; ``model(input_ids).logits`` must return
-            logits of shape ``[B, L, V]``.
+        model: HF-shaped causal LM. ``model(input_ids, use_cache=True)``
+            must return ``.logits`` of shape ``[B, L, V]`` and
+            ``.past_key_values`` (a HF ``Cache`` or legacy
+            tuple-of-(K, V)-pairs); ``model(input_ids, past_key_values=...)``
+            must accept the cache and produce position-correct logits.
         input_ids: Input sequences with shape [B, 2, L] where the 2 sequences are [ref, alt].
         nuc_token_ids: Length-4 tensor of token IDs for the 4 DNA nucleotides
             in canonical ``NUCLEOTIDES`` (= "ACGT") order. Used to slice the
@@ -207,9 +229,45 @@ def compute_variant_score_bundle(
             - [:, 1]: next_token_jsd_mean (mean per-position 4-nuc JSD over downstream positions)
     """
     B, _, L = input_ids.shape
-    input_ids_flat = rearrange(input_ids, "B V L -> (B V) L")
 
-    logits = model(input_ids_flat).logits
+    # Detect var_pos at the token level; this is BOS-aware automatically.
+    diff = input_ids[:, 0] != input_ids[:, 1]  # [B, L]
+    assert diff.any(dim=-1).all(), "found rows with identical ref/alt input_ids"
+    var_pos_each = diff.float().argmax(dim=-1)  # [B]
+    p = int(var_pos_each[0].item())
+    assert (var_pos_each == p).all(), (
+        f"prefix-sharing requires constant var_pos within the batch; got "
+        f"unique values {var_pos_each.unique().tolist()}"
+    )
+    assert 0 < p < L - 1, (
+        f"variant at token position {p} of length-{L} sequence has no shared "
+        f"prefix or no downstream prediction; expected 0 < var_pos < L-1"
+    )
+
+    # Split shared prefix [B, p] from divergent suffixes [B*2, L-p].
+    prefix = input_ids[:, 0, :p].contiguous()
+    suffixes_flat = rearrange(input_ids[:, :, p:], "B V L -> (B V) L").contiguous()
+
+    # 1. Forward the shared prefix once and capture its KV cache.
+    prefix_out = model(prefix, use_cache=True)
+    prefix_logits = prefix_out.logits  # [B, p, V]
+    past_kv = prefix_out.past_key_values
+
+    # 2. Duplicate the cache so each (ref, alt) pair sees its own copy.
+    past_kv_doubled = _repeat_interleave_kv_cache(past_kv, 2)
+
+    # 3. Forward the divergent suffixes with the cached prefix as context.
+    #    HF derives position_ids for the suffix from cache length, so the
+    #    suffix tokens land at absolute positions [p, L-1] correctly.
+    suffix_logits = model(
+        suffixes_flat, past_key_values=past_kv_doubled, use_cache=False
+    ).logits  # [B*2, L-p, V]
+
+    # 4. Stitch into [B*2, L, V] for the LLR + JSD downstream math.
+    prefix_logits_doubled = prefix_logits.repeat_interleave(2, dim=0)
+    logits = torch.cat([prefix_logits_doubled, suffix_logits], dim=1)
+
+    input_ids_flat = rearrange(input_ids, "B V L -> (B V) L")
 
     log_prob = _clm_seq_logprob(logits, input_ids_flat)
     log_prob = rearrange(log_prob, "(B V) -> B V", B=B)
@@ -220,6 +278,25 @@ def compute_variant_score_bundle(
     )
 
     return torch.stack([llr, next_token_jsd_mean], dim=1)
+
+
+def _repeat_interleave_kv_cache(past_kv: Any, n: int) -> Any:
+    """Repeat each layer's K and V along the batch dim by ``n``.
+
+    Handles HF's modern ``Cache`` objects (``DynamicCache`` and friends,
+    which expose ``key_cache`` / ``value_cache`` lists) and the legacy
+    tuple-of-(K, V)-pairs format. Mutates the cache in place when given
+    an HF ``Cache`` — caller doesn't reuse the original.
+    """
+    if hasattr(past_kv, "key_cache") and hasattr(past_kv, "value_cache"):
+        for i in range(len(past_kv.key_cache)):
+            past_kv.key_cache[i] = past_kv.key_cache[i].repeat_interleave(n, dim=0)
+            past_kv.value_cache[i] = past_kv.value_cache[i].repeat_interleave(n, dim=0)
+        return past_kv
+    return tuple(
+        (k.repeat_interleave(n, dim=0), v.repeat_interleave(n, dim=0))
+        for k, v in past_kv
+    )
 
 
 def _compute_next_token_jsd_mean(

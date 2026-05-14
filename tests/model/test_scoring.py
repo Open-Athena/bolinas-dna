@@ -477,17 +477,34 @@ class _DeterministicCausalLM(nn.Module):
     FWD and RC [N, 2] predictions.
 
     Mimics HF ``CausalLMOutput``: returns an object with ``.logits`` only
-    (no ``.hidden_states`` — the kernel no longer requests them)."""
+    (no ``.hidden_states`` — the kernel no longer requests them).
+
+    Logits depend only on ``input_ids[t]`` at each position, not on
+    surrounding context — so the prefix-shared kernel
+    (``compute_variant_score_bundle``) gives bit-identical results to a
+    full-sequence forward on this mock. Accepts ``use_cache`` and
+    ``past_key_values`` for compatibility with the prefix-sharing call
+    pattern; the cache content is dummy zeros (the mock's logits don't
+    actually depend on past tokens)."""
 
     def __init__(self, vocab_size: int):
         super().__init__()
         self.vocab_size = vocab_size
 
-    def forward(self, input_ids):
+    def forward(self, input_ids, past_key_values=None, use_cache=False, **kwargs):
         x = input_ids.float()
         logits = x.unsqueeze(-1).repeat(1, 1, self.vocab_size).contiguous()
         logits = logits + torch.arange(self.vocab_size, dtype=torch.float)
-        return SimpleNamespace(logits=logits)
+        out = SimpleNamespace(logits=logits)
+        if use_cache:
+            B, L = input_ids.shape
+            # Minimal tuple-of-(K, V)-pairs shaped [B, num_heads=1, L, head_dim=1]
+            # so `_repeat_interleave_kv_cache` exercises the legacy-format
+            # branch. The mock ignores cache content; only the structure matters.
+            k = torch.zeros(B, 1, L, 1)
+            v = torch.zeros(B, 1, L, 1)
+            out.past_key_values = ((k, v),)
+        return out
 
 
 def test_run_variant_score_bundle_rc_avg_equals_mean_of_two_passes(tmp_path):
@@ -586,24 +603,45 @@ def test_run_inference_padding_roundtrip(tmp_path):
 
 class _ContentIndependentCausalLM(nn.Module):
     """Test double whose forward returns logits independent of input_ids
-    content (only depends on positions and vocab indices). Used to verify
-    that the JSD column is exactly 0 when ref and alt sequences produce
-    identical next-token distributions."""
+    content (only depends on absolute position and vocab indices). Used to
+    verify that the JSD column is exactly 0 when ref and alt sequences
+    produce identical next-token distributions.
+
+    Position-aware: derives the absolute-position offset from the length
+    of any provided ``past_key_values``. So the prefix-shared call pattern
+    (prefix forward at offset 0, suffix forward at offset = prefix length)
+    yields the same per-position logits as a single full-sequence forward.
+    This is what catches a bug where ``compute_variant_score_bundle``
+    forgot to pass ``past_key_values`` to the suffix call — the suffix
+    would see offset 0 instead of ``var_pos``, mismatching the full-forward
+    reference."""
 
     def __init__(self, vocab_size: int):
         super().__init__()
         self.vocab_size = vocab_size
 
-    def forward(self, input_ids):
+    def forward(self, input_ids, past_key_values=None, use_cache=False, **kwargs):
         B, L = input_ids.shape
-        # Content-independent logits: depend only on position and vocab
-        # index, never on input_ids content. So ref and alt produce
-        # identical next-token distributions → JSD = 0 everywhere.
-        pos = torch.arange(L, dtype=torch.float).unsqueeze(-1)
+        offset = _kv_cache_seq_len(past_key_values)
+        pos = torch.arange(offset, offset + L, dtype=torch.float).unsqueeze(-1)
         vocab = torch.arange(self.vocab_size, dtype=torch.float)
         logits_per_seq = pos + vocab  # [L, V]
         logits = logits_per_seq.unsqueeze(0).expand(B, L, self.vocab_size).contiguous()
-        return SimpleNamespace(logits=logits)
+        out = SimpleNamespace(logits=logits)
+        if use_cache:
+            k = torch.zeros(B, 1, L, 1)
+            v = torch.zeros(B, 1, L, 1)
+            out.past_key_values = ((k, v),)
+        return out
+
+
+def _kv_cache_seq_len(past_kv: object) -> int:
+    """Length of the cached prefix in a tuple-of-(K, V) cache (or 0 if absent).
+
+    K shape is [B, num_heads, seq_len, head_dim]; head dim 2 is seq_len."""
+    if past_kv is None:
+        return 0
+    return int(past_kv[0][0].shape[2])
 
 
 def test_next_token_jsd_mean_zero_when_ref_alt_logits_identical(tmp_path):
@@ -632,6 +670,48 @@ def test_next_token_jsd_mean_zero_when_ref_alt_logits_identical(tmp_path):
     np.testing.assert_allclose(out[:, 1], 0.0, atol=1e-7)
 
 
+def test_compute_variant_score_bundle_prefix_sharing_matches_full_forward():
+    """Prefix-shared kernel must produce identical results to a hand-rolled
+    full-sequence forward on a position-aware mock.
+
+    The mock derives its position offset from ``past_key_values`` length,
+    so a bug like "forgot to pass past_key_values to the suffix call"
+    would shift the suffix's logits by ``var_pos`` positions and fail
+    this test loud."""
+    torch.manual_seed(0)
+    model = _ContentIndependentCausalLM(vocab_size=8)
+    model.eval()
+    nuc_token_ids = torch.tensor([3, 4, 5, 6], dtype=torch.long)
+
+    # Hand-craft a [B=2, V=2 (ref/alt), L=10] batch with var_pos=4 (constant).
+    # Each row has a unique variant (alt token differs from ref at pos 4).
+    L = 10
+    var_pos = 4
+    ref_row_0 = [3, 4, 5, 3, 4, 5, 6, 3, 4, 5]
+    alt_row_0 = ref_row_0[:var_pos] + [5] + ref_row_0[var_pos + 1 :]  # 4 -> 5
+    ref_row_1 = [4, 5, 6, 4, 5, 6, 3, 4, 5, 6]
+    alt_row_1 = ref_row_1[:var_pos] + [3] + ref_row_1[var_pos + 1 :]  # 5 -> 3
+    input_ids = torch.tensor([[ref_row_0, alt_row_0], [ref_row_1, alt_row_1]])
+    assert input_ids.shape == (2, 2, L)
+
+    # Reference: full-sequence forward (no prefix split).
+    input_ids_flat = input_ids.reshape(2 * 2, L)
+    full_logits = model(input_ids_flat).logits
+
+    # Prefix-shared kernel.
+    out = compute_variant_score_bundle(model, input_ids, nuc_token_ids)
+
+    # Reproduce LLR + JSD from the full-forward logits directly and compare.
+    log_prob = _logits_to_logprobs(full_logits, input_ids_flat).sum(dim=-1)
+    log_prob = log_prob.reshape(2, 2)
+    expected_llr = log_prob[:, 1] - log_prob[:, 0]
+    np.testing.assert_allclose(out[:, 0].numpy(), expected_llr.numpy(), atol=1e-5)
+
+    # The JSD column should be 0 for this mock (logits are content-independent
+    # so ref/alt give identical per-position distributions at every position).
+    np.testing.assert_allclose(out[:, 1].numpy(), 0.0, atol=1e-7)
+
+
 def test_compute_variant_score_bundle_jsd_analytic():
     """Hand-craft logits where the per-position 4-nuc JSD is computable
     analytically and assert numerical match.
@@ -646,7 +726,9 @@ def test_compute_variant_score_bundle_jsd_analytic():
     """
 
     class _Custom(nn.Module):
-        def forward(self, input_ids):
+        def forward(
+            self, input_ids, past_key_values=None, use_cache=False, **kwargs
+        ):
             B, L = input_ids.shape
             V = 4
             logits = torch.zeros(B, L, V)
@@ -655,7 +737,12 @@ def test_compute_variant_score_bundle_jsd_analytic():
             sharp = (input_ids != 0).float().unsqueeze(-1)  # [B, L, 1]
             template = torch.tensor([10.0, 0.0, 0.0, 0.0])
             logits = logits + sharp * template
-            return SimpleNamespace(logits=logits)
+            out = SimpleNamespace(logits=logits)
+            if use_cache:
+                k = torch.zeros(B, 1, L, 1)
+                v = torch.zeros(B, 1, L, 1)
+                out.past_key_values = ((k, v),)
+            return out
 
     model = _Custom()
     model.eval()
