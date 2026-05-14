@@ -9,8 +9,10 @@ For each of 3 datasets (mendelian_traits, complex_traits, eqtl):
   - Rank within (dataset, subset); compute 7 ensembles of the two base scores:
     mean_rank, min_rank, max_rank, geomean_rank (≡ mean log rank, n=2),
     harmonic_rank, rrf_k60, zscore_mean (non-rank baseline)
-  - Compute PairwiseAccuracy per subset, plus pooled (all variants concatenated)
-    and macro (unweighted mean of per-subset PA)
+  - Compute PairwiseAccuracy per subset, plus Global (PA over all match-pairs
+    concatenated, no filter) and Macro Avg (unweighted mean of per-subset PAs
+    over subsets with n_pairs ≥ 30) — canonical leaderboard convention from
+    `bolinas.evals.metrics.compute_pairwise_metrics` on main (PR #178).
 """
 
 from __future__ import annotations
@@ -20,6 +22,9 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+# n_pairs threshold for inclusion in Macro Avg. Leaderboard convention is 30.
+N_MIN_MACRO: int = 30
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from bolinas.evals.metrics import pairwise_accuracy
@@ -129,53 +134,71 @@ def _score_columns(ds: str) -> list[str]:
 
 
 def _compute_metrics(scored: pd.DataFrame, ds: str) -> pd.DataFrame:
+    """Per-subset + Global + Macro Avg metrics matching the leaderboard convention.
+
+    - Per-subset PA: one PA per (dataset, subset, score), no filter.
+    - Global PA: single PA over all match-pairs concatenated (no filter).
+    - Macro Avg PA: unweighted mean of per-subset PAs over subsets with
+      ``n_pairs >= N_MIN_MACRO``. SE is ``sqrt(Σ SE_s²) / K`` (SE of unweighted
+      mean of K independent estimates), matching ``compute_pairwise_metrics``
+      on main (PR #178).
+    """
     records = []
     cols = _score_columns(ds)
 
     # Per-subset PA
+    per_subset_rows: dict[str, list[dict]] = {c: [] for c in cols}
     for subset, sub in scored.groupby("subset", sort=False):
         for col in cols:
             r = pairwise_accuracy(
                 sub["label"], sub[col], sub["match_group"], alternative="greater"
             )
-            records.append({"dataset": ds, "agg": "per_subset", "subset": subset,
-                            "score": col, **r})
+            row = {"dataset": ds, "agg": "per_subset", "subset": subset,
+                   "score": col, **r}
+            records.append(row)
+            per_subset_rows[col].append(row)
 
-    # Pooled — single PA over all variants. Match groups are subset-local so
-    # this is well-defined.
+    # Global — single PA over all match-pairs concatenated (no n filter).
     for col in cols:
         r = pairwise_accuracy(
             scored["label"], scored[col], scored["match_group"], alternative="greater"
         )
-        records.append({"dataset": ds, "agg": "pooled", "subset": "_all",
+        records.append({"dataset": ds, "agg": "global", "subset": "_global_",
                         "score": col, **r})
+
+    # Macro Avg — mean of per-subset PA over subsets with n_pairs >= N_MIN_MACRO.
+    for col in cols:
+        qualifying = [r for r in per_subset_rows[col] if r["n_pairs"] >= N_MIN_MACRO]
+        assert qualifying, f"{ds} × {col}: no subsets with n_pairs >= {N_MIN_MACRO}"
+        k = len(qualifying)
+        value = float(np.mean([r["value"] for r in qualifying]))
+        se = float(np.sqrt(sum(r["se"] ** 2 for r in qualifying)) / k)
+        records.append({
+            "dataset": ds, "agg": "macro_avg", "subset": "_macro_avg_",
+            "score": col,
+            "value": value, "se": se,
+            "n_pairs": k,
+            "n_ties": int(sum(r["n_ties"] for r in qualifying)),
+            "p_value": float("nan"),
+        })
 
     return pd.DataFrame(records)
 
 
-def _macro(per_subset: pd.DataFrame) -> pd.DataFrame:
-    """Unweighted mean of per-subset PA per (dataset, score)."""
-    macro = (per_subset.query("agg == 'per_subset'")
-                       .groupby(["dataset", "score"])["value"]
-                       .agg(value="mean", std="std", n="count")
-                       .reset_index())
-    macro["se"] = macro["std"] / np.sqrt(macro["n"])
-    macro["agg"] = "macro"
-    macro["subset"] = "_all"
-    return macro[["dataset", "agg", "subset", "score", "value", "se", "n"]]
-
-
 def _global_table(metrics: pd.DataFrame, ds: str) -> pd.DataFrame:
-    """Build the 9-row × 2-col (pooled, macro) table for one dataset."""
+    """Build the 9-row × 2-col (Global, Macro Avg) table for one dataset."""
     cols = _score_columns(ds)
     rows = []
-    pool = metrics.query("dataset == @ds and agg == 'pooled'").set_index("score")
-    macro = metrics.query("dataset == @ds and agg == 'macro'").set_index("score")
+    glb = metrics.query("dataset == @ds and agg == 'global'").set_index("score")
+    macro = metrics.query("dataset == @ds and agg == 'macro_avg'").set_index("score")
     for c in cols:
         rows.append({
             "score": c,
-            "pooled": pool.loc[c, "value"],
+            "global": glb.loc[c, "value"],
+            "global_se": glb.loc[c, "se"],
             "macro": macro.loc[c, "value"],
+            "macro_se": macro.loc[c, "se"],
+            "macro_k": macro.loc[c, "n_pairs"],
         })
     return pd.DataFrame(rows)
 
@@ -196,11 +219,17 @@ def _format_pretty_name(score: str, ds: str) -> str:
 
 
 def _format_global_md(table: pd.DataFrame, ds: str) -> str:
+    """Two-col Global / Macro Avg markdown table with SE in parens."""
+    macro_k = int(table["macro_k"].iloc[0])
     lines = []
-    lines.append("| score | pooled PA | macro PA |")
+    lines.append(f"| score | Global | Macro Avg ({macro_k} subsets, n≥{N_MIN_MACRO}) |")
     lines.append("|---|---:|---:|")
     for _, row in table.iterrows():
-        lines.append(f"| {_format_pretty_name(row['score'], ds)} | {row['pooled']:.4f} | {row['macro']:.4f} |")
+        lines.append(
+            f"| {_format_pretty_name(row['score'], ds)} | "
+            f"{row['global']:.4f} ± {row['global_se']:.4f} | "
+            f"{row['macro']:.4f} ± {row['macro_se']:.4f} |"
+        )
     return "\n".join(lines)
 
 
@@ -219,27 +248,28 @@ def _render_dataset_comment(metrics: pd.DataFrame, ds: str) -> str:
     g = _global_table(metrics, ds)
     sub = _per_subset_table(metrics, ds)
     llr_name = LLR_BY_DATASET[ds]
+    macro_k = int(g["macro_k"].iloc[0])
 
-    # Identify best ensemble (max of pooled + macro)
+    # Identify best ensemble (max of global + macro_avg)
     ens_cols = ["mean_rank", "min_rank", "max_rank", "geomean_rank",
                 "harmonic_rank", "rrf_k60", "zscore_mean"]
     ens_rows = g[g["score"].isin(ens_cols)]
-    best_pool = ens_rows.loc[ens_rows["pooled"].idxmax()]
+    best_global = ens_rows.loc[ens_rows["global"].idxmax()]
     best_macro = ens_rows.loc[ens_rows["macro"].idxmax()]
-    base_pool = g[g["score"] == llr_name].iloc[0]["pooled"]
+    base_global = g[g["score"] == llr_name].iloc[0]["global"]
     base_macro = g[g["score"] == llr_name].iloc[0]["macro"]
-    emb_pool = g[g["score"] == EMBED].iloc[0]["pooled"]
+    emb_global = g[g["score"] == EMBED].iloc[0]["global"]
     emb_macro = g[g["score"] == EMBED].iloc[0]["macro"]
 
     lines = []
-    lines.append(f"🤖 **exp166-p1B (FWD+RC AVG) — {ds}.** LLR-family default vs `embed_l2_flat_last` vs 7 ensembles of the two. Both pooled and macro PairwiseAccuracy.")
+    lines.append(f"🤖 **exp166-p1B (FWD+RC AVG) — {ds}.** LLR-family default vs `embed_l2_flat_last` vs 7 ensembles of the two. Global + Macro Avg PairwiseAccuracy (leaderboard convention: Macro Avg = unweighted mean of per-subset PAs over subsets with n_pairs ≥ {N_MIN_MACRO}).")
     lines.append("")
-    lines.append("## Global (pooled + macro)")
+    lines.append(f"## Global + Macro Avg ({macro_k} subsets qualify)")
     lines.append("")
     lines.append(_format_global_md(g, ds))
     lines.append("")
-    lines.append(f"- Best ensemble (pooled): `{best_pool['score']}` = **{best_pool['pooled']:.4f}** vs `{llr_name}` {base_pool:.4f} (Δ {best_pool['pooled']-base_pool:+.4f}), vs `{EMBED}` {emb_pool:.4f} (Δ {best_pool['pooled']-emb_pool:+.4f}).")
-    lines.append(f"- Best ensemble (macro): `{best_macro['score']}` = **{best_macro['macro']:.4f}** vs `{llr_name}` {base_macro:.4f} (Δ {best_macro['macro']-base_macro:+.4f}), vs `{EMBED}` {emb_macro:.4f} (Δ {best_macro['macro']-emb_macro:+.4f}).")
+    lines.append(f"- Best ensemble (Global): `{best_global['score']}` = **{best_global['global']:.4f}** vs `{llr_name}` {base_global:.4f} (Δ {best_global['global']-base_global:+.4f}), vs `{EMBED}` {emb_global:.4f} (Δ {best_global['global']-emb_global:+.4f}).")
+    lines.append(f"- Best ensemble (Macro Avg): `{best_macro['score']}` = **{best_macro['macro']:.4f}** vs `{llr_name}` {base_macro:.4f} (Δ {best_macro['macro']-base_macro:+.4f}), vs `{EMBED}` {emb_macro:.4f} (Δ {best_macro['macro']-emb_macro:+.4f}).")
     lines.append("")
     lines.append("## Per-subset PA")
     lines.append("")
@@ -249,23 +279,25 @@ def _render_dataset_comment(metrics: pd.DataFrame, ds: str) -> str:
 
 
 def _render_summary_comment(metrics: pd.DataFrame) -> str:
-    """Cross-dataset summary: 1 row per (dataset × score) → pooled, macro."""
+    """Cross-dataset summary: 1 row per (dataset × score) → Global, Macro Avg."""
     lines = ["🤖 **Iter-5 summary — exp166-p1B FWD+RC AVG, 3 datasets × 9 scores.**\n"]
-    lines.append("Columns: pooled PA / macro PA per dataset. Cells highlighted **bold** for the best ensemble per dataset/metric.\n")
+    lines.append("Columns: Global / Macro Avg PairwiseAccuracy per dataset (canonical leaderboard convention: Macro Avg over subsets with n_pairs ≥ 30). **Bold** marks the best ensemble per (dataset, metric) cell.\n")
 
     score_order = ["LLR-default", "embed_l2_flat_last",
                    "mean_rank", "min_rank", "max_rank", "geomean_rank",
                    "harmonic_rank", "rrf_k60", "zscore_mean"]
 
-    # Build wide table
     per_ds_tables = {ds: _global_table(metrics, ds).set_index("score") for ds in DATASETS}
-    # Determine best ensemble per dataset × metric
     ens_cols = ["mean_rank", "min_rank", "max_rank", "geomean_rank",
                 "harmonic_rank", "rrf_k60", "zscore_mean"]
-    best_pool = {ds: per_ds_tables[ds].loc[ens_cols]["pooled"].idxmax() for ds in DATASETS}
+    best_global = {ds: per_ds_tables[ds].loc[ens_cols]["global"].idxmax() for ds in DATASETS}
     best_macro = {ds: per_ds_tables[ds].loc[ens_cols]["macro"].idxmax() for ds in DATASETS}
 
-    header = "| score | " + " | ".join(f"{ds} pooled | {ds} macro" for ds in DATASETS) + " |"
+    macro_ks = {ds: int(per_ds_tables[ds]["macro_k"].iloc[0]) for ds in DATASETS}
+    header_parts = []
+    for ds in DATASETS:
+        header_parts.append(f"{ds} Global | {ds} Macro Avg (k={macro_ks[ds]})")
+    header = "| score | " + " | ".join(header_parts) + " |"
     sep = "|---|" + "---:|---:|" * len(DATASETS)
     lines.append(header)
     lines.append(sep)
@@ -276,30 +308,29 @@ def _render_summary_comment(metrics: pd.DataFrame) -> str:
             llr_name = LLR_BY_DATASET[ds]
             actual_score = llr_name if s == "LLR-default" else s
             try:
-                pooled = per_ds_tables[ds].loc[actual_score, "pooled"]
+                glb = per_ds_tables[ds].loc[actual_score, "global"]
                 macro = per_ds_tables[ds].loc[actual_score, "macro"]
             except KeyError:
                 row.extend(["—", "—"])
                 continue
-            pooled_s = f"**{pooled:.4f}**" if (s != "LLR-default" and s != EMBED and s == best_pool[ds]) else f"{pooled:.4f}"
-            macro_s = f"**{macro:.4f}**" if (s != "LLR-default" and s != EMBED and s == best_macro[ds]) else f"{macro:.4f}"
-            row.extend([pooled_s, macro_s])
+            glb_s = f"**{glb:.4f}**" if (s in ens_cols and s == best_global[ds]) else f"{glb:.4f}"
+            macro_s = f"**{macro:.4f}**" if (s in ens_cols and s == best_macro[ds]) else f"{macro:.4f}"
+            row.extend([glb_s, macro_s])
         if s == "LLR-default":
-            label = "`minus_llr` / `abs_llr`*"
-            row[0] = label
+            row[0] = "`minus_llr` / `abs_llr`*"
         elif s == EMBED:
             row[0] = f"`{EMBED}`"
         else:
             row[0] = f"`{s}`"
         lines.append("| " + " | ".join(row) + " |")
     lines.append("")
-    lines.append("*`minus_llr` for mendelian, `abs_llr` for complex_traits & eqtl.*")
+    lines.append("*`minus_llr` for mendelian; `abs_llr` for complex_traits & eqtl.*")
     lines.append("")
-    lines.append("**Caveats**:")
+    lines.append("**Conventions**:")
+    lines.append(f"- **Global** = PA across ALL match-pairs concatenated (no n filter). **Macro Avg** = unweighted mean of per-subset PAs over subsets with n_pairs ≥ {N_MIN_MACRO} — matches `bolinas.evals.metrics.compute_pairwise_metrics` on main (PR #178).")
     lines.append("- Ranks computed within `(dataset, subset)` (matched pairs are subset-local).")
-    lines.append("- Pooled PA = single PairwiseAccuracy over all match-pairs concatenated; macro = unweighted mean of per-subset PAs.")
-    lines.append("- All 7 ensembles use only the 2 base scores. `mean_rank` is iter-2's `rk_minus_llr_plus_l2flat_last` formula (sum is monotone-equivalent to mean).")
-    lines.append("- `rrf_k60` uses rank-from-top (`n+1-r`) so standard \"rank 1 = best\" semantics apply; PA direction reproduced via `PA(x).value + PA(-x).value == 1` cross-check.")
+    lines.append("- `mean_rank` ≡ iter-2's `rk_minus_llr_plus_l2flat_last` formula (sum is monotone-equivalent to mean).")
+    lines.append("- `rrf_k60` uses rank-from-top (`n+1-r`) so standard \"rank 1 = best\" RRF semantics apply; PA direction reproduced via `PA(x).value + PA(-x).value == 1` cross-check.")
     return "\n".join(lines)
 
 
@@ -319,9 +350,6 @@ def main() -> int:
         all_metrics.append(metrics)
 
     metrics = pd.concat(all_metrics, ignore_index=True)
-    macro = _macro(metrics)
-    metrics = pd.concat([metrics, macro], ignore_index=True)
-
     metrics.to_parquet(out_dir / "iter5_metrics_exp166_p1B_rcavg.parquet", index=False)
     print(f"\n[iter5] wrote {out_dir / 'iter5_metrics_exp166_p1B_rcavg.parquet'}", flush=True)
 
