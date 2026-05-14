@@ -18,9 +18,9 @@ rule compute_metrics:
         df = pd.read_parquet(input[0])
         for col in REQUIRED_VARIANT_COLUMNS:
             assert col in df.columns, f"scores parquet missing column {col!r}"
-        assert score_col in df.columns, (
-            f"scores parquet missing score column {score_col!r}"
-        )
+        assert (
+            score_col in df.columns
+        ), f"scores parquet missing score column {score_col!r}"
 
         metrics = compute_pairwise_metrics(
             dataset=df[list(REQUIRED_VARIANT_COLUMNS)],
