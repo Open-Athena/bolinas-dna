@@ -60,6 +60,6 @@ inference:
                         # headroom for ~2x batch on A10G (24 GB).
   num_workers: 4
   data_transform_on_the_fly: true
-  torch_compile: false
+  torch_compile: true
   rc_avg: true          # FWD + RC averaging; doubles inference time but is the
                         # validated default per issue #175 conclusion 2.

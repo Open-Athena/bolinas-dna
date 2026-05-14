@@ -550,6 +550,40 @@ def test_run_variant_score_bundle_rc_avg_equals_mean_of_two_passes(tmp_path):
     assert not np.allclose(fwd, rc, atol=1e-6)
 
 
+def test_run_inference_padding_roundtrip(tmp_path):
+    """When n_examples is not a multiple of batch_size, ``_run_inference``
+    pads the dataset to a clean multiple (so torch.compile sees only one
+    batch shape) and slices the padded predictions off before returning.
+
+    Set up a dataset of 4 variants with batch_size=3 → pads by 2 internally.
+    Verify (a) shape is (4, 2) — padding is invisible to the caller — and
+    (b) the per-row predictions match what we get with batch_size=2 (no pad)."""
+    torch.manual_seed(0)
+    tokenizer = AutoTokenizer.from_pretrained("songlab/tokenizer-dna-mlm")
+    model = _DeterministicCausalLM(vocab_size=8)
+    model.eval()
+    genome = Genome(_write_long_fasta(tmp_path))
+    dataset = _make_variant_dataset()
+    window_size = 16
+
+    no_pad = run_variant_score_bundle(
+        model, tokenizer, dataset, genome, window_size,
+        rc_avg=False, data_transform_on_the_fly=True,
+        inference_kwargs=_INFERENCE_KWARGS,  # batch_size=2 → divides 4 evenly
+    )
+
+    padded_kwargs = {**_INFERENCE_KWARGS, "per_device_eval_batch_size": 3}
+    with_pad = run_variant_score_bundle(
+        model, tokenizer, dataset, genome, window_size,
+        rc_avg=False, data_transform_on_the_fly=True,
+        inference_kwargs=padded_kwargs,  # batch_size=3 → pads 4→6, slices 6→4
+    )
+
+    assert no_pad.shape == (4, 2)
+    assert with_pad.shape == (4, 2)
+    np.testing.assert_allclose(no_pad, with_pad, rtol=1e-5, atol=1e-6)
+
+
 class _ContentIndependentCausalLM(nn.Module):
     """Test double whose forward returns logits independent of input_ids
     content (only depends on positions and vocab indices). Used to verify

@@ -218,7 +218,23 @@ def _run_inference(
     Returns:
         The model's predictions on the dataset. The exact format depends on the
         model and dataset, but typically includes probabilities or embeddings.
+
+    Notes:
+        Pads the dataset up to a multiple of ``per_device_eval_batch_size`` by
+        repeating the last example, then slices the padded predictions off
+        before returning. With ``torch_compile=True``, this keeps every batch
+        at the same shape, so dynamo compiles a single graph for the cell
+        instead of a second one for the otherwise-partial trailing batch
+        (which on 1B Qwen3 + A10G cost ~15 s recompile per pass).
     """
+    n_real = len(dataset)
+    batch_size = kwargs.get("per_device_eval_batch_size", 1)
+    pad_n = (batch_size - n_real % batch_size) % batch_size if batch_size > 1 else 0
+    if pad_n > 0:
+        # Repeat the last real example pad_n times. The padded predictions
+        # are sliced off below — we only consume the first n_real rows.
+        dataset = dataset.select(list(range(n_real)) + [n_real - 1] * pad_n)
+
     # HF Trainer requires an output_dir even for .predict() (it never
     # writes to it on the predict path). Use a tempdir scoped to this
     # call so it's cleaned up deterministically.
@@ -228,7 +244,11 @@ def _run_inference(
             **(kwargs or {}),
         )
         trainer = Trainer(model=model, args=training_args)
-        return trainer.predict(test_dataset=dataset).predictions
+        predictions = trainer.predict(test_dataset=dataset).predictions
+
+    if pad_n > 0:
+        predictions = predictions[:n_real]
+    return predictions
 
 
 class _ModelComputeFnWrapper(nn.Module):
