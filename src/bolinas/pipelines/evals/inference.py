@@ -45,15 +45,12 @@ def compute_variant_scores(
             semantics on the JSD column.
 
     Returns:
-        DataFrame with columns [llr, minus_llr, abs_llr, embed_last_l2,
-        embed_middle_l2, next_token_jsd_mean]. Rows align with input
-        dataset by index.
+        DataFrame with columns [llr, minus_llr, abs_llr, next_token_jsd_mean].
+        Rows align with input dataset by index.
 
         - llr: Raw log-likelihood ratio
         - minus_llr: Negated LLR (higher = more deleterious)
         - abs_llr: Absolute LLR (higher = more impactful)
-        - embed_last_l2: L2 distance between ref/alt embeddings (last layer)
-        - embed_middle_l2: L2 distance between ref/alt embeddings (middle layer)
         - next_token_jsd_mean: mean per-position 4-nuc JSD over downstream
           positions (called ``down_jsd_mean`` in issue #175)
     """
@@ -89,17 +86,13 @@ def compute_variant_scores(
     )
 
     llr = results[:, 0]
-    embed_last_l2 = results[:, 1]
-    embed_middle_l2 = results[:, 2]
-    next_token_jsd_mean = results[:, 3]
+    next_token_jsd_mean = results[:, 1]
 
     scores = pd.DataFrame(
         {
             "llr": llr,
             "minus_llr": -llr,
             "abs_llr": np.abs(llr),
-            "embed_last_l2": embed_last_l2,
-            "embed_middle_l2": embed_middle_l2,
             "next_token_jsd_mean": next_token_jsd_mean,
         }
     )

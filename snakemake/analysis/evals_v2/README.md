@@ -13,10 +13,14 @@ For each `model` × `dataset` in the config:
    the model entry). The genome reference is read directly from S3 by
    pyfaidx (byte-range reads — no full download).
 2. **Score** every variant with `compute_variant_scores`. The score
-   bundle is LLR + last/middle embedding L2 + `next_token_jsd_mean`
-   (per-position 4-nuc next-token JSD averaged over downstream positions
-   — called `down_jsd_mean` in issue #175). FWD+RC averaging is on by
-   default (`inference.rc_avg`); doubles inference time but is the
+   bundle is LLR + `next_token_jsd_mean` (per-position 4-nuc next-token
+   JSD averaged over downstream positions — called `down_jsd_mean` in
+   issue #175). Embedding-distance columns from earlier revisions are
+   dropped; the LLR-vs-embedding ensemble can be approximated with JSD
+   (Spearman ρ ≈ 0.90 with last_L2 within mendelian subsets per #175
+   conclusion 9), and `output_hidden_states=True` was using ~2.6 GB at
+   our shape that's better spent on a larger batch. FWD+RC averaging is
+   on by default (`inference.rc_avg`); doubles inference time but is the
    validated default per #175 conclusion 2.
 3. **Compute** PairwiseAccuracy ± SE per consequence subset on the
    dataset-appropriate score column:

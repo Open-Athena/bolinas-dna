@@ -470,47 +470,35 @@ def test_run_reflogprob_clm_fwd_and_rc_differ():
     assert not np.allclose(fwd, rc, atol=1e-6)
 
 
-class _DeterministicCausalLMWithEmbeddings(nn.Module):
-    """Test double returning content-dependent (logits, last_emb, middle_emb)
-    so that two different input batches produce two different outputs —
-    enough to verify that the rc_avg=True path of
-    ``run_variant_score_bundle`` correctly averages the FWD and RC
-    [N, 4] predictions.
+class _DeterministicCausalLM(nn.Module):
+    """Test double whose forward returns content-dependent logits, so that
+    different input batches produce different outputs. Used to verify the
+    rc_avg=True path of ``run_variant_score_bundle`` correctly averages the
+    FWD and RC [N, 2] predictions.
 
-    Mimics HF ``CausalLMOutputWithHiddenStates``: returns an object with
-    ``.logits`` and ``.hidden_states`` where ``hidden_states[-1]`` is the
-    last-layer embedding and ``hidden_states[len // 2]`` is the middle one.
-    """
+    Mimics HF ``CausalLMOutput``: returns an object with ``.logits`` only
+    (no ``.hidden_states`` — the kernel no longer requests them)."""
 
-    def __init__(self, vocab_size: int, emb_dim: int):
+    def __init__(self, vocab_size: int):
         super().__init__()
         self.vocab_size = vocab_size
-        self.emb_dim = emb_dim
 
-    def forward(self, input_ids, output_hidden_states: bool = False):
+    def forward(self, input_ids):
         x = input_ids.float()
         logits = x.unsqueeze(-1).repeat(1, 1, self.vocab_size).contiguous()
         logits = logits + torch.arange(self.vocab_size, dtype=torch.float)
-        last = x.unsqueeze(-1).repeat(1, 1, self.emb_dim).contiguous()
-        middle = (x.unsqueeze(-1) * 2).repeat(1, 1, self.emb_dim).contiguous()
-        # ``compute_variant_score_bundle`` indexes hidden_states[-1]
-        # (last) and hidden_states[len // 2] (middle). A 2-tuple makes
-        # ``len // 2 == 1``, so hidden_states[1] is ``last`` — but we
-        # want index ``len // 2`` to map to ``middle``. Use 4 layers so
-        # ``len // 2 == 2`` and ``[2] == middle`` while ``[-1] == last``.
-        hidden_states = (last, last, middle, last)
-        return SimpleNamespace(logits=logits, hidden_states=hidden_states)
+        return SimpleNamespace(logits=logits)
 
 
 def test_run_variant_score_bundle_rc_avg_equals_mean_of_two_passes(tmp_path):
-    """End-to-end smoke test for the [N, 4] return shape — the path
+    """End-to-end smoke test for the [N, 2] return shape — the path
     biofoundation issue #24 specifically called out as the primary VEP
-    entrypoint, now extended with a per-position next-token JSD column."""
+    entrypoint, with LLR + per-position next-token JSD columns."""
     torch.manual_seed(0)
     tokenizer = AutoTokenizer.from_pretrained("songlab/tokenizer-dna-mlm")
     # songlab tokenizer puts ACGT at IDs 3-6; vocab_size=8 in the mock has
     # enough headroom for the JSD slice into the 4 nucleotide columns.
-    model = _DeterministicCausalLMWithEmbeddings(vocab_size=8, emb_dim=4)
+    model = _DeterministicCausalLM(vocab_size=8)
     model.eval()
     genome = Genome(_write_long_fasta(tmp_path))
     dataset = _make_variant_dataset()
@@ -553,9 +541,9 @@ def test_run_variant_score_bundle_rc_avg_equals_mean_of_two_passes(tmp_path):
         inference_kwargs=_INFERENCE_KWARGS,
     )
 
-    assert fwd.shape == (4, 4)
-    assert rc.shape == (4, 4)
-    assert avg.shape == (4, 4)
+    assert fwd.shape == (4, 2)
+    assert rc.shape == (4, 2)
+    assert avg.shape == (4, 2)
     np.testing.assert_allclose(
         avg, (np.asarray(fwd) + np.asarray(rc)) / 2, rtol=1e-5, atol=1e-6
     )
@@ -564,16 +552,15 @@ def test_run_variant_score_bundle_rc_avg_equals_mean_of_two_passes(tmp_path):
 
 class _ContentIndependentCausalLM(nn.Module):
     """Test double whose forward returns logits independent of input_ids
-    content (only depends on positions and vocab indices). Useful for
-    verifying that the JSD column is exactly 0 when ref and alt sequences
-    produce identical next-token distributions."""
+    content (only depends on positions and vocab indices). Used to verify
+    that the JSD column is exactly 0 when ref and alt sequences produce
+    identical next-token distributions."""
 
-    def __init__(self, vocab_size: int, emb_dim: int):
+    def __init__(self, vocab_size: int):
         super().__init__()
         self.vocab_size = vocab_size
-        self.emb_dim = emb_dim
 
-    def forward(self, input_ids, output_hidden_states: bool = False):
+    def forward(self, input_ids):
         B, L = input_ids.shape
         # Content-independent logits: depend only on position and vocab
         # index, never on input_ids content. So ref and alt produce
@@ -582,13 +569,7 @@ class _ContentIndependentCausalLM(nn.Module):
         vocab = torch.arange(self.vocab_size, dtype=torch.float)
         logits_per_seq = pos + vocab  # [L, V]
         logits = logits_per_seq.unsqueeze(0).expand(B, L, self.vocab_size).contiguous()
-        # Embeddings still depend on content so the L2 columns vary; only
-        # JSD must be exactly zero.
-        x = input_ids.float()
-        last = x.unsqueeze(-1).repeat(1, 1, self.emb_dim).contiguous()
-        middle = (x.unsqueeze(-1) * 2).repeat(1, 1, self.emb_dim).contiguous()
-        hidden_states = (last, last, middle, last)
-        return SimpleNamespace(logits=logits, hidden_states=hidden_states)
+        return SimpleNamespace(logits=logits)
 
 
 def test_next_token_jsd_mean_zero_when_ref_alt_logits_identical(tmp_path):
@@ -597,7 +578,7 @@ def test_next_token_jsd_mean_zero_when_ref_alt_logits_identical(tmp_path):
     next_token_jsd_mean = 0 for every batch row."""
     torch.manual_seed(0)
     tokenizer = AutoTokenizer.from_pretrained("songlab/tokenizer-dna-mlm")
-    model = _ContentIndependentCausalLM(vocab_size=8, emb_dim=4)
+    model = _ContentIndependentCausalLM(vocab_size=8)
     model.eval()
     genome = Genome(_write_long_fasta(tmp_path))
     dataset = _make_variant_dataset()
@@ -613,8 +594,8 @@ def test_next_token_jsd_mean_zero_when_ref_alt_logits_identical(tmp_path):
         data_transform_on_the_fly=True,
         inference_kwargs=_INFERENCE_KWARGS,
     )
-    assert out.shape == (4, 4)
-    np.testing.assert_allclose(out[:, 3], 0.0, atol=1e-7)
+    assert out.shape == (4, 2)
+    np.testing.assert_allclose(out[:, 1], 0.0, atol=1e-7)
 
 
 def test_compute_variant_score_bundle_jsd_analytic():
@@ -631,7 +612,7 @@ def test_compute_variant_score_bundle_jsd_analytic():
     """
 
     class _Custom(nn.Module):
-        def forward(self, input_ids, output_hidden_states: bool = False):
+        def forward(self, input_ids):
             B, L = input_ids.shape
             V = 4
             logits = torch.zeros(B, L, V)
@@ -640,9 +621,7 @@ def test_compute_variant_score_bundle_jsd_analytic():
             sharp = (input_ids != 0).float().unsqueeze(-1)  # [B, L, 1]
             template = torch.tensor([10.0, 0.0, 0.0, 0.0])
             logits = logits + sharp * template
-            emb = input_ids.float().unsqueeze(-1).repeat(1, 1, 2)
-            hidden_states = (emb, emb, emb, emb)
-            return SimpleNamespace(logits=logits, hidden_states=hidden_states)
+            return SimpleNamespace(logits=logits)
 
     model = _Custom()
     model.eval()
@@ -650,7 +629,7 @@ def test_compute_variant_score_bundle_jsd_analytic():
     nuc_token_ids = torch.tensor([0, 1, 2, 3], dtype=torch.long)
 
     out = compute_variant_score_bundle(model, input_ids, nuc_token_ids)
-    assert out.shape == (1, 4)
+    assert out.shape == (1, 2)
 
     # Analytic JSD computation: at position t in mask = [1, 2]:
     #   ref logits at t come from input_ids_ref[t] = 0 → uniform
@@ -668,4 +647,4 @@ def test_compute_variant_score_bundle_jsd_analytic():
 
     # Mask is t in [1, 2] → 2 positions; JSD nonzero only at t=1.
     expected_mean = jsd_at_var / 2
-    np.testing.assert_allclose(out[0, 3].item(), expected_mean, rtol=1e-5)
+    np.testing.assert_allclose(out[0, 1].item(), expected_mean, rtol=1e-5)

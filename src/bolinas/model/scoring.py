@@ -175,58 +175,51 @@ def compute_variant_score_bundle(
     model: Any,
     input_ids: Int[Tensor, "B 2 L"],
     nuc_token_ids: Int[Tensor, " 4"],
-) -> Float[Tensor, "B 4"]:
-    """Compute LLR, last/middle embedding distance, and per-position next-token JSD in one pass.
+) -> Float[Tensor, "B 2"]:
+    """Compute LLR and per-position next-token JSD in one forward pass.
 
     The JSD column (``next_token_jsd_mean``, called ``down_jsd_mean`` in
     Open-Athena/bolinas-dna#175) is the per-position 4-nucleotide softmax
     Jensen-Shannon divergence between REF-context and ALT-context next-token
     predictions, averaged over the AR positions where the variant is in
     context (i.e. ``var_pos <= t <= L-2``). Computed from the same logits as
-    LLR — no extra forward pass.
+    LLR — no extra forward pass and no extra activation memory.
+
+    Embedding-distance columns from earlier revisions of this kernel are
+    dropped: ``output_hidden_states=True`` keeps every layer's activation
+    alive (~2.6 GB at batch=64×2, L=256, hidden=1920 for the 1B Qwen3),
+    crowding out batch-size headroom on a 24 GB A10G. JSD has Spearman
+    ρ≈0.90 with the last-layer L2 within-subset on mendelian (#175
+    conclusion 9), so the signal is largely preserved in this slimmer
+    bundle.
 
     Args:
-        model: HF-shaped causal LM; ``model(input_ids, output_hidden_states=True)``
-            must return an object with ``.logits`` and ``.hidden_states``
-            (tuple of layer outputs, last layer at ``[-1]``).
+        model: HF-shaped causal LM; ``model(input_ids).logits`` must return
+            logits of shape ``[B, L, V]``.
         input_ids: Input sequences with shape [B, 2, L] where the 2 sequences are [ref, alt].
         nuc_token_ids: Length-4 tensor of token IDs for the 4 DNA nucleotides
             in canonical ``NUCLEOTIDES`` (= "ACGT") order. Used to slice the
             full-vocab logits down to a 4-class softmax for the JSD column.
 
     Returns:
-        Tensor with shape [B, 4] where columns are:
+        Tensor with shape [B, 2] where columns are:
             - [:, 0]: LLR (log-likelihood ratio: alt_logprob - ref_logprob)
-            - [:, 1]: Euclidean distance between last-layer embeddings
-            - [:, 2]: Euclidean distance between middle-layer embeddings
-            - [:, 3]: next_token_jsd_mean (mean per-position 4-nuc JSD over downstream positions)
+            - [:, 1]: next_token_jsd_mean (mean per-position 4-nuc JSD over downstream positions)
     """
     B, _, L = input_ids.shape
     input_ids_flat = rearrange(input_ids, "B V L -> (B V) L")
 
-    output = model(input_ids_flat, output_hidden_states=True)
-    logits = output.logits
-    last_emb = output.hidden_states[-1]
-    middle_idx = len(output.hidden_states) // 2
-    middle_emb = output.hidden_states[middle_idx]
+    logits = model(input_ids_flat).logits
 
     log_prob = _clm_seq_logprob(logits, input_ids_flat)
     log_prob = rearrange(log_prob, "(B V) -> B V", B=B)
     llr = log_prob[:, 1] - log_prob[:, 0]  # alt - ref
 
-    last_emb = rearrange(last_emb, "(B V) L D -> B V (L D)", B=B)
-    last_distance = F.pairwise_distance(last_emb[:, 0], last_emb[:, 1])
-
-    middle_emb = rearrange(middle_emb, "(B V) L D -> B V (L D)", B=B)
-    middle_distance = F.pairwise_distance(middle_emb[:, 0], middle_emb[:, 1])
-
     next_token_jsd_mean = _compute_next_token_jsd_mean(
         logits, input_ids, nuc_token_ids
     )
 
-    return torch.stack(
-        [llr, last_distance, middle_distance, next_token_jsd_mean], dim=1
-    )
+    return torch.stack([llr, next_token_jsd_mean], dim=1)
 
 
 def _compute_next_token_jsd_mean(

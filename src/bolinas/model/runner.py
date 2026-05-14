@@ -87,7 +87,7 @@ def _run_strand_aware(
 
     ``strand`` is bound into ``transform_fn`` via ``partial``. Averaging is
     element-wise on numpy arrays, so it works for shape ``[N]`` (e.g.
-    ``run_llr_clm``) and ``[N, 4]`` (``run_variant_score_bundle``).
+    ``run_llr_clm``) and ``[N, 2]`` (``run_variant_score_bundle``).
     """
 
     def _one(strand: Literal["+", "-"]) -> Any:
@@ -146,13 +146,11 @@ def run_variant_score_bundle(
     rc_avg: bool = False,
     **kwargs: Any,
 ) -> Any:
-    """Run the variant-score bundle (LLR + embedding distances + next-token JSD).
+    """Run the variant-score bundle (LLR + next-token JSD) in one forward pass.
 
-    Computes all four scores in a single forward pass:
+    Two scores per variant:
 
     - LLR (log-likelihood ratio)
-    - Last-layer embedding L2 distance
-    - Middle-layer embedding L2 distance
     - ``next_token_jsd_mean`` — per-position 4-nucleotide softmax JSD between
       REF and ALT next-token predictions, averaged over downstream positions
       (called ``down_jsd_mean`` in Open-Athena/bolinas-dna#175).
@@ -169,7 +167,7 @@ def run_variant_score_bundle(
         window_size: Window size for sequence context.
         rc_avg: If True, also score the reverse-complemented window for
             each variant and return the element-wise average of FWD and
-            RC predictions (shape ``[N, 4]``). Doubles inference cost.
+            RC predictions (shape ``[N, 2]``). Doubles inference cost.
             Under RC, the AR mask runs in token order which is reversed
             on the RC strand — so FWD captures the genomic-downstream
             half of the variant's effect footprint and RC captures the
@@ -179,11 +177,9 @@ def run_variant_score_bundle(
         **kwargs: Additional arguments passed to run_inference.
 
     Returns:
-        Numpy array with shape [B, 4] where columns are:
+        Numpy array with shape [B, 2] where columns are:
             - [:, 0]: LLR
-            - [:, 1]: Last-layer embedding distance
-            - [:, 2]: Middle-layer embedding distance
-            - [:, 3]: next_token_jsd_mean
+            - [:, 1]: next_token_jsd_mean
     """
     nuc_ids_dict = _get_nucleotide_token_ids(tokenizer)
     nuc_token_ids = torch.tensor(
