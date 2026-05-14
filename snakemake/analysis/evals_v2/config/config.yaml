@@ -56,7 +56,13 @@ models:
 inference:
   batch_size: 64        # OOMs at 512 on A10G (24 GB) for 0.6B Qwen3 + 256 tokens
   num_workers: 4
-  data_transform_on_the_fly: true
+  # Pre-materialize the transformed dataset upfront via `dataset.map()` in the
+  # main process (~3 min for ~10K variants). This is required when reading
+  # the genome from `s3://` — fsspec's async event loop is initialized in the
+  # parent during `Genome.__init__`'s chrom-size probe, and the inherited
+  # reference is broken in PyTorch DataLoader fork()'d workers, deadlocking
+  # any S3 read. With on_the_fly=false the workers never touch fsspec.
+  data_transform_on_the_fly: false
   torch_compile: false
   rc_avg: true          # FWD + RC averaging; doubles inference time but is the
                         # validated default per issue #175 conclusion 2.
