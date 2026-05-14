@@ -1,0 +1,96 @@
+"""Iter-2a hparam sweep on eqtl fold 0 (1 epoch each).
+
+Eqtl has 4x more pairs than complex_traits (2306 vs 564), so the gradient
+signal should be cleaner. Sweep the same 5 configs from sweep#2 to see if
+the larger dataset gives a decisive LoRA lift.
+
+Frozen baselines (eqtl): embed_last_l2 global=0.5306, abs_llr global=0.5230.
+"""
+
+from __future__ import annotations
+
+import json
+import time
+from pathlib import Path
+
+import pandas as pd
+
+from bolinas.supervised.lora_pipeline import fit_predict_one_fold
+
+
+GENOME_PATH = (
+    "/home/ubuntu/sky_workdir/snakemake/analysis/supervised_vep/.snakemake/storage/"
+    "s3/oa-bolinas/snakemake/analysis/supervised_vep/results/genome.fa.gz"
+)
+HF_DATASET = "bolinas-dna/evals_eqtl"
+SPLIT = "train"
+BACKBONE = "bolinas-dna/exp166-p1B-step-16398"
+WINDOW = 255
+FOLD = 0
+
+COMMON = dict(
+    lora_rank=4, lr=1e-4, batch_size=2, grad_accum_steps=1, epochs=1,
+    margin=50.0, normalize=False,
+)
+
+CONFIGS = [
+    ("bs8",         {**COMMON, "batch_size": 8}),
+    ("bs2_accum8",  {**COMMON, "grad_accum_steps": 8}),
+    ("bs8_lr3e4",   {**COMMON, "batch_size": 8, "lr": 3e-4}),
+    ("rank16",      {**COMMON, "lora_rank": 16}),
+    ("qkvo",        {**COMMON, "lora_target_modules": ("q_proj", "k_proj", "v_proj", "o_proj")}),
+]
+
+
+def main():
+    out_dir = Path("/home/ubuntu/iter2_sweep_eqtl_out")
+    out_dir.mkdir(exist_ok=True, parents=True)
+    rows = []
+    for label, hp in CONFIGS:
+        print(f"\n========== eqtl sweep config: {label} ==========")
+        print(f"  hparams: {hp}")
+        t0 = time.time()
+        try:
+            preds, stats = fit_predict_one_fold(
+                hf_dataset_path=HF_DATASET,
+                split=SPLIT,
+                backbone_id=BACKBONE,
+                window_size=WINDOW,
+                genome_path=GENOME_PATH,
+                fold=FOLD,
+                **hp,
+            )
+        except Exception as e:
+            print(f"  ERROR: {type(e).__name__}: {e}")
+            rows.append(dict(label=label, hp=str(hp), status="error", error=str(e)))
+            continue
+        elapsed = time.time() - t0
+        rows.append(dict(
+            label=label,
+            hp=str(hp),
+            status="ok",
+            epoch0_train_pa=stats["train_pa"][0],
+            epoch0_val_pa=stats["val_pa"][0],
+            epoch1_train_pa=stats["train_pa"][-1],
+            epoch1_val_pa=stats["val_pa"][-1],
+            train_loss=stats["train_loss"][-1],
+            elapsed_s=elapsed,
+        ))
+        preds.to_parquet(out_dir / f"{label}_predictions.parquet", index=False)
+        with open(out_dir / f"{label}_stats.json", "w") as f:
+            json.dump(stats, f, indent=2, default=str)
+        print(
+            f"  elapsed={elapsed:.1f}s  "
+            f"epoch0 val_PA={stats['val_pa'][0]:.4f}  "
+            f"epoch1 val_PA={stats['val_pa'][-1]:.4f}  "
+            f"epoch1 train_PA={stats['train_pa'][-1]:.4f}"
+        )
+
+    df = pd.DataFrame(rows)
+    df.to_parquet(out_dir / "iter2_sweep_eqtl_summary.parquet", index=False)
+    print("\n========== EQTL SWEEP SUMMARY ==========")
+    print(df.to_string(index=False))
+
+
+if __name__ == "__main__":
+    main()
