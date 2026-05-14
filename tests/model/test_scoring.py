@@ -431,13 +431,14 @@ def test_run_llr_clm_rc_avg_equals_mean_of_two_passes(tmp_path):
     assert not np.allclose(fwd, rc, atol=1e-6)
 
 
-def test_run_reflogprob_clm_rc_avg_equals_mean_of_two_passes():
-    """rc_avg via two ``run_inference`` calls equals the element-wise mean
-    of FWD and RC predictions. ``bolinas.model.runner`` doesn't export a
-    dedicated ``run_reflogprob_clm`` (it was dropped to keep the core
-    minimal), so this test exercises the underlying ``run_inference`` +
-    ``compute_reflogprob_clm`` + ``transform_reflogprob_clm`` wiring
-    directly."""
+def test_run_reflogprob_clm_fwd_and_rc_differ():
+    """FWD and RC ``transform_reflogprob_clm`` passes through
+    ``run_inference`` produce distinct outputs. ``bolinas.model.runner``
+    doesn't export a ``run_reflogprob_clm`` wrapper, so this verifies the
+    underlying ``run_inference`` + ``compute_reflogprob_clm`` +
+    ``transform_reflogprob_clm`` wiring at least responds to strand —
+    rc-averaging itself is covered by ``run_llr_clm`` and
+    ``run_llr_and_embedding_distance`` tests above."""
     torch.manual_seed(0)
     tokenizer = AutoTokenizer.from_pretrained("songlab/tokenizer-dna-mlm")
     model = AutoModelForCausalLM.from_pretrained(TINY_CLM)
@@ -463,11 +464,6 @@ def test_run_reflogprob_clm_rc_avg_equals_mean_of_two_passes():
         data_transform_fn=partial(transform_reflogprob_clm, strand="-"),
         data_transform_on_the_fly=True,
         inference_kwargs=_INFERENCE_KWARGS,
-    )
-    avg = (np.asarray(fwd) + np.asarray(rc)) / 2
-
-    np.testing.assert_allclose(
-        avg, (np.asarray(fwd) + np.asarray(rc)) / 2, rtol=1e-5, atol=1e-6
     )
     assert not np.allclose(fwd, rc, atol=1e-6)
 

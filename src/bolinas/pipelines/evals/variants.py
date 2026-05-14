@@ -6,20 +6,16 @@ Ported from TraitGym (commit e59d612e9; src/traitgym/variants.py).
 import polars as pl
 from liftover import get_lifter
 
+from bolinas.data.dna import COMPLEMENT, NUCLEOTIDES, reverse_complement  # noqa: F401  re-exported
+
 COORDINATES = ["chrom", "pos", "ref", "alt"]
-NUCLEOTIDES = list("ACGT")
 CHROMS = sorted([str(i) for i in range(1, 23)] + ["X", "Y"])
-COMPLEMENT = {"A": "T", "T": "A", "C": "G", "G": "C"}
 NON_EXONIC = [
     "intergenic_variant",
     "intron_variant",
     "upstream_gene_variant",
     "downstream_gene_variant",
 ]
-
-
-def reverse_complement(seq: str) -> str:
-    return "".join(COMPLEMENT[base] for base in reversed(seq))
 
 
 def filter_snp(V: pl.DataFrame) -> pl.DataFrame:

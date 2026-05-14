@@ -13,9 +13,9 @@ from Bio.Seq import Seq
 from transformers import AutoTokenizer
 
 from bolinas.data.genome import Genome
+from bolinas.data.dna import complement_base
 from bolinas.data.transforms import (
     NUCLEOTIDES,
-    _complement_base,
     _get_special_token_counts,
     transform_ll_clm,
     transform_llr_clm,
@@ -301,14 +301,14 @@ def test_transform_reflogprob_clm_handles_bos_eos(bos_id, eos_id):
 
 
 def test_complement_base():
-    assert _complement_base("A") == "T"
-    assert _complement_base("C") == "G"
-    assert _complement_base("G") == "C"
-    assert _complement_base("T") == "A"
+    assert complement_base("A") == "T"
+    assert complement_base("C") == "G"
+    assert complement_base("G") == "C"
+    assert complement_base("T") == "A"
     # Non-ACGT round-trips unchanged
-    assert _complement_base("N") == "N"
-    assert _complement_base("M") == "M"
-    assert _complement_base("R") == "R"
+    assert complement_base("N") == "N"
+    assert complement_base("M") == "M"
+    assert complement_base("R") == "R"
 
 
 @pytest.mark.parametrize(
@@ -428,7 +428,7 @@ def test_transform_reflogprob_clm_strand_rc_matrix(bos_id, eos_id, seq):
     for i, nuc in enumerate(NUCLEOTIDES):
         assert rc["input_ids"][i, rc_token_idx].item() == base.encode(nuc)[0]
     # ref is the index of the complement of the original ref base
-    assert NUCLEOTIDES[rc["ref"]] == _complement_base(seq[pos])
+    assert NUCLEOTIDES[rc["ref"]] == complement_base(seq[pos])
 
 
 def test_transform_reflogprob_clm_basic_functionality():

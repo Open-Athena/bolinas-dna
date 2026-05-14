@@ -18,29 +18,15 @@ import functools
 from typing import Any, Literal
 
 import torch
-from Bio.Seq import Seq
 
-
-NUCLEOTIDES = list("ACGT")
-
-_DNA_COMPLEMENT = {"A": "T", "C": "G", "G": "C", "T": "A"}
-
-
-def _complement_base(base: str) -> str:
-    """Complement A/C/G/T; pass any other character through unchanged.
-
-    Non-ACGT inputs (N, IUPAC codes, etc.) round-trip via the unchanged
-    branch — downstream DNA tokenizers collapse them to a single unknown
-    token regardless, so the exact value returned here is moot.
-    """
-    return _DNA_COMPLEMENT.get(base, base)
+from bolinas.data.dna import NUCLEOTIDES, complement_base, reverse_complement
 
 
 def _maybe_rc(seq: str, pos: int, strand: Literal["+", "-"]) -> tuple[str, int]:
     """If ``strand == "-"``, reverse-complement ``seq`` and map ``pos`` to
     its position in the RC string. Otherwise return inputs unchanged."""
     if strand == "-":
-        seq = str(Seq(seq).reverse_complement())
+        seq = reverse_complement(seq)
         pos = len(seq) - 1 - pos
     return seq, pos
 
@@ -87,7 +73,7 @@ def _get_variant_window(
     assert len(seq) == window_size
     if strand == "-":
         pos = window_size - 1 - pos
-        assert seq[pos] == _complement_base(example["ref"])
+        assert seq[pos] == complement_base(example["ref"])
     else:
         assert seq[pos] == example["ref"]
     return seq, pos
@@ -142,7 +128,7 @@ def transform_llr_clm(
     DNA index inside the window.
     """
     seq, pos = _get_variant_window(example, genome, window_size, strand=strand)
-    alt = example["alt"] if strand == "+" else _complement_base(example["alt"])
+    alt = example["alt"] if strand == "+" else complement_base(example["alt"])
     ref_seq = seq
     alt_seq = seq[:pos] + alt + seq[pos + 1 :]
     input_ids = torch.stack(

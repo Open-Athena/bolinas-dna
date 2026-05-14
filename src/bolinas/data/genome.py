@@ -12,8 +12,9 @@ from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlparse
 
-from Bio.Seq import Seq
 from pyfaidx import Fasta
+
+from bolinas.data.dna import reverse_complement
 
 
 class Genome:
@@ -119,7 +120,7 @@ class Genome:
             seq = seq + "N" * (end - chrom_size)  # right padding
 
         if strand == "-":
-            seq = str(Seq(seq).reverse_complement())
+            seq = reverse_complement(seq)
         return seq
 
     def __getstate__(self) -> dict[str, Any]:

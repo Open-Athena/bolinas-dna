@@ -198,12 +198,16 @@ def _run_inference(
         The model's predictions on the dataset. The exact format depends on the
         model and dataset, but typically includes probabilities or embeddings.
     """
-    training_args = TrainingArguments(
-        output_dir=tempfile.TemporaryDirectory().name,
-        **(kwargs or {}),
-    )
-    trainer = Trainer(model=model, args=training_args)
-    return trainer.predict(test_dataset=dataset).predictions
+    # HF Trainer requires an output_dir even for .predict() (it never
+    # writes to it on the predict path). Use a tempdir scoped to this
+    # call so it's cleaned up deterministically.
+    with tempfile.TemporaryDirectory() as output_dir:
+        training_args = TrainingArguments(
+            output_dir=output_dir,
+            **(kwargs or {}),
+        )
+        trainer = Trainer(model=model, args=training_args)
+        return trainer.predict(test_dataset=dataset).predictions
 
 
 class _ModelComputeFnWrapper(nn.Module):

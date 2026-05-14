@@ -48,21 +48,16 @@ def compute_variant_scores(
     checkpoint_path = Path(checkpoint_path)
     genome_path = Path(genome_path)
 
-    # Load genome reference
     genome = Genome(genome_path)
-
-    # Load tokenizer and model. AutoTokenizer and AutoModelForCausalLM
-    # satisfy the duck-typed interface that bolinas.model.runner expects.
+    # AutoTokenizer / AutoModelForCausalLM satisfy the duck-typed interface
+    # bolinas.model.runner expects — no adapter wrappers needed.
     tokenizer = AutoTokenizer.from_pretrained(checkpoint_path)
     model = AutoModelForCausalLM.from_pretrained(
         checkpoint_path,
         trust_remote_code=True,
     )
-
-    # Convert pandas DataFrame to HuggingFace Dataset
     hf_dataset = Dataset.from_pandas(dataset, preserve_index=False)
 
-    # Run LLR and embedding distance inference
     results = run_llr_and_embedding_distance(
         model,
         tokenizer,
@@ -79,12 +74,10 @@ def compute_variant_scores(
         },
     )
 
-    # Extract individual arrays from results
     llr = results[:, 0]
     embed_last_l2 = results[:, 1]
     embed_middle_l2 = results[:, 2]
 
-    # Return only scores (assumes rows align with input dataset)
     scores = pd.DataFrame(
         {
             "llr": llr,
