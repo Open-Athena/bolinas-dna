@@ -171,7 +171,7 @@ rather than per-repo).
 
 **Intervals:**
 - `v1` — identity (every row of `all_species_with_sequence.parquet`)
-- `v2` — window overlaps `[TSS − 256, TSS + 256]` for any Ensembl protein_coding transcript (~5–15% of v1)
+- `v2` — window overlaps `[TSS − 256, TSS + 256]` for any Ensembl protein_coding transcript
 - `v3_<label>` — per-anchor region-type partition of v1 (`cds` / `utr3` / `ncrna_exon` / `tss_region_and_utr5` / `ccre_non_promoter` / `bg`). Each anchor is assigned exactly one label by the priority-walk in `region_labels.smk`; the six v3 subsets sum to v1 at the anchor level. See the "Region-type annotation" section below for label definitions and the partition stats.
 
 **HF dataset schema** (single `train` split per repo; JSONL.zst-sharded at `data/train/shard_NNNN.jsonl.zst`):
@@ -305,7 +305,7 @@ All region extractors read **Ensembl** biotype vocabulary (`protein_coding`, `ln
 ### Pipeline
 
 ```
-filtered/min{min_p}.bed.gz  (22.9M anchors after PR #152)
+filtered/min{min_p}.bed.gz  (anchors from rule all)
 GTF (Ensembl r115)
 cCRE V4 parquet (from validation.smk)        →  build_region_labels
 defined.bed (genome − N regions)                       ↓

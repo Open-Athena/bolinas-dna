@@ -44,18 +44,7 @@ NCBI annotations use two key attributes to classify transcripts:
 | `gbkey` | High-level category | mRNA, ncRNA, misc_RNA, tRNA, rRNA, precursor_RNA |
 | `transcript_biotype` | Specific transcript type | lnc_RNA, miRNA, snoRNA, transcript, primary_transcript |
 
-The relationship between these attributes (human):
-
-| gbkey | transcript_biotype | Count | Functional? |
-|-------|-------------------|-------|-------------|
-| mRNA | mRNA | 145k | Yes (protein-coding) |
-| ncRNA | lnc_RNA | 33k | Yes |
-| ncRNA | miRNA | 3.2k | Yes |
-| ncRNA | snoRNA | 1.3k | Yes |
-| **misc_RNA** | **transcript** | **15k** | **No (uncertain)** |
-| **precursor_RNA** | **primary_transcript** | **2.1k** | **No (precursors)** |
-| tRNA | tRNA | 691 | Yes |
-| - | V/J/D/C_gene_segment | 896 | No (immunoglobulin) |
+Per-attribute cross-species counts and the functional/non-functional designations are tracked in [issue #36](https://github.com/Open-Athena/bolinas-dna/issues/36).
 
 #### Included Biotypes
 
@@ -78,17 +67,7 @@ The relationship between these attributes (human):
 
 #### Cross-Species Consistency
 
-The biotype/gbkey system is consistent across species:
-
-| Species | lnc_RNA | miRNA | snoRNA | tRNA | misc_RNA (excluded) |
-|---------|---------|-------|--------|------|---------------------|
-| Human | 33k | 3.2k | 1.3k | 691 | 15k |
-| Mouse | 24k | 2.1k | 1.3k | 422 | 12k |
-| Drosophila | 2.4k | 485 | 270 | 317 | 0 |
-| C. elegans | 202 | 458 | 346 | 634 | 658 |
-| Chicken | 10k | 1.2k | 186 | 303 | 4.2k |
-
-Note: C. elegans has 15k piRNA transcripts (included) and uses `ncRNA` biotype (7.8k) for unclassified ncRNAs.
+The biotype/gbkey system is broadly consistent across species. Edge cases (e.g. C. elegans has a large piRNA set and uses the generic `ncRNA` biotype for unclassified non-coding RNAs) are tracked in [issue #36](https://github.com/Open-Athena/bolinas-dna/issues/36).
 
 ### Promoter Options
 
@@ -136,69 +115,11 @@ diff1 = mrna_minus_cds - utr_union  # Should be ~0
 diff2 = utr_union - mrna_minus_cds  # Should be 0
 ```
 
-**Edge cases**: A small number of intervals (17 in human, ~13kb total) satisfy `mRNA - CDS ⊃ 5' UTR | 3' UTR` but not strict equality. These are regions in mRNA exons that are neither CDS nor UTR:
+**Edge cases**: A small number of intervals satisfy `mRNA - CDS ⊃ 5' UTR | 3' UTR` but not strict equality — typically 1bp gaps within CDS (small introns or frameshift annotations) or unusual annotations on unplaced scaffolds. Some genomes lack UTR or ncRNA annotations entirely (common in non-model organisms with coding-focused annotations); the pipeline handles these via empty `GenomicSet`s, which work correctly in all downstream operations. Per-genome details and analysis tables are tracked in [issue #36](https://github.com/Open-Athena/bolinas-dna/issues/36).
 
-| chrom | start | end | notes |
-|-------|-------|-----|-------|
-| NC_000015.10 | 64691514 | 64691515 | 1bp gap within CDS |
-| NC_000019.10 | 2271442 | 2271443 | 1bp gap within CDS |
-| NT_167249.2 | 941944 | 942223 | unplaced scaffold |
-| NT_187518.1 | 162112 | 162469 | unplaced scaffold |
-| NT_187610.1 | 130379 | 130698 | unplaced scaffold |
-| NT_187633.1 | 301994 | 302395 | unplaced scaffold |
-| NT_187646.1 | 158490 | 158847 | unplaced scaffold |
-| NW_003315955.1 | 78827 | 79107 | unplaced scaffold |
-| NW_009646197.1 | 443494 | 451168 | unplaced scaffold |
-| NW_009646203.1 | 106479 | 106757 | unplaced scaffold |
-| NW_009646203.1 | 107409 | 107495 | unplaced scaffold |
-| NW_018654714.1 | 1278 | 1611 | unplaced scaffold |
-| NW_019805490.1 | 22254 | 22576 | unplaced scaffold |
-| NW_019805490.1 | 22919 | 23010 | unplaced scaffold |
-| NW_019805496.1 | 0 | 22 | unplaced scaffold |
-| NW_025791794.1 | 0 | 1856 | unplaced scaffold |
-| NW_025791802.1 | 234037 | 234878 | unplaced scaffold |
+### Annotation Sources
 
-These are typically 1bp gaps within CDS (small introns or frameshift annotations) or unusual annotations on unplaced scaffolds.
-
-**Missing UTR annotations**: Some genomes lack UTR annotations entirely, where CDS regions span the full extent of mRNA exons. Analysis of 499 genomes shows:
-
-| Region | Genomes with data | Empty genomes | Empty % |
-|--------|------------------|---------------|---------|
-| 5' UTR | 495 | 4 | 0.8% |
-| 3' UTR | 497 | 2 | 0.4% |
-
-Genomes without 5' UTR:
-- GCF_031761385.1 (Necator americanus - hookworm)
-- GCF_000524195.1
-- GCF_001040885.1
-- GCF_000002995.4
-
-Genomes without 3' UTR:
-- GCF_031761385.1 (Necator americanus)
-- GCF_000524195.1
-
-This is typical of lower-quality or coding-focused annotations, particularly in non-model organisms. The pipeline handles these cases by creating empty GenomicSets, which work correctly in all downstream operations.
-
-**Missing ncRNA annotations**: Similarly, some genomes lack ncRNA exon annotations. Analysis of 499 genomes shows:
-
-| Region | Genomes with data | Empty genomes | Empty % |
-|--------|------------------|---------------|---------|
-| ncRNA exons | 492 | 7 | 1.4% |
-
-Genomes without ncRNA exons:
-- GCF_031761385.1 (Necator americanus - also missing UTRs)
-- GCF_000524195.1 (also missing 5' UTR)
-- GCF_001040885.1 (also missing 5' UTR)
-- GCF_000150275.1
-- GCF_000327385.1
-- GCF_000715545.1
-- GCF_000326865.2
-
-These genomes have parquet files with the minimum file size (1814 bytes) containing 0 intervals. The pipeline handles empty ncRNA sets the same way as empty UTR sets.
-
-### Annotation Sources and Data Quality
-
-NCBI genome annotations come from different sources with varying quality levels:
+NCBI genome annotations come from multiple sources with varying quality:
 
 | Source | Description | Transcript Prefix |
 |--------|-------------|-------------------|
@@ -209,76 +130,14 @@ NCBI genome annotations come from different sources with varying quality levels:
 | **tRNAscan-SE** | tRNA predictions | - |
 | **Curated Genomic** | Manual curation | - |
 
-**Cross-species distribution** (based on 34 genomes in `genome_subset_analysis`):
+NCBI also provides MANE Select / RefSeq Select tags for "preferred" or "canonical" transcripts, but availability is limited to human and mouse.
 
-| Source | Mean | Median |
-|--------|------|--------|
-| Gnomon | 81% | 97% |
-| RefSeq | 11% | 0% |
-| BestRefSeq | 3% | 0% |
-| cmsearch | 2% | 1% |
-| tRNAscan-SE | 2% | 1% |
-
-**Key findings:**
-- **Gnomon dominates** most genomes (median 97% of transcripts)
-- **BestRefSeq** is only significant in well-studied model organisms:
-  - Human: 53.5%
-  - Mouse: 43.9%
-  - Zebrafish: 13.5%
-  - Chicken: 12.3%
-
-**Implications for training data quality:**
-- Filtering to BestRefSeq-only would work for model organisms but eliminate most data for other species
-- Gnomon predictions tend to have more extreme outliers (very long UTRs from alternative transcripts)
-- Interval length outliers by region (human):
-
-| Region | p99 | Max | >50kb |
-|--------|-----|-----|-------|
-| CDS | 1.3kb | 21kb | 0 |
-| Promoters | 1.2kb | 3.5kb | 0 |
-| 3' UTR | 9kb | 56kb | 1 |
-| 5' UTR | 5kb | 88kb | 3 |
-| ncRNA | 7kb | 92kb | 8 |
-
-CDS regions have no extreme outliers (biological constraint on exon size), while UTRs and ncRNA exons can be very large. Consider applying length filters to UTR/ncRNA regions if outliers are problematic.
+**Current approach:** all transcripts are used regardless of source or selection tags. Filtering to curated transcripts would eliminate most data for non-model organisms. Cross-species distribution stats, per-region outlier-length analyses, and per-species curated-transcript availability are tracked in [issue #36](https://github.com/Open-Athena/bolinas-dna/issues/36).
 
 To compute annotation source statistics:
 ```bash
 uv run snakemake all_annotation_source_stats --cores 4
 ```
-
-### Preferred Transcript Selection
-
-NCBI provides tags to identify "preferred" or "canonical" transcripts, but availability varies by species:
-
-| Tag | Description | Availability |
-|-----|-------------|--------------|
-| **MANE Select** | Matched Annotation from NCBI and EMBL-EBI, one per protein-coding gene | Human only |
-| **RefSeq Select** | NCBI's one-per-gene selection | Mouse only |
-
-**Curated transcript availability by species:**
-
-| Species | MANE Select | RefSeq Select | NM_/NR_ (curated) | Gnomon |
-|---------|-------------|---------------|-------------------|--------|
-| Human | 9.5% | 0% | 52% | 45% |
-| Mouse | 0% | 15% | 42% | 54% |
-| Drosophila | 0% | 0% | 98% | 0% |
-| C. elegans | 0% | 0% | 94% | 0% |
-| Chicken | 0% | 0% | 11% | 87% |
-| Zebrafish | 0% | 0% | - | - |
-| **Other genomes** | 0% | 0% | **0%** | **91-99%** |
-
-**Key findings:**
-- **Model organisms** (human, mouse) have MANE/RefSeq Select tags for preferred transcripts
-- **Well-annotated invertebrates** (Drosophila, C. elegans) have high curated NM_/NR_ coverage but no selection tags
-- **Most other genomes** have **no curated transcripts** - nearly all annotations are Gnomon predictions
-
-**Implications:**
-- For cross-species work, there is no universal way to select "preferred" transcripts
-- Filtering to curated transcripts would eliminate most data for non-model organisms
-- Potential heuristics (not currently implemented): longest CDS per gene, most exons per gene
-
-**Current approach:** All transcripts are used regardless of source or selection tags.
 
 ## Setup
 
@@ -446,7 +305,7 @@ Naming convention: underscored, semantic `{source_name}_{mapper}_{preset}` (no d
 
 **Resources:** mmseqs2 nucleotide search against a whole mammalian target genome needs ~50-80 GB resident at the full index, so real runs use a big-memory cloud instance (r6i.8xlarge, 256 GB). `split_memory_limit` lets a smaller box fit at the cost of wall time; the defaults shown above target the 15 GB dev box.
 
-**Status:** v1 (issue [#123](https://github.com/Open-Athena/bolinas-dna/issues/123)): mmseqs2 only, flank 0, `-s 7.5 --max-accept 1`. On hg38→mm39 this projects 375,932 `ELS_conserved_20` enhancers to **229,288 mouse intervals (61.0% recall)**, vs. minimap2 `-cx map-ont`'s 20.7% (prior PR #125 baseline) — consistent with the ~3× recall advantage reported in [#120](https://github.com/Open-Athena/bolinas-dna/issues/120) at comparable precision. Run time: ~2 min wall (createdb 7 s, search 110 s, convertalis 0.3 s) on r6i.8xlarge (32 vCPU, 256 GB RAM), ~26 GB peak RSS. Sensitivity sweep, flank sweep, soft-mask filtering, and alternative aligners (e.g. lastz for the high-recall end of the frontier) are left for future iterations.
+**Status:** v1 (issue [#123](https://github.com/Open-Athena/bolinas-dna/issues/123)): mmseqs2 only, flank 0, `-s 7.5 --max-accept 1`. Run time: ~2 min wall (createdb 7 s, search 110 s, convertalis 0.3 s) on r6i.8xlarge (32 vCPU, 256 GB RAM), ~26 GB peak RSS. Recall/precision benchmarks against alternative aligners are tracked in [#120](https://github.com/Open-Athena/bolinas-dna/issues/120) and [#123](https://github.com/Open-Athena/bolinas-dna/issues/123). Sensitivity sweep, flank sweep, soft-mask filtering, and alternative aligners (e.g. lastz for the high-recall end of the frontier) are left for future iterations.
 
 ### Source-curation sweep around v30 (recipes v31/v32/v33)
 

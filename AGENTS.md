@@ -23,7 +23,7 @@ This is research code. Prioritize **reproducibility** and **correctness** over a
 
 ## Code Structure
 
-The codebase has two main components:
+The codebase has three main components:
 
 1. **Python Library** (`src/bolinas/`) - Python logic for all pipelines lives here, including pipeline-specific modules. See **Research Code Values** above for why, and for how Snakemake rules should relate to it.
 
@@ -34,13 +34,18 @@ The codebase has two main components:
    - Invoke as `uv run snakemake …` from the repo root, not bare `snakemake`.
    - Put pipeline-wide defaults (`cores`, `use-conda`, `default-storage-provider`, etc.) in the pipeline's `workflow/profiles/default/config.yaml`, not on the CLI. Snakemake auto-loads that profile, so every invocation picks them up.
 
+3. **Experiments** (`experiments/`) - Marin-launched training/eval scripts. See `experiments/README.md` for setup.
+   - **wandb run names.** Training scripts run from `experiments/` should set wandb run names that include `dna-exp<N>` where `<N>` is the experiment number from the issue/directory. Lets runs be filtered by experiment.
+
 ## Development Practices
 
 - **Package management**: Use `uv` for Python dependencies
 - **Bioinformatics tools**: Use Conda for external CLI tools (bedtools, twoBitToFa, etc.)
 - **Testing**: Run `uv run pytest` before committing
 - **Code quality**: Pre-commit hooks enforce ruff formatting and linting
-- **Documentation**: Before merging a PR, make sure all the relevant READMEs are updated.
+- **Documentation**: Before merging a PR, make sure all the relevant READMEs are updated. READMEs describe how to run or use a thing, not what was found — experimental results (tables, leaderboards, key findings, per-genome stats, etc.) belong in the GitHub issue tracking that work, not in any README. Results drift; READMEs shouldn't.
+- **Where to run.** For quick work (small data, smoke tests, dev iteration), run locally on the current node — but first check system load (`uptime` / `cat /proc/loadavg`); multiple agent sessions share this small instance. Be careful about parallelizing local subprocesses: it has crashed the instance more than once (requiring reboot). Cap parallel jobs conservatively (rule of thumb: `nproc/2` or less). For heavy work (training, large-scale evals, anything GPU-bound), launch on SkyPilot. Always confirm with the user before launching SkyPilot resources — they're not free.
+- **Babysit new jobs early.** First time running a script / config / cluster combination? Check actively within the first few minutes rather than passively waiting. Look for: progress rate sane (a common silent failure is CPU fallback when GPU was expected), device count matches what you asked for, no immediate OOM / mount errors / auth failures. Notifiers fire on completion or timeout — they don't tell you the run spent 4 hours on CPU.
 
 ### Type Annotations
 - Type-annotate all function parameters and return values in `src/bolinas/`.
@@ -56,3 +61,11 @@ The codebase has two main components:
 - When an agent creates a PR or issue, add the `agent-generated` label.
 - Agent comments on PRs/issues must begin with `🤖`.
 - For iterative investigations the user wants tracked in their own issue, use the `agent-research` skill — issue body is the living doc, comments are the append-only log with commit-pinned permalinks to code.
+- **Branch names.** The worktree harness auto-prefixes branches with `claude/` and a random slug (e.g. `claude/happy-bose-180d63`). Before opening a PR, rename the branch with `git branch -m` so the branch list is scannable:
+  - With an existing issue: `claude/issue-<issue-number>-<short-kebab-summary>` (e.g. `claude/issue-187-readme-revamp`).
+  - Otherwise: `claude/<short-kebab-summary>`.
+- **Sub-issues.** Use GitHub's native sub-issue metadata for parent/child relationships — `gh api -X POST repos/{owner}/{repo}/issues/{parent}/sub_issues -f sub_issue_id={child_id}` — not free-text references in the issue body. The metadata renders in the UI and is queryable; body references drift.
+- **Don't put `fixes #N` in PR titles.** Issue-closing keywords (`fixes #131`, `closes #131`, `resolves #131`) belong in the PR *body* — that's where GitHub's auto-close picks them up just the same. Titles should describe the change itself, not the metadata.
+- **HuggingFace uploads.** When uploading anything to HuggingFace under `bolinas-dna/*` (datasets *or* models), include a README that contains: (a) a commit-pinned permalink to the snakemake pipeline (for datasets) or training script (for models) that produced it, (b) a 1–2 sentence description of contents/provenance, (c) the minimal tag set `biology, genomics, dna`. Draft the README content for user review *before* pushing to HF.
+- **Collapse large content.** When posting issues, comments, or PRs that include logs (>40 lines), large tables, or code dumps, wrap the content in `<details><summary>…</summary>…</details>`. Easier for humans to scan; agents still read the full body.
+- **Verify rendering.** After posting any issue, comment, or PR with non-trivial markdown (tables, lists, code blocks, multi-paragraph bodies), re-fetch the body (`gh issue view`, `gh pr view`, or `gh api`) and check for broken line breaks, dropped indentation, missing blank lines around lists/code blocks, or other rendering glitches. HEREDOC-passed bodies through `gh` can introduce stray whitespace; if so, fix with `gh issue edit` / `gh pr edit`.

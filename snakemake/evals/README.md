@@ -55,19 +55,13 @@ design that this replaces, three things changed:
   20bin for {distal, tss_proximal, ncRNA}, 10bin for {3'UTR, 5'UTR, missense},
   5bin for {synonymous, splicing, …small subsets}. For `eqtl/distal`
   specifically, fixed global edges leave an asymptotic Bonferroni-significant
-  residual leak (PA ≈ 0.532 across every global granularity); replacing it
-  with per-categorical-group **local equal-width log10(MAF) bins** (8 buckets,
-  joint pos+neg ref over the categorical match key) closes the leak. That
-  scheme is `MAF_TIERED_LOG8_DISTAL_ONLY` (= tiered_v1 with `LOG_LOCAL` for
-  distal). Apply via `add_tiered_maf_bin(df, scheme, ...)`.
+  residual leak; replacing it with per-categorical-group **local equal-width
+  log10(MAF) bins** (8 buckets, joint pos+neg ref over the categorical match
+  key) closes the leak. That scheme is `MAF_TIERED_LOG8_DISTAL_ONLY`
+  (= tiered_v1 with `LOG_LOCAL` for distal). Apply via
+  `add_tiered_maf_bin(df, scheme, ...)`.
 
-Net result (positives / matched / leaks):
-
-| dataset | n_pos | matched | retention | matched-feature ★ leaks |
-|---|---:|---:|---:|---|
-| mendelian_traits | 17,167 | 8,576 | 50.0% | 0 |
-| complex_traits | 2,165 | 1,134 | 52.4% | 0 |
-| eqtl | 17,799 | 6,549 | 36.8% | 0 |
+Per-dataset matching retention statistics are tracked in [issue #156](https://github.com/Open-Athena/bolinas-dna/issues/156).
 
 Per-dataset specifics:
 
