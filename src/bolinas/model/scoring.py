@@ -273,9 +273,7 @@ def compute_variant_score_bundle(
     log_prob = rearrange(log_prob, "(B V) -> B V", B=B)
     llr = log_prob[:, 1] - log_prob[:, 0]  # alt - ref
 
-    next_token_jsd_mean = _compute_next_token_jsd_mean(
-        logits, input_ids, nuc_token_ids
-    )
+    next_token_jsd_mean = _compute_next_token_jsd_mean(logits, input_ids, nuc_token_ids)
 
     return torch.stack([llr, next_token_jsd_mean], dim=1)
 

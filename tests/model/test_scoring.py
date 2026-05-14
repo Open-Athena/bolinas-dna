@@ -584,15 +584,25 @@ def test_run_inference_padding_roundtrip(tmp_path):
     window_size = 16
 
     no_pad = run_variant_score_bundle(
-        model, tokenizer, dataset, genome, window_size,
-        rc_avg=False, data_transform_on_the_fly=True,
+        model,
+        tokenizer,
+        dataset,
+        genome,
+        window_size,
+        rc_avg=False,
+        data_transform_on_the_fly=True,
         inference_kwargs=_INFERENCE_KWARGS,  # batch_size=2 → divides 4 evenly
     )
 
     padded_kwargs = {**_INFERENCE_KWARGS, "per_device_eval_batch_size": 3}
     with_pad = run_variant_score_bundle(
-        model, tokenizer, dataset, genome, window_size,
-        rc_avg=False, data_transform_on_the_fly=True,
+        model,
+        tokenizer,
+        dataset,
+        genome,
+        window_size,
+        rc_avg=False,
+        data_transform_on_the_fly=True,
         inference_kwargs=padded_kwargs,  # batch_size=3 → pads 4→6, slices 6→4
     )
 
@@ -726,9 +736,7 @@ def test_compute_variant_score_bundle_jsd_analytic():
     """
 
     class _Custom(nn.Module):
-        def forward(
-            self, input_ids, past_key_values=None, use_cache=False, **kwargs
-        ):
+        def forward(self, input_ids, past_key_values=None, use_cache=False, **kwargs):
             B, L = input_ids.shape
             V = 4
             logits = torch.zeros(B, L, V)
