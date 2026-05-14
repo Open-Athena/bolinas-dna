@@ -124,8 +124,14 @@ Baseline numbers were computed by running each cached zero-shot scalar through `
 - [x] **iter-1**: 82 (recipe × classifier) supervised combos through chrom-grouped 3-fold OOF. **Negative result**: high-D supervised underperforms zero-shot on 2/3 datasets. [`#180 comment 4445512959`](https://github.com/Open-Athena/bolinas-dna/issues/180#issuecomment-4445512959).
 - [x] **iter-1b**: single-feature OOF + low-dim rank-mean / LogReg of zero-shot scalars. **Positive result on mendelian**: `rank-mean(embed_last_l2, minus_llr) = 0.7682` beats both zero-shot and every iter-1 cell. [`#180 comment 4445555064`](https://github.com/Open-Athena/bolinas-dna/issues/180#issuecomment-4445555064).
 - [x] **iter-1c/d/e**: pair-aware deep-dive + wide C grids. **Iter-1 BFS was C-undertuned**; pair-aware on high-D mendelian × `sym_concat` jumps 0.524 → 0.7164 with proper C. New mendelian champion: `logreg(embed_last_l2, minus_llr)` wide C = **0.7750**. Pair-aware ties std logreg in the low-dim regime; high-D std-logreg-with-wide-C still untested. [`#180 comment 4445776202`](https://github.com/Open-Athena/bolinas-dna/issues/180#issuecomment-4445776202).
-- [ ] **iter-1f (optional, cheap)**: std logreg with wide C on high-D recipes (sym_concat, abs_delta, mean_delta). Tests whether pair-aware has residual advantage at high-D or whether wide-C tuning alone closes the iter-1 gap.
-- [ ] **iter-2**: LoRA fine-tuning of `exp166-p1B` with pair-aware ranking loss. The frozen-embedding ceiling on complex / eqtl (0.6541 / 0.5360 macro PA — already matched by zero-shot `embed_last_l2`) is the binding constraint; only a learned backbone can plausibly raise it.
+- [x] **iter-1f**: std logreg with wide C on high-D recipes confirms pair-aware ≈ std logreg at high-D (both lift from BFS ~0.6 → ~0.72 with proper C). [`#180 comment 4445956874`](https://github.com/Open-Athena/bolinas-dna/issues/180#issuecomment-4445956874).
+- [x] **iter-2a** (LoRA, no head, score = pairwise L2 distance over flat hidden state): complex_traits 3-fold OOF ties frozen baseline (0.5798 vs 0.5824 global) and eqtl single-fold sweep shows the same null pattern. [`#180 comment 4450851925`](https://github.com/Open-Athena/bolinas-dna/issues/180#issuecomment-4450851925) + wrap-up below.
+- [x] **iter-2b** (LoRA + MLP head on `|mean(alt) − mean(ref)|`): all 6 head configs overfit (train_PA up, val_PA flat or down) and tie or fall below frozen on outer-test. See wrap-up.
+- [x] **Iter-2 wrap-up**: no LoRA variant breaks the frozen `embed_last_l2` ceiling on complex_traits or eqtl. Mendelian intentionally skipped — zero-shot already strong there (champion `logreg(embed_last_l2, minus_llr)` = 0.7462 global / 0.7750 macro).
+
+# Status — closed direction
+
+Frozen-embedding ceiling on complex_traits / eqtl is the binding constraint. No supervised approach tested (linear, non-linear, frozen, LoRA-tuned) lifts global PA above `embed_last_l2` on those two datasets. On mendelian, a tiny low-dim composite of two zero-shot scalars (`embed_last_l2 + minus_llr`) is the strongest recipe found.
 
 # Tracking
 
