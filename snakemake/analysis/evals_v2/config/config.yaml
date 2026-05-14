@@ -2,8 +2,10 @@
 # loaded as f"{input_hf_prefix}_{dataset.name}".
 input_hf_prefix: bolinas-dna/evals
 
-# Genome reference for context extraction (GRCh38, Ensembl 113).
-genome_url: http://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz
+# Canonical bgzipped + indexed GRCh38 (Ensembl release 115; sequence is
+# byte-identical to 113/114 — only annotations differ). Read directly from
+# S3 by pyfaidx via fsspec/s3fs — no full download.
+genome_path: s3://oa-bolinas/data/genomes/homo_sapiens/GRCh38/ensembl-release-115/Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa.gz
 
 # Train-only convention — the test split is held out for the final-eval pass.
 # All development / iteration uses train.
@@ -17,13 +19,15 @@ datasets:
   - name: eqtl
     score_column: abs_llr     # GTEx fine-mapped eQTLs — magnitude regardless of direction
 
-# Model checkpoints. `gcs_path` is the full path to the specific checkpoint
-# directory (i.e. includes /hf/step-{N}). Pipeline copies its contents into
-# results/checkpoints/{name}/.
+# Model checkpoints. Each entry must have exactly one of:
+#   - `gcs_path`: full GCS URI to the checkpoint directory (includes /hf/step-{N});
+#                  pulled with `gcloud storage cp -r`.
+#   - `hf_repo`:  HuggingFace Hub repo ID; pulled with `huggingface_hub.snapshot_download`.
+# The result lands in results/checkpoints/{name}/.
 #
 # `window_size` is the number of DNA bases extracted per variant context.
 # 256 = old convention (no BOS, e.g. exp55/58/59).
-# 255 = new convention (BOS prepended, e.g. exp136).
+# 255 = new convention (BOS prepended, e.g. exp136 / exp166-p1B).
 models:
   - name: exp55-mammals
     gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-mammals-r01-52f413/hf/step-16999
@@ -45,8 +49,14 @@ models:
     gcs_path: gs://marin-us-central1/checkpoints/dna-bolinas-enhancer-curation-v0.1-proj_v30-6692f0/hf/step-9999
     window_size: 255   # 255 bp DNA + BOS = 256 total tokens
 
+  - name: exp166-p1B
+    hf_repo: bolinas-dna/exp166-p1B-step-16398   # 1B zoonomia-v1-v1 generalist
+    window_size: 255
+
 inference:
   batch_size: 64        # OOMs at 512 on A10G (24 GB) for 0.6B Qwen3 + 256 tokens
   num_workers: 4
   data_transform_on_the_fly: true
   torch_compile: false
+  rc_avg: true          # FWD + RC averaging; doubles inference time but is the
+                        # validated default per issue #175 conclusion 2.

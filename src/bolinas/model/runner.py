@@ -31,15 +31,19 @@ import numpy as np
 import torch.nn as nn
 from transformers import Trainer, TrainingArguments
 
+import torch
+
+from bolinas.data.dna import NUCLEOTIDES
 from bolinas.data.genome import Genome
 from bolinas.data.transforms import (
+    _get_nucleotide_token_ids,
     transform_ll_clm,
     transform_llr_clm,
 )
 from bolinas.model.scoring import (
     compute_ll_clm,
-    compute_llr_and_embedding_distance,
     compute_llr_clm,
+    compute_variant_score_bundle,
 )
 
 
@@ -83,7 +87,7 @@ def _run_strand_aware(
 
     ``strand`` is bound into ``transform_fn`` via ``partial``. Averaging is
     element-wise on numpy arrays, so it works for shape ``[N]`` (e.g.
-    ``run_llr_clm``) and ``[N, 3]`` (``run_llr_and_embedding_distance``).
+    ``run_llr_clm``) and ``[N, 4]`` (``run_variant_score_bundle``).
     """
 
     def _one(strand: Literal["+", "-"]) -> Any:
@@ -133,7 +137,7 @@ def run_llr_clm(
     )
 
 
-def run_llr_and_embedding_distance(
+def run_variant_score_bundle(
     model: nn.Module,
     tokenizer: Any,
     dataset: datasets.Dataset,
@@ -142,10 +146,20 @@ def run_llr_and_embedding_distance(
     rc_avg: bool = False,
     **kwargs: Any,
 ) -> Any:
-    """Run combined LLR and embedding distance inference.
+    """Run the variant-score bundle (LLR + embedding distances + next-token JSD).
 
-    Computes LLR, last-layer embedding distance, and middle-layer embedding distance
-    in a single forward pass.
+    Computes all four scores in a single forward pass:
+
+    - LLR (log-likelihood ratio)
+    - Last-layer embedding L2 distance
+    - Middle-layer embedding L2 distance
+    - ``next_token_jsd_mean`` — per-position 4-nucleotide softmax JSD between
+      REF and ALT next-token predictions, averaged over downstream positions
+      (called ``down_jsd_mean`` in Open-Athena/bolinas-dna#175).
+
+    Nucleotide token IDs are derived from the tokenizer via
+    ``_get_nucleotide_token_ids`` (which handles BOS/n_prefix offset) and
+    bound into the compute function as a tensor in ``NUCLEOTIDES`` order.
 
     Args:
         model: HF-shaped causal LM (see module docstring for interface).
@@ -155,20 +169,31 @@ def run_llr_and_embedding_distance(
         window_size: Window size for sequence context.
         rc_avg: If True, also score the reverse-complemented window for
             each variant and return the element-wise average of FWD and
-            RC predictions (shape ``[N, 3]``). Doubles inference cost.
+            RC predictions (shape ``[N, 4]``). Doubles inference cost.
+            Under RC, the AR mask runs in token order which is reversed
+            on the RC strand — so FWD captures the genomic-downstream
+            half of the variant's effect footprint and RC captures the
+            genomic-upstream half (see issue #175 conclusion 9). The
+            average is bidirectional nuc-dep despite the unidirectional
+            AR model.
         **kwargs: Additional arguments passed to run_inference.
 
     Returns:
-        Numpy array with shape [B, 3] where columns are:
-            - [:, 0]: LLR (log-likelihood ratio)
+        Numpy array with shape [B, 4] where columns are:
+            - [:, 0]: LLR
             - [:, 1]: Last-layer embedding distance
             - [:, 2]: Middle-layer embedding distance
+            - [:, 3]: next_token_jsd_mean
     """
+    nuc_ids_dict = _get_nucleotide_token_ids(tokenizer)
+    nuc_token_ids = torch.tensor(
+        [nuc_ids_dict[nuc] for nuc in NUCLEOTIDES], dtype=torch.long
+    )
     return _run_strand_aware(
         model,
         tokenizer,
         dataset,
-        compute_fn=compute_llr_and_embedding_distance,
+        compute_fn=partial(compute_variant_score_bundle, nuc_token_ids=nuc_token_ids),
         transform_fn=transform_llr_clm,
         transform_kwargs=dict(genome=genome, window_size=window_size),
         rc_avg=rc_avg,

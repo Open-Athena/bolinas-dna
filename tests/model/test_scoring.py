@@ -25,23 +25,25 @@ import torch.nn as nn
 from torch import Tensor
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from bolinas.data.dna import NUCLEOTIDES
 from bolinas.data.genome import Genome
 from bolinas.data.transforms import (
+    _get_nucleotide_token_ids,
     transform_llr_clm,
     transform_reflogprob_clm,
 )
 from bolinas.model.runner import (
     run_inference,
     run_ll_clm,
-    run_llr_and_embedding_distance,
     run_llr_clm,
+    run_variant_score_bundle,
 )
 from bolinas.model.scoring import (
     _logits_to_logprobs,
-    compute_llr_and_embedding_distance,
-    compute_llr_clm,
     compute_ll_clm,
+    compute_llr_clm,
     compute_reflogprob_clm,
+    compute_variant_score_bundle,
 )
 
 
@@ -438,7 +440,7 @@ def test_run_reflogprob_clm_fwd_and_rc_differ():
     underlying ``run_inference`` + ``compute_reflogprob_clm`` +
     ``transform_reflogprob_clm`` wiring at least responds to strand —
     rc-averaging itself is covered by ``run_llr_clm`` and
-    ``run_llr_and_embedding_distance`` tests above."""
+    ``run_variant_score_bundle`` tests above."""
     torch.manual_seed(0)
     tokenizer = AutoTokenizer.from_pretrained("songlab/tokenizer-dna-mlm")
     model = AutoModelForCausalLM.from_pretrained(TINY_CLM)
@@ -472,8 +474,8 @@ class _DeterministicCausalLMWithEmbeddings(nn.Module):
     """Test double returning content-dependent (logits, last_emb, middle_emb)
     so that two different input batches produce two different outputs —
     enough to verify that the rc_avg=True path of
-    ``run_llr_and_embedding_distance`` correctly averages the FWD and RC
-    [N, 3] predictions.
+    ``run_variant_score_bundle`` correctly averages the FWD and RC
+    [N, 4] predictions.
 
     Mimics HF ``CausalLMOutputWithHiddenStates``: returns an object with
     ``.logits`` and ``.hidden_states`` where ``hidden_states[-1]`` is the
@@ -491,7 +493,7 @@ class _DeterministicCausalLMWithEmbeddings(nn.Module):
         logits = logits + torch.arange(self.vocab_size, dtype=torch.float)
         last = x.unsqueeze(-1).repeat(1, 1, self.emb_dim).contiguous()
         middle = (x.unsqueeze(-1) * 2).repeat(1, 1, self.emb_dim).contiguous()
-        # ``compute_llr_and_embedding_distance`` indexes hidden_states[-1]
+        # ``compute_variant_score_bundle`` indexes hidden_states[-1]
         # (last) and hidden_states[len // 2] (middle). A 2-tuple makes
         # ``len // 2 == 1``, so hidden_states[1] is ``last`` — but we
         # want index ``len // 2`` to map to ``middle``. Use 4 layers so
@@ -500,19 +502,26 @@ class _DeterministicCausalLMWithEmbeddings(nn.Module):
         return SimpleNamespace(logits=logits, hidden_states=hidden_states)
 
 
-def test_run_llr_and_embedding_distance_rc_avg_equals_mean_of_two_passes(tmp_path):
-    """End-to-end smoke test for the [N, 3] return shape — the path
+def test_run_variant_score_bundle_rc_avg_equals_mean_of_two_passes(tmp_path):
+    """End-to-end smoke test for the [N, 4] return shape — the path
     biofoundation issue #24 specifically called out as the primary VEP
-    entrypoint."""
+    entrypoint, now extended with a per-position next-token JSD column."""
     torch.manual_seed(0)
     tokenizer = AutoTokenizer.from_pretrained("songlab/tokenizer-dna-mlm")
+    # songlab tokenizer puts ACGT at IDs 3-6; vocab_size=8 in the mock has
+    # enough headroom for the JSD slice into the 4 nucleotide columns.
     model = _DeterministicCausalLMWithEmbeddings(vocab_size=8, emb_dim=4)
     model.eval()
     genome = Genome(_write_long_fasta(tmp_path))
     dataset = _make_variant_dataset()
     window_size = 16
 
-    fwd = run_llr_and_embedding_distance(
+    nuc_ids_dict = _get_nucleotide_token_ids(tokenizer)
+    nuc_token_ids = torch.tensor(
+        [nuc_ids_dict[nuc] for nuc in NUCLEOTIDES], dtype=torch.long
+    )
+
+    fwd = run_variant_score_bundle(
         model,
         tokenizer,
         dataset,
@@ -526,14 +535,14 @@ def test_run_llr_and_embedding_distance_rc_avg_equals_mean_of_two_passes(tmp_pat
         model,
         tokenizer,
         dataset,
-        compute_fn=compute_llr_and_embedding_distance,
+        compute_fn=partial(compute_variant_score_bundle, nuc_token_ids=nuc_token_ids),
         data_transform_fn=partial(
             transform_llr_clm, genome=genome, window_size=window_size, strand="-"
         ),
         data_transform_on_the_fly=True,
         inference_kwargs=_INFERENCE_KWARGS,
     )
-    avg = run_llr_and_embedding_distance(
+    avg = run_variant_score_bundle(
         model,
         tokenizer,
         dataset,
@@ -544,10 +553,119 @@ def test_run_llr_and_embedding_distance_rc_avg_equals_mean_of_two_passes(tmp_pat
         inference_kwargs=_INFERENCE_KWARGS,
     )
 
-    assert fwd.shape == (4, 3)
-    assert rc.shape == (4, 3)
-    assert avg.shape == (4, 3)
+    assert fwd.shape == (4, 4)
+    assert rc.shape == (4, 4)
+    assert avg.shape == (4, 4)
     np.testing.assert_allclose(
         avg, (np.asarray(fwd) + np.asarray(rc)) / 2, rtol=1e-5, atol=1e-6
     )
     assert not np.allclose(fwd, rc, atol=1e-6)
+
+
+class _ContentIndependentCausalLM(nn.Module):
+    """Test double whose forward returns logits independent of input_ids
+    content (only depends on positions and vocab indices). Useful for
+    verifying that the JSD column is exactly 0 when ref and alt sequences
+    produce identical next-token distributions."""
+
+    def __init__(self, vocab_size: int, emb_dim: int):
+        super().__init__()
+        self.vocab_size = vocab_size
+        self.emb_dim = emb_dim
+
+    def forward(self, input_ids, output_hidden_states: bool = False):
+        B, L = input_ids.shape
+        # Content-independent logits: depend only on position and vocab
+        # index, never on input_ids content. So ref and alt produce
+        # identical next-token distributions → JSD = 0 everywhere.
+        pos = torch.arange(L, dtype=torch.float).unsqueeze(-1)
+        vocab = torch.arange(self.vocab_size, dtype=torch.float)
+        logits_per_seq = pos + vocab  # [L, V]
+        logits = logits_per_seq.unsqueeze(0).expand(B, L, self.vocab_size).contiguous()
+        # Embeddings still depend on content so the L2 columns vary; only
+        # JSD must be exactly zero.
+        x = input_ids.float()
+        last = x.unsqueeze(-1).repeat(1, 1, self.emb_dim).contiguous()
+        middle = (x.unsqueeze(-1) * 2).repeat(1, 1, self.emb_dim).contiguous()
+        hidden_states = (last, last, middle, last)
+        return SimpleNamespace(logits=logits, hidden_states=hidden_states)
+
+
+def test_next_token_jsd_mean_zero_when_ref_alt_logits_identical(tmp_path):
+    """If logits don't depend on input_ids content, the per-position 4-nuc
+    softmax is identical for ref and alt → JSD = 0 at every position →
+    next_token_jsd_mean = 0 for every batch row."""
+    torch.manual_seed(0)
+    tokenizer = AutoTokenizer.from_pretrained("songlab/tokenizer-dna-mlm")
+    model = _ContentIndependentCausalLM(vocab_size=8, emb_dim=4)
+    model.eval()
+    genome = Genome(_write_long_fasta(tmp_path))
+    dataset = _make_variant_dataset()
+    window_size = 16
+
+    out = run_variant_score_bundle(
+        model,
+        tokenizer,
+        dataset,
+        genome,
+        window_size,
+        rc_avg=False,
+        data_transform_on_the_fly=True,
+        inference_kwargs=_INFERENCE_KWARGS,
+    )
+    assert out.shape == (4, 4)
+    np.testing.assert_allclose(out[:, 3], 0.0, atol=1e-7)
+
+
+def test_compute_variant_score_bundle_jsd_analytic():
+    """Hand-craft logits where the per-position 4-nuc JSD is computable
+    analytically and assert numerical match.
+
+    Setup: B=1, L=4, V=4 (= nuc_token_ids = [0, 1, 2, 3] so the slice
+    is the identity). Ref input_ids = [0, 0, 0, 0]; alt = [0, 1, 0, 0]
+    (variant at position 1). Logits at every position:
+      ref: [0, 0, 0, 0] → uniform softmax = [0.25, 0.25, 0.25, 0.25]
+      alt: [10, 0, 0, 0] except position 1 logits = ref's logits.
+    Variant at position 1, so mask is t in [1, 2] (L-2=2).
+    JSD(uniform, sharp) at masked positions = constant analytic value.
+    """
+
+    class _Custom(nn.Module):
+        def forward(self, input_ids, output_hidden_states: bool = False):
+            B, L = input_ids.shape
+            V = 4
+            logits = torch.zeros(B, L, V)
+            # Where input_ids != 0, sharpen toward token 0:
+            #   logits[b, t] = [10, 0, 0, 0] if input_ids[b, t] != 0, else zeros.
+            sharp = (input_ids != 0).float().unsqueeze(-1)  # [B, L, 1]
+            template = torch.tensor([10.0, 0.0, 0.0, 0.0])
+            logits = logits + sharp * template
+            emb = input_ids.float().unsqueeze(-1).repeat(1, 1, 2)
+            hidden_states = (emb, emb, emb, emb)
+            return SimpleNamespace(logits=logits, hidden_states=hidden_states)
+
+    model = _Custom()
+    model.eval()
+    input_ids = torch.tensor([[[0, 0, 0, 0], [0, 1, 0, 0]]])  # [B=1, 2, L=4]
+    nuc_token_ids = torch.tensor([0, 1, 2, 3], dtype=torch.long)
+
+    out = compute_variant_score_bundle(model, input_ids, nuc_token_ids)
+    assert out.shape == (1, 4)
+
+    # Analytic JSD computation: at position t in mask = [1, 2]:
+    #   ref logits at t come from input_ids_ref[t] = 0 → uniform
+    #   alt logits at t=1 from input_ids_alt[1] = 1 → sharp toward 0
+    #   alt logits at t=2 from input_ids_alt[2] = 0 → uniform
+    # So JSD nonzero only at t=1 (sharp vs uniform), zero at t=2.
+    p_ref = torch.full((4,), 0.25)
+    log_p_ref = p_ref.log()
+    log_p_alt = torch.log_softmax(torch.tensor([10.0, 0.0, 0.0, 0.0]), dim=-1)
+    p_alt = log_p_alt.exp()
+    log_m = torch.logaddexp(log_p_ref, log_p_alt) - math.log(2.0)
+    kl_ref_m = (p_ref * (log_p_ref - log_m)).sum()
+    kl_alt_m = (p_alt * (log_p_alt - log_m)).sum()
+    jsd_at_var = 0.5 * (kl_ref_m + kl_alt_m).item()
+
+    # Mask is t in [1, 2] → 2 positions; JSD nonzero only at t=1.
+    expected_mean = jsd_at_var / 2
+    np.testing.assert_allclose(out[0, 3].item(), expected_mean, rtol=1e-5)

@@ -99,6 +99,14 @@ alphagenome-eval = [
 aws-cli = [
     "awscli>=1.45.2",
 ]
+# Modern s3fs for `Genome(s3://...)` (pyfaidx + fsspec direct reads from
+# S3). Conflicts with the `aws-cli` group's older awscli/aiobotocore pins,
+# so it's gated as its own group and listed in `[tool.uv.conflicts]`
+# below. Pipelines that read genome FASTA from S3 (e.g. evals_v2) install
+# with `--group genome-s3`.
+genome-s3 = [
+    "s3fs>=2024",
+]
 
 [tool.uv]
 # awscli (in the `aws-cli` group) pins fsspec/s3fs strictly below the
@@ -113,6 +121,10 @@ conflicts = [
     ],
     [
         { extra = "tpu" },
+        { group = "aws-cli" },
+    ],
+    [
+        { group = "genome-s3" },
         { group = "aws-cli" },
     ],
 ]

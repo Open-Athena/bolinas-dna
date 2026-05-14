@@ -15,6 +15,7 @@ see ``pipelines/evals/evo2.py`` for an example.
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import torch
@@ -170,25 +171,37 @@ def compute_euclidean_distance(
     return F.pairwise_distance(ref_emb, alt_emb)
 
 
-def compute_llr_and_embedding_distance(
+def compute_variant_score_bundle(
     model: Any,
     input_ids: Int[Tensor, "B 2 L"],
-) -> Float[Tensor, "B 3"]:
-    """Compute LLR, last-layer distance, and middle-layer distance in one pass.
+    nuc_token_ids: Int[Tensor, " 4"],
+) -> Float[Tensor, "B 4"]:
+    """Compute LLR, last/middle embedding distance, and per-position next-token JSD in one pass.
+
+    The JSD column (``next_token_jsd_mean``, called ``down_jsd_mean`` in
+    Open-Athena/bolinas-dna#175) is the per-position 4-nucleotide softmax
+    Jensen-Shannon divergence between REF-context and ALT-context next-token
+    predictions, averaged over the AR positions where the variant is in
+    context (i.e. ``var_pos <= t <= L-2``). Computed from the same logits as
+    LLR — no extra forward pass.
 
     Args:
         model: HF-shaped causal LM; ``model(input_ids, output_hidden_states=True)``
             must return an object with ``.logits`` and ``.hidden_states``
             (tuple of layer outputs, last layer at ``[-1]``).
-        input_ids: Input sequences with shape [B, 2, L] where the 2 sequences are [ref, alt]
+        input_ids: Input sequences with shape [B, 2, L] where the 2 sequences are [ref, alt].
+        nuc_token_ids: Length-4 tensor of token IDs for the 4 DNA nucleotides
+            in canonical ``NUCLEOTIDES`` (= "ACGT") order. Used to slice the
+            full-vocab logits down to a 4-class softmax for the JSD column.
 
     Returns:
-        Tensor with shape [B, 3] where columns are:
+        Tensor with shape [B, 4] where columns are:
             - [:, 0]: LLR (log-likelihood ratio: alt_logprob - ref_logprob)
             - [:, 1]: Euclidean distance between last-layer embeddings
             - [:, 2]: Euclidean distance between middle-layer embeddings
+            - [:, 3]: next_token_jsd_mean (mean per-position 4-nuc JSD over downstream positions)
     """
-    B = input_ids.shape[0]
+    B, _, L = input_ids.shape
     input_ids_flat = rearrange(input_ids, "B V L -> (B V) L")
 
     output = model(input_ids_flat, output_hidden_states=True)
@@ -207,4 +220,58 @@ def compute_llr_and_embedding_distance(
     middle_emb = rearrange(middle_emb, "(B V) L D -> B V (L D)", B=B)
     middle_distance = F.pairwise_distance(middle_emb[:, 0], middle_emb[:, 1])
 
-    return torch.stack([llr, last_distance, middle_distance], dim=1)
+    next_token_jsd_mean = _compute_next_token_jsd_mean(
+        logits, input_ids, nuc_token_ids
+    )
+
+    return torch.stack(
+        [llr, last_distance, middle_distance, next_token_jsd_mean], dim=1
+    )
+
+
+def _compute_next_token_jsd_mean(
+    logits: Float[Tensor, "Bx2 L V"],
+    input_ids: Int[Tensor, "B 2 L"],
+    nuc_token_ids: Int[Tensor, " 4"],
+) -> Float[Tensor, " B"]:
+    """Mean per-position 4-nuc next-token JSD over downstream positions.
+
+    For each batch row, compute the Jensen-Shannon divergence between the
+    REF and ALT next-token distributions (restricted to A/C/G/T) at every
+    position whose left context includes the variant, then average.
+    """
+    B, _, L = input_ids.shape
+
+    # SNV invariants: exactly one differing position per row, not at the last
+    # position (since logits[L-1] predicts off the end and is dropped).
+    diff = input_ids[:, 0] != input_ids[:, 1]  # [B, L]
+    assert diff.any(dim=-1).all(), "found rows with identical ref/alt input_ids"
+    var_pos = diff.float().argmax(dim=-1)  # [B]
+    assert (var_pos < L - 1).all(), (
+        f"variant at last position has no downstream prediction; var_pos={var_pos.tolist()}"
+    )
+
+    # Restrict to 4-nuc softmax + cast to fp32 (bf16 log_softmax has the
+    # same rounding-error issue flagged in _logits_to_logprobs).
+    nuc_logits = logits[..., nuc_token_ids.to(logits.device)].float()
+    log_p = F.log_softmax(nuc_logits, dim=-1)  # [B*2, L, 4]
+    log_p = rearrange(log_p, "(B V) L C -> B V L C", B=B)
+    log_p_ref = log_p[:, 0]  # [B, L, 4]
+    log_p_alt = log_p[:, 1]  # [B, L, 4]
+
+    # log_M = log(0.5 * (P + Q)) computed exactly via logaddexp (no clamp).
+    log_m = torch.logaddexp(log_p_ref, log_p_alt) - math.log(2.0)
+    p_ref = log_p_ref.exp()
+    p_alt = log_p_alt.exp()
+    kl_ref_m = (p_ref * (log_p_ref - log_m)).sum(dim=-1)  # [B, L]
+    kl_alt_m = (p_alt * (log_p_alt - log_m)).sum(dim=-1)  # [B, L]
+    jsd_per_pos = 0.5 * (kl_ref_m + kl_alt_m)  # [B, L]
+
+    # Mask: t in [var_pos, L-2]. logits[t] predicts input_ids[t+1] from
+    # context input_ids[:t+1]; at t=var_pos the variant has just entered
+    # context (first downstream-affected prediction). Drop t=L-1 to match
+    # the _logits_to_logprobs convention (predicts off the end).
+    pos = torch.arange(L, device=jsd_per_pos.device)
+    mask = (pos.unsqueeze(0) >= var_pos.unsqueeze(1)) & (pos.unsqueeze(0) <= L - 2)
+    n_pos = mask.sum(dim=-1).float()  # > 0 by the assertion above
+    return (jsd_per_pos * mask).sum(dim=-1) / n_pos
