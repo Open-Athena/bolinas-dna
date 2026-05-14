@@ -1,0 +1,41 @@
+# Iter-6: downstream-effect (nuc-dep) scoring for exp166-p1B on 3 datasets ×
+# {FWD, RC}. Runs on the existing iter5-rc cluster (which already has the
+# uv-synced env + cached genome). Use `sky exec iter5-rc <this-yaml>`.
+
+name: iter6-exp166-1b-nucdep
+
+resources:
+    infra: aws/us-east-2
+    accelerators: A10G:1
+    labels:
+        project: dna
+
+workdir: .
+
+run: |
+    set -euxo pipefail
+    export PATH="$HOME/.local/bin:$PATH"
+    export WANDB_DISABLED=true
+
+    mkdir -p ~/iter6_out
+    # Reuse the iter5_data/genome.fa.gz already on the cluster.
+    GENOME=~/iter5_data/genome.fa.gz
+    test -f "$GENOME" || { echo "ERROR: genome not found at $GENOME — sky exec assumes prior iter5-rc cluster"; exit 1; }
+
+    for DATASET in mendelian_traits complex_traits eqtl; do
+        for STRAND in fwd rc; do
+            echo "=== exp166-p1B nuc-dep $STRAND bf16, $DATASET, win=255 ==="
+            .venv/bin/python scratch/zeroshot_vep_iter6_nucdep_scout.py \
+                --checkpoint bolinas-dna/exp166-p1B-step-16398 \
+                --genome "$GENOME" \
+                --window 255 \
+                --dataset "$DATASET" \
+                --batch-size 8 \
+                --strand "$STRAND" \
+                --dtype bf16 \
+                --out ~/iter6_out/iter6_nucdep_${STRAND}_exp166-p1B__win255__${DATASET}.parquet
+        done
+    done
+
+    echo "[iter6-exp166-1b-nucdep] DONE."
+    ls -la ~/iter6_out/
