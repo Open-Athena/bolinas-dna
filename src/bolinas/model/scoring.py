@@ -23,6 +23,7 @@ import torch.nn.functional as F
 from einops import rearrange, reduce
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
+from transformers.cache_utils import DynamicCache
 
 
 # https://github.com/ArcInstitute/evo2/blob/4c3c8522dc99d2dc14b5b5a07cd65f2b67e6f457/evo2/scoring.py#L37
@@ -291,8 +292,6 @@ def _repeat_interleave_kv_cache(past_kv: Any, n: int) -> Any:
 
     Mutates an input ``Cache`` in place — caller doesn't reuse the original.
     """
-    from transformers.cache_utils import DynamicCache
-
     if hasattr(past_kv, "key_cache") and hasattr(past_kv, "value_cache"):
         for i in range(len(past_kv.key_cache)):
             past_kv.key_cache[i] = past_kv.key_cache[i].repeat_interleave(n, dim=0)
