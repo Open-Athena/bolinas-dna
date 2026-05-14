@@ -45,6 +45,7 @@ The codebase has three main components:
 - **Code quality**: Pre-commit hooks enforce ruff formatting and linting
 - **Documentation**: Before merging a PR, make sure all the relevant READMEs are updated.
 - **Where to run.** For quick work (small data, smoke tests, dev iteration), run locally on the current node — but first check system load (`uptime` / `cat /proc/loadavg`); multiple agent sessions share this small instance. Be careful about parallelizing local subprocesses: it has crashed the instance more than once (requiring reboot). Cap parallel jobs conservatively (rule of thumb: `nproc/2` or less). For heavy work (training, large-scale evals, anything GPU-bound), launch on SkyPilot. Always confirm with the user before launching SkyPilot resources — they're not free.
+- **Babysit new jobs early.** First time running a script / config / cluster combination? Check actively within the first few minutes rather than passively waiting. Look for: progress rate sane (a common silent failure is CPU fallback when GPU was expected), device count matches what you asked for, no immediate OOM / mount errors / auth failures. Notifiers fire on completion or timeout — they don't tell you the run spent 4 hours on CPU.
 
 ### Type Annotations
 - Type-annotate all function parameters and return values in `src/bolinas/`.
