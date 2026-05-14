@@ -93,13 +93,15 @@ Driven by 0–2 results:
 
 ### Best-so-far per dataset (PairwiseAccuracy, train-split, 3-fold chrom-grouped OOF)
 
-This table is updated as new best recipes are found. Both **macro** PA (unweighted mean of per-subset PA for subsets with n_pairs ≥ 30) and **global** PA (single PA over all matched pairs in the train split) are reported, with deltas against both the **LLR-protocol baseline** (the leaderboard default: `minus_llr` for mendelian, `abs_llr` for complex_traits / eqtl) and the alternative zero-shot **`embed_last_l2`** (flattened ref-vs-alt L2 distance, identified in #175 §1 as competitive).
+Headline metric = **global PA** (single PA over all matched pairs in the train split; more statistical power than macro). Macro PA (unweighted mean of per-subset PA for subsets with n_pairs ≥ 30) reported alongside for the leaderboard-comparable view. Updated as new best recipes are found.
 
-| dataset | best recipe so far | macro PA | global PA | Δ macro vs LLR | Δ global vs LLR | Δ macro vs `embed_last_l2` | Δ global vs `embed_last_l2` |
-|---|---|---:|---:|---:|---:|---:|---:|
-| `mendelian_traits` | **`logreg_l2(embed_last_l2, minus_llr)`** wide C | **0.7750** ± 0.018 | **0.7462** ± 0.006 | +0.058 vs `minus_llr` (0.7175) | +0.011 vs `minus_llr` (0.7350) | +0.034 vs `embed_last_l2` (0.7408) | +0.024 vs `embed_last_l2` (0.7225) |
-| `complex_traits` | zero-shot `embed_last_l2` (untrained) | **0.6541** ± 0.032 | **0.5824** ± 0.021 | +0.061 vs `abs_llr` (0.5927) | +0.047 vs `abs_llr` (0.5355) | — (= baseline) | — (= baseline) |
-| `eqtl` | zero-shot `embed_last_l2` (untrained) | **0.5360** ± 0.022 | **0.5306** ± 0.010 | +0.013 vs `abs_llr` (0.5225) | +0.008 vs `abs_llr` (0.5230) | — (= baseline) | — (= baseline) |
+Deltas computed against (a) the **LLR-protocol baseline** = the leaderboard default for each dataset (`minus_llr` for mendelian, `abs_llr` for complex_traits / eqtl), and (b) the alternative zero-shot **`embed_last_l2`** (flattened ref-vs-alt L2 distance, identified in #175 §1 as competitive).
+
+| dataset | best recipe so far | **global PA** | macro PA | Δ global vs LLR | Δ global vs `embed_last_l2` | Δ macro vs LLR |
+|---|---|---:|---:|---:|---:|---:|
+| `mendelian_traits` | **`logreg_l2(embed_last_l2, minus_llr)`** wide C | **0.7462** ± 0.006 | **0.7750** ± 0.018 | +0.011 vs `minus_llr` (0.7350) | +0.024 vs `embed_last_l2` (0.7225) | +0.058 vs `minus_llr` (0.7175) |
+| `complex_traits` | zero-shot `embed_last_l2` (untrained) | **0.5824** ± 0.021 | **0.6541** ± 0.032 | +0.047 vs `abs_llr` (0.5355) | — (= baseline) | +0.061 vs `abs_llr` (0.5927) |
+| `eqtl` | zero-shot `embed_last_l2` (untrained) | **0.5306** ± 0.010 | **0.5360** ± 0.022 | +0.008 vs `abs_llr` (0.5230) | — (= baseline) | +0.013 vs `abs_llr` (0.5225) |
 
 Baseline numbers were computed by running each cached zero-shot scalar through `compute_pairwise_metrics` directly on the train split, so they're drop-in comparable to #161 / #162 / #172.
 

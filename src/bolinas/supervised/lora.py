@@ -221,6 +221,7 @@ def train_one_fold(
     epochs: int = 2,
     lr: float = 1e-4,
     batch_size: int = 8,
+    grad_accum_steps: int = 1,
     margin: float = 1.0,
     num_workers: int = 2,
     device: str = "cuda",
@@ -288,20 +289,25 @@ def train_one_fold(
     )
 
     step = 0
+    optim.zero_grad()
     for epoch in range(1, epochs + 1):
         model.train()
         loss_sum = 0.0
         n_batches = 0
+        accum_count = 0
         for batch in loader:
             pos_ids = batch["pos_input_ids"].to(device)
             neg_ids = batch["neg_input_ids"].to(device)
             s_pos = model(pos_ids)
             s_neg = model(neg_ids)
             loss = pairwise_ranking_loss(s_pos, s_neg, margin=margin)
-            optim.zero_grad()
-            loss.backward()
-            optim.step()
-            sched.step()
+            (loss / grad_accum_steps).backward()
+            accum_count += 1
+            if accum_count >= grad_accum_steps:
+                optim.step()
+                sched.step()
+                optim.zero_grad()
+                accum_count = 0
             loss_sum += loss.item()
             n_batches += 1
             step += 1
@@ -310,6 +316,11 @@ def train_one_fold(
                     f"  step {step}/{n_steps}  loss={loss.item():.4f}  "
                     f"lr={sched.get_last_lr()[0]:.2e}"
                 )
+        # Flush any partial accumulation at end of epoch.
+        if accum_count > 0:
+            optim.step()
+            sched.step()
+            optim.zero_grad()
         train_loss = loss_sum / max(n_batches, 1)
         train_pa = evaluate_pa(
             model,
