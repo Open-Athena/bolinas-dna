@@ -283,20 +283,33 @@ def compute_variant_score_bundle(
 def _repeat_interleave_kv_cache(past_kv: Any, n: int) -> Any:
     """Repeat each layer's K and V along the batch dim by ``n``.
 
-    Handles HF's modern ``Cache`` objects (``DynamicCache`` and friends,
-    which expose ``key_cache`` / ``value_cache`` lists) and the legacy
-    tuple-of-(K, V)-pairs format. Mutates the cache in place when given
-    an HF ``Cache`` — caller doesn't reuse the original.
+    Always returns an HF ``DynamicCache`` (constructing one from a legacy
+    tuple if needed). Modern Qwen3/Llama-style models call
+    ``past_key_values.get_seq_length()`` internally — the legacy
+    tuple-of-(K, V)-pairs format normally auto-converts, but under
+    ``torch.compile`` the conversion can be skipped and the method call
+    raises ``AttributeError: 'tuple' object has no attribute
+    'get_seq_length'``. Returning a real ``DynamicCache`` sidesteps that.
+
+    Mutates an input ``Cache`` in place — caller doesn't reuse the original.
     """
+    from transformers.cache_utils import DynamicCache
+
     if hasattr(past_kv, "key_cache") and hasattr(past_kv, "value_cache"):
         for i in range(len(past_kv.key_cache)):
             past_kv.key_cache[i] = past_kv.key_cache[i].repeat_interleave(n, dim=0)
             past_kv.value_cache[i] = past_kv.value_cache[i].repeat_interleave(n, dim=0)
         return past_kv
-    return tuple(
-        (k.repeat_interleave(n, dim=0), v.repeat_interleave(n, dim=0))
-        for k, v in past_kv
-    )
+
+    # Legacy tuple format → coerce to DynamicCache.
+    new_cache = DynamicCache()
+    for layer_idx, (k, v) in enumerate(past_kv):
+        new_cache.update(
+            k.repeat_interleave(n, dim=0),
+            v.repeat_interleave(n, dim=0),
+            layer_idx=layer_idx,
+        )
+    return new_cache
 
 
 def _compute_next_token_jsd_mean(
