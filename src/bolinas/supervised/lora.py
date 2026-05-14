@@ -63,7 +63,19 @@ class PairwiseVepLora(nn.Module):
         *,
         torch_dtype: torch.dtype = torch.bfloat16,
         gradient_checkpointing: bool = True,
+        normalize: bool = False,
     ) -> None:
+        """If ``normalize=True``, L2-normalize the flattened hidden state to
+        the unit sphere before taking the pairwise distance. Score then lives
+        in ``[0, 2]``, so margin in ``{0.1, 0.5, 1.0}`` is sensible (FaceNet
+        territory). At LoRA init the ranking is preserved but the absolute
+        score is no longer identical to the frozen `embed_last_l2` baseline.
+
+        With ``normalize=False`` (default), the score is the raw L2 distance
+        across all `L*D` entries — matches the frozen baseline exactly at
+        init but margin must be picked relative to the dataset-specific
+        natural score scale (~100-200 here).
+        """
         super().__init__()
         backbone = AutoModelForCausalLM.from_pretrained(
             backbone_id, trust_remote_code=True, torch_dtype=torch_dtype
@@ -80,6 +92,7 @@ class PairwiseVepLora(nn.Module):
             task_type=TaskType.FEATURE_EXTRACTION,
         )
         self.backbone = get_peft_model(backbone, peft_config)
+        self.normalize = normalize
 
     def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
         B = input_ids.shape[0]
@@ -87,6 +100,8 @@ class PairwiseVepLora(nn.Module):
         out = self.backbone(input_ids=flat, output_hidden_states=True)
         last = out.hidden_states[-1]  # [B*2, L, D]
         last = rearrange(last, "(B V) L D -> B V (L D)", B=B)  # flatten L,D
+        if self.normalize:
+            last = F.normalize(last, p=2, dim=-1)
         return F.pairwise_distance(last[:, 0], last[:, 1])  # [B]
 
     def trainable_parameters(self) -> int:
