@@ -114,6 +114,124 @@ models:
     datasets: [mendelian_traits]
     batch_size: 64
 
+  # exp13/exp27 — promoter × CDS mixture sweep (issue #13). 4-way comparison
+  # of Qwen3-1.7B trained on: 100% promoters (exp21 above), 50/50 mix (exp13
+  # equal), 10/90 mix (exp13 proportional), 100% CDS (exp27 cds-yolo). All
+  # 512 bp context, no BOS. Step list 2000/6000/10000/14000/18000/22000 is
+  # the harmonized intersection that aligns with exp21's GCS ceiling; +26000
+  # added for the 3 runs that trained that far. mendelian_traits only.
+
+  # exp27 — animal-cds-yolo-repeat-weight-0.01-r01-e8cb9b (100% CDS).
+  - name: exp27-cds-yolo-step-2000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-cds-yolo-repeat-weight-0.01-r01-e8cb9b/hf/step-2000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp27-cds-yolo-step-6000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-cds-yolo-repeat-weight-0.01-r01-e8cb9b/hf/step-6000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp27-cds-yolo-step-10000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-cds-yolo-repeat-weight-0.01-r01-e8cb9b/hf/step-10000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp27-cds-yolo-step-14000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-cds-yolo-repeat-weight-0.01-r01-e8cb9b/hf/step-14000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp27-cds-yolo-step-18000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-cds-yolo-repeat-weight-0.01-r01-e8cb9b/hf/step-18000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp27-cds-yolo-step-22000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-cds-yolo-repeat-weight-0.01-r01-e8cb9b/hf/step-22000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp27-cds-yolo-step-26000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-cds-yolo-repeat-weight-0.01-r01-e8cb9b/hf/step-26000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+
+  # exp13 — promoter-cds-mixture-equal-r01-b67fd1 (50% promoter / 50% CDS).
+  - name: exp13-mixture-equal-step-2000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/promoter-cds-mixture-equal-r01-b67fd1/hf/step-2000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp13-mixture-equal-step-6000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/promoter-cds-mixture-equal-r01-b67fd1/hf/step-6000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp13-mixture-equal-step-10000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/promoter-cds-mixture-equal-r01-b67fd1/hf/step-10000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp13-mixture-equal-step-14000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/promoter-cds-mixture-equal-r01-b67fd1/hf/step-14000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp13-mixture-equal-step-18000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/promoter-cds-mixture-equal-r01-b67fd1/hf/step-18000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp13-mixture-equal-step-22000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/promoter-cds-mixture-equal-r01-b67fd1/hf/step-22000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp13-mixture-equal-step-26000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/promoter-cds-mixture-equal-r01-b67fd1/hf/step-26000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+
+  # exp13 — promoter-cds-mixture-proportional-r01-6705f1 (10% promoter / 90% CDS).
+  - name: exp13-mixture-proportional-step-2000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/promoter-cds-mixture-proportional-r01-6705f1/hf/step-2000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp13-mixture-proportional-step-6000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/promoter-cds-mixture-proportional-r01-6705f1/hf/step-6000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp13-mixture-proportional-step-10000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/promoter-cds-mixture-proportional-r01-6705f1/hf/step-10000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp13-mixture-proportional-step-14000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/promoter-cds-mixture-proportional-r01-6705f1/hf/step-14000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp13-mixture-proportional-step-18000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/promoter-cds-mixture-proportional-r01-6705f1/hf/step-18000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp13-mixture-proportional-step-22000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/promoter-cds-mixture-proportional-r01-6705f1/hf/step-22000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp13-mixture-proportional-step-26000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/promoter-cds-mixture-proportional-r01-6705f1/hf/step-26000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+
 inference:
   batch_size: 128       # Was 64 with output_hidden_states=True keeping all
                         # 19+2 layers' activations alive (~2.6 GB at L=256,
