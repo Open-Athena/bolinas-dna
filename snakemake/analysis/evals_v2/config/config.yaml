@@ -62,6 +62,21 @@ models:
     hf_repo: bolinas-dna/exp166-p1B-step-16398   # 1B zoonomia-v1-v1 generalist
     window_size: 255
 
+  # exp136 — enhancer-curation proj_v30, intermediate checkpoints (issue #136).
+  # Native Levanter checkpoints were saved at every num_train_steps // 3 step
+  # (CHECKPOINTS_PER_RUN = 3 in marin's exp136_enhancer_curation.py); the
+  # 3333/6666 intermediates were exported to HF after the fact (the original
+  # `hf/` only had step-9999 — see `exp136-proj_v30` entry above for that
+  # final checkpoint). Scoped to mendelian_traits for the convergence curve.
+  - name: exp136-proj_v30-step-3333
+    gcs_path: gs://marin-us-central1/checkpoints/dna-bolinas-enhancer-curation-v0.1-proj_v30-6692f0/hf/step-3333
+    window_size: 255
+    datasets: [mendelian_traits]
+  - name: exp136-proj_v30-step-6666
+    gcs_path: gs://marin-us-central1/checkpoints/dna-bolinas-enhancer-curation-v0.1-proj_v30-6692f0/hf/step-6666
+    window_size: 255
+    datasets: [mendelian_traits]
+
   # exp21 — animal-promoters-yolo (issue #21, wandb animal-promoters-yolo-r01-213a8e).
   # 512 bp context, no BOS. Scoped to mendelian_traits only: complex/eqtl signal
   # was weak in #21, and the matched-pair mendelian dataset is the one of
