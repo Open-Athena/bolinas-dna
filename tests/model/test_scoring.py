@@ -25,23 +25,23 @@ import torch.nn as nn
 from torch import Tensor
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from bolinas.data.dna import NUCLEOTIDES
 from bolinas.data.genome import Genome
 from bolinas.data.transforms import (
+    _get_nucleotide_token_ids,
     transform_llr_clm,
     transform_reflogprob_clm,
 )
 from bolinas.model.runner import (
     run_inference,
     run_ll_clm,
-    run_llr_and_embedding_distance,
-    run_llr_clm,
+    run_variant_score_bundle,
 )
 from bolinas.model.scoring import (
     _logits_to_logprobs,
-    compute_llr_and_embedding_distance,
-    compute_llr_clm,
     compute_ll_clm,
     compute_reflogprob_clm,
+    compute_variant_score_bundle,
 )
 
 
@@ -380,65 +380,14 @@ _INFERENCE_KWARGS = dict(
 )
 
 
-def test_run_llr_clm_rc_avg_equals_mean_of_two_passes(tmp_path):
-    """run_llr_clm(rc_avg=True) returns the element-wise mean of two single-
-    strand runs. Catches regressions in the partial / transform / compute_fn
-    wiring of the rc_avg path."""
-    torch.manual_seed(0)
-    tokenizer = AutoTokenizer.from_pretrained("songlab/tokenizer-dna-mlm")
-    model = AutoModelForCausalLM.from_pretrained(TINY_CLM)
-    model.eval()
-    genome = Genome(_write_long_fasta(tmp_path))
-    dataset = _make_variant_dataset()
-    window_size = 16
-
-    fwd = run_llr_clm(
-        model,
-        tokenizer,
-        dataset,
-        genome,
-        window_size,
-        rc_avg=False,
-        data_transform_on_the_fly=True,
-        inference_kwargs=_INFERENCE_KWARGS,
-    )
-    rc = run_inference(
-        model,
-        tokenizer,
-        dataset,
-        compute_fn=compute_llr_clm,
-        data_transform_fn=partial(
-            transform_llr_clm, genome=genome, window_size=window_size, strand="-"
-        ),
-        data_transform_on_the_fly=True,
-        inference_kwargs=_INFERENCE_KWARGS,
-    )
-    avg = run_llr_clm(
-        model,
-        tokenizer,
-        dataset,
-        genome,
-        window_size,
-        rc_avg=True,
-        data_transform_on_the_fly=True,
-        inference_kwargs=_INFERENCE_KWARGS,
-    )
-
-    np.testing.assert_allclose(
-        avg, (np.asarray(fwd) + np.asarray(rc)) / 2, rtol=1e-5, atol=1e-6
-    )
-    # And FWD != RC for at least one variant (otherwise the test is trivial)
-    assert not np.allclose(fwd, rc, atol=1e-6)
-
-
 def test_run_reflogprob_clm_fwd_and_rc_differ():
     """FWD and RC ``transform_reflogprob_clm`` passes through
     ``run_inference`` produce distinct outputs. ``bolinas.model.runner``
     doesn't export a ``run_reflogprob_clm`` wrapper, so this verifies the
     underlying ``run_inference`` + ``compute_reflogprob_clm`` +
     ``transform_reflogprob_clm`` wiring at least responds to strand —
-    rc-averaging itself is covered by ``run_llr_clm`` and
-    ``run_llr_and_embedding_distance`` tests above."""
+    rc-averaging itself is covered by the ``run_variant_score_bundle``
+    test below."""
     torch.manual_seed(0)
     tokenizer = AutoTokenizer.from_pretrained("songlab/tokenizer-dna-mlm")
     model = AutoModelForCausalLM.from_pretrained(TINY_CLM)
@@ -468,51 +417,70 @@ def test_run_reflogprob_clm_fwd_and_rc_differ():
     assert not np.allclose(fwd, rc, atol=1e-6)
 
 
-class _DeterministicCausalLMWithEmbeddings(nn.Module):
-    """Test double returning content-dependent (logits, last_emb, middle_emb)
-    so that two different input batches produce two different outputs —
-    enough to verify that the rc_avg=True path of
-    ``run_llr_and_embedding_distance`` correctly averages the FWD and RC
-    [N, 3] predictions.
+class _DeterministicCausalLM(nn.Module):
+    """Test double whose forward returns content-dependent logits, so that
+    different input batches produce different outputs. Used to verify the
+    rc_avg=True path of ``run_variant_score_bundle`` correctly averages the
+    FWD and RC [N, 2] predictions.
 
-    Mimics HF ``CausalLMOutputWithHiddenStates``: returns an object with
-    ``.logits`` and ``.hidden_states`` where ``hidden_states[-1]`` is the
-    last-layer embedding and ``hidden_states[len // 2]`` is the middle one.
-    """
+    Mimics HF ``CausalLMOutput``: returns an object with ``.logits`` only
+    (no ``.hidden_states`` — the kernel no longer requests them).
 
-    def __init__(self, vocab_size: int, emb_dim: int):
+    Logits depend only on ``input_ids[t]`` at each position, not on
+    surrounding context — so the prefix-shared kernel
+    (``compute_variant_score_bundle``) gives bit-identical results to a
+    full-sequence forward on this mock. Accepts ``use_cache`` and
+    ``past_key_values`` for compatibility with the prefix-sharing call
+    pattern; the cache content is dummy zeros (the mock's logits don't
+    actually depend on past tokens)."""
+
+    def __init__(self, vocab_size: int):
         super().__init__()
         self.vocab_size = vocab_size
-        self.emb_dim = emb_dim
 
-    def forward(self, input_ids, output_hidden_states: bool = False):
+    def forward(self, input_ids, past_key_values=None, use_cache=False, **kwargs):
         x = input_ids.float()
         logits = x.unsqueeze(-1).repeat(1, 1, self.vocab_size).contiguous()
         logits = logits + torch.arange(self.vocab_size, dtype=torch.float)
-        last = x.unsqueeze(-1).repeat(1, 1, self.emb_dim).contiguous()
-        middle = (x.unsqueeze(-1) * 2).repeat(1, 1, self.emb_dim).contiguous()
-        # ``compute_llr_and_embedding_distance`` indexes hidden_states[-1]
-        # (last) and hidden_states[len // 2] (middle). A 2-tuple makes
-        # ``len // 2 == 1``, so hidden_states[1] is ``last`` — but we
-        # want index ``len // 2`` to map to ``middle``. Use 4 layers so
-        # ``len // 2 == 2`` and ``[2] == middle`` while ``[-1] == last``.
-        hidden_states = (last, last, middle, last)
-        return SimpleNamespace(logits=logits, hidden_states=hidden_states)
+        out = SimpleNamespace(logits=logits)
+        if use_cache:
+            B, L = input_ids.shape
+            # Minimal tuple-of-(K, V)-pairs shaped [B, num_heads=1, L, head_dim=1]
+            # so `_repeat_interleave_kv_cache` exercises the legacy-format
+            # branch. The mock ignores cache content; only the structure matters.
+            k = torch.zeros(B, 1, L, 1)
+            v = torch.zeros(B, 1, L, 1)
+            out.past_key_values = ((k, v),)
+        return out
 
 
-def test_run_llr_and_embedding_distance_rc_avg_equals_mean_of_two_passes(tmp_path):
-    """End-to-end smoke test for the [N, 3] return shape — the path
-    biofoundation issue #24 specifically called out as the primary VEP
-    entrypoint."""
+def test_run_variant_score_bundle_rc_avg_equals_mean_of_two_passes(tmp_path):
+    """End-to-end smoke test for the [N, 2] return shape with rc_avg=True.
+
+    Verifies that ``run_variant_score_bundle(rc_avg=True)`` returns the
+    element-wise mean of FWD and RC single-strand runs. Catches regressions
+    in the per-strand var_pos derivation, partial-binding, and strand
+    averaging."""
+    from bolinas.data.transforms import _get_special_token_counts, in_seq_var_pos
+
     torch.manual_seed(0)
     tokenizer = AutoTokenizer.from_pretrained("songlab/tokenizer-dna-mlm")
-    model = _DeterministicCausalLMWithEmbeddings(vocab_size=8, emb_dim=4)
+    # songlab tokenizer puts ACGT at IDs 3-6; vocab_size=8 in the mock has
+    # enough headroom for the JSD slice into the 4 nucleotide columns.
+    model = _DeterministicCausalLM(vocab_size=8)
     model.eval()
     genome = Genome(_write_long_fasta(tmp_path))
     dataset = _make_variant_dataset()
-    window_size = 16
+    window_size = 16  # even → FWD and RC have different in-seq var_pos
 
-    fwd = run_llr_and_embedding_distance(
+    n_prefix, _ = _get_special_token_counts(tokenizer)
+    nuc_ids_dict = _get_nucleotide_token_ids(tokenizer)
+    nuc_token_ids = torch.tensor(
+        [nuc_ids_dict[nuc] for nuc in NUCLEOTIDES], dtype=torch.long
+    )
+    var_pos_rc = in_seq_var_pos(window_size, "-") + n_prefix
+
+    fwd = run_variant_score_bundle(
         model,
         tokenizer,
         dataset,
@@ -526,14 +494,18 @@ def test_run_llr_and_embedding_distance_rc_avg_equals_mean_of_two_passes(tmp_pat
         model,
         tokenizer,
         dataset,
-        compute_fn=compute_llr_and_embedding_distance,
+        compute_fn=partial(
+            compute_variant_score_bundle,
+            var_pos=var_pos_rc,
+            nuc_token_ids=nuc_token_ids,
+        ),
         data_transform_fn=partial(
             transform_llr_clm, genome=genome, window_size=window_size, strand="-"
         ),
         data_transform_on_the_fly=True,
         inference_kwargs=_INFERENCE_KWARGS,
     )
-    avg = run_llr_and_embedding_distance(
+    avg = run_variant_score_bundle(
         model,
         tokenizer,
         dataset,
@@ -544,10 +516,252 @@ def test_run_llr_and_embedding_distance_rc_avg_equals_mean_of_two_passes(tmp_pat
         inference_kwargs=_INFERENCE_KWARGS,
     )
 
-    assert fwd.shape == (4, 3)
-    assert rc.shape == (4, 3)
-    assert avg.shape == (4, 3)
+    assert fwd.shape == (4, 2)
+    assert rc.shape == (4, 2)
+    assert avg.shape == (4, 2)
     np.testing.assert_allclose(
         avg, (np.asarray(fwd) + np.asarray(rc)) / 2, rtol=1e-5, atol=1e-6
     )
     assert not np.allclose(fwd, rc, atol=1e-6)
+
+
+def test_run_inference_padding_roundtrip(tmp_path):
+    """When n_examples is not a multiple of batch_size, ``_run_inference``
+    pads the dataset to a clean multiple (so torch.compile sees only one
+    batch shape) and slices the padded predictions off before returning.
+
+    Set up a dataset of 4 variants with batch_size=3 → pads by 2 internally.
+    Verify (a) shape is (4, 2) — padding is invisible to the caller — and
+    (b) the per-row predictions match what we get with batch_size=2 (no pad)."""
+    torch.manual_seed(0)
+    tokenizer = AutoTokenizer.from_pretrained("songlab/tokenizer-dna-mlm")
+    model = _DeterministicCausalLM(vocab_size=8)
+    model.eval()
+    genome = Genome(_write_long_fasta(tmp_path))
+    dataset = _make_variant_dataset()
+    window_size = 16
+
+    no_pad = run_variant_score_bundle(
+        model,
+        tokenizer,
+        dataset,
+        genome,
+        window_size,
+        rc_avg=False,
+        data_transform_on_the_fly=True,
+        inference_kwargs=_INFERENCE_KWARGS,  # batch_size=2 → divides 4 evenly
+    )
+
+    padded_kwargs = {**_INFERENCE_KWARGS, "per_device_eval_batch_size": 3}
+    with_pad = run_variant_score_bundle(
+        model,
+        tokenizer,
+        dataset,
+        genome,
+        window_size,
+        rc_avg=False,
+        data_transform_on_the_fly=True,
+        inference_kwargs=padded_kwargs,  # batch_size=3 → pads 4→6, slices 6→4
+    )
+
+    assert no_pad.shape == (4, 2)
+    assert with_pad.shape == (4, 2)
+    np.testing.assert_allclose(no_pad, with_pad, rtol=1e-5, atol=1e-6)
+
+
+class _ContentIndependentCausalLM(nn.Module):
+    """Test double whose forward returns logits independent of input_ids
+    content (only depends on absolute position and vocab indices). Used to
+    verify that the JSD column is exactly 0 when ref and alt sequences
+    produce identical next-token distributions.
+
+    Position-aware: derives the absolute-position offset from the length
+    of any provided ``past_key_values``. So the prefix-shared call pattern
+    (prefix forward at offset 0, suffix forward at offset = prefix length)
+    yields the same per-position logits as a single full-sequence forward.
+    This is what catches a bug where ``compute_variant_score_bundle``
+    forgot to pass ``past_key_values`` to the suffix call — the suffix
+    would see offset 0 instead of ``var_pos``, mismatching the full-forward
+    reference."""
+
+    def __init__(self, vocab_size: int):
+        super().__init__()
+        self.vocab_size = vocab_size
+
+    def forward(self, input_ids, past_key_values=None, use_cache=False, **kwargs):
+        B, L = input_ids.shape
+        offset = _kv_cache_seq_len(past_key_values)
+        pos = torch.arange(offset, offset + L, dtype=torch.float).unsqueeze(-1)
+        vocab = torch.arange(self.vocab_size, dtype=torch.float)
+        logits_per_seq = pos + vocab  # [L, V]
+        logits = logits_per_seq.unsqueeze(0).expand(B, L, self.vocab_size).contiguous()
+        out = SimpleNamespace(logits=logits)
+        if use_cache:
+            k = torch.zeros(B, 1, L, 1)
+            v = torch.zeros(B, 1, L, 1)
+            out.past_key_values = ((k, v),)
+        return out
+
+
+def _kv_cache_seq_len(past_kv: object) -> int:
+    """Length of the cached prefix in a tuple-of-(K, V) cache (or 0 if absent).
+
+    K shape is [B, num_heads, seq_len, head_dim]; head dim 2 is seq_len."""
+    if past_kv is None:
+        return 0
+    return int(past_kv[0][0].shape[2])
+
+
+def test_next_token_jsd_mean_zero_when_ref_alt_logits_identical(tmp_path):
+    """If logits don't depend on input_ids content, the per-position 4-nuc
+    softmax is identical for ref and alt → JSD = 0 at every position →
+    next_token_jsd_mean = 0 for every batch row."""
+    torch.manual_seed(0)
+    tokenizer = AutoTokenizer.from_pretrained("songlab/tokenizer-dna-mlm")
+    model = _ContentIndependentCausalLM(vocab_size=8)
+    model.eval()
+    genome = Genome(_write_long_fasta(tmp_path))
+    dataset = _make_variant_dataset()
+    window_size = 16
+
+    out = run_variant_score_bundle(
+        model,
+        tokenizer,
+        dataset,
+        genome,
+        window_size,
+        rc_avg=False,
+        data_transform_on_the_fly=True,
+        inference_kwargs=_INFERENCE_KWARGS,
+    )
+    assert out.shape == (4, 2)
+    np.testing.assert_allclose(out[:, 1], 0.0, atol=1e-7)
+
+
+def test_compute_variant_score_bundle_prefix_sharing_correctness():
+    """Prefix-shared kernel produces correct LLR + zero JSD on a position-aware
+    mock whose logits depend on absolute position only (not on input content).
+
+    This catches two classes of bug:
+
+    1. **Forgot to pass past_key_values to the suffix forward**: the suffix
+       would see absolute positions [0, L-p) instead of [p, L), shifting the
+       logits and breaking LLR_at_var.
+    2. **JSD computation includes positions where ref/alt distributions
+       differ**: for this mock all positions give identical distributions
+       (content-independent), so JSD must be exactly 0 at every position.
+
+    Constructs LLR analytically from the mock's logit formula: at the prefix's
+    last position (var_pos - 1), 4-nuc logits are
+    ``[var_pos-1+nuc_id for nuc_id in [3,4,5,6]]`` (offset = past_kv_len = 0
+    for the prefix forward). After log_softmax, gather at alt-nuc-idx vs
+    ref-nuc-idx and difference."""
+    torch.manual_seed(0)
+    model = _ContentIndependentCausalLM(vocab_size=8)
+    model.eval()
+    nuc_token_ids = torch.tensor([3, 4, 5, 6], dtype=torch.long)
+
+    L = 10
+    var_pos = 4
+    # Ref rows: arbitrary; alt token differs from ref at var_pos.
+    # Row 0: ref nuc at var_pos = 4 (idx 1 in nuc_ids); alt = 5 (idx 2).
+    # Row 1: ref nuc at var_pos = 5 (idx 2);             alt = 3 (idx 0).
+    input_ids = torch.tensor(
+        [
+            [3, 4, 5, 3, 4, 5, 6, 3, 4, 5],
+            [4, 5, 6, 4, 5, 6, 3, 4, 5, 6],
+        ]
+    )
+    alt_token_id = torch.tensor([5, 3])
+    assert input_ids.shape == (2, L)
+
+    out = compute_variant_score_bundle(
+        model,
+        input_ids,
+        alt_token_id,
+        var_pos=var_pos,
+        nuc_token_ids=nuc_token_ids,
+    )
+    assert out.shape == (2, 2)
+
+    # Expected LLR_at_var: log_p[alt_idx] - log_p[ref_idx], where log_p
+    # is log_softmax of the mock's 4-nuc logits at position var_pos - 1.
+    # Mock logits[t, v] = t + v; offset from prefix is 0 (no past_kv).
+    log_p = torch.log_softmax(
+        torch.tensor([(var_pos - 1) + v for v in [3, 4, 5, 6]], dtype=torch.float),
+        dim=-1,
+    )
+    expected_llr = torch.tensor(
+        [
+            log_p[2] - log_p[1],  # row 0: alt=5(idx2), ref=4(idx1)
+            log_p[0] - log_p[2],  # row 1: alt=3(idx0), ref=5(idx2)
+        ]
+    )
+    np.testing.assert_allclose(out[:, 0].numpy(), expected_llr.numpy(), atol=1e-5)
+
+    # JSD = 0: content-independent logits → identical ref/alt distributions
+    # at every position → KL(P||M) = KL(Q||M) = 0.
+    np.testing.assert_allclose(out[:, 1].numpy(), 0.0, atol=1e-7)
+
+
+def test_compute_variant_score_bundle_jsd_analytic():
+    """Hand-craft logits where the per-position 4-nuc JSD is computable
+    analytically and assert numerical match.
+
+    Setup: B=1, L=4, V=4 (= nuc_token_ids = [0, 1, 2, 3] so the 4-nuc slice
+    is the identity). var_pos=1. Ref input_ids = [0, 0, 0, 0]; alt token at
+    var_pos = 1 (so reconstructed alt = [0, 1, 0, 0]).
+
+    Mock logits: ``[10, 0, 0, 0]`` (sharp toward token 0) where input_ids[t]
+    is nonzero, else uniform ``[0, 0, 0, 0]``. Two downstream positions
+    (t in [1, 2] = suffix indices [0, 1]):
+
+    - Suffix-pos 0 (= global pos 1): ref-suffix[0]=0 → uniform; alt-suffix[0]=1
+      → sharp. JSD nonzero (uniform vs sharp).
+    - Suffix-pos 1 (= global pos 2): both ref-suffix[1]=alt-suffix[1]=0 →
+      uniform. JSD = 0.
+
+    Mean JSD = jsd_at_var / 2."""
+
+    class _Custom(nn.Module):
+        def forward(self, input_ids, past_key_values=None, use_cache=False, **kwargs):
+            B, L = input_ids.shape
+            V = 4
+            logits = torch.zeros(B, L, V)
+            # Sharp toward token 0 where input_ids != 0; else uniform zeros.
+            sharp = (input_ids != 0).float().unsqueeze(-1)
+            template = torch.tensor([10.0, 0.0, 0.0, 0.0])
+            logits = logits + sharp * template
+            out = SimpleNamespace(logits=logits)
+            if use_cache:
+                k = torch.zeros(B, 1, L, 1)
+                v = torch.zeros(B, 1, L, 1)
+                out.past_key_values = ((k, v),)
+            return out
+
+    model = _Custom()
+    model.eval()
+    input_ids = torch.tensor([[0, 0, 0, 0]])  # [B=1, L=4] — ref only
+    alt_token_id = torch.tensor([1])  # alt nuc at var_pos
+    nuc_token_ids = torch.tensor([0, 1, 2, 3], dtype=torch.long)
+
+    out = compute_variant_score_bundle(
+        model, input_ids, alt_token_id, var_pos=1, nuc_token_ids=nuc_token_ids
+    )
+    assert out.shape == (1, 2)
+
+    # Analytic JSD at suffix position 0 (global pos 1):
+    #   ref distribution = log_softmax([0,0,0,0]) = uniform
+    #   alt distribution = log_softmax([10,0,0,0]) = sharp toward token 0
+    p_ref = torch.full((4,), 0.25)
+    log_p_ref = p_ref.log()
+    log_p_alt = torch.log_softmax(torch.tensor([10.0, 0.0, 0.0, 0.0]), dim=-1)
+    p_alt = log_p_alt.exp()
+    log_m = torch.logaddexp(log_p_ref, log_p_alt) - math.log(2.0)
+    kl_ref_m = (p_ref * (log_p_ref - log_m)).sum()
+    kl_alt_m = (p_alt * (log_p_alt - log_m)).sum()
+    jsd_at_var = 0.5 * (kl_ref_m + kl_alt_m).item()
+
+    # 2 downstream positions, JSD nonzero only at the first.
+    expected_mean = jsd_at_var / 2
+    np.testing.assert_allclose(out[0, 1].item(), expected_mean, rtol=1e-5)

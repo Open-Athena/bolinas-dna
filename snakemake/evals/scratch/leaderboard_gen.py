@@ -60,6 +60,7 @@ EVALS_V2_MODELS = [
     ("exp58-animals", "CDS, animals"),
     ("exp59-mammals", "downstream, mammals"),
     ("exp136-proj_v30", "enhancers, mammals"),
+    ("exp166-p1B", "zoonomia, generalist, 1B"),
 ]
 CONSERVATION_TRACKS = [
     "phastCons_100v",
@@ -368,6 +369,34 @@ def _update_bold_rule(body: str) -> str:
     return _idempotent_replace(body, [old], new, "bold-rule sentence")
 
 
+def _update_glm_protocol(body: str) -> str:
+    """Reflect that evals_v2 gLMs now run FWD + RC strand averaging
+    (was forward-strand only). Also rewrites the GPN-Star calibration
+    row's parenthetical and the NaN-handling note."""
+    body = _idempotent_replace(
+        body,
+        ["| gLM with causal LM head (LLR) |"],
+        "| gLM with causal LM head (LLR), FWD + RC averaged |",
+        "gLM-row kind column",
+    )
+    body = _idempotent_replace(
+        body,
+        [
+            "the other gLM rows here are forward-strand only (RC averaging is a "
+            "planned addition)"
+        ],
+        "the other gLM rows here are also FWD + RC averaged (per #175 conclusion 2)",
+        "GPN-Star RC-parenthetical",
+    )
+    body = _idempotent_replace(
+        body,
+        ["- **gLM (LLR):** no NaN expected — every variant gets a forward pass."],
+        "- **gLM (LLR):** no NaN expected — every variant gets a forward + reverse-complement strand pass; results averaged element-wise.",
+        "gLM NaN-handling note",
+    )
+    return body
+
+
 def _bump_last_updated(body: str, today: str) -> str:
     return re.sub(
         r"\*\*Last updated:\*\* [0-9]{4}-[0-9]{2}-[0-9]{2}",
@@ -410,7 +439,19 @@ def patch_issue(dataset: str, table_md: str) -> None:
     new_body = _replace_table(body, table_md)
     new_body = _update_intro_paragraph(new_body, global_n, macro_k)
     new_body = _update_bold_rule(new_body)
+    new_body = _update_glm_protocol(new_body)
     new_body = _bump_last_updated(new_body, str(date.today()))
+    new_body = _prepend_changelog_entry(
+        new_body,
+        "- **2026-05-14** — added `exp166-p1B` (1B zoonomia-v1-v1 generalist; "
+        "HF: [`bolinas-dna/exp166-p1B-step-16398`](https://huggingface.co/bolinas-dna/exp166-p1B-step-16398)). "
+        "All 5 existing `evals_v2` gLM rows re-scored under FWD + RC strand "
+        "averaging (per #175 conclusion 2; previously forward-strand only); "
+        "per-cell PA shifts up to ~0.06. Variant-score kernel slimmed to "
+        "LLR + per-position next-token JSD (drops the `embed_*_l2` columns; "
+        "JSD has Spearman ρ ≈ 0.90 with `embed_last_l2` within mendelian "
+        "subsets per #175 conclusion 9). Leaderboard score column unchanged.",
+    )
     # Hardcoded dates on changelog entries (matching the date the change
     # actually landed) so re-runs of this script don't re-add the entry with
     # today's date each time — idempotency relies on the entry text being

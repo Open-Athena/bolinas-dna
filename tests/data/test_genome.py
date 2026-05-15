@@ -135,8 +135,14 @@ def test_genome_forwards_storage_options_to_fsspec(monkeypatch):
     monkeypatch.setattr(fsspec, "open", fake_open)
 
     opts = {"anon": True, "endpoint_url": "https://example"}
+    # The probe is lazy now (so fsspec init is deferred until first use,
+    # avoiding event-loop inheritance breakage in DataLoader fork()'d
+    # workers); construction alone shouldn't touch fsspec.
+    g = Genome("s3://fake-bucket/x.fa", storage_options=opts)
+    assert captured == {}
+
     with pytest.raises(_Sentinel):
-        Genome("s3://fake-bucket/x.fa", storage_options=opts)
+        g.chroms  # triggers _ensure_probed → _open_fasta → fsspec.open
 
     assert captured["path"] == "s3://fake-bucket/x.fa"
     assert captured["kwargs"] == {"anon": True, "endpoint_url": "https://example"}

@@ -3,28 +3,37 @@
 PairwiseAccuracy ± binomial SE on the new matched-pair eval datasets
 (`bolinas-dna/evals_mendelian_traits` and `bolinas-dna/evals_complex_traits`,
 PR #159). Stripped-down successor to `evals_v1`: one metric, one split, no
-plotting, GCS-stored checkpoints.
+plotting, GCS- or HF-stored checkpoints.
 
 ## What it does
 
 For each `model` × `dataset` in the config:
 
-1. **Download** the genome reference (GRCh38, Ensembl 113) and the model
-   checkpoint dir from GCS.
-2. **Score** every variant with `compute_variant_scores` (LLR + embedding
-   distances).
+1. **Download** the model checkpoint dir (from GCS or HF Hub depending on
+   the model entry). The genome reference is read directly from S3 by
+   pyfaidx (byte-range reads — no full download).
+2. **Score** every variant with `compute_variant_scores`. The score
+   bundle is LLR + `next_token_jsd_mean` (per-position 4-nuc next-token
+   JSD averaged over downstream positions — called `down_jsd_mean` in
+   issue #175). Embedding-distance columns from earlier revisions are
+   dropped; the LLR-vs-embedding ensemble can be approximated with JSD
+   (Spearman ρ ≈ 0.90 with last_L2 within mendelian subsets per #175
+   conclusion 9), and `output_hidden_states=True` was using ~2.6 GB at
+   our shape that's better spent on a larger batch. FWD+RC averaging is
+   on by default (`inference.rc_avg`); doubles inference time but is the
+   validated default per #175 conclusion 2.
 3. **Compute** PairwiseAccuracy ± SE per consequence subset on the
    dataset-appropriate score column:
    - `mendelian_traits` → `minus_llr` (pathogenic > benign)
    - `complex_traits` → `abs_llr` (magnitude)
+   - `eqtl` → `abs_llr` (magnitude)
 
 Outputs land in S3 at `s3://oa-bolinas/snakemake/analysis/evals_v2/results/`:
 
 ```
 results/
-├── genome.fa.gz
 ├── checkpoints/{model}/                         # cached HF model dir
-├── scores/{model}/{dataset}.parquet             # variant cols + LLR/embedding scores
+├── scores/{model}/{dataset}.parquet             # variant cols + score bundle
 └── metrics/{model}/{dataset}.parquet            # PairwiseAccuracy ± SE per subset
 ```
 
@@ -35,7 +44,7 @@ results/
 - **Two context conventions are supported.** Per-model `window_size` config
   field selects the number of DNA bases extracted (255 or 256). The
   tokenizer loaded from each checkpoint handles BOS itself.
-  - 255 = BOS-using runs (e.g. `exp136-proj_v30`).
+  - 255 = BOS-using runs (e.g. `exp136-proj_v30`, `exp166-p1B`).
   - 256 = no-BOS runs (e.g. `exp55/58/59`).
 
 ## Setup
@@ -51,6 +60,9 @@ gcloud auth application-default login
 # snakemake/evals/ — see that pipeline's README).
 gcloud storage ls gs://marin-us-central1/checkpoints/ | head
 aws s3 ls s3://oa-bolinas/snakemake/analysis/evals_v2/ 2>&1 | head
+
+# Install the genome-s3 group so pyfaidx can read the reference from S3.
+uv sync --frozen --group genome-s3
 ```
 
 ## Usage
@@ -73,11 +85,11 @@ at `s3://oa-bolinas/snakemake/analysis/evals_v2/`.
 | Key | Purpose |
 | --- | --- |
 | `input_hf_prefix` | HF prefix for `f"{prefix}_{dataset.name}"`. |
-| `genome_url` | GRCh38 reference. |
+| `genome_path` | Canonical GRCh38 FASTA. fsspec URI (e.g. `s3://...`) or local path. The S3 path requires `--group genome-s3` at install time. |
 | `split` | `train` (or `test` once held-out eval is unlocked). |
 | `datasets` | List of `{name, score_column}`. |
-| `models` | List of `{name, gcs_path, window_size}`. `gcs_path` includes the `/hf/step-{N}` suffix. |
-| `inference.*` | Batch size, workers, `data_transform_on_the_fly`, `torch_compile`. |
+| `models` | List of `{name, window_size, ...}`. Each entry has exactly one of `gcs_path` (full GCS URI incl. `/hf/step-{N}`) or `hf_repo` (HuggingFace Hub repo ID). |
+| `inference.*` | Batch size, workers, `data_transform_on_the_fly`, `torch_compile`, `rc_avg` (FWD+RC averaging — doubles inference time). |
 
 ## Library
 

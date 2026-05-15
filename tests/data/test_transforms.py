@@ -16,6 +16,7 @@ from bolinas.data.genome import Genome
 from bolinas.data.dna import complement_base
 from bolinas.data.transforms import (
     NUCLEOTIDES,
+    _get_nucleotide_token_ids,
     _get_special_token_counts,
     transform_ll_clm,
     transform_llr_clm,
@@ -92,104 +93,58 @@ def test_transform_llr_clm_basic_functionality(tmp_path):
 
     result = transform_llr_clm(example, tokenizer, genome, window_size)
 
-    # Check return structure
+    # Check return structure: ref-only input_ids [L] + alt_token_id (int).
     assert isinstance(result, dict)
     assert "input_ids" in result
+    assert "alt_token_id" in result
     assert isinstance(result["input_ids"], torch.Tensor)
-
-    # Check shape: should be [2, L] for ref and alt sequences
-    assert result["input_ids"].shape[0] == 2
-    assert result["input_ids"].shape[1] == window_size
+    assert result["input_ids"].shape == (window_size,)
 
 
-def test_transform_llr_clm_creates_ref_and_alt_sequences(tmp_path):
-    """Test that transform_llr_clm creates both ref and alt sequences correctly"""
+def test_transform_llr_clm_records_ref_and_alt(tmp_path):
+    """Ref-suffix carries the ref nucleotide at the variant position; the
+    alt nucleotide travels separately as a scalar token ID (the kernel
+    reconstructs the alt suffix on the fly via a single-token swap)."""
     tokenizer = AutoTokenizer.from_pretrained("songlab/tokenizer-dna-mlm")
     genome = Genome(_write_test_fasta(tmp_path))
     window_size = 16
     example = {"chrom": "chr1", "pos": 6, "ref": "C", "alt": "G"}
 
     result = transform_llr_clm(example, tokenizer, genome, window_size)
-
     input_ids = result["input_ids"]
 
-    # Check that we have 2 sequences
-    assert input_ids.shape[0] == 2
-
-    # The two sequences should differ at exactly one position
-    diff_mask = input_ids[0] != input_ids[1]
-    num_diffs = diff_mask.sum().item()
-
-    # They should differ at exactly 1 position (the variant)
-    assert num_diffs == 1
-
-    # The position where they differ should be at or near window_size // 2
-    diff_pos = diff_mask.nonzero()[0].item()
-
-    # Verify the tokens at the different position correspond to ref and alt
+    # In-sequence variant position is window_size // 2 (no BOS for songlab).
+    var_pos = window_size // 2
     ref_token_id = tokenizer.encode(example["ref"])[0]
     alt_token_id = tokenizer.encode(example["alt"])[0]
 
-    assert input_ids[0, diff_pos].item() == ref_token_id
-    assert input_ids[1, diff_pos].item() == alt_token_id
+    assert input_ids[var_pos].item() == ref_token_id
+    assert result["alt_token_id"] == alt_token_id
 
 
-def test_transform_llr_clm_tokenizes_both_sequences(tmp_path):
-    """Test that both sequences are properly tokenized and stacked"""
+def test_transform_llr_clm_token_ids_are_valid(tmp_path):
+    """All ref-sequence token IDs are non-negative."""
     tokenizer = AutoTokenizer.from_pretrained("songlab/tokenizer-dna-mlm")
     genome = Genome(_write_test_fasta(tmp_path))
     window_size = 16
     example = {"chrom": "chr1", "pos": 6, "ref": "C", "alt": "T"}
 
     result = transform_llr_clm(example, tokenizer, genome, window_size)
-
-    input_ids = result["input_ids"]
-
-    # Check that we have exactly 2 sequences
-    assert input_ids.shape[0] == 2
-
-    # Check that both sequences have the same length
-    assert input_ids[0].shape == input_ids[1].shape
-
-    # Check that all token IDs are valid (non-negative)
-    assert (input_ids >= 0).all()
-
-
-def test_transform_llr_clm_first_tokens_match(tmp_path):
-    """Test that first 8 tokens match between ref and alt as asserted in code"""
-    tokenizer = AutoTokenizer.from_pretrained("songlab/tokenizer-dna-mlm")
-    genome = Genome(_write_test_fasta(tmp_path))
-    window_size = 16
-    # Use position that's far enough from the start
-    example = {"chrom": "chr1", "pos": 6, "ref": "C", "alt": "A"}
-
-    result = transform_llr_clm(example, tokenizer, genome, window_size)
-
-    input_ids = result["input_ids"]
-
-    # The code asserts that first 8 tokens should match
-    # This is because the variant is at position window_size//2 = 8
-    # So the first 8 positions should definitely match
-    assert (input_ids[0, :8] == input_ids[1, :8]).all()
+    assert (result["input_ids"] >= 0).all()
 
 
 def test_transform_llr_clm_different_window_sizes(tmp_path):
-    """Test with various window sizes"""
+    """Shape scales with window_size; ref nucleotide at var_pos always matches."""
     tokenizer = AutoTokenizer.from_pretrained("songlab/tokenizer-dna-mlm")
     genome = Genome(_write_test_fasta(tmp_path))
 
-    # Use window sizes >= 16 to ensure variant is at position 8 or later
-    # so that the first 8 tokens assertion in the code works
     for window_size in [16, 18, 20]:
         example = {"chrom": "chr1", "pos": 6, "ref": "C", "alt": "T"}
-
         result = transform_llr_clm(example, tokenizer, genome, window_size)
-
-        # Check shape matches window size
-        assert result["input_ids"].shape == (2, window_size)
-
-        # Check first 8 tokens match as asserted in the actual code
-        assert (result["input_ids"][0, :8] == result["input_ids"][1, :8]).all()
+        assert result["input_ids"].shape == (window_size,)
+        var_pos = window_size // 2
+        ref_token_id = tokenizer.encode(example["ref"])[0]
+        assert result["input_ids"][var_pos].item() == ref_token_id
 
 
 @pytest.mark.parametrize(
@@ -222,7 +177,9 @@ def test_get_special_token_counts_real_tokenizers(tokenizer_name, counts):
 
 
 def test_transform_llr_clm_exp136_recipe(tmp_path):
-    """Regression for issue #19: window_size=255 + bolinas BOS tokenizer."""
+    """Regression for issue #19: window_size=255 + bolinas BOS tokenizer.
+
+    With BOS (n_prefix=1), the token-level var_pos is window_size // 2 + 1 = 128."""
     tokenizer = AutoTokenizer.from_pretrained("bolinas-dna/tokenizer-char-bos")
     fasta_path = tmp_path / "g.fa"
     fasta_path.write_text(">chr1\n" + ("ACGT" * 100) + "\n")
@@ -231,10 +188,11 @@ def test_transform_llr_clm_exp136_recipe(tmp_path):
 
     result = transform_llr_clm(example, tokenizer, genome, window_size=255)
 
-    assert result["input_ids"].shape == (2, 256)
-    diff_mask = result["input_ids"][0] != result["input_ids"][1]
-    assert diff_mask.sum().item() == 1
-    assert diff_mask.nonzero()[0].item() == 128
+    assert result["input_ids"].shape == (256,)  # 255 bp + 1 BOS
+    var_pos_tokens = 255 // 2 + 1  # 128 (in-seq pos + n_prefix)
+    nuc_ids = _get_nucleotide_token_ids(tokenizer)
+    assert result["input_ids"][var_pos_tokens].item() == nuc_ids["T"]
+    assert result["alt_token_id"] == nuc_ids["G"]
 
 
 def test_transform_llr_clm_window_size_one(tmp_path):
@@ -245,8 +203,9 @@ def test_transform_llr_clm_window_size_one(tmp_path):
 
     result = transform_llr_clm(example, tokenizer, genome, window_size=1)
 
-    assert result["input_ids"].shape == (2, 1)
-    assert result["input_ids"][0, 0] != result["input_ids"][1, 0]
+    assert result["input_ids"].shape == (1,)
+    assert result["input_ids"][0].item() == tokenizer.encode("C")[0]
+    assert result["alt_token_id"] == tokenizer.encode("A")[0]
 
 
 @pytest.mark.parametrize(
@@ -265,10 +224,10 @@ def test_transform_llr_clm_handles_bos_eos(tmp_path, bos_id, eos_id, window_size
     has_bos = bos_id is not None
     has_eos = eos_id is not None
     expected_len = window_size + int(has_bos) + int(has_eos)
-    assert result["input_ids"].shape == (2, expected_len)
-    diff_mask = result["input_ids"][0] != result["input_ids"][1]
-    assert diff_mask.sum().item() == 1
-    assert diff_mask.nonzero()[0].item() == window_size // 2 + int(has_bos)
+    assert result["input_ids"].shape == (expected_len,)
+    var_pos_tokens = window_size // 2 + int(has_bos)
+    assert result["input_ids"][var_pos_tokens].item() == base.encode("C")[0]
+    assert result["alt_token_id"] == base.encode("A")[0]
 
 
 @pytest.mark.parametrize(
@@ -332,25 +291,23 @@ def test_transform_llr_clm_strand_rc_matrix(tmp_path, bos_id, eos_id, window_siz
     has_eos = eos_id is not None
     expected_len = window_size + int(has_bos) + int(has_eos)
 
-    assert rc["input_ids"].shape == (2, expected_len)
+    assert rc["input_ids"].shape == (expected_len,)
 
-    diff_mask = rc["input_ids"][0] != rc["input_ids"][1]
-    assert diff_mask.sum().item() == 1
     rc_dna_pos = (
         window_size - 1 - window_size // 2
     )  # asymmetric when window_size is even
-    assert diff_mask.nonzero()[0].item() == rc_dna_pos + int(has_bos)
+    rc_token_idx = rc_dna_pos + int(has_bos)
 
     nuc_ids = {n: base.encode(n)[0] for n in "ACGT"}
-    rc_token_idx = rc_dna_pos + int(has_bos)
-    assert rc["input_ids"][0, rc_token_idx].item() == nuc_ids["A"]  # complement("T")
-    assert rc["input_ids"][1, rc_token_idx].item() == nuc_ids["C"]  # complement("G")
+    # Ref nuc on RC strand is complement(T) = A; alt nuc is complement(G) = C.
+    assert rc["input_ids"][rc_token_idx].item() == nuc_ids["A"]
+    assert rc["alt_token_id"] == nuc_ids["C"]
 
-    # The body of rc[0] equals revcomp of the body of fwd[0]
+    # Body of the rc ref sequence equals revcomp of the body of fwd ref sequence.
     body_slice = slice(int(has_bos), expected_len - int(has_eos))
     id_to_nuc = {v: k for k, v in nuc_ids.items()}
-    fwd_body_dna = "".join(id_to_nuc[t.item()] for t in fwd["input_ids"][0, body_slice])
-    rc_body_dna = "".join(id_to_nuc[t.item()] for t in rc["input_ids"][0, body_slice])
+    fwd_body_dna = "".join(id_to_nuc[t.item()] for t in fwd["input_ids"][body_slice])
+    rc_body_dna = "".join(id_to_nuc[t.item()] for t in rc["input_ids"][body_slice])
     assert str(Seq(fwd_body_dna).reverse_complement()) == rc_body_dna
 
 
@@ -364,9 +321,12 @@ def test_transform_llr_clm_odd_window_strand_symmetric(tmp_path, window_size):
     fwd = transform_llr_clm(example, tokenizer, genome, window_size, strand="+")
     rc = transform_llr_clm(example, tokenizer, genome, window_size, strand="-")
 
-    fwd_diff = (fwd["input_ids"][0] != fwd["input_ids"][1]).nonzero()[0].item()
-    rc_diff = (rc["input_ids"][0] != rc["input_ids"][1]).nonzero()[0].item()
-    assert fwd_diff == rc_diff == window_size // 2
+    var_pos = window_size // 2  # equal on both strands for odd window_size
+    nuc_ids = {n: tokenizer.encode(n)[0] for n in "ACGT"}
+    # FWD: ref="T" at var_pos
+    assert fwd["input_ids"][var_pos].item() == nuc_ids["T"]
+    # RC: complement(ref) = "A" at var_pos
+    assert rc["input_ids"][var_pos].item() == nuc_ids["A"]
 
 
 def test_transform_llr_clm_strand_rc_n_padding(tmp_path):
@@ -379,23 +339,24 @@ def test_transform_llr_clm_strand_rc_n_padding(tmp_path):
     fwd = transform_llr_clm(example, tokenizer, genome, window_size, strand="+")
     rc = transform_llr_clm(example, tokenizer, genome, window_size, strand="-")
 
-    assert fwd["input_ids"].shape == (2, window_size)
-    assert rc["input_ids"].shape == (2, window_size)
+    assert fwd["input_ids"].shape == (window_size,)
+    assert rc["input_ids"].shape == (window_size,)
 
-    # On both strands, ref and alt differ at exactly one position
-    fwd_diff = (fwd["input_ids"][0] != fwd["input_ids"][1]).nonzero()[0].item()
-    rc_diff = (rc["input_ids"][0] != rc["input_ids"][1]).nonzero()[0].item()
-    assert fwd_diff == window_size // 2
-    assert rc_diff == window_size - 1 - window_size // 2
-
-    # The N-padded body on FWD reverse-complements to the N-padded body on RC
-    # (N maps to N under reverse_complement)
     base = tokenizer
     nuc_ids = {n: base.encode(n)[0] for n in "ACGTN"}
+    fwd_var_pos = window_size // 2
+    rc_var_pos = window_size - 1 - window_size // 2
+    assert fwd["input_ids"][fwd_var_pos].item() == nuc_ids["C"]
+    assert rc["input_ids"][rc_var_pos].item() == nuc_ids["G"]  # complement("C")
+    assert fwd["alt_token_id"] == nuc_ids["T"]
+    assert rc["alt_token_id"] == nuc_ids["A"]  # complement("T")
+
+    # The N-padded body on FWD reverse-complements to the N-padded body on RC
+    # (N maps to N under reverse_complement). Sanity: at least one N appears
+    # on each strand (chrom boundary).
     id_to_nuc = {v: k for k, v in nuc_ids.items()}
-    fwd_dna = "".join(id_to_nuc.get(t.item(), "?") for t in fwd["input_ids"][0])
-    rc_dna = "".join(id_to_nuc.get(t.item(), "?") for t in rc["input_ids"][0])
-    # Sanity: at least one N appears on each strand (chrom boundary)
+    fwd_dna = "".join(id_to_nuc.get(t.item(), "?") for t in fwd["input_ids"])
+    rc_dna = "".join(id_to_nuc.get(t.item(), "?") for t in rc["input_ids"])
     assert "N" in fwd_dna
     assert "N" in rc_dna
 

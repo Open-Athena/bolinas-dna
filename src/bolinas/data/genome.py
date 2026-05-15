@@ -52,15 +52,31 @@ class Genome:
         self._path: str = str(path)
         self._is_remote: bool = urlparse(self._path).scheme not in ("", "file")
         self._storage_options: dict[str, Any] = dict(storage_options or {})
+        self._subset_chroms: set[str] | None = (
+            set(subset_chroms) if subset_chroms is not None else None
+        )
 
-        # Probe once to capture chromosome sizes, then close so no live fd
-        # is inherited across fork() into DataLoader workers.
-        with self._open_fasta() as fa:
-            keys = [k for k in fa.keys() if subset_chroms is None or k in subset_chroms]
-            self._chrom_sizes: dict[str, int] = {k: len(fa[k]) for k in keys}
+        # Defer the chrom-size probe to first use. If we probed eagerly here,
+        # remote (s3://, etc.) paths would initialize fsspec's async event
+        # loop in the parent process — and that loop reference doesn't
+        # survive ``fork()`` into PyTorch DataLoader workers, deadlocking
+        # any S3 read in the worker. Lazy probing means each fork()'d
+        # worker triggers a fresh fsspec init on its own first ``__call__``.
+        self._chrom_sizes: dict[str, int] | None = None
 
         self._fa: Fasta | None = None
         self._fa_pid: int = -1
+
+    def _ensure_probed(self) -> None:
+        if self._chrom_sizes is not None:
+            return
+        with self._open_fasta() as fa:
+            keys = [
+                k
+                for k in fa.keys()
+                if self._subset_chroms is None or k in self._subset_chroms
+            ]
+            self._chrom_sizes = {k: len(fa[k]) for k in keys}
 
     def _open_fasta(self) -> Fasta:
         if self._is_remote:
@@ -79,6 +95,8 @@ class Genome:
     @property
     def chroms(self) -> dict[str, int]:
         """Chromosome names mapped to their lengths."""
+        self._ensure_probed()
+        assert self._chrom_sizes is not None
         return dict(self._chrom_sizes)
 
     def __call__(
@@ -100,6 +118,8 @@ class Genome:
             end: The end position of the sequence (0-based, exclusive).
             strand: The strand of the sequence (+ or -).
         """
+        self._ensure_probed()
+        assert self._chrom_sizes is not None
         if chrom not in self._chrom_sizes:
             raise ValueError(f"chromosome {chrom} not found in genome")
         chrom_size = self._chrom_sizes[chrom]

@@ -15,6 +15,7 @@ see ``pipelines/evals/evo2.py`` for an example.
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import torch
@@ -22,6 +23,7 @@ import torch.nn.functional as F
 from einops import rearrange, reduce
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
+from transformers.cache_utils import DynamicCache
 
 
 # https://github.com/ArcInstitute/evo2/blob/4c3c8522dc99d2dc14b5b5a07cd65f2b67e6f457/evo2/scoring.py#L37
@@ -58,31 +60,6 @@ def _clm_seq_logprob(
 ) -> Float[Tensor, " B"]:
     log_probs = _logits_to_logprobs(logits, input_ids)
     return reduce(log_probs.float(), "B L -> B", "sum")
-
-
-def compute_llr_clm(
-    model: Any,
-    input_ids: Int[Tensor, "B 2 L"],
-) -> Float[Tensor, " B"]:
-    """Compute log-likelihood ratio for causal language models.
-
-    Args:
-        model: HF-shaped causal LM; ``model(input_ids).logits`` must
-            return logits of shape ``[B, L, V]``.
-        input_ids: Input sequences with shape [B, 2, L] where the 2 sequences are [ref, alt]
-
-    Returns:
-        Log-likelihood ratio (alt_logprob - ref_logprob) with shape [B]
-    """
-    B = input_ids.shape[0]
-    input_ids = rearrange(input_ids, "B V L -> (B V) L")
-
-    logits = model(input_ids).logits
-    log_prob = _clm_seq_logprob(logits, input_ids)
-    log_prob = rearrange(log_prob, "(B V) -> B V", B=B)
-
-    llr = log_prob[:, 1] - log_prob[:, 0]  # alt - ref
-    return llr
 
 
 def compute_reflogprob_clm(
@@ -170,41 +147,175 @@ def compute_euclidean_distance(
     return F.pairwise_distance(ref_emb, alt_emb)
 
 
-def compute_llr_and_embedding_distance(
+def compute_variant_score_bundle(
     model: Any,
-    input_ids: Int[Tensor, "B 2 L"],
-) -> Float[Tensor, "B 3"]:
-    """Compute LLR, last-layer distance, and middle-layer distance in one pass.
+    input_ids: Int[Tensor, "B L"],
+    alt_token_id: Int[Tensor, " B"],
+    *,
+    var_pos: int,
+    nuc_token_ids: Int[Tensor, " 4"],
+) -> Float[Tensor, "B 2"]:
+    """Compute LLR and per-position next-token JSD using prefix-sharing.
+
+    SNV-only kernel. For each row, the alt sequence equals ``input_ids`` with
+    a single token replaced at ``var_pos`` by ``alt_token_id``. The shared
+    prefix ``input_ids[:, :var_pos]`` is forwarded once with KV-cache; the
+    two divergent suffixes (ref and alt, length ``L - var_pos``) are then
+    forwarded with the cached prefix as context. Same trick as
+    lm-eval-harness and inference servers like vLLM.
+
+    Both LLR and JSD operate in the **4-nucleotide softmax** space (rather
+    than full vocab). For SNVs both ref and alt targets are always
+    nucleotides, so ``log P_full(token | context) = log P_4nuc(token | context,
+    nuc) + log P_full(nuc | context)``; the second term cancels exactly at
+    the variant position (shared context) and is ~0 elsewhere for any
+    well-trained DNA model. Empirically validated against the prior
+    full-vocab kernel on exp166-p1B × mendelian: per-row LLR diff is at
+    bf16-noise scale (~1e-3) and Global PA shifts by < 0.002. The 4-nuc
+    softmax is shared between LLR (gather at the actual nuc index) and JSD
+    (full distribution + symmetric KL).
+
+    The kernel skips the LLR computation at prefix positions before
+    ``var_pos`` — they contribute zero to the alt-vs-ref log-prob diff
+    (same context, same target) — and at ``var_pos - 1`` it gathers from a
+    single shared prefix logit. Combined with prefix-sharing this means we
+    never materialize ``[B*2, L, V]`` logits.
+
+    ``var_pos`` is a Python int — constant per inference call, derived in
+    the wrapper from ``window_size``, ``strand``, and tokenizer
+    ``n_prefix`` (BOS). Passing it as a kwarg avoids a ``.item()`` call
+    that would graph-break under torch.compile.
 
     Args:
-        model: HF-shaped causal LM; ``model(input_ids, output_hidden_states=True)``
-            must return an object with ``.logits`` and ``.hidden_states``
-            (tuple of layer outputs, last layer at ``[-1]``).
-        input_ids: Input sequences with shape [B, 2, L] where the 2 sequences are [ref, alt]
+        model: HF-shaped causal LM. ``model(input_ids, use_cache=True,
+            logits_to_keep=N)`` must return ``.logits`` (shape ``[B, N, V]``
+            when ``logits_to_keep=N``, else ``[B, L, V]``) and
+            ``.past_key_values`` (HF ``Cache`` or legacy tuple).
+            ``model(input_ids, past_key_values=...)`` must accept the cache.
+        input_ids: Reference sequences, shape ``[B, L]``.
+        alt_token_id: Alt nucleotide token ID per row, shape ``[B]``.
+        var_pos: Token-level variant position (Python int, constant within batch).
+        nuc_token_ids: Length-4 tensor of token IDs for A/C/G/T in
+            ``NUCLEOTIDES`` order.
 
     Returns:
-        Tensor with shape [B, 3] where columns are:
-            - [:, 0]: LLR (log-likelihood ratio: alt_logprob - ref_logprob)
-            - [:, 1]: Euclidean distance between last-layer embeddings
-            - [:, 2]: Euclidean distance between middle-layer embeddings
+        Tensor with shape ``[B, 2]``:
+            - [:, 0]: LLR (alt_logprob - ref_logprob, 4-nuc-softmax space)
+            - [:, 1]: next_token_jsd_mean (mean per-position 4-nuc JSD over downstream positions)
     """
-    B = input_ids.shape[0]
-    input_ids_flat = rearrange(input_ids, "B V L -> (B V) L")
+    B, L = input_ids.shape
+    p = var_pos
+    assert 0 < p < L - 1, (
+        f"variant at token position {p} of length-{L} sequence has no shared "
+        f"prefix or no downstream prediction; expected 0 < var_pos < L-1"
+    )
 
-    output = model(input_ids_flat, output_hidden_states=True)
-    logits = output.logits
-    last_emb = output.hidden_states[-1]
-    middle_idx = len(output.hidden_states) // 2
-    middle_emb = output.hidden_states[middle_idx]
+    # Split: shared prefix, divergent suffixes (alt = ref with one token swap at p).
+    # Build alt_suffix functionally with torch.cat instead of clone+in-place
+    # assignment — avoids the clone allocation and stays compile-friendly
+    # (in-place mutation on a freshly-cloned tensor can graph-break on older
+    # torch.compile).
+    prefix = input_ids[:, :p].contiguous()
+    ref_suffix = input_ids[:, p:].contiguous()
+    alt_suffix = torch.cat([alt_token_id.unsqueeze(-1), ref_suffix[:, 1:]], dim=-1)
+    suffixes = torch.stack([ref_suffix, alt_suffix], dim=1)  # [B, 2, L-p]
+    suffixes_flat = rearrange(suffixes, "B V L -> (B V) L").contiguous()
 
-    log_prob = _clm_seq_logprob(logits, input_ids_flat)
-    log_prob = rearrange(log_prob, "(B V) -> B V", B=B)
-    llr = log_prob[:, 1] - log_prob[:, 0]  # alt - ref
+    # 1. Prefix forward — only need logits at the last prefix position
+    #    (predicts the variant token); skip the lm_head for the rest.
+    prefix_out = model(prefix, use_cache=True, logits_to_keep=1)
+    prefix_last_logits = prefix_out.logits[:, -1]  # [B, V]
+    past_kv = _repeat_interleave_kv_cache(prefix_out.past_key_values, 2)
 
-    last_emb = rearrange(last_emb, "(B V) L D -> B V (L D)", B=B)
-    last_distance = F.pairwise_distance(last_emb[:, 0], last_emb[:, 1])
+    # 2. Suffix forward with cached prefix.
+    suffix_logits = model(
+        suffixes_flat, past_key_values=past_kv, use_cache=False
+    ).logits  # [B*2, L-p, V]
 
-    middle_emb = rearrange(middle_emb, "(B V) L D -> B V (L D)", B=B)
-    middle_distance = F.pairwise_distance(middle_emb[:, 0], middle_emb[:, 1])
+    # 3. 4-nuc log-softmax — shared by LLR and JSD. fp32 cast inherits
+    #    the biofoundation#21 numerical-stability fix.
+    nuc_ids = nuc_token_ids.to(suffix_logits.device)
+    log_p_nuc = F.log_softmax(
+        suffix_logits[..., nuc_ids].float(), dim=-1
+    )  # [B*2, L-p, 4]
+    log_p_nuc = rearrange(log_p_nuc, "(B V) L C -> B V L C", B=B)  # [B, 2, L-p, 4]
+    log_p_ref = log_p_nuc[:, 0, :-1]  # [B, L-p-1, 4] — drop last (predicts off-the-end)
+    log_p_alt = log_p_nuc[:, 1, :-1]  # [B, L-p-1, 4]
 
-    return torch.stack([llr, last_distance, middle_distance], dim=1)
+    # 4. JSD over downstream positions (suffix indices [0, L-p-2] = global [p, L-2]).
+    log_m = torch.logaddexp(log_p_ref, log_p_alt) - math.log(2.0)
+    p_ref_dist = log_p_ref.exp()
+    p_alt_dist = log_p_alt.exp()
+    kl_ref_m = (p_ref_dist * (log_p_ref - log_m)).sum(dim=-1)  # [B, L-p-1]
+    kl_alt_m = (p_alt_dist * (log_p_alt - log_m)).sum(dim=-1)
+    next_token_jsd_mean = (0.5 * (kl_ref_m + kl_alt_m)).mean(dim=-1)  # [B]
+
+    # 5. LLR = (variant-position contribution at p-1) + (downstream contribution at [p, L-2]).
+    #    All in 4-nuc-softmax space; the log_full(nuc | context) terms cancel
+    #    at the variant position and ≈ 0 elsewhere for trained DNA models.
+    prefix_log_p = F.log_softmax(
+        prefix_last_logits[..., nuc_ids].float(), dim=-1
+    )  # [B, 4]
+    ref_var_idx = _token_id_to_nuc_idx(input_ids[:, p], nuc_ids)  # [B]
+    alt_var_idx = _token_id_to_nuc_idx(alt_token_id, nuc_ids)  # [B]
+    llr_at_var = prefix_log_p.gather(-1, alt_var_idx.unsqueeze(-1)).squeeze(
+        -1
+    ) - prefix_log_p.gather(-1, ref_var_idx.unsqueeze(-1)).squeeze(-1)  # [B]
+
+    # Downstream targets are shared between ref and alt (only var_pos differs).
+    suffix_targets = input_ids[:, p + 1 :]  # [B, L-p-1]
+    target_idx = _token_id_to_nuc_idx(suffix_targets, nuc_ids).unsqueeze(
+        -1
+    )  # [B, L-p-1, 1]
+    log_p_ref_at_targets = log_p_ref.gather(-1, target_idx).squeeze(-1)  # [B, L-p-1]
+    log_p_alt_at_targets = log_p_alt.gather(-1, target_idx).squeeze(-1)
+    llr_downstream = (log_p_alt_at_targets - log_p_ref_at_targets).sum(dim=-1)  # [B]
+
+    llr = llr_at_var + llr_downstream
+
+    return torch.stack([llr, next_token_jsd_mean], dim=1)
+
+
+def _token_id_to_nuc_idx(
+    token_ids: Int[Tensor, "..."],
+    nuc_token_ids: Int[Tensor, " 4"],
+) -> Int[Tensor, "..."]:
+    """Map a tensor of nucleotide token IDs to indices into ``nuc_token_ids``.
+
+    Asserts every token is one of the four nucleotides (raises otherwise —
+    catches non-SNV input that would silently miscompute downstream)."""
+    eq = token_ids.unsqueeze(-1) == nuc_token_ids
+    assert eq.any(dim=-1).all(), (
+        "non-nucleotide token in SNV input — expected only ACGT token IDs"
+    )
+    return eq.int().argmax(dim=-1)
+
+
+def _repeat_interleave_kv_cache(past_kv: Any, n: int) -> Any:
+    """Repeat each layer's K and V along the batch dim by ``n``.
+
+    Always returns an HF ``DynamicCache`` (constructing one from a legacy
+    tuple if needed). Modern Qwen3/Llama-style models call
+    ``past_key_values.get_seq_length()`` internally — the legacy
+    tuple-of-(K, V)-pairs format normally auto-converts, but under
+    ``torch.compile`` the conversion can be skipped and the method call
+    raises ``AttributeError: 'tuple' object has no attribute
+    'get_seq_length'``. Returning a real ``DynamicCache`` sidesteps that.
+
+    Mutates an input ``Cache`` in place — caller doesn't reuse the original.
+    """
+    if hasattr(past_kv, "key_cache") and hasattr(past_kv, "value_cache"):
+        for i in range(len(past_kv.key_cache)):
+            past_kv.key_cache[i] = past_kv.key_cache[i].repeat_interleave(n, dim=0)
+            past_kv.value_cache[i] = past_kv.value_cache[i].repeat_interleave(n, dim=0)
+        return past_kv
+
+    # Legacy tuple format → coerce to DynamicCache.
+    new_cache = DynamicCache()
+    for layer_idx, (k, v) in enumerate(past_kv):
+        new_cache.update(
+            k.repeat_interleave(n, dim=0),
+            v.repeat_interleave(n, dim=0),
+            layer_idx=layer_idx,
+        )
+    return new_cache

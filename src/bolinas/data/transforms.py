@@ -31,6 +31,15 @@ def _maybe_rc(seq: str, pos: int, strand: Literal["+", "-"]) -> tuple[str, int]:
     return seq, pos
 
 
+def in_seq_var_pos(window_size: int, strand: Literal["+", "-"] = "+") -> int:
+    """In-sequence variant position for a centered window on FWD or RC strand.
+
+    FWD: ``window_size // 2``. RC: ``window_size - 1 - window_size // 2``.
+    Equal for odd ``window_size``; differ by 1 for even.
+    """
+    return window_size // 2 if strand == "+" else window_size - 1 - window_size // 2
+
+
 def _get_variant_window(
     example: dict[str, Any],
     genome: Any,
@@ -47,7 +56,7 @@ def _get_variant_window(
     ``window_size`` puts the extra base in the left flank (e.g. 2 + 1 + 1 = 4).
 
     With ``strand="-"``, the same genomic interval is returned reverse-
-    complemented. The variant moves to index ``window_size - 1 - window_size // 2``
+    complemented. The variant moves to index ``in_seq_var_pos(window_size, "-")``
     (equal to the forward index for odd ``window_size``; shifted by 1 for
     even). The base at that index equals ``complement(example["ref"])``.
 
@@ -66,13 +75,13 @@ def _get_variant_window(
         Tuple of (sequence, position_within_window)
     """
     center_index = example["pos"] - 1  # 1-based to 0-based
-    pos = window_size // 2
+    pos = in_seq_var_pos(window_size, "+")
     start = center_index - pos
     end = start + window_size
     seq = genome(example["chrom"], start, end, strand=strand).upper()
     assert len(seq) == window_size
+    pos = in_seq_var_pos(window_size, strand)
     if strand == "-":
-        pos = window_size - 1 - pos
         assert seq[pos] == complement_base(example["ref"])
     else:
         assert seq[pos] == example["ref"]
@@ -116,28 +125,27 @@ def transform_llr_clm(
     window_size: int,
     strand: Literal["+", "-"] = "+",
 ) -> dict[str, Any]:
-    """Prepare an example for causal language modeling log likelihood ratio scoring.
+    """SNV-explicit variant-window transform for ``compute_variant_score_bundle``.
 
-    The input dictionary follows VCF semantics where `pos` is a 1-based
-    coordinate and `ref`/`alt` are single nucleotides. The function extracts a
-    centered window from the provided genome, creates two sequences (ref and alt),
-    and returns tokenized tensors stacked together.
+    Returns ``{"input_ids": [L] (ref only), "alt_token_id": int}``. The
+    alt sequence is identical to ref except at one position, so storing
+    only the ref tokens + the alt nucleotide token ID is a strictly
+    smaller representation than ``[2, L]`` (~50% dataset memory). The
+    kernel reconstructs the alt suffix on the fly.
 
-    With ``strand="-"``, the window is reverse-complemented and ``alt`` is
-    complemented before substitution; the variant ends up at the RC-strand
-    DNA index inside the window.
+    The input dictionary follows VCF semantics where ``pos`` is a 1-based
+    coordinate and ``ref``/``alt`` are single nucleotides. With
+    ``strand="-"``, the window is reverse-complemented and ``alt`` is
+    complemented; the variant ends up at the RC-strand DNA index inside
+    the window.
+
+    SNV-only: the schema can't represent indels or multi-base substitutions.
     """
-    seq, pos = _get_variant_window(example, genome, window_size, strand=strand)
+    seq, _pos = _get_variant_window(example, genome, window_size, strand=strand)
     alt = example["alt"] if strand == "+" else complement_base(example["alt"])
-    ref_seq = seq
-    alt_seq = seq[:pos] + alt + seq[pos + 1 :]
-    input_ids = torch.stack(
-        [
-            torch.tensor(tokenizer.encode(ref_seq)),
-            torch.tensor(tokenizer.encode(alt_seq)),
-        ]
-    )
-    return dict(input_ids=input_ids)
+    input_ids = torch.tensor(tokenizer.encode(seq))
+    alt_token_id = _get_nucleotide_token_ids(tokenizer)[alt]
+    return dict(input_ids=input_ids, alt_token_id=alt_token_id)
 
 
 def transform_reflogprob_clm(

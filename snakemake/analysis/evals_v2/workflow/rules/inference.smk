@@ -1,4 +1,5 @@
-"""Compute LLR / abs(LLR) / embedding-distance scores per (model, dataset).
+"""Compute the variant-score bundle (LLR + embedding distances + next-token JSD)
+per (model, dataset), with FWD+RC averaging.
 
 GPU-bound: meant to run on a SkyPilot GPU node, not the local CPU box.
 """
@@ -6,7 +7,6 @@ GPU-bound: meant to run on a SkyPilot GPU node, not the local CPU box.
 
 rule compute_scores:
     input:
-        genome="results/genome.fa.gz",
         checkpoint="results/checkpoints/{model}",
     output:
         "results/scores/{model}/{dataset}.parquet",
@@ -27,12 +27,15 @@ rule compute_scores:
         scores = compute_variant_scores(
             checkpoint_path=input.checkpoint,
             dataset=ds,
-            genome_path=input.genome,
+            # S3 URI; pyfaidx + fsspec/s3fs reads sequence by byte-range,
+            # no full download. Requires `--group genome-s3`.
+            genome_path=config["genome_path"],
             context_size=params.window_size,
             batch_size=config["inference"]["batch_size"],
             num_workers=config["inference"]["num_workers"],
             data_transform_on_the_fly=config["inference"]["data_transform_on_the_fly"],
             torch_compile=config["inference"]["torch_compile"],
+            rc_avg=config["inference"]["rc_avg"],
         )
         assert len(scores) == len(ds)
 

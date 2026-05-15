@@ -8,7 +8,7 @@ from datasets import Dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from bolinas.data.genome import Genome
-from bolinas.model.runner import run_llr_and_embedding_distance
+from bolinas.model.runner import run_variant_score_bundle
 
 
 def compute_variant_scores(
@@ -20,34 +20,44 @@ def compute_variant_scores(
     num_workers: int = 4,
     data_transform_on_the_fly: bool = True,
     torch_compile: bool = False,
+    rc_avg: bool = False,
 ) -> pd.DataFrame:
-    """Compute variant scores using LLR and embedding distances from a genomic language model.
+    """Compute variant scores from a CLM: LLR + embedding distances + next-token JSD.
 
-    Takes a dataset of genomic variants and computes LLR scores and embedding distances
-    using a causal language model. Returns only scores, preserving input row order for alignment.
+    Takes a dataset of genomic variants and computes the full score bundle
+    using a causal language model. Returns only scores, preserving input
+    row order for alignment.
 
     Args:
         checkpoint_path: Path to model checkpoint directory.
         dataset: DataFrame with columns [chrom, pos, ref, alt, label] and optionally [subset].
-        genome_path: Path to genome reference FASTA file.
+        genome_path: Path to genome reference FASTA. May be a local filesystem
+            path or an fsspec URI (e.g. ``s3://bucket/genome.fa.gz``); the
+            latter requires the ``genome-s3`` dependency group.
         context_size: Context window size for model inference.
         batch_size: Number of sequences per batch during inference.
         num_workers: Number of workers for data loading.
         data_transform_on_the_fly: Whether to transform data on the fly during inference.
         torch_compile: Whether to use torch.compile for faster inference.
+        rc_avg: If True, also score the reverse-complemented window for each
+            variant and return the element-wise FWD/RC average. Doubles
+            inference cost. See ``run_variant_score_bundle`` for the
+            semantics on the JSD column.
 
     Returns:
-        DataFrame with columns [llr, minus_llr, abs_llr, embed_last_l2, embed_middle_l2].
+        DataFrame with columns [llr, minus_llr, abs_llr, next_token_jsd_mean].
         Rows align with input dataset by index.
+
         - llr: Raw log-likelihood ratio
         - minus_llr: Negated LLR (higher = more deleterious)
         - abs_llr: Absolute LLR (higher = more impactful)
-        - embed_last_l2: L2 distance between reference and alternate embeddings (last layer)
-        - embed_middle_l2: L2 distance between reference and alternate embeddings (middle layer)
+        - next_token_jsd_mean: mean per-position 4-nuc JSD over downstream
+          positions (called ``down_jsd_mean`` in issue #175)
     """
     checkpoint_path = Path(checkpoint_path)
-    genome_path = Path(genome_path)
-
+    # Don't Path()-cast genome_path: would break s3:// URIs (POSIX path
+    # normalization collapses // to /). Genome accepts str | Path and
+    # detects the remote scheme itself.
     genome = Genome(genome_path)
     # AutoTokenizer / AutoModelForCausalLM satisfy the duck-typed interface
     # bolinas.model.runner expects — no adapter wrappers needed.
@@ -58,12 +68,13 @@ def compute_variant_scores(
     )
     hf_dataset = Dataset.from_pandas(dataset, preserve_index=False)
 
-    results = run_llr_and_embedding_distance(
+    results = run_variant_score_bundle(
         model,
         tokenizer,
         hf_dataset,
         genome,
         context_size,
+        rc_avg=rc_avg,
         data_transform_on_the_fly=data_transform_on_the_fly,
         inference_kwargs={
             "per_device_eval_batch_size": batch_size,
@@ -75,16 +86,14 @@ def compute_variant_scores(
     )
 
     llr = results[:, 0]
-    embed_last_l2 = results[:, 1]
-    embed_middle_l2 = results[:, 2]
+    next_token_jsd_mean = results[:, 1]
 
     scores = pd.DataFrame(
         {
             "llr": llr,
             "minus_llr": -llr,
             "abs_llr": np.abs(llr),
-            "embed_last_l2": embed_last_l2,
-            "embed_middle_l2": embed_middle_l2,
+            "next_token_jsd_mean": next_token_jsd_mean,
         }
     )
 

@@ -31,15 +31,20 @@ import numpy as np
 import torch.nn as nn
 from transformers import Trainer, TrainingArguments
 
+import torch
+
+from bolinas.data.dna import NUCLEOTIDES
 from bolinas.data.genome import Genome
 from bolinas.data.transforms import (
+    _get_nucleotide_token_ids,
+    _get_special_token_counts,
+    in_seq_var_pos,
     transform_ll_clm,
     transform_llr_clm,
 )
 from bolinas.model.scoring import (
     compute_ll_clm,
-    compute_llr_and_embedding_distance,
-    compute_llr_clm,
+    compute_variant_score_bundle,
 )
 
 
@@ -82,8 +87,7 @@ def _run_strand_aware(
     on the reverse-complemented strand and return the element-wise mean.
 
     ``strand`` is bound into ``transform_fn`` via ``partial``. Averaging is
-    element-wise on numpy arrays, so it works for shape ``[N]`` (e.g.
-    ``run_llr_clm``) and ``[N, 3]`` (``run_llr_and_embedding_distance``).
+    element-wise on numpy arrays, so it works for arbitrary output shape.
     """
 
     def _one(strand: Literal["+", "-"]) -> Any:
@@ -112,7 +116,7 @@ run_ll_clm = partial(
 )
 
 
-def run_llr_clm(
+def run_variant_score_bundle(
     model: nn.Module,
     tokenizer: Any,
     dataset: datasets.Dataset,
@@ -121,31 +125,28 @@ def run_llr_clm(
     rc_avg: bool = False,
     **kwargs: Any,
 ) -> Any:
-    return _run_strand_aware(
-        model,
-        tokenizer,
-        dataset,
-        compute_fn=compute_llr_clm,
-        transform_fn=transform_llr_clm,
-        transform_kwargs=dict(genome=genome, window_size=window_size),
-        rc_avg=rc_avg,
-        **kwargs,
-    )
+    """Run the variant-score bundle (LLR + next-token JSD) in one forward pass.
 
+    Two scores per variant:
 
-def run_llr_and_embedding_distance(
-    model: nn.Module,
-    tokenizer: Any,
-    dataset: datasets.Dataset,
-    genome: Genome,
-    window_size: int,
-    rc_avg: bool = False,
-    **kwargs: Any,
-) -> Any:
-    """Run combined LLR and embedding distance inference.
+    - LLR (log-likelihood ratio)
+    - ``next_token_jsd_mean`` — per-position 4-nucleotide softmax JSD between
+      REF and ALT next-token predictions, averaged over downstream positions
+      (called ``down_jsd_mean`` in Open-Athena/bolinas-dna#175).
 
-    Computes LLR, last-layer embedding distance, and middle-layer embedding distance
-    in a single forward pass.
+    Both scores share a single 4-nuc log_softmax in the kernel. The
+    nucleotide token IDs come from ``_get_nucleotide_token_ids`` (handles
+    BOS / n_prefix offset).
+
+    The token-level variant position is computed here per-strand and
+    bound into the compute_fn as a Python int — constant within the
+    inference call, no graph break under torch.compile. Per
+    ``_get_variant_window`` the in-sequence pos is ``window_size // 2``
+    on the FWD strand and ``window_size - 1 - window_size // 2`` on RC
+    (equal for odd ``window_size``, off-by-one for even); after
+    tokenization both shift by ``n_prefix``. We don't fuse FWD+RC into
+    ``_run_strand_aware`` because ``var_pos`` differs across strands for
+    even ``window_size`` and the strand-averaging logic is small.
 
     Args:
         model: HF-shaped causal LM (see module docstring for interface).
@@ -155,25 +156,42 @@ def run_llr_and_embedding_distance(
         window_size: Window size for sequence context.
         rc_avg: If True, also score the reverse-complemented window for
             each variant and return the element-wise average of FWD and
-            RC predictions (shape ``[N, 3]``). Doubles inference cost.
+            RC predictions. Doubles inference cost.
         **kwargs: Additional arguments passed to run_inference.
 
     Returns:
-        Numpy array with shape [B, 3] where columns are:
-            - [:, 0]: LLR (log-likelihood ratio)
-            - [:, 1]: Last-layer embedding distance
-            - [:, 2]: Middle-layer embedding distance
+        Numpy array with shape [B, 2]:
+            - [:, 0]: LLR
+            - [:, 1]: next_token_jsd_mean
     """
-    return _run_strand_aware(
-        model,
-        tokenizer,
-        dataset,
-        compute_fn=compute_llr_and_embedding_distance,
-        transform_fn=transform_llr_clm,
-        transform_kwargs=dict(genome=genome, window_size=window_size),
-        rc_avg=rc_avg,
-        **kwargs,
+    n_prefix, _ = _get_special_token_counts(tokenizer)
+    nuc_ids_dict = _get_nucleotide_token_ids(tokenizer)
+    nuc_token_ids = torch.tensor(
+        [nuc_ids_dict[nuc] for nuc in NUCLEOTIDES], dtype=torch.long
     )
+
+    def _one(strand: Literal["+", "-"]) -> Any:
+        var_pos = in_seq_var_pos(window_size, strand) + n_prefix
+        return run_inference(
+            model,
+            tokenizer,
+            dataset,
+            compute_fn=partial(
+                compute_variant_score_bundle,
+                var_pos=var_pos,
+                nuc_token_ids=nuc_token_ids,
+            ),
+            data_transform_fn=partial(
+                transform_llr_clm, genome=genome, window_size=window_size, strand=strand
+            ),
+            **kwargs,
+        )
+
+    fwd = _one("+")
+    if not rc_avg:
+        return fwd
+    rc = _one("-")
+    return (np.asarray(fwd) + np.asarray(rc)) / 2
 
 
 def _run_inference(
@@ -197,7 +215,23 @@ def _run_inference(
     Returns:
         The model's predictions on the dataset. The exact format depends on the
         model and dataset, but typically includes probabilities or embeddings.
+
+    Notes:
+        Pads the dataset up to a multiple of ``per_device_eval_batch_size`` by
+        repeating the last example, then slices the padded predictions off
+        before returning. With ``torch_compile=True``, this keeps every batch
+        at the same shape, so dynamo compiles a single graph for the cell
+        instead of a second one for the otherwise-partial trailing batch
+        (which on 1B Qwen3 + A10G cost ~15 s recompile per pass).
     """
+    n_real = len(dataset)
+    batch_size = kwargs.get("per_device_eval_batch_size", 1)
+    pad_n = (batch_size - n_real % batch_size) % batch_size if batch_size > 1 else 0
+    if pad_n > 0:
+        # Repeat the last real example pad_n times. The padded predictions
+        # are sliced off below — we only consume the first n_real rows.
+        dataset = dataset.select(list(range(n_real)) + [n_real - 1] * pad_n)
+
     # HF Trainer requires an output_dir even for .predict() (it never
     # writes to it on the predict path). Use a tempdir scoped to this
     # call so it's cleaned up deterministically.
@@ -207,7 +241,11 @@ def _run_inference(
             **(kwargs or {}),
         )
         trainer = Trainer(model=model, args=training_args)
-        return trainer.predict(test_dataset=dataset).predictions
+        predictions = trainer.predict(test_dataset=dataset).predictions
+
+    if pad_n > 0:
+        predictions = predictions[:n_real]
+    return predictions
 
 
 class _ModelComputeFnWrapper(nn.Module):

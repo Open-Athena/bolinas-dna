@@ -1,14 +1,16 @@
 # SkyPilot task: run the evals_v2 pipeline on a small GPU node.
 #
-# The pipeline pulls model checkpoints from `gs://marin-us-central1/...`,
-# scores variants on the matched-pair eval datasets, and computes
-# PairwiseAccuracy ± SE per (model, dataset). 5 models × 2 datasets = 10
-# inference runs, each ≤ 10K variants — fits on a single small GPU.
+# The pipeline pulls model checkpoints from `gs://marin-us-central1/...`
+# (or HF Hub for `hf_repo` model entries), reads the GRCh38 reference
+# directly from S3 by pyfaidx, scores variants on the matched-pair eval
+# datasets, and computes PairwiseAccuracy ± SE per (model, dataset).
+# 6 models × 3 datasets = 18 inference runs, each ≤ 10K variants — fits
+# on a single small GPU. RC averaging doubles per-run cost.
 #
 # Auth: the user's GCP application-default credentials are mounted from
 # ~/.config/gcloud/application_default_credentials.json. The setup step
 # installs the gcloud CLI so the pipeline's `gcloud storage cp -r` rule
-# works.
+# works. AWS creds for the S3 genome read come from the instance role.
 #
 # Launch:
 #   sky launch snakemake/analysis/evals_v2/sky/run.yaml -c evals-v2
@@ -55,7 +57,9 @@ setup: |
     # Pin to the ADC we mounted; gcloud picks this up automatically.
     export GOOGLE_APPLICATION_CREDENTIALS="$HOME/.config/gcloud/application_default_credentials.json"
 
-    uv sync --frozen
+    # `--group genome-s3` pulls in s3fs so pyfaidx can read the GRCh38
+    # reference directly from S3 (see config/config.yaml `genome_path`).
+    uv sync --frozen --group genome-s3
 
     # Smoke-test GCS access so a bad ADC fails fast in setup, not in a rule.
     gcloud storage ls gs://marin-us-central1/checkpoints/ | head -3 >/dev/null
@@ -78,7 +82,7 @@ run: |
     # if `--profile` etc. follow `$SNAKEMAKE_ARGS` they'd be treated as
     # target paths and the rule lookup fails with
     # `AttributeError: 'AnnotatedString' object has no attribute 'is_storage'`).
-    uv run --project ../../.. snakemake \
+    uv run --project ../../.. --group genome-s3 snakemake \
         --profile workflow/profiles/default \
         --printshellcmds \
         --rerun-incomplete \
