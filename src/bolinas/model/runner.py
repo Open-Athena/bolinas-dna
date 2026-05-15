@@ -37,12 +37,12 @@ from bolinas.data.dna import NUCLEOTIDES
 from bolinas.data.genome import Genome
 from bolinas.data.transforms import (
     _get_nucleotide_token_ids,
+    _get_special_token_counts,
     transform_ll_clm,
     transform_llr_clm,
 )
 from bolinas.model.scoring import (
     compute_ll_clm,
-    compute_llr_clm,
     compute_variant_score_bundle,
 )
 
@@ -86,8 +86,7 @@ def _run_strand_aware(
     on the reverse-complemented strand and return the element-wise mean.
 
     ``strand`` is bound into ``transform_fn`` via ``partial``. Averaging is
-    element-wise on numpy arrays, so it works for shape ``[N]`` (e.g.
-    ``run_llr_clm``) and ``[N, 2]`` (``run_variant_score_bundle``).
+    element-wise on numpy arrays, so it works for arbitrary output shape.
     """
 
     def _one(strand: Literal["+", "-"]) -> Any:
@@ -116,27 +115,6 @@ run_ll_clm = partial(
 )
 
 
-def run_llr_clm(
-    model: nn.Module,
-    tokenizer: Any,
-    dataset: datasets.Dataset,
-    genome: Genome,
-    window_size: int,
-    rc_avg: bool = False,
-    **kwargs: Any,
-) -> Any:
-    return _run_strand_aware(
-        model,
-        tokenizer,
-        dataset,
-        compute_fn=compute_llr_clm,
-        transform_fn=transform_llr_clm,
-        transform_kwargs=dict(genome=genome, window_size=window_size),
-        rc_avg=rc_avg,
-        **kwargs,
-    )
-
-
 def run_variant_score_bundle(
     model: nn.Module,
     tokenizer: Any,
@@ -155,9 +133,19 @@ def run_variant_score_bundle(
       REF and ALT next-token predictions, averaged over downstream positions
       (called ``down_jsd_mean`` in Open-Athena/bolinas-dna#175).
 
-    Nucleotide token IDs are derived from the tokenizer via
-    ``_get_nucleotide_token_ids`` (which handles BOS/n_prefix offset) and
-    bound into the compute function as a tensor in ``NUCLEOTIDES`` order.
+    Both scores share a single 4-nuc log_softmax in the kernel. The
+    nucleotide token IDs come from ``_get_nucleotide_token_ids`` (handles
+    BOS / n_prefix offset).
+
+    The token-level variant position is computed here per-strand and
+    bound into the compute_fn as a Python int — constant within the
+    inference call, no graph break under torch.compile. Per
+    ``_get_variant_window`` the in-sequence pos is ``window_size // 2``
+    on the FWD strand and ``window_size - 1 - window_size // 2`` on RC
+    (equal for odd ``window_size``, off-by-one for even); after
+    tokenization both shift by ``n_prefix``. We don't fuse FWD+RC into
+    ``_run_strand_aware`` because ``var_pos`` differs across strands for
+    even ``window_size`` and the strand-averaging logic is small.
 
     Args:
         model: HF-shaped causal LM (see module docstring for interface).
@@ -167,34 +155,45 @@ def run_variant_score_bundle(
         window_size: Window size for sequence context.
         rc_avg: If True, also score the reverse-complemented window for
             each variant and return the element-wise average of FWD and
-            RC predictions (shape ``[N, 2]``). Doubles inference cost.
-            Under RC, the AR mask runs in token order which is reversed
-            on the RC strand — so FWD captures the genomic-downstream
-            half of the variant's effect footprint and RC captures the
-            genomic-upstream half (see issue #175 conclusion 9). The
-            average is bidirectional nuc-dep despite the unidirectional
-            AR model.
+            RC predictions. Doubles inference cost.
         **kwargs: Additional arguments passed to run_inference.
 
     Returns:
-        Numpy array with shape [B, 2] where columns are:
+        Numpy array with shape [B, 2]:
             - [:, 0]: LLR
             - [:, 1]: next_token_jsd_mean
     """
+    n_prefix, _ = _get_special_token_counts(tokenizer)
     nuc_ids_dict = _get_nucleotide_token_ids(tokenizer)
     nuc_token_ids = torch.tensor(
         [nuc_ids_dict[nuc] for nuc in NUCLEOTIDES], dtype=torch.long
     )
-    return _run_strand_aware(
-        model,
-        tokenizer,
-        dataset,
-        compute_fn=partial(compute_variant_score_bundle, nuc_token_ids=nuc_token_ids),
-        transform_fn=transform_llr_clm,
-        transform_kwargs=dict(genome=genome, window_size=window_size),
-        rc_avg=rc_avg,
-        **kwargs,
-    )
+
+    def _one(strand: Literal["+", "-"]) -> Any:
+        in_seq_pos = (
+            window_size // 2 if strand == "+" else window_size - 1 - window_size // 2
+        )
+        var_pos = in_seq_pos + n_prefix
+        return run_inference(
+            model,
+            tokenizer,
+            dataset,
+            compute_fn=partial(
+                compute_variant_score_bundle,
+                var_pos=var_pos,
+                nuc_token_ids=nuc_token_ids,
+            ),
+            data_transform_fn=partial(
+                transform_llr_clm, genome=genome, window_size=window_size, strand=strand
+            ),
+            **kwargs,
+        )
+
+    fwd = _one("+")
+    if not rc_avg:
+        return fwd
+    rc = _one("-")
+    return (np.asarray(fwd) + np.asarray(rc)) / 2
 
 
 def _run_inference(

@@ -116,28 +116,27 @@ def transform_llr_clm(
     window_size: int,
     strand: Literal["+", "-"] = "+",
 ) -> dict[str, Any]:
-    """Prepare an example for causal language modeling log likelihood ratio scoring.
+    """SNV-explicit variant-window transform for ``compute_variant_score_bundle``.
 
-    The input dictionary follows VCF semantics where `pos` is a 1-based
-    coordinate and `ref`/`alt` are single nucleotides. The function extracts a
-    centered window from the provided genome, creates two sequences (ref and alt),
-    and returns tokenized tensors stacked together.
+    Returns ``{"input_ids": [L] (ref only), "alt_token_id": int}``. The
+    alt sequence is identical to ref except at one position, so storing
+    only the ref tokens + the alt nucleotide token ID is a strictly
+    smaller representation than ``[2, L]`` (~50% dataset memory). The
+    kernel reconstructs the alt suffix on the fly.
 
-    With ``strand="-"``, the window is reverse-complemented and ``alt`` is
-    complemented before substitution; the variant ends up at the RC-strand
-    DNA index inside the window.
+    The input dictionary follows VCF semantics where ``pos`` is a 1-based
+    coordinate and ``ref``/``alt`` are single nucleotides. With
+    ``strand="-"``, the window is reverse-complemented and ``alt`` is
+    complemented; the variant ends up at the RC-strand DNA index inside
+    the window.
+
+    SNV-only: the schema can't represent indels or multi-base substitutions.
     """
-    seq, pos = _get_variant_window(example, genome, window_size, strand=strand)
+    seq, _pos = _get_variant_window(example, genome, window_size, strand=strand)
     alt = example["alt"] if strand == "+" else complement_base(example["alt"])
-    ref_seq = seq
-    alt_seq = seq[:pos] + alt + seq[pos + 1 :]
-    input_ids = torch.stack(
-        [
-            torch.tensor(tokenizer.encode(ref_seq)),
-            torch.tensor(tokenizer.encode(alt_seq)),
-        ]
-    )
-    return dict(input_ids=input_ids)
+    input_ids = torch.tensor(tokenizer.encode(seq))
+    alt_token_id = _get_nucleotide_token_ids(tokenizer)[alt]
+    return dict(input_ids=input_ids, alt_token_id=alt_token_id)
 
 
 def transform_reflogprob_clm(

@@ -111,8 +111,10 @@ def find_max_batch_size(
     ``seq_factor`` is the number of sequences per logical "row" the
     downstream pipeline pushes through the model in one batch:
 
-    - ``2`` (default) for ``compute_llr_clm`` — flattens ``[B, 2, L]``
-      (ref+alt per variant) into ``[B*2, L]`` before the fwd pass.
+    - ``2`` (default) for ``compute_variant_score_bundle`` — one ref-suffix
+      and one alt-suffix forwarded per variant (the shared prefix is
+      forwarded once via KV-cache; only the suffixes hit the per-row
+      multiplier).
     - ``1`` for ``compute_ll_clm`` — one sequence per row.
     """
     import torch
@@ -152,7 +154,7 @@ def _load_evo2_for_inference(
     """Construct ``(model, tokenizer)`` ready for ``bolinas.model.runner``.
 
     Both wrappers shim Evo2 into the HF-shaped duck-typed interface that
-    ``bolinas.model.runner.run_llr_clm`` / ``run_ll_clm`` expect; the model
+    ``bolinas.model.runner.run_variant_score_bundle`` / ``run_ll_clm`` expect; the model
     wrapper also handles sharded multi-GPU device routing transparently.
     """
     from evo2 import Evo2
@@ -187,7 +189,7 @@ def compute_evo2_llr(
             OOM-descent tune starting from ``tune_start`` and pick the largest
             that survives a forward pass.
         num_workers: Dataloader workers.
-        data_transform_on_the_fly: Forwarded to ``run_llr_clm``.
+        data_transform_on_the_fly: Forwarded to ``run_variant_score_bundle``.
         tune_start: Initial batch size to probe when ``batch_size is None``.
 
     Returns:
@@ -197,7 +199,7 @@ def compute_evo2_llr(
     from datasets import Dataset
 
     from bolinas.data.genome import Genome
-    from bolinas.model.runner import run_llr_clm
+    from bolinas.model.runner import run_variant_score_bundle
 
     genome_path = Path(genome_path)
     assert genome_path.exists(), f"genome not found: {genome_path}"
@@ -213,7 +215,8 @@ def compute_evo2_llr(
 
     hf_dataset = Dataset.from_pandas(dataset, preserve_index=False)
 
-    llr = run_llr_clm(
+    # Bundle returns [N, 2] = (LLR, next_token_jsd_mean); we only need LLR.
+    bundle = run_variant_score_bundle(
         model,
         tokenizer,
         hf_dataset,
@@ -227,7 +230,7 @@ def compute_evo2_llr(
         ),
     )
 
-    llr = np.asarray(llr).reshape(-1)
+    llr = np.asarray(bundle)[:, 0]
     assert llr.shape == (len(dataset),), (
         f"LLR shape mismatch: got {llr.shape}, expected ({len(dataset)},)"
     )
