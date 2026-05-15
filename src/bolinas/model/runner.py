@@ -38,6 +38,7 @@ from bolinas.data.genome import Genome
 from bolinas.data.transforms import (
     _get_nucleotide_token_ids,
     _get_special_token_counts,
+    in_seq_var_pos,
     transform_ll_clm,
     transform_llr_clm,
 )
@@ -170,10 +171,7 @@ def run_variant_score_bundle(
     )
 
     def _one(strand: Literal["+", "-"]) -> Any:
-        in_seq_pos = (
-            window_size // 2 if strand == "+" else window_size - 1 - window_size // 2
-        )
-        var_pos = in_seq_pos + n_prefix
+        var_pos = in_seq_var_pos(window_size, strand) + n_prefix
         return run_inference(
             model,
             tokenizer,

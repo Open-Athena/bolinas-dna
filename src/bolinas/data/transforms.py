@@ -31,6 +31,15 @@ def _maybe_rc(seq: str, pos: int, strand: Literal["+", "-"]) -> tuple[str, int]:
     return seq, pos
 
 
+def in_seq_var_pos(window_size: int, strand: Literal["+", "-"] = "+") -> int:
+    """In-sequence variant position for a centered window on FWD or RC strand.
+
+    FWD: ``window_size // 2``. RC: ``window_size - 1 - window_size // 2``.
+    Equal for odd ``window_size``; differ by 1 for even.
+    """
+    return window_size // 2 if strand == "+" else window_size - 1 - window_size // 2
+
+
 def _get_variant_window(
     example: dict[str, Any],
     genome: Any,
@@ -47,7 +56,7 @@ def _get_variant_window(
     ``window_size`` puts the extra base in the left flank (e.g. 2 + 1 + 1 = 4).
 
     With ``strand="-"``, the same genomic interval is returned reverse-
-    complemented. The variant moves to index ``window_size - 1 - window_size // 2``
+    complemented. The variant moves to index ``in_seq_var_pos(window_size, "-")``
     (equal to the forward index for odd ``window_size``; shifted by 1 for
     even). The base at that index equals ``complement(example["ref"])``.
 
@@ -66,13 +75,13 @@ def _get_variant_window(
         Tuple of (sequence, position_within_window)
     """
     center_index = example["pos"] - 1  # 1-based to 0-based
-    pos = window_size // 2
+    pos = in_seq_var_pos(window_size, "+")
     start = center_index - pos
     end = start + window_size
     seq = genome(example["chrom"], start, end, strand=strand).upper()
     assert len(seq) == window_size
+    pos = in_seq_var_pos(window_size, strand)
     if strand == "-":
-        pos = window_size - 1 - pos
         assert seq[pos] == complement_base(example["ref"])
     else:
         assert seq[pos] == example["ref"]

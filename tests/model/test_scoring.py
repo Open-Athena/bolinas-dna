@@ -461,7 +461,7 @@ def test_run_variant_score_bundle_rc_avg_equals_mean_of_two_passes(tmp_path):
     element-wise mean of FWD and RC single-strand runs. Catches regressions
     in the per-strand var_pos derivation, partial-binding, and strand
     averaging."""
-    from bolinas.data.transforms import _get_special_token_counts
+    from bolinas.data.transforms import _get_special_token_counts, in_seq_var_pos
 
     torch.manual_seed(0)
     tokenizer = AutoTokenizer.from_pretrained("songlab/tokenizer-dna-mlm")
@@ -478,7 +478,7 @@ def test_run_variant_score_bundle_rc_avg_equals_mean_of_two_passes(tmp_path):
     nuc_token_ids = torch.tensor(
         [nuc_ids_dict[nuc] for nuc in NUCLEOTIDES], dtype=torch.long
     )
-    var_pos_rc = (window_size - 1 - window_size // 2) + n_prefix
+    var_pos_rc = in_seq_var_pos(window_size, "-") + n_prefix
 
     fwd = run_variant_score_bundle(
         model,

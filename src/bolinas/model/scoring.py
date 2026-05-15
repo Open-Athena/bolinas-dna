@@ -166,10 +166,12 @@ def compute_variant_score_bundle(
 
     Both LLR and JSD operate in the **4-nucleotide softmax** space (rather
     than full vocab). For SNVs both ref and alt targets are always
-    nucleotides, so `log P_full(token | context) = log P_4nuc(token | context,
-    nuc) + log P_full(nuc | context)`; the second term ≈ 0 for any
-    well-trained DNA model (mass on non-nuc tokens is negligible) and
-    cancels exactly at the variant position (shared context). The 4-nuc
+    nucleotides, so ``log P_full(token | context) = log P_4nuc(token | context,
+    nuc) + log P_full(nuc | context)``; the second term cancels exactly at
+    the variant position (shared context) and is ~0 elsewhere for any
+    well-trained DNA model. Empirically validated against the prior
+    full-vocab kernel on exp166-p1B × mendelian: per-row LLR diff is at
+    bf16-noise scale (~1e-3) and Global PA shifts by < 0.002. The 4-nuc
     softmax is shared between LLR (gather at the actual nuc index) and JSD
     (full distribution + symmetric KL).
 
@@ -209,10 +211,13 @@ def compute_variant_score_bundle(
     )
 
     # Split: shared prefix, divergent suffixes (alt = ref with one token swap at p).
+    # Build alt_suffix functionally with torch.cat instead of clone+in-place
+    # assignment — avoids the clone allocation and stays compile-friendly
+    # (in-place mutation on a freshly-cloned tensor can graph-break on older
+    # torch.compile).
     prefix = input_ids[:, :p].contiguous()
     ref_suffix = input_ids[:, p:].contiguous()
-    alt_suffix = ref_suffix.clone()
-    alt_suffix[:, 0] = alt_token_id
+    alt_suffix = torch.cat([alt_token_id.unsqueeze(-1), ref_suffix[:, 1:]], dim=-1)
     suffixes = torch.stack([ref_suffix, alt_suffix], dim=1)  # [B, 2, L-p]
     suffixes_flat = rearrange(suffixes, "B V L -> (B V) L").contiguous()
 
