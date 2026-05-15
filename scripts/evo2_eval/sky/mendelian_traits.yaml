@@ -45,13 +45,13 @@ setup: |
   FROM nvcr.io/nvidia/pytorch:25.04-py3
   RUN pip install --break-system-packages evo2
   # Runtime deps for bolinas.model.runner + bolinas.data.genome — previously
-  # pulled transitively by biofoundation. nvcr ships transformers + torch +
-  # numpy + pandas + an old datasets 2.x (incompatible with newer fsspec —
-  # raises "Invalid pattern: '**' can only be an entire path component"),
-  # but not pyfaidx. Force-upgrade datasets to match the project pin.
+  # pulled transitively by biofoundation. nvcr ships torch + numpy + pandas
+  # + an old datasets 2.x (incompatible with newer fsspec — raises
+  # "Invalid pattern: '**' can only be an entire path component"), but NOT
+  # transformers or pyfaidx. Force-upgrade datasets, add the missing deps.
   # PIP_CONSTRAINT= bypass: nvcr's /etc/pip/constraint.txt pins dill==0.3.9
   # but datasets>=3.1 needs dill<0.3.9 → ResolutionImpossible without bypass.
-  RUN PIP_CONSTRAINT= pip install --break-system-packages -U "datasets>=3.1,<4" pyfaidx
+  RUN PIP_CONSTRAINT= pip install --break-system-packages -U "datasets>=3.1,<4" pyfaidx transformers
   # nvcr image's transformers wants regex>=2025.10.22 but ships an older one
   # pinned via the same constraint file. Unset PIP_CONSTRAINT to bypass,
   # then upgrade regex.
