@@ -83,9 +83,11 @@ INTERMEDIATE_DIM = HIDDEN_DIM * 4  # mlp_ratio=4
 NUM_HEADS = HIDDEN_DIM // 128  # hidden_head_ratio=128 → 15 heads
 NUM_LAYERS = 19  # round(1920 / (64 + log2(1920)*4 - 9)) = 19
 
-# v5p-8 matches what exp166's training (and exp160_parity) ran on. Inference is
-# bf16-friendly and fits in v5p-8 HBM (~95 GB/chip) with comfort.
-TPU_TYPES: tuple[str, ...] = ("v5p-8",)
+# v6e-4 has its own quota pool (separate from v5p-preemptible). Switched on
+# 2026-05-15 because v5p-preemptible was stuck in the bad-node-signature
+# retry loop in BOTH us-east5 and us-central1 across 3 attempts (r7/r8/r9).
+# 1B-param eval inference fits in v6e-4 HBM (~31 GB/chip) comfortably.
+TPU_TYPES: tuple[str, ...] = ("v6e-4",)
 
 # bolinas-dna's `marin` extra transitively pulls lm-eval, levanter, jax,
 # transformers — same substitution exp160_parity.py uses for its tokenize step
