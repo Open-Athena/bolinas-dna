@@ -29,7 +29,6 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 from datasets import load_dataset  # noqa: E402
 
-from bolinas.pipelines.evals.conservation import REQUIRED_VARIANT_COLUMNS  # noqa: E402
 from bolinas.pipelines.evals.evo2 import (  # noqa: E402
     EVO2_MODEL_CHOICES,
     compute_evo2_variant_score_bundle,
@@ -44,6 +43,19 @@ from bolinas.pipelines.evals.metrics import (  # noqa: E402
 DATASET_HF_PATH = "bolinas-dna/evals_mendelian_traits"
 SCORE_COLUMN = "minus_llr"
 DATASET_NAME = "mendelian_traits"
+# Schema of the matched-pair eval datasets. Same tuple as
+# `bolinas.pipelines.evals.conservation.REQUIRED_VARIANT_COLUMNS`, hardcoded
+# here to avoid importing conservation.py (which triggers a top-level
+# `import pyBigWig` — needs libBigWig.so on the host).
+REQUIRED_VARIANT_COLUMNS = (
+    "chrom",
+    "pos",
+    "ref",
+    "alt",
+    "label",
+    "subset",
+    "match_group",
+)
 
 
 def main() -> None:

@@ -44,6 +44,10 @@ setup: |
   cat > /tmp/evo2.Dockerfile <<'EOF'
   FROM nvcr.io/nvidia/pytorch:25.04-py3
   RUN pip install --break-system-packages evo2
+  # Runtime deps for bolinas.model.runner + bolinas.data.genome — previously
+  # pulled transitively by biofoundation. nvcr ships transformers + torch +
+  # numpy + pandas, but not datasets or pyfaidx.
+  RUN pip install --break-system-packages datasets pyfaidx
   # nvcr image's transformers wants regex>=2025.10.22 but ships an older one
   # pinned via a pip constraint file (/etc/pip/constraint.txt). Unset
   # PIP_CONSTRAINT to bypass, then upgrade regex.
