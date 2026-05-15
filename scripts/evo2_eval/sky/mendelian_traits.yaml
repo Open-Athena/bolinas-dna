@@ -52,7 +52,8 @@ setup: |
   # PIP_CONSTRAINT= bypass: nvcr's /etc/pip/constraint.txt pins dill==0.3.9
   # but datasets>=3.1 needs dill<0.3.9 → ResolutionImpossible without bypass.
   RUN PIP_CONSTRAINT= pip install --break-system-packages -U \
-    "datasets>=3.1,<4" pyfaidx transformers jaxtyping einops scipy scikit-learn
+    "datasets>=3.1,<4" pyfaidx "transformers[torch]" \
+    jaxtyping einops scipy scikit-learn accelerate
   # nvcr image's transformers wants regex>=2025.10.22 but ships an older one
   # pinned via the same constraint file. Unset PIP_CONSTRAINT to bypass,
   # then upgrade regex.
