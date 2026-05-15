@@ -186,6 +186,36 @@ def test_heterogeneous_strand_sets_fails_loud():
         _run_aggregation(items)
 
 
+def test_per_subset_rows_with_n_below_30_are_dropped():
+    """Per-subset rows with fewer than 30 matched pairs are NOT stored
+    (leaderboard convention). ``_global_`` and ``_macro_avg_`` are always stored.
+    """
+    per_variant: list = []
+    # 30 pairs in "missense" — qualifying.
+    for i in range(30):
+        per_variant.append((("1", 100 + i, "G", "A"), 1, "missense", i + 1, {"+": 0.9}))
+        per_variant.append((("1", 200 + i, "T", "A"), 0, "missense", i + 1, {"+": 0.1}))
+    # 5 pairs in "splicing" — below threshold.
+    for i in range(5):
+        per_variant.append(
+            (("2", 100 + i, "G", "A"), 1, "splicing", 100 + i, {"+": 0.9})
+        )
+        per_variant.append(
+            (("2", 200 + i, "T", "A"), 0, "splicing", 100 + i, {"+": 0.1})
+        )
+    items = _items_from_per_variant(per_variant)
+    _, store = _run_aggregation(items)
+
+    # Qualifying subset is present.
+    assert "missense/avg/pairwise_accuracy" in store
+    # Below-threshold subset is dropped.
+    assert "splicing/avg/pairwise_accuracy" not in store
+    assert "splicing/avg/pairwise_accuracy_se" not in store
+    # Aggregate rows always emitted.
+    assert "_global_/avg/pairwise_accuracy" in store
+    assert "_macro_avg_/avg/pairwise_accuracy" in store
+
+
 def test_se_is_finite_and_consistent_with_wald():
     """Standard error matches the Wald binomial form ``sqrt(p*(1-p)/n)``.
 

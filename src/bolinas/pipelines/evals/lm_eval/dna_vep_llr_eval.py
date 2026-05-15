@@ -41,7 +41,20 @@ import pandas as pd
 from lm_eval.api.instance import Instance
 from lm_eval.api.task import Task
 
-from bolinas.pipelines.evals.metrics import GLOBAL_SUBSET, compute_pairwise_metrics
+from bolinas.pipelines.evals.metrics import (
+    GLOBAL_SUBSET,
+    MACRO_AVG_SUBSET,
+    compute_pairwise_metrics,
+)
+
+
+# Per-subset PA only reported for subsets with ``n_pairs`` >= this many pairs.
+# Matches ``compute_pairwise_metrics``' default ``n_min`` and the leaderboard
+# convention (#161/#162/#172): a per-subset cell is only shown when there
+# are at least this many matched-pair examples to estimate from. _global_ and
+# _macro_avg_ rows are always reported (their ``n_pairs`` has a different
+# meaning).
+_MIN_PAIRS_PER_SUBSET = 30
 
 
 # Strand tag → key segment used when storing per-strand PA in the wandb store.
@@ -62,8 +75,11 @@ class _PairwiseAccuracyAggregation:
     All score columns are passed to ``compute_pairwise_metrics`` in a single
     call. The resulting per-subset PA goes into ``self.results_store`` keyed as
     ``{subset}/{strand_tag}/{metric_name}`` (and ``..._se``) where
-    ``strand_tag`` ∈ ``{"fwd", "rc", "avg"}``. Returns
-    ``_global_/avg/{metric_name}`` as the lm-eval scalar.
+    ``strand_tag`` ∈ ``{"fwd", "rc", "avg"}``. Per-subset rows with fewer than
+    ``_MIN_PAIRS_PER_SUBSET`` matched pairs are dropped (leaderboard
+    convention — only stable subset cells get a number); the ``_global_`` and
+    ``_macro_avg_`` rows are always emitted. Returns ``_global_/avg/{metric_name}``
+    as the lm-eval scalar.
     """
 
     def __init__(self, results_store: dict, metric_name: str):
@@ -146,11 +162,22 @@ class _PairwiseAccuracyAggregation:
             dataset=df[["label", "subset", "match_group"]],
             scores=df[score_columns],
             score_columns=score_columns,
+            n_min=_MIN_PAIRS_PER_SUBSET,
         )
         # Store every (score_type, subset) row keyed as {subset}/{strand_tag}/{metric_name}.
+        # Per-subset rows with fewer than _MIN_PAIRS_PER_SUBSET pairs are dropped
+        # to match the leaderboard convention (only _global_ + _macro_avg_ +
+        # qualifying per-subset cells are exposed).
         for _, row in metrics.iterrows():
+            subset_name = row["subset"]
+            n_pairs = int(row["n_pairs"])
+            if (
+                subset_name not in (GLOBAL_SUBSET, MACRO_AVG_SUBSET)
+                and n_pairs < _MIN_PAIRS_PER_SUBSET
+            ):
+                continue
             strand_tag = row["score_type"].removeprefix("score_")  # fwd / rc / avg
-            key = f"{row['subset']}/{strand_tag}/{self.metric_name}"
+            key = f"{subset_name}/{strand_tag}/{self.metric_name}"
             self.results_store[key] = float(row["value"])
             self.results_store[f"{key}_se"] = float(row["se"])
 
