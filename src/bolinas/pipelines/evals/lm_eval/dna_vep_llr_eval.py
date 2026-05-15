@@ -1,88 +1,127 @@
 # Copyright The Marin Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""
-LLR-based variant effect prediction (VEP) evaluation task for lm-eval-harness.
+"""LLR-based variant effect prediction (VEP) evaluation task for lm-eval-harness.
 
 Computes log-likelihood ratios (LLR) for DNA sequence variants and evaluates
-them against ground-truth labels using configurable metrics (AUPRC, AUROC,
-Pearson, Spearman). Supports per-subset stratification via an optional
-"subset" column in the dataset.
+them with **PairwiseAccuracy ± SE** (matched-pair within-``match_group``
+accuracy, ties = 0.5) — the same metric the offline batched VEP path
+(``snakemake/analysis/evals_v2/``) reports and the matched-pair leaderboards
+#161/#162/#172 live on.
 
-Each variant is scored by computing:
-    LLR = log P(alt_completion | context) - log P(ref_completion | context)
+Each row is scored by computing:
+
+    LLR   = log P(alt_completion | context) - log P(ref_completion | context)
     score = llr_transform(LLR)
 
-where context is the shared left flanking sequence, and ref/alt completions
-are the reference/alternate allele plus the right flanking sequence.
+When the dataset emits two rows per variant (one per strand, ``strand`` column
+in ``{"+", "-"}``), the per-strand scores are averaged per
+``(chrom, pos, ref, alt)`` before the metric is computed — matches
+``snakemake/analysis/evals_v2/`` ``inference.rc_avg=true`` (FWD+RC strand
+averaging, #175 conclusion 2). For datasets with one row per variant the
+averaging step is a no-op.
 
-Metrics are reported as {subset}/{metric} (e.g. "all/auprc", "missense/auprc").
+Per-subset metrics are reported as ``{subset}/pairwise_accuracy`` plus
+``_global_/pairwise_accuracy`` and ``_macro_avg_/pairwise_accuracy`` sentinel
+rows from ``compute_pairwise_metrics``. The headline scalar returned to
+lm-eval is the global PA.
 
 Ported from ``marin-community/marin@dna-dev``:
-``experiments/evals/custom_tasks/dna_vep/dna_vep_llr_eval.py``.
+``experiments/evals/custom_tasks/dna_vep/dna_vep_llr_eval.py`` (originally
+AUPRC; switched to PairwiseAccuracy in #179 for parity with evals_v2).
 """
 
 from collections import defaultdict
 from collections.abc import Callable
 
 import datasets
+import pandas as pd
 from lm_eval.api.instance import Instance
 from lm_eval.api.task import Task
-from scipy.stats import pearsonr, spearmanr
-from sklearn.metrics import average_precision_score, roc_auc_score
 
-METRIC_REGISTRY: dict[str, dict] = {
-    "auprc": {
-        "fn": lambda items: average_precision_score(
-            [t for _, t in items], [s for s, _ in items]
-        ),
-        "higher_is_better": True,
-    },
-    "auroc": {
-        "fn": lambda items: roc_auc_score([t for _, t in items], [s for s, _ in items]),
-        "higher_is_better": True,
-    },
-    "pearson": {
-        "fn": lambda items: float(
-            pearsonr([s for s, _ in items], [t for _, t in items]).statistic
-        ),
-        "higher_is_better": True,
-    },
-    "spearman": {
-        "fn": lambda items: float(
-            spearmanr([s for s, _ in items], [t for _, t in items]).statistic
-        ),
-        "higher_is_better": True,
-    },
-}
+from bolinas.pipelines.evals.metrics import GLOBAL_SUBSET, compute_pairwise_metrics
 
 
-class SubsetAwareAggregation:
-    """Aggregation callable that computes metrics both overall and per-subset.
+class _PairwiseAccuracyAggregation:
+    """Aggregation callable that averages per-variant scores across rows
+    (FWD/RC strand collapse) and computes per-subset PairwiseAccuracy ± SE
+    via :func:`bolinas.pipelines.evals.metrics.compute_pairwise_metrics`.
 
-    Returns the overall ("all") metric as the scalar for lm-eval.
-    Stores all results (including per-subset) in a shared dict using
-    the format "{subset}/{metric}" for wandb grouping.
+    Stores every row of the metrics DataFrame in ``self.results_store``
+    keyed as ``{subset}/pairwise_accuracy`` and
+    ``{subset}/pairwise_accuracy_se`` for wandb grouping. Returns the
+    ``_global_/pairwise_accuracy`` value as the lm-eval scalar.
     """
 
-    def __init__(self, base_fn, results_store: dict, metric_name: str):
-        self.base_fn = base_fn
+    def __init__(self, results_store: dict, metric_name: str):
         self.results_store = results_store
         self.metric_name = metric_name
 
-    def __call__(self, items: list[tuple[float, float, str | None]]) -> float:
-        by_subset: dict[str, list[tuple[float, float]]] = defaultdict(list)
-        for score, target, subset in items:
-            by_subset["all"].append((score, target))
-            if subset is not None:
-                by_subset[subset].append((score, target))
+    def __call__(
+        self,
+        items: list[tuple[float, float, str | None, tuple, int]],
+    ) -> float:
+        # Collapse per variant_id (averaging scores across rows = FWD/RC strands).
+        # Asserts target/subset/match_group are consistent within a variant — a
+        # silent doubling or a match_group split would be the kind of bug worth
+        # crashing on rather than producing a quietly wrong number.
+        by_variant: dict[tuple, list[tuple[float, float, str | None, int]]] = (
+            defaultdict(list)
+        )
+        for score, target, subset, variant_id, match_group in items:
+            by_variant[variant_id].append((score, target, subset, match_group))
 
-        for subset, subset_items in by_subset.items():
-            self.results_store[f"{subset}/{self.metric_name}"] = self.base_fn(
-                subset_items
+        rows: list[dict] = []
+        for variant_id, group in by_variant.items():
+            scores = [g[0] for g in group]
+            targets = {g[1] for g in group}
+            subsets = {g[2] for g in group}
+            match_groups = {g[3] for g in group}
+            assert len(targets) == 1, (
+                f"variant {variant_id} has inconsistent target across rows: {targets}"
+            )
+            assert len(subsets) == 1, (
+                f"variant {variant_id} has inconsistent subset across rows: {subsets}"
+            )
+            assert len(match_groups) == 1, (
+                f"variant {variant_id} has inconsistent match_group across rows: {match_groups}"
+            )
+            rows.append(
+                {
+                    "label": int(targets.pop()),
+                    "score": float(sum(scores) / len(scores)),
+                    "subset": str(next(iter(subsets))),
+                    "match_group": int(match_groups.pop()),
+                }
             )
 
-        return self.results_store[f"all/{self.metric_name}"]
+        df = pd.DataFrame(rows)
+        metrics = compute_pairwise_metrics(
+            dataset=df[["label", "subset", "match_group"]],
+            scores=df[["score"]],
+            score_columns=["score"],
+        )
+        for _, row in metrics.iterrows():
+            self.results_store[f"{row['subset']}/{self.metric_name}"] = float(
+                row["value"]
+            )
+            self.results_store[f"{row['subset']}/{self.metric_name}_se"] = float(
+                row["se"]
+            )
+
+        global_row = metrics[metrics["subset"] == GLOBAL_SUBSET]
+        assert not global_row.empty, (
+            "compute_pairwise_metrics did not emit a _global_ row"
+        )
+        return float(global_row["value"].iloc[0])
+
+
+METRIC_REGISTRY: dict[str, dict] = {
+    "pairwise_accuracy": {
+        "aggregation_cls": _PairwiseAccuracyAggregation,
+        "higher_is_better": True,
+    },
+}
 
 
 LLR_TRANSFORMS: dict[str, Callable[[float], float]] = {
@@ -93,22 +132,33 @@ LLR_TRANSFORMS: dict[str, Callable[[float], float]] = {
 
 
 class DnaVepLlrEvalTask(Task):
-    """General LLR eval task for variant effect prediction.
+    """LLR eval task for variant effect prediction with per-variant aggregation.
 
     Parameterized by dataset and metrics via YAML config.
 
-    Dataset docs must have: context, ref_completion, alt_completion, target.
-    Optional: subset (str) — metrics computed per distinct value + "all".
+    Dataset rows must have ``[chrom, pos, ref, alt, context, ref_completion,
+    alt_completion, target, match_group]``. Optional: ``subset`` (str) — metrics
+    computed per distinct value plus ``_global_`` and ``_macro_avg_``.
+
+    When the dataset has multiple rows per variant (e.g. two rows per variant
+    tagged by ``strand`` in ``{"+", "-"}`` — see
+    :func:`bolinas.pipelines.evals.materialize.materialize_sequences`), per-row
+    scores are averaged per ``(chrom, pos, ref, alt)`` before the
+    PairwiseAccuracy is computed. For one-row-per-variant datasets the
+    averaging step is a no-op.
 
     YAML config fields:
         dataset_path: HuggingFace dataset path
         dataset_name: HuggingFace dataset config name (optional)
         test_split: dataset split to evaluate on
-        metrics: list of metric names from METRIC_REGISTRY
+        metrics: list of metric names from ``METRIC_REGISTRY`` (just
+            ``pairwise_accuracy`` is supported as of #179).
         llr_transform: identity | negate | abs (default: identity)
     """
 
-    VERSION = 0
+    # Bumped in #179: switched from per-row AUPRC to per-variant PairwiseAccuracy
+    # (3-tuple → 5-tuple in process_results, metric registry entirely replaced).
+    VERSION = 1
     DATASET_PATH = None
     DATASET_NAME = None
 
@@ -123,8 +173,13 @@ class DnaVepLlrEvalTask(Task):
         self._task_name = cfg.get("task")
         self.DATASET_PATH = cfg.get("dataset_path") or self.DATASET_PATH
         self.DATASET_NAME = cfg.get("dataset_name") or self.DATASET_NAME
-        self._metrics = cfg.get("metrics") or ["auprc"]
+        self._metrics = cfg.get("metrics") or ["pairwise_accuracy"]
         self._test_split = cfg.get("test_split") or "test"
+        unknown = [m for m in self._metrics if m not in METRIC_REGISTRY]
+        if unknown:
+            raise ValueError(
+                f"Unknown metrics {unknown}. Must be one of {list(METRIC_REGISTRY)}"
+            )
 
         transform_name = cfg.get("llr_transform") or "identity"
         if transform_name not in LLR_TRANSFORMS:
@@ -204,12 +259,23 @@ class DnaVepLlrEvalTask(Task):
         score = self._llr_transform(llr)
         target = doc["target"]
         subset = doc.get("subset")
-        return {metric: (score, target, subset) for metric in self._metrics}
+        # Defensive casts because HF can return numpy scalars in dataset rows;
+        # the variant_id tuple needs to be hashable for per-variant collapse.
+        variant_id = (
+            str(doc["chrom"]),
+            int(doc["pos"]),
+            str(doc["ref"]),
+            str(doc["alt"]),
+        )
+        match_group = int(doc["match_group"])
+        return {
+            metric: (score, target, subset, variant_id, match_group)
+            for metric in self._metrics
+        }
 
     def aggregation(self):
         return {
-            metric: SubsetAwareAggregation(
-                base_fn=METRIC_REGISTRY[metric]["fn"],
+            metric: METRIC_REGISTRY[metric]["aggregation_cls"](
                 results_store=self._subset_results,
                 metric_name=metric,
             )

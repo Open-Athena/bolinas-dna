@@ -40,8 +40,7 @@ def test_patch_is_idempotent(patched_task_manager):
 def test_custom_tasks_discoverable(patched_task_manager):
     """TaskManager() with no args should still see bolinas-dna's task YAMLs."""
     mgr = patched_task_manager()
-    assert "traitgym_mendelian_v2_255" in mgr.all_tasks
-    assert "traitgym_mendelian_v2" in mgr.all_tasks
+    assert "mendelian_traits_255" in mgr.all_tasks
 
 
 def test_caller_include_path_preserved_as_string(tmp_path, patched_task_manager):

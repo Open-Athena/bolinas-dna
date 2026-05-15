@@ -16,11 +16,16 @@ commit `e59d612e9`, so HGMD pathogenic SNVs are included as a positive source.
 | `complex_traits` | UKBB fine-mapped complex-trait variants | SuSiE+FINEMAP `max(PIP across the traits where this variant was fine-mapped) > 0.9` | `max(PIP) < 0.01` AND no SuSiE/FINEMAP combine-step null PIP among those traits (`label_variants_by_pip(use_null_pip_guard=True)`) |
 | `eqtl` | GTEx v8 fine-mapped eQTLs from [eQTL Catalogue r7](https://www.ebi.ac.uk/eqtl/) (study `QTS000015`, 49 tissues × `ge` quantification, pooled) | SuSiE `max(PIP across tested tissues) > 0.9` from `credible_sets.tsv.gz` | `max(PIP) < 0.01` — variant must appear in at least one tissue's nominal sumstats (`all.tsv.gz`) but never reach a strong credible set; covered by the 0-fill in `bolinas.evals.catalogue_parser.merge_cs_and_sumstats` (sentinel: tested-but-no-signal variant has `pip=0`, not null, so `pl.max()` reaches it). |
 
-Each dataset has a corresponding `*_harness_255` eval-harness variant where a
-255 bp window centered on each variant is materialized into
-`context` / `ref_completion` / `alt_completion` columns. Models that prepend a
-BOS token see 256 tokens of context; the rest of the codebase uses 255 bp
-windows for the same reason.
+Only `mendelian_traits` has a corresponding `_harness_255` eval-harness
+variant. A 255 bp window centered on each variant is materialized into
+`context` / `ref_completion` / `alt_completion` columns; models that prepend a
+BOS token see 256 tokens of context (the rest of the codebase uses 255 bp
+windows for the same reason). Each input variant produces **two output rows**
+— one for `strand="+"` (FWD), one for `strand="-"` (RC of the same window) —
+for the online lm_eval VEP scorer to average per variant (#179, #175 conclusion 2).
+`complex_traits` has no harness variant: it's scored offline only via
+`snakemake/analysis/evals_v2/`, which already does FWD+RC averaging in the
+batched VEP path.
 
 ## Matching scheme
 
@@ -246,21 +251,31 @@ Examples:
 - `bolinas-dna/evals_complex_traits`
 - `bolinas-dna/evals_eqtl`
 - `bolinas-dna/evals_mendelian_traits_harness_255`
-- `bolinas-dna/evals_complex_traits_harness_255`
 
 Locally, files live in `results/dataset/{dataset}/{train,test}.parquet`.
 
 ### Eval-harness columns
 
-Datasets materialized with `_harness_{window_size}` add:
+Datasets materialized with `_harness_{window_size}` add the following columns
+and emit **two output rows per input variant** — one per strand:
 
 | Column | Description |
 |---|---|
-| `context` | Left flank up to (but not including) the variant position. |
-| `ref_completion` | Reference allele + right flank. |
-| `alt_completion` | Alternate allele + right flank. |
-| `target` | Binary label (renamed from `label`). |
+| `context` | Left flank up to (but not including) the variant position, on the strand named in `strand`. |
+| `ref_completion` | Reference allele (in-strand) + right flank. |
+| `alt_completion` | Alternate allele (in-strand) + right flank. |
+| `strand` | `"+"` (FWD) or `"-"` (RC of the FWD window; ref/alt complemented). |
+| `target` | Binary label (renamed from `label`; identical across the two strand rows). |
 
-The window is centered on the variant: `context` has length `window_size // 2`
-and each completion has length `window_size - window_size // 2`. For odd window
-sizes, the extra base goes to the completion (right side).
+Two-row layout exists so the online lm_eval VEP scorer (`bolinas.pipelines.evals.lm_eval.dna_vep_llr_eval`)
+averages per-strand LLRs per variant before computing PairwiseAccuracy — the
+FWD+RC averaging documented as #175 conclusion 2 (mirrors `snakemake/analysis/evals_v2/`'s
+`inference.rc_avg=true`). Rows are sorted by `(chrom, pos, ref, alt, strand)`
+so per-variant strand pairs are adjacent.
+
+Window-length math:
+- FWD: `var_pos = window_size // 2`. Context length `window_size // 2`,
+  completion length `window_size - window_size // 2`.
+- RC:  `var_pos = window_size - 1 - window_size // 2`. For odd `window_size`
+  this matches FWD; for even `window_size` the RC context is one bp shorter
+  and the RC completion one bp longer.
