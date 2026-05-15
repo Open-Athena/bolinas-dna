@@ -17,6 +17,8 @@ rule compute_scores:
         # 255 for BOS-using checkpoints (e.g. exp136), 256 for older runs;
         # the tokenizer baked into each checkpoint handles BOS itself.
         window_size=lambda wc: get_model_config(wc.model)["window_size"],
+        # Per-model override; falls back to config["inference"]["batch_size"].
+        batch_size=lambda wc: get_model_batch_size(wc.model),
         hf_path=lambda wc: f"{config['input_hf_prefix']}_{wc.dataset}",
     threads: config["inference"]["num_workers"]
     run:
@@ -31,7 +33,7 @@ rule compute_scores:
             # no full download. Requires `--group genome-s3`.
             genome_path=config["genome_path"],
             context_size=params.window_size,
-            batch_size=config["inference"]["batch_size"],
+            batch_size=params.batch_size,
             num_workers=config["inference"]["num_workers"],
             data_transform_on_the_fly=config["inference"]["data_transform_on_the_fly"],
             torch_compile=config["inference"]["torch_compile"],

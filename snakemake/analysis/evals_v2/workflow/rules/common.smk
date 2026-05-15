@@ -37,3 +37,27 @@ for _m in config["models"]:
 # Wildcard alternations used across rules.
 DATASETS = [d["name"] for d in config["datasets"]]
 MODELS = [m["name"] for m in config["models"]]
+
+
+def get_model_datasets(model_name):
+    """Datasets a given model is evaluated on.
+
+    Defaults to all configured datasets; a model entry may set
+    ``datasets: [name, …]`` to restrict evaluation to a subset.
+    """
+    cfg = get_model_config(model_name)
+    if "datasets" not in cfg:
+        return DATASETS
+    bad = [d for d in cfg["datasets"] if d not in DATASETS]
+    assert not bad, (
+        f"model {model_name!r} `datasets` references unknown names: {bad} "
+        f"(known: {DATASETS})"
+    )
+    return cfg["datasets"]
+
+
+def get_model_batch_size(model_name):
+    """Per-model ``batch_size`` if set, else the global ``inference.batch_size``."""
+    return get_model_config(model_name).get(
+        "batch_size", config["inference"]["batch_size"]
+    )

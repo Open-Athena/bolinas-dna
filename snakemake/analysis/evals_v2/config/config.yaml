@@ -28,6 +28,15 @@ datasets:
 # `window_size` is the number of DNA bases extracted per variant context.
 # 256 = old convention (no BOS, e.g. exp55/58/59).
 # 255 = new convention (BOS prepended, e.g. exp136 / exp166-p1B).
+# 512 = older 512-context runs trained without BOS (e.g. exp21 promoter-yolo);
+#       pair with a per-model `batch_size` override to fit on an A10G.
+#
+# Optional per-model fields:
+#   - `datasets: [name, …]`  Restrict evaluation to a subset of the configured
+#                            `datasets`. Omit to run on all of them.
+#   - `batch_size: N`        Override `inference.batch_size` for this checkpoint.
+#                            Useful when the global default is tuned for a
+#                            different context size.
 models:
   - name: exp55-mammals
     gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-mammals-r01-52f413/hf/step-16999
@@ -52,6 +61,58 @@ models:
   - name: exp166-p1B
     hf_repo: bolinas-dna/exp166-p1B-step-16398   # 1B zoonomia-v1-v1 generalist
     window_size: 255
+
+  # exp21 — animal-promoters-yolo (issue #21, wandb animal-promoters-yolo-r01-213a8e).
+  # 512 bp context, no BOS. Scoped to mendelian_traits only: complex/eqtl signal
+  # was weak in #21, and the matched-pair mendelian dataset is the one of
+  # interest for tracking promoter-relevant convergence over training steps.
+  # batch_size: 32 is a conservative starting point for 512-context on A10G;
+  # bump up if `nvidia-smi` shows headroom.
+  - name: exp21-promoters-yolo-step-2000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-promoters-yolo-r01-213a8e/hf/step-2000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 32
+  - name: exp21-promoters-yolo-step-6000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-promoters-yolo-r01-213a8e/hf/step-6000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 32
+  - name: exp21-promoters-yolo-step-10000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-promoters-yolo-r01-213a8e/hf/step-10000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 32
+  - name: exp21-promoters-yolo-step-12000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-promoters-yolo-r01-213a8e/hf/step-12000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 32
+  - name: exp21-promoters-yolo-step-14000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-promoters-yolo-r01-213a8e/hf/step-14000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 32
+  - name: exp21-promoters-yolo-step-16000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-promoters-yolo-r01-213a8e/hf/step-16000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 32
+  - name: exp21-promoters-yolo-step-18000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-promoters-yolo-r01-213a8e/hf/step-18000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 32
+  - name: exp21-promoters-yolo-step-20000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-promoters-yolo-r01-213a8e/hf/step-20000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 32
+  - name: exp21-promoters-yolo-step-22000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-promoters-yolo-r01-213a8e/hf/step-22000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 32
 
 inference:
   batch_size: 128       # Was 64 with output_hidden_states=True keeping all
