@@ -82,11 +82,17 @@ rule split_dataset_by_chrom:
 rule materialize_eval_harness_dataset:
     input:
         parquet="results/dataset/{dataset}/{split}.parquet",
-        genome="results/genome.fa.gz",
     output:
         "results/dataset/{dataset}_harness_{window_size}/{split}.parquet",
+    params:
+        # Canonical bgzipped + indexed GRCh38 (Ensembl release 115; sequence is
+        # byte-identical to 113/114). pyfaidx reads it directly from S3 by
+        # byte-range via fsspec/s3fs — no full download. Bypasses the
+        # download_genome rule (Ensembl ships plain gzip; the new Genome class
+        # post-#182 requires BGZF + .gzi index).
+        genome_path=config["canonical_genome_path"],
     run:
-        genome = Genome(input.genome)
+        genome = Genome(params.genome_path)
         ds = Dataset.from_parquet(input.parquet)
         ds = materialize_sequences(ds, genome, int(wildcards.window_size))
         ds.to_parquet(output[0])
