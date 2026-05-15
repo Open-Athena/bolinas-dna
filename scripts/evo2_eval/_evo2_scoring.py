@@ -30,6 +30,7 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 from pyfaidx import Fasta
+from tqdm import tqdm
 
 
 COMPLEMENT = str.maketrans("ACGTNacgtn", "TGCANtgcan")
@@ -259,7 +260,8 @@ def compute_evo2_bundle(
             flush=True,
         )
         strand_out = np.zeros((n, 2), dtype=np.float64)
-        for i in range(0, n, batch_size):
+        batch_starts = list(range(0, n, batch_size))
+        for i in tqdm(batch_starts, desc=f"strand={strand}", unit="batch"):
             batch_ids = input_ids[i : i + batch_size]
             batch_alt = alt_token_ids[i : i + batch_size]
             bundle = _compute_evo2_kernel(
