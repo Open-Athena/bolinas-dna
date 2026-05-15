@@ -123,16 +123,11 @@ def main() -> None:
     if "WANDB_API_KEY" in os.environ:
         env_vars["WANDB_API_KEY"] = os.environ["WANDB_API_KEY"]
 
-    # preemptible=False: ResourceConfig defaults to preemptible TPUs, but
-    # preemptible queues were flaky as of 2026-05-15 (marin-community/marin#5751,
-    # plus discord #infra reports of v5p-preemptible jobs getting killed
-    # silently with exit=0 a few minutes in). A 2 min eval run is well within
-    # non-preemptible quota; cost difference is negligible at this duration.
     step = _evaluate_levanter_lm_evaluation_harness(
         model_name=MODEL_NAME,
         model_path=MODEL_PATH,
         evals=[MENDELIAN_TRAITS_255],
-        resource_config=ResourceConfig.with_tpu(TPU_TYPES, preemptible=False),
+        resource_config=ResourceConfig.with_tpu(TPU_TYPES),
         env_vars=env_vars,
     )
     executor_main(
