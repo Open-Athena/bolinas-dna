@@ -65,10 +65,19 @@ setup: |
   # Genome (GRCh38 primary assembly, Ensembl release-113 — sequence is
   # byte-identical to the release-115 S3 copy used by evals_v2; local file
   # avoids S3 + fsspec/fork complications inside docker).
+  # `bolinas.data.genome.Genome` strictly requires BGZF-compressed input
+  # (not plain gzip), so wget → gunzip → bgzip. Need `tabix` package for
+  # bgzip + samtools-style indexing.
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq tabix samtools
   mkdir -p results
-  if [ ! -f results/genome.fa.gz ]; then
-    wget -q -O results/genome.fa.gz \
+  if [ ! -f results/genome.fa.gz.gzi ]; then
+    wget -q -O results/genome.fa.gz.plain \
       http://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz
+    gunzip -c results/genome.fa.gz.plain > results/genome.fa
+    rm results/genome.fa.gz.plain
+    bgzip --force results/genome.fa   # produces genome.fa.gz (BGZF)
+    samtools faidx results/genome.fa.gz   # writes .fai + .gzi
   fi
 
 run: |
