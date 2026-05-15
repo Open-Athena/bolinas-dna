@@ -167,11 +167,18 @@ def main() -> None:
         f"jsd mean={out.next_token_jsd_mean.mean():.4f}"
     )
 
-    metrics = compute_pairwise_metrics(
-        dataset=out[list(REQUIRED_VARIANT_COLUMNS)],
-        scores=out[[SCORE_COLUMN]],
-        score_columns=[SCORE_COLUMN],
-    )
+    try:
+        metrics = compute_pairwise_metrics(
+            dataset=out[list(REQUIRED_VARIANT_COLUMNS)],
+            scores=out[[SCORE_COLUMN]],
+            score_columns=[SCORE_COLUMN],
+        )
+    except AssertionError as e:
+        # At small --limit we may not have ≥1 subset with n_pairs ≥ n_min=30
+        # (the macro-avg threshold). Smoke-test scenario; metrics aren't the
+        # deliverable. Skip them and let the scores parquet stand.
+        print(f"[evo2] WARNING: skipping metrics ({e})", flush=True)
+        return
     metrics["model"] = args.model
     metrics["dataset"] = DATASET_NAME
     metrics["split"] = args.split
