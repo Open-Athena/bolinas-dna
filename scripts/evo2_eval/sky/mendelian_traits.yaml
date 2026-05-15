@@ -26,19 +26,15 @@ workdir: .
 
 # Canonical BGZF GRCh38 reference (Ensembl release-115 — byte-identical
 # sequence to release-113), pre-bgzipped with .fai + .gzi alongside.
-# Sky resolves the S3 URLs using the launching host's AWS credentials and
-# COPYs the files onto the cluster at setup time — no S3 plumbing inside
-# the docker container, no fsspec/fork issues.
+# Files live locally under ~/genome_cache/ (one-time `aws s3 cp` from
+# s3://oa-bolinas/data/genomes/homo_sapiens/GRCh38/ensembl-release-115/);
+# sky rsyncs them to the cluster via file_mounts. Local cache avoids
+# needing AWS creds on the Lambda cluster (cluster doesn't have IAM
+# auth; the launching host does).
 file_mounts:
-  /home/ubuntu/sky_workdir/results/genome.fa.gz:
-    source: s3://oa-bolinas/data/genomes/homo_sapiens/GRCh38/ensembl-release-115/Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa.gz
-    mode: COPY
-  /home/ubuntu/sky_workdir/results/genome.fa.gz.fai:
-    source: s3://oa-bolinas/data/genomes/homo_sapiens/GRCh38/ensembl-release-115/Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa.gz.fai
-    mode: COPY
-  /home/ubuntu/sky_workdir/results/genome.fa.gz.gzi:
-    source: s3://oa-bolinas/data/genomes/homo_sapiens/GRCh38/ensembl-release-115/Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa.gz.gzi
-    mode: COPY
+  /home/ubuntu/sky_workdir/results/genome.fa.gz: ~/genome_cache/Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa.gz
+  /home/ubuntu/sky_workdir/results/genome.fa.gz.fai: ~/genome_cache/Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa.gz.fai
+  /home/ubuntu/sky_workdir/results/genome.fa.gz.gzi: ~/genome_cache/Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa.gz.gzi
 
 envs:
   MODEL: evo2_1b_base
