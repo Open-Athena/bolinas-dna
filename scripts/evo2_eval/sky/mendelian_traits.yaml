@@ -84,6 +84,7 @@ run: |
   # sharding; HF Trainer DDP on top of Vortex breaks device placement.
   sudo docker run --rm --name "$CONTAINER_NAME" --gpus all --ipc=host --shm-size=16g \
     -v "$PWD":/workspace -w /workspace \
+    -v "$HOME/.sky/file_mounts:$HOME/.sky/file_mounts:ro" \
     -e MODEL="$MODEL" -e HF_TOKEN="${HF_TOKEN:-}" \
     -e LIMIT="${LIMIT:-}" -e BATCH_SIZE="${BATCH_SIZE:-}" \
     -e SKIP_SELF_TEST="${SKIP_SELF_TEST:-}" \
