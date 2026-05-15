@@ -230,7 +230,9 @@ def compute_variant_score_bundle(
     # 3. 4-nuc log-softmax — shared by LLR and JSD. fp32 cast inherits
     #    the biofoundation#21 numerical-stability fix.
     nuc_ids = nuc_token_ids.to(suffix_logits.device)
-    log_p_nuc = F.log_softmax(suffix_logits[..., nuc_ids].float(), dim=-1)  # [B*2, L-p, 4]
+    log_p_nuc = F.log_softmax(
+        suffix_logits[..., nuc_ids].float(), dim=-1
+    )  # [B*2, L-p, 4]
     log_p_nuc = rearrange(log_p_nuc, "(B V) L C -> B V L C", B=B)  # [B, 2, L-p, 4]
     log_p_ref = log_p_nuc[:, 0, :-1]  # [B, L-p-1, 4] — drop last (predicts off-the-end)
     log_p_alt = log_p_nuc[:, 1, :-1]  # [B, L-p-1, 4]
@@ -246,17 +248,20 @@ def compute_variant_score_bundle(
     # 5. LLR = (variant-position contribution at p-1) + (downstream contribution at [p, L-2]).
     #    All in 4-nuc-softmax space; the log_full(nuc | context) terms cancel
     #    at the variant position and ≈ 0 elsewhere for trained DNA models.
-    prefix_log_p = F.log_softmax(prefix_last_logits[..., nuc_ids].float(), dim=-1)  # [B, 4]
+    prefix_log_p = F.log_softmax(
+        prefix_last_logits[..., nuc_ids].float(), dim=-1
+    )  # [B, 4]
     ref_var_idx = _token_id_to_nuc_idx(input_ids[:, p], nuc_ids)  # [B]
     alt_var_idx = _token_id_to_nuc_idx(alt_token_id, nuc_ids)  # [B]
-    llr_at_var = (
-        prefix_log_p.gather(-1, alt_var_idx.unsqueeze(-1)).squeeze(-1)
-        - prefix_log_p.gather(-1, ref_var_idx.unsqueeze(-1)).squeeze(-1)
-    )  # [B]
+    llr_at_var = prefix_log_p.gather(-1, alt_var_idx.unsqueeze(-1)).squeeze(
+        -1
+    ) - prefix_log_p.gather(-1, ref_var_idx.unsqueeze(-1)).squeeze(-1)  # [B]
 
     # Downstream targets are shared between ref and alt (only var_pos differs).
     suffix_targets = input_ids[:, p + 1 :]  # [B, L-p-1]
-    target_idx = _token_id_to_nuc_idx(suffix_targets, nuc_ids).unsqueeze(-1)  # [B, L-p-1, 1]
+    target_idx = _token_id_to_nuc_idx(suffix_targets, nuc_ids).unsqueeze(
+        -1
+    )  # [B, L-p-1, 1]
     log_p_ref_at_targets = log_p_ref.gather(-1, target_idx).squeeze(-1)  # [B, L-p-1]
     log_p_alt_at_targets = log_p_alt.gather(-1, target_idx).squeeze(-1)
     llr_downstream = (log_p_alt_at_targets - log_p_ref_at_targets).sum(dim=-1)  # [B]
@@ -309,5 +314,3 @@ def _repeat_interleave_kv_cache(past_kv: Any, n: int) -> Any:
             layer_idx=layer_idx,
         )
     return new_cache
-
-
