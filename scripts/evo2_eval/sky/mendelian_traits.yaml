@@ -24,6 +24,22 @@ resources:
 
 workdir: .
 
+# Canonical BGZF GRCh38 reference (Ensembl release-115 — byte-identical
+# sequence to release-113), pre-bgzipped with .fai + .gzi alongside.
+# Sky resolves the S3 URLs using the launching host's AWS credentials and
+# COPYs the files onto the cluster at setup time — no S3 plumbing inside
+# the docker container, no fsspec/fork issues.
+file_mounts:
+  /home/ubuntu/sky_workdir/results/genome.fa.gz:
+    source: s3://oa-bolinas/data/genomes/homo_sapiens/GRCh38/ensembl-release-115/Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa.gz
+    mode: COPY
+  /home/ubuntu/sky_workdir/results/genome.fa.gz.fai:
+    source: s3://oa-bolinas/data/genomes/homo_sapiens/GRCh38/ensembl-release-115/Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa.gz.fai
+    mode: COPY
+  /home/ubuntu/sky_workdir/results/genome.fa.gz.gzi:
+    source: s3://oa-bolinas/data/genomes/homo_sapiens/GRCh38/ensembl-release-115/Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa.gz.gzi
+    mode: COPY
+
 envs:
   MODEL: evo2_1b_base
   LIMIT: ""
@@ -44,41 +60,21 @@ setup: |
   cat > /tmp/evo2.Dockerfile <<'EOF'
   FROM nvcr.io/nvidia/pytorch:25.04-py3
   RUN pip install --break-system-packages evo2
-  # Runtime deps for bolinas.model.runner + bolinas.data.genome — previously
-  # pulled transitively by biofoundation. nvcr ships torch + numpy + pandas
-  # + an old datasets 2.x (incompatible with newer fsspec — raises
-  # "Invalid pattern: '**' can only be an entire path component"), but NOT
-  # transformers or pyfaidx. Force-upgrade datasets, add the missing deps.
+  # Runtime deps for the script-local Evo2 scoring path
+  # (scripts/evo2_eval/_evo2_scoring.py + mendelian_traits.py + metrics).
+  # nvcr ships torch + numpy + pandas + an old datasets 2.x (incompatible
+  # with newer fsspec; raises "Invalid pattern: '**' can only be an entire
+  # path component"); we force-upgrade datasets and add pyfaidx, scipy,
+  # scikit-learn (the metrics module pulls these). HF transformers /
+  # accelerate are NOT needed — the local kernel skips HF Trainer entirely.
   # PIP_CONSTRAINT= bypass: nvcr's /etc/pip/constraint.txt pins dill==0.3.9
   # but datasets>=3.1 needs dill<0.3.9 → ResolutionImpossible without bypass.
   RUN PIP_CONSTRAINT= pip install --break-system-packages -U \
-    "datasets>=3.1,<4" pyfaidx "transformers[torch]" \
-    jaxtyping einops scipy scikit-learn accelerate
-  # nvcr image's transformers wants regex>=2025.10.22 but ships an older one
-  # pinned via the same constraint file. Unset PIP_CONSTRAINT to bypass,
-  # then upgrade regex.
-  RUN PIP_CONSTRAINT= pip install --break-system-packages -U "regex>=2025.10.22"
+    "datasets>=3.1,<4" pyfaidx scipy scikit-learn
   # bolinas is installed via PYTHONPATH at run-time (pure Python, no build).
   WORKDIR /workspace
   EOF
   sudo docker build -t evo2-eval:latest -f /tmp/evo2.Dockerfile /tmp
-  # Genome (GRCh38 primary assembly, Ensembl release-113 — sequence is
-  # byte-identical to the release-115 S3 copy used by evals_v2; local file
-  # avoids S3 + fsspec/fork complications inside docker).
-  # `bolinas.data.genome.Genome` strictly requires BGZF-compressed input
-  # (not plain gzip), so wget → gunzip → bgzip. Need `tabix` package for
-  # bgzip + samtools-style indexing.
-  sudo apt-get update -qq
-  sudo apt-get install -y -qq tabix samtools
-  mkdir -p results
-  if [ ! -f results/genome.fa.gz.gzi ]; then
-    wget -q -O results/genome.fa.gz.plain \
-      http://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz
-    gunzip -c results/genome.fa.gz.plain > results/genome.fa
-    rm results/genome.fa.gz.plain
-    bgzip --force results/genome.fa   # produces genome.fa.gz (BGZF)
-    samtools faidx results/genome.fa.gz   # writes .fai + .gzi
-  fi
 
 run: |
   set -euxo pipefail

@@ -23,21 +23,25 @@ if _local_rank is not None:
 # ---------------------------------------------------------------------------
 
 import argparse  # noqa: E402
+import sys  # noqa: E402
 from pathlib import Path  # noqa: E402
 
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 from datasets import load_dataset  # noqa: E402
 
-from bolinas.pipelines.evals.evo2 import (  # noqa: E402
-    EVO2_MODEL_CHOICES,
-    compute_evo2_variant_score_bundle,
-)
+from bolinas.pipelines.evals.evo2 import EVO2_MODEL_CHOICES  # noqa: E402
 from bolinas.pipelines.evals.metrics import (  # noqa: E402
     GLOBAL_SUBSET,
     MACRO_AVG_SUBSET,
     compute_pairwise_metrics,
 )
+
+# Script-local Evo2 scoring (no KV-cache; doesn't go through
+# bolinas.model.runner / HF Trainer — see scripts/evo2_eval/_evo2_scoring.py
+# docstring for why).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _evo2_scoring import compute_evo2_bundle  # noqa: E402, I001
 
 
 DATASET_HF_PATH = "bolinas-dna/evals_mendelian_traits"
@@ -83,17 +87,12 @@ def main() -> None:
     p.add_argument(
         "--batch-size",
         type=int,
-        default=None,
-        help="Per-device eval batch size. If omitted, auto-tune "
-        "by OOM-descent from --tune-start (runs twice when --rc-avg).",
+        default=16,
+        help="Per-batch row count. Each batch feeds the model "
+        "[2*batch_size, window_size] tokens (ref+alt concatenated). "
+        "Default 16 worked for evo2_1b_base on GH200 at window=8192; "
+        "halve for 7B, more for 40B-needs-bs=1.",
     )
-    p.add_argument(
-        "--tune-start",
-        type=int,
-        default=64,
-        help="Starting batch size for OOM-descent tuning.",
-    )
-    p.add_argument("--num-workers", type=int, default=8)
     p.add_argument(
         "--limit",
         type=int,
@@ -135,14 +134,12 @@ def main() -> None:
         n_pairs_input = ds["match_group"].nunique()
         print(f"[evo2] match_groups (pairs): {n_pairs_input}")
 
-    scores = compute_evo2_variant_score_bundle(
+    scores = compute_evo2_bundle(
         model_name=args.model,
-        dataset=ds[["chrom", "pos", "ref", "alt"]],
+        df=ds[["chrom", "pos", "ref", "alt"]],
         genome_path=args.genome_path,
         window_size=args.window_size,
         batch_size=args.batch_size,
-        tune_start=args.tune_start,
-        num_workers=args.num_workers,
         rc_avg=not args.no_rc_avg,
     )
 

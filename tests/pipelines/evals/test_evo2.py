@@ -6,42 +6,19 @@ import, aggregator math). The heavy lifting is checked at runtime on the
 SkyPilot cluster.
 """
 
-import inspect
-
 import numpy as np
 
-from bolinas.pipelines.evals.evo2 import (
-    aggregate_ll_gap,
-    compute_evo2_ll,
-    compute_evo2_variant_score_bundle,
-)
+from bolinas.pipelines.evals.evo2 import aggregate_ll_gap, compute_evo2_ll
 
 
 def test_evo2_helpers_importable():
-    """Sanity-check that the public functions exist and are importable
-    without evo2 installed."""
-    assert callable(compute_evo2_variant_score_bundle)
+    """Sanity-check that the public LL-gap functions exist and are importable
+    without evo2 installed.
+
+    Variant scoring lives in ``scripts/evo2_eval/_evo2_scoring.py``
+    (intentionally not testable from here without an evo2 install)."""
     assert callable(compute_evo2_ll)
-
-
-def test_compute_evo2_variant_score_bundle_signature():
-    """rc_avg defaults to True (matches evals_v2 default per issue #175
-    conclusion 2); window_size defaults to 8192 (Evo2 design point)."""
-    sig = inspect.signature(compute_evo2_variant_score_bundle)
-    assert "rc_avg" in sig.parameters
-    assert sig.parameters["rc_avg"].default is True
-    assert "window_size" in sig.parameters
-    assert sig.parameters["window_size"].default == 8192
-    # Must accept the kwargs the entry script forwards to it.
-    for name in (
-        "model_name",
-        "dataset",
-        "genome_path",
-        "batch_size",
-        "tune_start",
-        "num_workers",
-    ):
-        assert name in sig.parameters, f"missing parameter {name!r}"
+    assert callable(aggregate_ll_gap)
 
 
 def test_aggregate_ll_gap_token_weighted_mean_and_sign():
