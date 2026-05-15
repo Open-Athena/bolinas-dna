@@ -14,21 +14,23 @@ Each row is scored by computing:
     LLR   = log P(alt_completion | context) - log P(ref_completion | context)
     score = llr_transform(LLR)
 
-When the dataset emits two rows per variant (one per strand, ``strand`` column
-in ``{"+", "-"}``), the per-strand scores are averaged per
-``(chrom, pos, ref, alt)`` before the metric is computed — matches
-``snakemake/analysis/evals_v2/`` ``inference.rc_avg=true`` (FWD+RC strand
-averaging, #175 conclusion 2). For datasets with one row per variant the
-averaging step is a no-op.
+For datasets that emit two rows per variant (one per strand, ``strand`` column
+in ``{"+", "-"}``), the aggregation builds three per-variant scores —
+``score_fwd``, ``score_rc``, and ``score_avg = (score_fwd + score_rc) / 2`` —
+and reports PairwiseAccuracy on each, keyed as
+``{subset}/{fwd|rc|avg}/pairwise_accuracy``. ``score_avg`` matches what the
+offline ``snakemake/analysis/evals_v2/`` pipeline computes with
+``inference.rc_avg=true`` (#175 conclusion 2); ``fwd`` and ``rc`` are exposed
+so the leaderboards can show all three side-by-side. For 1-strand datasets
+only the ``avg`` keys are emitted (= the single-strand score). Per-subset,
+plus ``_global_`` and ``_macro_avg_`` sentinels via ``compute_pairwise_metrics``.
 
-Per-subset metrics are reported as ``{subset}/pairwise_accuracy`` plus
-``_global_/pairwise_accuracy`` and ``_macro_avg_/pairwise_accuracy`` sentinel
-rows from ``compute_pairwise_metrics``. The headline scalar returned to
-lm-eval is the global PA.
+The lm-eval headline scalar is ``_global_/avg/pairwise_accuracy``.
 
 Ported from ``marin-community/marin@dna-dev``:
 ``experiments/evals/custom_tasks/dna_vep/dna_vep_llr_eval.py`` (originally
-AUPRC; switched to PairwiseAccuracy in #179 for parity with evals_v2).
+AUPRC; switched to PairwiseAccuracy + per-strand breakdown in #179 for parity
+with evals_v2).
 """
 
 from collections import defaultdict
@@ -42,15 +44,26 @@ from lm_eval.api.task import Task
 from bolinas.pipelines.evals.metrics import GLOBAL_SUBSET, compute_pairwise_metrics
 
 
+# Strand tag → key segment used when storing per-strand PA in the wandb store.
+# "+" / "-" → "fwd" / "rc" because slashes in wandb keys group the panel; "+"
+# and "-" would render as math operators in Workspace search.
+_STRAND_TAGS = {"+": "fwd", "-": "rc"}
+
+
 class _PairwiseAccuracyAggregation:
-    """Aggregation callable that averages per-variant scores across rows
-    (FWD/RC strand collapse) and computes per-subset PairwiseAccuracy ± SE
+    """Aggregation callable that builds per-variant FWD / RC / AVG scores from
+    strand-tagged per-row scores, then computes per-subset PairwiseAccuracy ± SE
     via :func:`bolinas.pipelines.evals.metrics.compute_pairwise_metrics`.
 
-    Stores every row of the metrics DataFrame in ``self.results_store``
-    keyed as ``{subset}/pairwise_accuracy`` and
-    ``{subset}/pairwise_accuracy_se`` for wandb grouping. Returns the
-    ``_global_/pairwise_accuracy`` value as the lm-eval scalar.
+    For each variant:
+      - if both strand rows are present: emit ``score_fwd``, ``score_rc``, ``score_avg``
+      - if only one strand row is present: emit only ``score_avg`` (= the single-strand score)
+
+    All score columns are passed to ``compute_pairwise_metrics`` in a single
+    call. The resulting per-subset PA goes into ``self.results_store`` keyed as
+    ``{subset}/{strand_tag}/{metric_name}`` (and ``..._se``) where
+    ``strand_tag`` ∈ ``{"fwd", "rc", "avg"}``. Returns
+    ``_global_/avg/{metric_name}`` as the lm-eval scalar.
     """
 
     def __init__(self, results_store: dict, metric_name: str):
@@ -59,61 +72,97 @@ class _PairwiseAccuracyAggregation:
 
     def __call__(
         self,
-        items: list[tuple[float, float, str | None, tuple, int]],
+        items: list[tuple[float, float, str | None, tuple, int, str]],
     ) -> float:
-        # Collapse per variant_id (averaging scores across rows = FWD/RC strands).
-        # Asserts target/subset/match_group are consistent within a variant — a
-        # silent doubling or a match_group split would be the kind of bug worth
+        # Group rows per variant. Asserts strand uniqueness within a variant
+        # and target/subset/match_group consistency — a silent strand
+        # duplication or match_group split would be the kind of bug worth
         # crashing on rather than producing a quietly wrong number.
-        by_variant: dict[tuple, list[tuple[float, float, str | None, int]]] = (
-            defaultdict(list)
+        by_variant: dict[tuple, dict] = defaultdict(dict)
+        for score, target, subset, variant_id, match_group, strand in items:
+            v = by_variant[variant_id]
+            assert strand in _STRAND_TAGS, (
+                f"variant {variant_id} has unknown strand={strand!r}; "
+                f"expected one of {sorted(_STRAND_TAGS)}"
+            )
+            assert strand not in v, (
+                f"variant {variant_id} has duplicate strand={strand!r} rows"
+            )
+            v[strand] = float(score)
+            if "_meta" in v:
+                m = v["_meta"]
+                assert m["target"] == target, (
+                    f"variant {variant_id} has inconsistent target: {m['target']} vs {target}"
+                )
+                assert m["subset"] == subset, (
+                    f"variant {variant_id} has inconsistent subset: {m['subset']} vs {subset}"
+                )
+                assert m["match_group"] == match_group, (
+                    f"variant {variant_id} has inconsistent match_group: {m['match_group']} vs {match_group}"
+                )
+            else:
+                v["_meta"] = {
+                    "target": target,
+                    "subset": subset,
+                    "match_group": match_group,
+                }
+
+        # Sanity: all variants should carry the same set of strands. A mixed
+        # dataset (some 1-strand, some 2-strand variants) would silently make
+        # `score_avg` mean different things across rows.
+        strand_sets = {
+            frozenset(k for k in v if k in _STRAND_TAGS) for v in by_variant.values()
+        }
+        assert len(strand_sets) == 1, (
+            f"variants have heterogeneous strand sets: {sorted(map(sorted, strand_sets))}"
         )
-        for score, target, subset, variant_id, match_group in items:
-            by_variant[variant_id].append((score, target, subset, match_group))
+        present_strands = next(iter(strand_sets))
+        emit_per_strand = len(present_strands) > 1
 
         rows: list[dict] = []
-        for variant_id, group in by_variant.items():
-            scores = [g[0] for g in group]
-            targets = {g[1] for g in group}
-            subsets = {g[2] for g in group}
-            match_groups = {g[3] for g in group}
-            assert len(targets) == 1, (
-                f"variant {variant_id} has inconsistent target across rows: {targets}"
-            )
-            assert len(subsets) == 1, (
-                f"variant {variant_id} has inconsistent subset across rows: {subsets}"
-            )
-            assert len(match_groups) == 1, (
-                f"variant {variant_id} has inconsistent match_group across rows: {match_groups}"
-            )
-            rows.append(
-                {
-                    "label": int(targets.pop()),
-                    "score": float(sum(scores) / len(scores)),
-                    "subset": str(next(iter(subsets))),
-                    "match_group": int(match_groups.pop()),
-                }
-            )
+        for variant_id, v in by_variant.items():
+            meta = v["_meta"]
+            row = {
+                "label": int(meta["target"]),
+                "subset": str(meta["subset"]),
+                "match_group": int(meta["match_group"]),
+            }
+            strand_scores = [v[s] for s in present_strands]
+            row["score_avg"] = sum(strand_scores) / len(strand_scores)
+            if emit_per_strand:
+                for s in present_strands:
+                    row[f"score_{_STRAND_TAGS[s]}"] = v[s]
+            rows.append(row)
 
         df = pd.DataFrame(rows)
+        score_columns = ["score_avg"]
+        if emit_per_strand:
+            # Order: fwd, rc, avg — matches how wandb dashboards typically list them.
+            score_columns = [
+                f"score_{_STRAND_TAGS[s]}" for s in ("+", "-") if s in present_strands
+            ] + ["score_avg"]
+
         metrics = compute_pairwise_metrics(
             dataset=df[["label", "subset", "match_group"]],
-            scores=df[["score"]],
-            score_columns=["score"],
+            scores=df[score_columns],
+            score_columns=score_columns,
         )
+        # Store every (score_type, subset) row keyed as {subset}/{strand_tag}/{metric_name}.
         for _, row in metrics.iterrows():
-            self.results_store[f"{row['subset']}/{self.metric_name}"] = float(
-                row["value"]
-            )
-            self.results_store[f"{row['subset']}/{self.metric_name}_se"] = float(
-                row["se"]
-            )
+            strand_tag = row["score_type"].removeprefix("score_")  # fwd / rc / avg
+            key = f"{row['subset']}/{strand_tag}/{self.metric_name}"
+            self.results_store[key] = float(row["value"])
+            self.results_store[f"{key}_se"] = float(row["se"])
 
-        global_row = metrics[metrics["subset"] == GLOBAL_SUBSET]
-        assert not global_row.empty, (
-            "compute_pairwise_metrics did not emit a _global_ row"
+        # Headline scalar returned to lm-eval: global PA on the AVG score.
+        global_avg = metrics[
+            (metrics["subset"] == GLOBAL_SUBSET)
+            & (metrics["score_type"] == "score_avg")
+        ]
+        assert not global_avg.empty, (
+            "compute_pairwise_metrics did not emit a _global_ row for score_avg"
         )
-        return float(global_row["value"].iloc[0])
+        return float(global_avg["value"].iloc[0])
 
 
 METRIC_REGISTRY: dict[str, dict] = {
@@ -132,20 +181,24 @@ LLR_TRANSFORMS: dict[str, Callable[[float], float]] = {
 
 
 class DnaVepLlrEvalTask(Task):
-    """LLR eval task for variant effect prediction with per-variant aggregation.
+    """LLR eval task for variant effect prediction with per-strand + AVG aggregation.
 
     Parameterized by dataset and metrics via YAML config.
 
     Dataset rows must have ``[chrom, pos, ref, alt, context, ref_completion,
     alt_completion, target, match_group]``. Optional: ``subset`` (str) — metrics
     computed per distinct value plus ``_global_`` and ``_macro_avg_``.
+    Optional: ``strand`` (str, ``"+"`` or ``"-"``) — when present the same variant
+    appears once per strand (see
+    :func:`bolinas.pipelines.evals.materialize.materialize_sequences`).
 
-    When the dataset has multiple rows per variant (e.g. two rows per variant
-    tagged by ``strand`` in ``{"+", "-"}`` — see
-    :func:`bolinas.pipelines.evals.materialize.materialize_sequences`), per-row
-    scores are averaged per ``(chrom, pos, ref, alt)`` before the
-    PairwiseAccuracy is computed. For one-row-per-variant datasets the
-    averaging step is a no-op.
+    Aggregation: per-row scores are grouped by ``(chrom, pos, ref, alt)``. For a
+    2-strand dataset the metric is computed three times — on per-variant
+    ``score_fwd``, ``score_rc``, and ``score_avg = (score_fwd + score_rc) / 2``
+    — and stored under keys ``{subset}/fwd/{metric}``, ``{subset}/rc/{metric}``,
+    ``{subset}/avg/{metric}`` (plus ``..._se``). For a 1-strand dataset only
+    the ``avg`` keys are emitted (= the single-strand score). The lm-eval
+    headline scalar is ``_global_/avg/{metric}``.
 
     YAML config fields:
         dataset_path: HuggingFace dataset path
@@ -268,8 +321,12 @@ class DnaVepLlrEvalTask(Task):
             str(doc["alt"]),
         )
         match_group = int(doc["match_group"])
+        # Default to "+" for legacy 1-row-per-variant datasets that don't
+        # carry a strand column. The aggregation will still emit only score_avg
+        # in that case (see _PairwiseAccuracyAggregation.__call__).
+        strand = str(doc.get("strand", "+"))
         return {
-            metric: (score, target, subset, variant_id, match_group)
+            metric: (score, target, subset, variant_id, match_group, strand)
             for metric in self._metrics
         }
 

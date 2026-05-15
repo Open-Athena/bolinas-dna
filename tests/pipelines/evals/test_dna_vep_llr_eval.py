@@ -3,9 +3,9 @@
 
 """Tests for the lm_eval task class ``DnaVepLlrEvalTask``.
 
-Pin down the per-variant aggregation logic — the load-bearing piece for #179
-parity with the offline batched VEP path. Avoids loading any HF dataset; the
-tests construct synthetic doc dicts and call ``process_results`` /
+Pin down the per-strand + AVG aggregation logic — the load-bearing piece for
+#179 parity with the offline batched VEP path. Avoids loading any HF dataset;
+the tests construct synthetic doc dicts and call ``process_results`` /
 ``aggregation`` directly.
 """
 
@@ -22,18 +22,18 @@ from bolinas.pipelines.evals.lm_eval.dna_vep_llr_eval import (  # noqa: E402
 
 
 def _items_from_per_variant(per_variant_rows):
-    """Flatten per-variant rows into the (score, target, subset, variant_id, match_group)
-    tuples that ``DnaVepLlrEvalTask.aggregation()`` consumes.
+    """Flatten per-variant rows into the
+    (score, target, subset, variant_id, match_group, strand) tuples that
+    ``DnaVepLlrEvalTask.aggregation()`` consumes.
 
     ``per_variant_rows`` is a list of
-        (variant_id, target, subset, match_group, scores)
-    where ``scores`` is a list of one or more per-row scores for that variant
-    (one score per strand for the FWD+RC dataset; one score for FWD-only).
+        (variant_id, target, subset, match_group, strand_to_score)
+    where ``strand_to_score`` is a dict ``{"+": s}`` or ``{"+": s, "-": s}``.
     """
     items = []
-    for variant_id, target, subset, match_group, scores in per_variant_rows:
-        for s in scores:
-            items.append((s, target, subset, variant_id, match_group))
+    for variant_id, target, subset, match_group, strand_to_score in per_variant_rows:
+        for strand, s in strand_to_score.items():
+            items.append((s, target, subset, variant_id, match_group, strand))
     return items
 
 
@@ -49,69 +49,87 @@ def test_metric_registry_has_pairwise_accuracy():
     assert METRIC_REGISTRY["pairwise_accuracy"]["higher_is_better"] is True
 
 
-def test_one_strand_per_variant_no_average():
-    """One row per variant: aggregation should match a direct PairwiseAccuracy
-    on the per-row scores. 4 perfectly-separable matched pairs => PA = 1.0.
+def test_one_strand_per_variant_emits_only_avg():
+    """1-strand dataset: only the avg keys are emitted (avg == single-strand score).
+
+    No fwd/rc keys because they would be redundant with avg. 4 perfectly-separable
+    matched pairs (in 30+ pairs to satisfy macro_avg n_min=30) => global PA = 1.0.
     """
-    per_variant = [
-        # (variant_id, target, subset, match_group, scores)
-        (("1", 11, "G", "A"), 1, "missense", 1, [0.9]),  # pos
-        (("1", 12, "T", "A"), 0, "missense", 1, [0.1]),  # neg
-        (("1", 13, "C", "G"), 1, "missense", 2, [0.8]),  # pos
-        (("1", 14, "A", "T"), 0, "missense", 2, [0.2]),  # neg
-        (("2", 11, "G", "A"), 1, "missense", 3, [0.7]),  # pos
-        (("2", 12, "T", "A"), 0, "missense", 3, [0.3]),  # neg
-    ] + [
-        (
-            ("3", 100 + i, "A", "T"),
-            int(i % 2 == 0),
-            "splicing",
-            4 + (i // 2),
-            [0.6 + 0.05 * i if i % 2 == 0 else 0.4 - 0.05 * i],
+    per_variant: list = []
+    for i in range(30):
+        per_variant.append((("1", 100 + i, "G", "A"), 1, "missense", i + 1, {"+": 0.9}))
+        per_variant.append((("1", 200 + i, "T", "A"), 0, "missense", i + 1, {"+": 0.1}))
+    items = _items_from_per_variant(per_variant)
+    scalar, store = _run_aggregation(items)
+
+    assert scalar == pytest.approx(1.0)
+    assert store["_global_/avg/pairwise_accuracy"] == pytest.approx(1.0)
+    assert store["missense/avg/pairwise_accuracy"] == pytest.approx(1.0)
+    assert store["_macro_avg_/avg/pairwise_accuracy"] == pytest.approx(1.0)
+    # No fwd/rc keys for 1-strand datasets.
+    fwd_keys = [k for k in store if "/fwd/" in k]
+    rc_keys = [k for k in store if "/rc/" in k]
+    assert fwd_keys == [], f"unexpected fwd keys for 1-strand dataset: {fwd_keys}"
+    assert rc_keys == [], f"unexpected rc keys for 1-strand dataset: {rc_keys}"
+
+
+def test_two_strands_per_variant_emits_fwd_rc_avg_separately():
+    """2-strand dataset: fwd / rc / avg PA all stored, avg returned as scalar.
+
+    Set up so:
+      - FWD scores would give PA = 0.5 (tied within each pair)
+      - RC scores would give PA = 1.0 (perfectly separable)
+      - AVG breaks the FWD tie in favor of the positive => AVG PA = 1.0
+    """
+    per_variant: list = []
+    for i in range(30):
+        per_variant.append(
+            (("1", 100 + i, "G", "A"), 1, "missense", i + 1, {"+": 0.5, "-": 0.9})
         )
-        for i in range(60)
-    ]
+        per_variant.append(
+            (("1", 200 + i, "T", "A"), 0, "missense", i + 1, {"+": 0.5, "-": 0.1})
+        )
     items = _items_from_per_variant(per_variant)
     scalar, store = _run_aggregation(items)
 
-    # All positives score above their matched negative => global PA = 1.0
+    # AVG breaks FWD ties => 1.0 globally
     assert scalar == pytest.approx(1.0)
-    assert store["_global_/pairwise_accuracy"] == pytest.approx(1.0)
-    # Per-subset rows present (missense and splicing).
-    assert "missense/pairwise_accuracy" in store
-    assert "splicing/pairwise_accuracy" in store
-    assert "_macro_avg_/pairwise_accuracy" in store
+    assert store["_global_/avg/pairwise_accuracy"] == pytest.approx(1.0)
+    # FWD: every pair tied => PA = 0.5
+    assert store["_global_/fwd/pairwise_accuracy"] == pytest.approx(0.5)
+    assert store["missense/fwd/pairwise_accuracy"] == pytest.approx(0.5)
+    # RC: perfectly separated => PA = 1.0
+    assert store["_global_/rc/pairwise_accuracy"] == pytest.approx(1.0)
+    assert store["missense/rc/pairwise_accuracy"] == pytest.approx(1.0)
+    # Macro-avg present for all three.
+    assert "_macro_avg_/fwd/pairwise_accuracy" in store
+    assert "_macro_avg_/rc/pairwise_accuracy" in store
+    assert "_macro_avg_/avg/pairwise_accuracy" in store
 
 
-def test_two_strands_per_variant_collapses_then_metric():
-    """Two rows per variant: scores are averaged per (chrom, pos, ref, alt) before PA.
-
-    Set up scores so that the FWD-only PA would be 0.5 (a tie) but the AVG
-    (FWD+RC) breaks the tie in favor of the positive => PA = 1.0.
-    """
-    # match_group 1: pos has FWD=0.5, RC=0.9 (avg 0.7); neg has FWD=0.5, RC=0.1 (avg 0.3)
-    per_variant = [
-        (("1", 11, "G", "A"), 1, "missense", 1, [0.5, 0.9]),  # pos
-        (("1", 12, "T", "A"), 0, "missense", 1, [0.5, 0.1]),  # neg
-    ]
-    # Pad to >=30 pairs in one subset so compute_pairwise_metrics' macro_avg
-    # threshold is satisfied (n_min=30).
-    for i in range(2, 31):
-        per_variant.append((("9", 100 + i, "A", "T"), 1, "missense", i, [0.5, 0.9]))
-        per_variant.append((("9", 200 + i, "A", "T"), 0, "missense", i, [0.5, 0.1]))
-
+def test_two_strands_se_present_for_each():
+    """Each (subset, strand_tag) emits a paired ``..._se`` key."""
+    per_variant: list = []
+    for i in range(30):
+        per_variant.append(
+            (("1", 100 + i, "G", "A"), 1, "missense", i + 1, {"+": 0.9, "-": 0.8})
+        )
+        per_variant.append(
+            (("1", 200 + i, "T", "A"), 0, "missense", i + 1, {"+": 0.1, "-": 0.2})
+        )
     items = _items_from_per_variant(per_variant)
-    scalar, store = _run_aggregation(items)
-
-    assert scalar == pytest.approx(1.0)
-    assert store["_global_/pairwise_accuracy"] == pytest.approx(1.0)
+    _, store = _run_aggregation(items)
+    for tag in ("fwd", "rc", "avg"):
+        assert f"_global_/{tag}/pairwise_accuracy" in store
+        assert f"_global_/{tag}/pairwise_accuracy_se" in store
+        assert math.isfinite(store[f"_global_/{tag}/pairwise_accuracy_se"])
 
 
 def test_inconsistent_target_within_variant_fails_loud():
-    """If two rows for the same variant_id disagree on target, the assertion fires."""
+    """Two rows with the same variant_id but different targets must fail."""
     items = [
-        (0.5, 1, "missense", ("1", 11, "G", "A"), 1),
-        (0.6, 0, "missense", ("1", 11, "G", "A"), 1),  # contradicting target
+        (0.5, 1, "missense", ("1", 11, "G", "A"), 1, "+"),
+        (0.6, 0, "missense", ("1", 11, "G", "A"), 1, "-"),  # contradicting target
     ]
     with pytest.raises(AssertionError, match="inconsistent target"):
         _run_aggregation(items)
@@ -119,8 +137,8 @@ def test_inconsistent_target_within_variant_fails_loud():
 
 def test_inconsistent_subset_within_variant_fails_loud():
     items = [
-        (0.5, 1, "missense", ("1", 11, "G", "A"), 1),
-        (0.6, 1, "splicing", ("1", 11, "G", "A"), 1),
+        (0.5, 1, "missense", ("1", 11, "G", "A"), 1, "+"),
+        (0.6, 1, "splicing", ("1", 11, "G", "A"), 1, "-"),
     ]
     with pytest.raises(AssertionError, match="inconsistent subset"):
         _run_aggregation(items)
@@ -128,31 +146,62 @@ def test_inconsistent_subset_within_variant_fails_loud():
 
 def test_inconsistent_match_group_within_variant_fails_loud():
     items = [
-        (0.5, 1, "missense", ("1", 11, "G", "A"), 1),
-        (0.6, 1, "missense", ("1", 11, "G", "A"), 99),
+        (0.5, 1, "missense", ("1", 11, "G", "A"), 1, "+"),
+        (0.6, 1, "missense", ("1", 11, "G", "A"), 99, "-"),
     ]
     with pytest.raises(AssertionError, match="inconsistent match_group"):
+        _run_aggregation(items)
+
+
+def test_duplicate_strand_within_variant_fails_loud():
+    """Two rows with the same variant_id AND same strand must fail."""
+    items = [
+        (0.5, 1, "missense", ("1", 11, "G", "A"), 1, "+"),
+        (0.6, 1, "missense", ("1", 11, "G", "A"), 1, "+"),  # duplicate strand
+    ]
+    with pytest.raises(AssertionError, match="duplicate strand"):
+        _run_aggregation(items)
+
+
+def test_unknown_strand_fails_loud():
+    items = [(0.5, 1, "missense", ("1", 11, "G", "A"), 1, "?")]
+    with pytest.raises(AssertionError, match="unknown strand"):
+        _run_aggregation(items)
+
+
+def test_heterogeneous_strand_sets_fails_loud():
+    """One variant has both strands, another only one — must fail.
+
+    A mixed dataset would silently make ``score_avg`` mean different things
+    across rows.
+    """
+    items = [
+        # variant A has both strands
+        (0.5, 1, "missense", ("1", 11, "G", "A"), 1, "+"),
+        (0.7, 1, "missense", ("1", 11, "G", "A"), 1, "-"),
+        # variant B has only "+"
+        (0.3, 0, "missense", ("1", 12, "T", "A"), 1, "+"),
+    ]
+    with pytest.raises(AssertionError, match="heterogeneous strand sets"):
         _run_aggregation(items)
 
 
 def test_se_is_finite_and_consistent_with_wald():
     """Standard error matches the Wald binomial form ``sqrt(p*(1-p)/n)``.
 
-    Uses 30 pairs (so compute_pairwise_metrics' n_min=30 macro-avg gate fires
-    cleanly) with 20 wins and 10 losses => global PA = 20/30.
+    Uses 30 1-strand pairs (n_min=30 macro-avg gate) with 20 wins, 10 losses
+    => global AVG PA = 20/30.
     """
     per_variant: list = []
-    # 20 winning pairs (positive scores higher).
     for i in range(20):
-        per_variant.append((("1", 100 + i, "G", "A"), 1, "missense", i + 1, [0.9]))
-        per_variant.append((("1", 200 + i, "T", "A"), 0, "missense", i + 1, [0.1]))
-    # 10 losing pairs.
+        per_variant.append((("1", 100 + i, "G", "A"), 1, "missense", i + 1, {"+": 0.9}))
+        per_variant.append((("1", 200 + i, "T", "A"), 0, "missense", i + 1, {"+": 0.1}))
     for i in range(20, 30):
-        per_variant.append((("1", 100 + i, "G", "A"), 1, "missense", i + 1, [0.1]))
-        per_variant.append((("1", 200 + i, "T", "A"), 0, "missense", i + 1, [0.9]))
+        per_variant.append((("1", 100 + i, "G", "A"), 1, "missense", i + 1, {"+": 0.1}))
+        per_variant.append((("1", 200 + i, "T", "A"), 0, "missense", i + 1, {"+": 0.9}))
     items = _items_from_per_variant(per_variant)
     scalar, store = _run_aggregation(items)
     assert scalar == pytest.approx(20 / 30)
     n_pairs = 30
     expected_se = math.sqrt((20 / 30) * (1 - 20 / 30) / n_pairs)
-    assert store["_global_/pairwise_accuracy_se"] == pytest.approx(expected_se)
+    assert store["_global_/avg/pairwise_accuracy_se"] == pytest.approx(expected_se)
