@@ -61,9 +61,12 @@ logger = logging.getLogger(__name__)
 MODEL_NAME = "exp166-p1B-step-16398"
 MODEL_PATH = "bolinas-dna/exp166-p1B-step-16398"
 
-# v5p-8 matches the exp160_parity.py worker; v4-8 also fine for a 1B-param
-# inference-only job but v5p-8 is the available default in us-east5.
-TPU_TYPES: tuple[str, ...] = ("v5p-8",)
+# v4-8 is the marin default for levanter eval (`default_eval` →
+# `ResourceConfig.with_tpu("v4-8")`) and is broadly available across v4 quota
+# pools. Switched away from v5p-8 (which exp160_parity used for training) on
+# 2026-05-15 because v5p capacity was contested across both us-east5 and
+# us-central1 — eval is inference-only so the bigger v5p chips aren't needed.
+TPU_TYPES: tuple[str, ...] = ("v4-8",)
 
 
 # Vendored from `marin-community/marin@main:experiments/evals/evals.py:142-169`.
