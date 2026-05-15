@@ -1,0 +1,106 @@
+# SkyPilot task: Evo2 on the Mendelian-traits leaderboard (issue #161),
+# bundle-scoring path (LLR + next-token JSD, FWD+RC averaged) introduced
+# in PR #184. Three model sizes — evo2_1b_base, evo2_7b, evo2_40b — all
+# fit on a single GH200 (96 GB), so one cluster + `sky exec` per model
+# is the recipe.
+#
+# Variant scoring no longer depends on biofoundation (vendored CLM
+# subset in PR #182), so the image only pip-installs `evo2`.
+#
+# See scripts/evo2_eval/README.md for the launch recipe.
+
+name: evo2-mendelian
+
+resources:
+  # GH200 (96 GB) — fits evo2_40b unsharded; 1B/7B have ample headroom.
+  # Note: Lambda is the cheapest reliable GH200 source ($2.29/hr on-demand,
+  # us-east-3 / europe-central). Cloud left unpinned so SkyPilot can pick.
+  # Lambda does NOT support image_id: docker:..., so we skip it entirely
+  # and build our docker image at setup time.
+  accelerators: GH200:1
+  labels:
+    project: dna
+  disk_size: 256  # evo2_40b weights ~80 GB in FP8, plus genome + scratch
+
+workdir: .
+
+envs:
+  MODEL: evo2_1b_base
+  LIMIT: ""
+  BATCH_SIZE: ""
+  SKIP_SELF_TEST: ""
+  NO_RC_AVG: ""    # empty = RC on (default); set to any non-empty to disable
+  HF_TOKEN: ""
+
+setup: |
+  set -euxo pipefail
+  # Docker-first setup. Lambda's base image has docker + nvidia-container-runtime
+  # preinstalled. We use NVIDIA's pytorch image (TE + flash-attn + CUDA 12.8 +
+  # matched torch already baked in) and layer evo2 on top. This avoids the
+  # from-source hell we hit trying to build TE/flash-attn on Lambda's bare
+  # image. NGC images are multi-arch and resolve to the aarch64 variant on
+  # GH200 automatically.
+  sudo docker pull nvcr.io/nvidia/pytorch:25.04-py3
+  cat > /tmp/evo2.Dockerfile <<'EOF'
+  FROM nvcr.io/nvidia/pytorch:25.04-py3
+  RUN pip install --break-system-packages evo2
+  # nvcr image's transformers wants regex>=2025.10.22 but ships an older one
+  # pinned via a pip constraint file (/etc/pip/constraint.txt). Unset
+  # PIP_CONSTRAINT to bypass, then upgrade regex.
+  RUN PIP_CONSTRAINT= pip install --break-system-packages -U "regex>=2025.10.22"
+  # bolinas is installed via PYTHONPATH at run-time (pure Python, no build).
+  WORKDIR /workspace
+  EOF
+  sudo docker build -t evo2-eval:latest -f /tmp/evo2.Dockerfile /tmp
+  # Genome (GRCh38 primary assembly, Ensembl release-113 — sequence is
+  # byte-identical to the release-115 S3 copy used by evals_v2; local file
+  # avoids S3 + fsspec/fork complications inside docker).
+  mkdir -p results
+  if [ ! -f results/genome.fa.gz ]; then
+    wget -q -O results/genome.fa.gz \
+      http://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz
+  fi
+
+run: |
+  set -euxo pipefail
+  # Clean up child docker container on signal (sky cancel sends SIGTERM to
+  # this bash script but does NOT propagate into the container, leaking GPU
+  # memory. The trap + --name ensures stale containers don't pin GPUs).
+  CONTAINER_NAME="evo2-eval-${MODEL}-$$"
+  trap 'sudo docker rm -f "$CONTAINER_NAME" 2>/dev/null || true' EXIT INT TERM
+  # Single-GPU only: GH200 has one device and Vortex handles its own placement.
+  # Don't launch via torchrun — Evo2/Vortex handles its own multi-GPU
+  # sharding; HF Trainer DDP on top of Vortex breaks device placement.
+  sudo docker run --rm --name "$CONTAINER_NAME" --gpus all --ipc=host --shm-size=16g \
+    -v "$PWD":/workspace -w /workspace \
+    -e MODEL="$MODEL" -e HF_TOKEN="${HF_TOKEN:-}" \
+    -e LIMIT="${LIMIT:-}" -e BATCH_SIZE="${BATCH_SIZE:-}" \
+    -e SKIP_SELF_TEST="${SKIP_SELF_TEST:-}" \
+    -e NO_RC_AVG="${NO_RC_AVG:-}" \
+    -e CUDA_VISIBLE_DEVICES=0 \
+    -e PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+    -e OMP_NUM_THREADS=8 \
+    -e PYTHONPATH=/workspace/src \
+    evo2-eval:latest \
+    bash -c '
+      set -euxo pipefail
+      if [ -n "${HF_TOKEN:-}" ]; then export HUGGING_FACE_HUB_TOKEN="$HF_TOKEN"; fi
+      if [ -z "${SKIP_SELF_TEST:-}" ]; then
+        echo "=== evo2 self-test for ${MODEL} ==="
+        python -m evo2.test.test_evo2 --model_name "${MODEL}" || true
+        echo "=== end self-test ==="
+      else
+        echo "[skip] self-test disabled via SKIP_SELF_TEST"
+      fi
+      LIMIT_ARG=""
+      if [ -n "${LIMIT:-}" ]; then LIMIT_ARG="--limit ${LIMIT}"; fi
+      BS_ARG=""
+      if [ -n "${BATCH_SIZE:-}" ]; then BS_ARG="--batch-size ${BATCH_SIZE}"; fi
+      RC_ARG=""
+      if [ -n "${NO_RC_AVG:-}" ]; then RC_ARG="--no-rc-avg"; fi
+      python scripts/evo2_eval/mendelian_traits.py \
+        --model "$MODEL" \
+        --split train \
+        --genome-path results/genome.fa.gz \
+        ${LIMIT_ARG} ${BS_ARG} ${RC_ARG}
+    '

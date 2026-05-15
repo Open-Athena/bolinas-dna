@@ -1,40 +1,47 @@
 """Tests for Evo2 variant scoring helpers.
 
-The real inference path needs ``evo2`` + an H100 + ~40 GB of downloaded
+The real inference path needs ``evo2`` + an H100/GH200 + ~40 GB of downloaded
 weights, so this file only exercises the lightweight contract (signature,
-import, score-dataframe shape). The heavy lifting is checked at runtime on
-the SkyPilot cluster.
+import, aggregator math). The heavy lifting is checked at runtime on the
+SkyPilot cluster.
 """
 
+import inspect
+
 import numpy as np
-import pandas as pd
 
 from bolinas.pipelines.evals.evo2 import (
     aggregate_ll_gap,
     compute_evo2_ll,
-    compute_evo2_llr,
-    scores_dataframe,
+    compute_evo2_variant_score_bundle,
 )
 
 
-def test_compute_evo2_llr_signature_and_imports():
-    """Sanity-check that the function exists and is importable without evo2 installed."""
-    assert callable(compute_evo2_llr)
+def test_evo2_helpers_importable():
+    """Sanity-check that the public functions exist and are importable
+    without evo2 installed."""
+    assert callable(compute_evo2_variant_score_bundle)
     assert callable(compute_evo2_ll)
 
 
-def test_scores_dataframe_shapes_and_signs():
-    llr = np.array([-1.5, 0.0, 2.0])
-    scores = scores_dataframe(llr)
-
-    assert list(scores.columns) == ["llr", "minus_llr", "abs_llr"]
-    assert len(scores) == 3
-    pd.testing.assert_series_equal(
-        scores["minus_llr"], pd.Series([1.5, -0.0, -2.0], name="minus_llr")
-    )
-    pd.testing.assert_series_equal(
-        scores["abs_llr"], pd.Series([1.5, 0.0, 2.0], name="abs_llr")
-    )
+def test_compute_evo2_variant_score_bundle_signature():
+    """rc_avg defaults to True (matches evals_v2 default per issue #175
+    conclusion 2); window_size defaults to 8192 (Evo2 design point)."""
+    sig = inspect.signature(compute_evo2_variant_score_bundle)
+    assert "rc_avg" in sig.parameters
+    assert sig.parameters["rc_avg"].default is True
+    assert "window_size" in sig.parameters
+    assert sig.parameters["window_size"].default == 8192
+    # Must accept the kwargs the entry script forwards to it.
+    for name in (
+        "model_name",
+        "dataset",
+        "genome_path",
+        "batch_size",
+        "tune_start",
+        "num_workers",
+    ):
+        assert name in sig.parameters, f"missing parameter {name!r}"
 
 
 def test_aggregate_ll_gap_token_weighted_mean_and_sign():

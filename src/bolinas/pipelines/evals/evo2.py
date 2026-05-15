@@ -2,8 +2,10 @@
 
 Provides:
 
-- ``compute_evo2_llr`` — per-variant log-likelihood ratio (alt - ref) over a
-  genome-anchored window. Used by issue #131's TraitGym VEP eval.
+- ``compute_evo2_variant_score_bundle`` — per-variant score bundle (LLR +
+  next-token JSD) over a genome-anchored window, with optional FWD+RC
+  averaging. Mirrors ``bolinas.pipelines.evals.inference.compute_variant_scores``
+  (the HF analog) one-to-one for the return shape.
 - ``compute_evo2_ll`` — per-sequence log-likelihood with case-based breakdown
   (uppercase=phyloP-functional, lowercase=non-functional). Used by the LL-gap
   follow-up eval.
@@ -165,7 +167,7 @@ def _load_evo2_for_inference(
     return model, tokenizer
 
 
-def compute_evo2_llr(
+def compute_evo2_variant_score_bundle(
     model_name: str,
     dataset: pd.DataFrame,
     genome_path: str | Path,
@@ -174,8 +176,14 @@ def compute_evo2_llr(
     num_workers: int = 8,
     data_transform_on_the_fly: bool = True,
     tune_start: int = 64,
-) -> np.ndarray:
-    """Compute per-variant LLR using an Evo2 checkpoint.
+    rc_avg: bool = True,
+) -> pd.DataFrame:
+    """Score Evo2 variants → DataFrame[llr, minus_llr, abs_llr, next_token_jsd_mean].
+
+    Evo2 analog of ``bolinas.pipelines.evals.inference.compute_variant_scores``
+    (HF flavor): same return shape, same column names. Only the model load
+    differs — ``_Evo2QuackModel`` / ``_Evo2QuackTokenizer`` shim Evo2 into the
+    HF-shaped duck-typed interface that ``run_variant_score_bundle`` expects.
 
     Args:
         model_name: One of ``evo2_1b_base``, ``evo2_7b``, ``evo2_40b`` (or any
@@ -183,18 +191,28 @@ def compute_evo2_llr(
         dataset: DataFrame with columns ``[chrom, pos, ref, alt]``. Row order
             of the output aligns with row order of this input.
         genome_path: Path to genome reference FASTA (.fa / .fa.gz).
-        window_size: Context length in bp. Fixed to 8192 for the issue #131
-            eval per user request.
+        window_size: Context length in bp. 8192 by default (Evo2 design point).
         batch_size: Per-device eval batch size. If ``None`` (default), run an
             OOM-descent tune starting from ``tune_start`` and pick the largest
-            that survives a forward pass.
+            that survives a forward pass. With ``rc_avg=True`` the tuner runs
+            twice (once per strand) — pass an explicit ``batch_size`` to skip
+            the second probe.
         num_workers: Dataloader workers.
         data_transform_on_the_fly: Forwarded to ``run_variant_score_bundle``.
         tune_start: Initial batch size to probe when ``batch_size is None``.
+        rc_avg: If True (default), score both FWD and RC windows and return
+            the element-wise mean. Doubles inference cost; the validated
+            default per issue #175 conclusion 2.
 
     Returns:
-        1-D float numpy array of LLR values (alt_logprob - ref_logprob),
-        length equal to ``len(dataset)``.
+        DataFrame with columns ``[llr, minus_llr, abs_llr, next_token_jsd_mean]``,
+        row-aligned with ``dataset`` (length N).
+
+        - llr: log p(alt) − log p(ref) in 4-nuc softmax space.
+        - minus_llr: −llr (pathogenic > benign on the mendelian leaderboard).
+        - abs_llr: |llr| (magnitude, used by complex_traits / eqtl).
+        - next_token_jsd_mean: mean per-position 4-nuc JSD over downstream
+          positions (called ``down_jsd_mean`` in issue #175).
     """
     from datasets import Dataset
 
@@ -215,13 +233,13 @@ def compute_evo2_llr(
 
     hf_dataset = Dataset.from_pandas(dataset, preserve_index=False)
 
-    # Bundle returns [N, 2] = (LLR, next_token_jsd_mean); we only need LLR.
     bundle = run_variant_score_bundle(
         model,
         tokenizer,
         hf_dataset,
         genome,
         window_size,
+        rc_avg=rc_avg,
         data_transform_on_the_fly=data_transform_on_the_fly,
         inference_kwargs=dict(
             per_device_eval_batch_size=batch_size,
@@ -230,22 +248,20 @@ def compute_evo2_llr(
         ),
     )
 
-    llr = np.asarray(bundle)[:, 0]
-    assert llr.shape == (len(dataset),), (
-        f"LLR shape mismatch: got {llr.shape}, expected ({len(dataset)},)"
+    bundle = np.asarray(bundle)
+    assert bundle.shape == (len(dataset), 2), (
+        f"bundle shape mismatch: got {bundle.shape}, expected ({len(dataset)}, 2)"
     )
-    assert np.isfinite(llr).all(), "non-finite LLR values produced by Evo2"
-    return llr
-
-
-def scores_dataframe(llr: np.ndarray) -> pd.DataFrame:
-    """Expand a 1-D LLR array into the score DataFrame the rest of the eval code expects."""
-    llr = np.asarray(llr).reshape(-1)
+    assert np.isfinite(bundle).all(), "non-finite values produced by Evo2 bundle"
+    llr = bundle[:, 0]
+    next_token_jsd_mean = bundle[:, 1]
+    assert (next_token_jsd_mean >= 0).all(), "negative JSD — impossible by construction"
     return pd.DataFrame(
         {
             "llr": llr,
             "minus_llr": -llr,
             "abs_llr": np.abs(llr),
+            "next_token_jsd_mean": next_token_jsd_mean,
         }
     )
 
