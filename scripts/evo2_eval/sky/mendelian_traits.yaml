@@ -42,6 +42,8 @@ envs:
   BATCH_SIZE: ""
   SKIP_SELF_TEST: ""
   NO_RC_AVG: ""    # empty = RC on (default); set to any non-empty to disable
+  SUBSET: ""       # if set (e.g. "splicing"), filter the dataset to that subset
+  OUTPUT_SUFFIX: ""  # optional suffix on output parquet filenames (avoid clobber)
   HF_TOKEN: ""
 
 setup: |
@@ -89,6 +91,8 @@ run: |
     -e LIMIT="${LIMIT:-}" -e BATCH_SIZE="${BATCH_SIZE:-}" \
     -e SKIP_SELF_TEST="${SKIP_SELF_TEST:-}" \
     -e NO_RC_AVG="${NO_RC_AVG:-}" \
+    -e SUBSET="${SUBSET:-}" \
+    -e OUTPUT_SUFFIX="${OUTPUT_SUFFIX:-}" \
     -e CUDA_VISIBLE_DEVICES=0 \
     -e PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
     -e OMP_NUM_THREADS=8 \
@@ -110,9 +114,14 @@ run: |
       if [ -n "${BATCH_SIZE:-}" ]; then BS_ARG="--batch-size ${BATCH_SIZE}"; fi
       RC_ARG=""
       if [ -n "${NO_RC_AVG:-}" ]; then RC_ARG="--no-rc-avg"; fi
+      SUBSET_ARG=""
+      if [ -n "${SUBSET:-}" ]; then SUBSET_ARG="--subset ${SUBSET}"; fi
+      OUT="results/evo2_mendelian_traits/${MODEL}_train${OUTPUT_SUFFIX:-}.parquet"
+      OUT_METRICS="results/evo2_mendelian_traits/${MODEL}_train${OUTPUT_SUFFIX:-}_metrics.parquet"
       python scripts/evo2_eval/mendelian_traits.py \
         --model "$MODEL" \
         --split train \
         --genome-path results/genome.fa.gz \
-        ${LIMIT_ARG} ${BS_ARG} ${RC_ARG}
+        --output "$OUT" --output-metrics "$OUT_METRICS" \
+        ${LIMIT_ARG} ${BS_ARG} ${RC_ARG} ${SUBSET_ARG}
     '
