@@ -244,8 +244,8 @@ def compute_evo2_bundle(
     )
 
     n = len(df)
-    out_total = np.zeros((n, 2), dtype=np.float64)
     strands: tuple[Literal["+", "-"], ...] = ("+", "-") if rc_avg else ("+",)
+    per_strand: dict[str, np.ndarray] = {}  # strand → [N, 2] kernel output
     for strand in strands:
         print(f"[evo2] strand={strand}: tokenizing {n} variants...", flush=True)
         input_ids_np, alt_token_ids_np, var_pos = _build_token_arrays(
@@ -270,19 +270,32 @@ def compute_evo2_bundle(
                 nuc_token_ids=nuc_token_ids,
             )
             strand_out[i : i + batch_size] = bundle.detach().cpu().numpy()
-        out_total += strand_out
-    if rc_avg:
-        out_total /= 2
+        per_strand[strand] = strand_out
 
-    llr = out_total[:, 0]
-    jsd = out_total[:, 1]
-    assert np.isfinite(llr).all(), "non-finite LLR"
-    assert np.isfinite(jsd).all() and (jsd >= 0).all(), "non-finite or negative JSD"
-    return pd.DataFrame(
-        {
-            "llr": llr,
-            "minus_llr": -llr,
-            "abs_llr": np.abs(llr),
-            "next_token_jsd_mean": jsd,
+    def _expand(out_arr: np.ndarray, suffix: str) -> dict[str, np.ndarray]:
+        llr_ = out_arr[:, 0]
+        jsd_ = out_arr[:, 1]
+        assert np.isfinite(llr_).all(), f"non-finite LLR{suffix}"
+        assert np.isfinite(jsd_).all() and (jsd_ >= 0).all(), (
+            f"non-finite or negative JSD{suffix}"
+        )
+        return {
+            f"llr{suffix}": llr_,
+            f"minus_llr{suffix}": -llr_,
+            f"abs_llr{suffix}": np.abs(llr_),
+            f"next_token_jsd_mean{suffix}": jsd_,
         }
-    )
+
+    cols: dict[str, np.ndarray] = {}
+    if rc_avg:
+        # FWD+RC averaging: keep per-strand columns + the averaged columns
+        # (which is what the leaderboard scores against). Per-strand columns
+        # let downstream callers sanity-check #175's patterns (fwd ≈ rev
+        # individually, low correlation, avg > individual for some subsets).
+        avg = (per_strand["+"] + per_strand["-"]) / 2
+        cols.update(_expand(avg, suffix=""))
+        cols.update(_expand(per_strand["+"], suffix="_fwd"))
+        cols.update(_expand(per_strand["-"], suffix="_rev"))
+    else:
+        cols.update(_expand(per_strand["+"], suffix=""))
+    return pd.DataFrame(cols)

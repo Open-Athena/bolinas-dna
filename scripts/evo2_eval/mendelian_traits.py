@@ -100,6 +100,14 @@ def main() -> None:
         help="Only score the first N variants. Smoke-test flag.",
     )
     p.add_argument(
+        "--subset",
+        type=str,
+        default=None,
+        help="Filter to a single consequence subset (e.g. 'splicing'). "
+        "Useful for targeted #175-style sanity checks (e.g. RC averaging "
+        "helps most on splicing).",
+    )
+    p.add_argument(
         "--no-rc-avg",
         action="store_true",
         help="Disable FWD+RC averaging (ablation only). Default is RC on, "
@@ -119,6 +127,13 @@ def main() -> None:
     assert not missing, f"dataset is missing required columns: {missing}"
     assert ds["label"].isna().sum() == 0, "label column contains NaN"
     assert set(ds["label"].astype(int).unique()) <= {0, 1}, "label is not binary 0/1"
+    if args.subset is not None:
+        assert args.subset in set(ds["subset"]), (
+            f"--subset {args.subset!r} not in dataset; available: "
+            f"{sorted(set(ds['subset']))}"
+        )
+        ds = ds[ds["subset"] == args.subset].reset_index(drop=True)
+        print(f"[evo2] --subset {args.subset} applied, scoring {len(ds)} variants")
     if args.limit is not None:
         ds = ds.head(args.limit).reset_index(drop=True)
         print(f"[evo2] --limit {args.limit} applied, scoring {len(ds)} variants")
@@ -167,11 +182,19 @@ def main() -> None:
         f"jsd mean={out.next_token_jsd_mean.mean():.4f}"
     )
 
+    # Score `minus_llr` (the leaderboard's canonical FWD+RC-averaged column),
+    # plus the per-strand `minus_llr_fwd` / `minus_llr_rev` if present (when
+    # rc_avg is on). Lets downstream callers verify #175's patterns —
+    # fwd ≈ rev individually, but their average improves PA (especially
+    # for splicing).
+    score_cols = [SCORE_COLUMN] + [
+        c for c in (f"{SCORE_COLUMN}_fwd", f"{SCORE_COLUMN}_rev") if c in out.columns
+    ]
     try:
         metrics = compute_pairwise_metrics(
             dataset=out[list(REQUIRED_VARIANT_COLUMNS)],
-            scores=out[[SCORE_COLUMN]],
-            score_columns=[SCORE_COLUMN],
+            scores=out[score_cols],
+            score_columns=score_cols,
         )
     except AssertionError as e:
         # At small --limit we may not have ≥1 subset with n_pairs ≥ n_min=30
@@ -188,23 +211,46 @@ def main() -> None:
     metrics.to_parquet(metrics_path, index=False)
     print(f"[evo2] wrote {metrics_path}")
 
-    glb = metrics[metrics["subset"] == GLOBAL_SUBSET].iloc[0]
-    mac = metrics[metrics["subset"] == MACRO_AVG_SUBSET].iloc[0]
+    # Print PA per subset for each score_type side-by-side, so the FWD vs
+    # RC vs avg pattern is easy to eyeball.
+    print(f"[evo2] {args.model} PairwiseAccuracy by subset × score_type:")
     print(
-        f"[evo2] {args.model} PairwiseAccuracy on '{SCORE_COLUMN}':\n"
-        f"  Global     PA = {glb['value']:.3f} ± {glb['se']:.3f}  "
-        f"(n_pairs={int(glb['n_pairs'])})\n"
-        f"  Macro Avg  PA = {mac['value']:.3f} ± {mac['se']:.3f}  "
-        f"(K={int(mac['n_pairs'])} subsets ≥ n_min)"
+        f"  {'subset':36s} {'n_pairs':>8s}  "
+        + "  ".join(f"{sc:>22s}" for sc in score_cols)
     )
-    per_subset = metrics[
-        ~metrics["subset"].isin([GLOBAL_SUBSET, MACRO_AVG_SUBSET])
-    ].sort_values("n_pairs", ascending=False)
-    for _, row in per_subset.iterrows():
-        print(
-            f"  {row['subset']:36s} PA = {row['value']:.3f} ± {row['se']:.3f}  "
-            f"(n_pairs={int(row['n_pairs'])}, n_ties={int(row['n_ties'])})"
+    # Sort subsets by n_pairs desc; put _global_ / _macro_avg_ first.
+    pivot = metrics.pivot_table(
+        index="subset",
+        columns="score_type",
+        values=["value", "se", "n_pairs"],
+        aggfunc="first",
+    )
+    ordered_subsets = [GLOBAL_SUBSET, MACRO_AVG_SUBSET] + [
+        s
+        for s, _ in sorted(
+            (
+                (s, int(pivot.loc[s, ("n_pairs", score_cols[0])]))
+                for s in pivot.index
+                if s not in (GLOBAL_SUBSET, MACRO_AVG_SUBSET)
+            ),
+            key=lambda x: -x[1],
         )
+    ]
+    for subset_name in ordered_subsets:
+        if subset_name not in pivot.index:
+            continue
+        n_pairs = int(pivot.loc[subset_name, ("n_pairs", score_cols[0])])
+        cells = []
+        for sc in score_cols:
+            v = pivot.loc[subset_name, ("value", sc)]
+            se = pivot.loc[subset_name, ("se", sc)]
+            cells.append(f"{v:.3f} ± {se:.3f}")
+        label = subset_name
+        if subset_name == GLOBAL_SUBSET:
+            label = "(Global)"
+        elif subset_name == MACRO_AVG_SUBSET:
+            label = "(Macro Avg)"
+        print(f"  {label:36s} {n_pairs:>8d}  " + "  ".join(f"{c:>22s}" for c in cells))
 
 
 if __name__ == "__main__":
