@@ -1,16 +1,27 @@
 # Genome reference (GRCh38)
+# `genome_url` is for the legacy `download_genome` rule used by the
+# eqtl/complex_traits annotation rules (untouched as of #179).
 genome_url: http://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz
+# `canonical_genome_path` is the bgzipped + indexed reference used by the
+# materialize rule. pyfaidx reads it directly from S3 (no full download).
+# Sequence is byte-identical to releases 113/114 — only annotations differ.
+canonical_genome_path: s3://oa-bolinas/data/genomes/homo_sapiens/GRCh38/ensembl-release-115/Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa.gz
 
 # HuggingFace repository prefix for dataset uploads.
 # Final repo name is f"{output_hf_prefix}_{dataset}" (joined with underscore).
 output_hf_prefix: bolinas-dna/evals
 
-# Datasets to build and upload
+# Datasets to build and upload.
+# `mendelian_traits_harness_255` is the only harness-materialized dataset built
+# here; it produces 2 rows per variant (one per strand) for the online
+# lm_eval VEP scorer (`bolinas.pipelines.evals.lm_eval.dna_vep_llr_eval`)
+# which averages FWD+RC scores per variant. complex_traits_harness was
+# dropped in #179: complex traits are scored offline only via
+# `snakemake/analysis/evals_v2/`, which already does FWD+RC averaging.
 datasets:
   - mendelian_traits
   - complex_traits
   - mendelian_traits_harness_255
-  - complex_traits_harness_255
   - eqtl
 
 # ----- Shared trait-pipeline parameters -----

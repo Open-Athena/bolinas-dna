@@ -40,8 +40,7 @@ def test_patch_is_idempotent(patched_task_manager):
 def test_custom_tasks_discoverable(patched_task_manager):
     """TaskManager() with no args should still see bolinas-dna's task YAMLs."""
     mgr = patched_task_manager()
-    assert "traitgym_mendelian_v2_255" in mgr.all_tasks
-    assert "traitgym_mendelian_v2" in mgr.all_tasks
+    assert "mendelian_traits_255" in mgr.all_tasks
 
 
 def test_caller_include_path_preserved_as_string(tmp_path, patched_task_manager):
@@ -65,3 +64,45 @@ def test_caller_include_path_preserved_as_list(tmp_path, patched_task_manager):
     (tmp_path / "b").mkdir()
     mgr = patched_task_manager(include_path=[p1, p2])
     assert mgr.include_path == [p1, p2, bolinas_path]
+
+
+def test_levanter_rename_patch_handles_plain_task():
+    """`LmEvalHarnessConfig.to_task_dict()` must work for our plain-Task
+    subclass — upstream `_rename_tasks_for_eval_harness` only handles
+    `ConfigurableTask` + dict and otherwise raises ``ValueError: Unknown task type``.
+    Our package's `_install_levanter_rename_patch()` adds a Task-passthrough.
+    """
+    import bolinas.pipelines.evals.lm_eval  # noqa: F401  triggers both patches
+    from levanter.eval_harness import LmEvalHarnessConfig
+    from levanter.eval_harness import TaskConfig as LevanterTaskConfig
+
+    spec = [
+        LevanterTaskConfig(
+            task="mendelian_traits_255",
+            num_fewshot=0,
+            task_alias="mendelian_traits_255",
+        )
+    ]
+    cfg = LmEvalHarnessConfig(task_spec=spec)
+    task_dict = cfg.to_task_dict()
+    assert "mendelian_traits_255" in task_dict
+    task = task_dict["mendelian_traits_255"]
+    assert type(task).__name__ == "DnaVepLlrEvalTask"
+
+
+def test_levanter_rename_patch_marker_set():
+    import bolinas.pipelines.evals.lm_eval  # noqa: F401
+    from levanter.eval_harness import LmEvalHarnessConfig
+
+    assert getattr(LmEvalHarnessConfig, "_bolinas_dna_rename_patched", False) is True
+
+
+def test_levanter_rename_patch_is_idempotent():
+    import bolinas.pipelines.evals.lm_eval  # noqa: F401
+    from bolinas.pipelines.evals.lm_eval import _install_levanter_rename_patch
+    from levanter.eval_harness import LmEvalHarnessConfig
+
+    rename_before = LmEvalHarnessConfig._rename_tasks_for_eval_harness
+    _install_levanter_rename_patch()
+    _install_levanter_rename_patch()
+    assert LmEvalHarnessConfig._rename_tasks_for_eval_harness is rename_before

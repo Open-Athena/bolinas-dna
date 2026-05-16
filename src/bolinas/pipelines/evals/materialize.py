@@ -1,70 +1,66 @@
-"""Materialize sequences from a reference genome into eval harness format."""
+"""Materialize per-variant (context, ref_completion, alt_completion) for the
+online lm_eval VEP scorer. Emits two rows per variant: one per strand."""
 
 from __future__ import annotations
 
 from functools import partial
-from typing import Any
+from typing import Any, Literal
 
+import datasets
+
+from bolinas.data.dna import complement_base
 from bolinas.data.genome import Genome
-from datasets import Dataset
+from bolinas.data.transforms import _get_variant_window
 
 
 def _add_eval_harness_fields(
     example: dict[str, Any],
     genome: Genome,
     window_size: int,
+    strand: Literal["+", "-"],
 ) -> dict[str, Any]:
-    """Per-example transform: extract context/ref_completion/alt_completion.
-
-    Assumes SNVs (single-nucleotide variants) where len(ref) == len(alt) == 1.
-
-    For a variant at 1-based ``pos`` in a window of ``window_size`` centered on
-    the variant:
-
-      context        = genome[window_start : variant_pos]   (left flank)
-      ref_completion = ref + genome[variant_pos+1 : window_end] (ref + right flank)
-      alt_completion = alt + genome[variant_pos+1 : window_end] (alt + right flank)
-    """
-    chrom = str(example["chrom"])
-    pos = int(example["pos"])
-    ref = str(example["ref"])
-    alt = str(example["alt"])
-
-    center = pos - 1  # 0-based
-    start = center - window_size // 2
-    end = start + window_size
-
-    context = genome(chrom, start, center).upper()
-    right_flank = genome(chrom, center + 1, end).upper()
-
+    """Per-example transform for one strand. Assumes SNVs."""
+    window, var_pos = _get_variant_window(example, genome, window_size, strand=strand)
+    alt = str(example["alt"]).upper()
+    alt_in_strand = alt if strand == "+" else complement_base(alt)
+    right_flank = window[var_pos + 1 :]
     return {
-        "context": context,
-        "ref_completion": ref.upper() + right_flank,
-        "alt_completion": alt.upper() + right_flank,
+        "context": window[:var_pos],
+        # window[var_pos] equals ref_in_strand by _get_variant_window's assert.
+        "ref_completion": window[var_pos:],
+        "alt_completion": alt_in_strand + right_flank,
+        "strand": strand,
     }
 
 
 def materialize_sequences(
-    dataset: Dataset,
+    dataset: datasets.Dataset,
     genome: Genome,
     window_size: int,
-) -> Dataset:
+) -> datasets.Dataset:
     """Add materialized sequence fields to a variant dataset.
 
-    Adds context/ref_completion/alt_completion columns and renames label -> target.
-    Assumes all variants are SNVs.
-
-    Args:
-        dataset: HF Dataset with columns [chrom, pos, ref, alt, label].
-        genome: Loaded Genome instance.
-        window_size: Total window size centered on the variant.
-
-    Returns:
-        Dataset with added columns [context, ref_completion, alt_completion, target].
+    Each input variant emits two output rows (one per strand). Renames
+    ``label`` → ``target`` and adds ``[context, ref_completion, alt_completion,
+    strand]``. Rows are sorted by ``(chrom, pos, ref, alt, strand)`` so per-
+    variant pairs are adjacent.
     """
-    dataset = dataset.map(
-        partial(_add_eval_harness_fields, genome=genome, window_size=window_size),
-    )
-    if "label" in dataset.column_names:
-        dataset = dataset.rename_column("label", "target")
-    return dataset
+    strands: tuple[Literal["+", "-"], ...] = ("+", "-")
+    parts = [
+        dataset.map(
+            partial(
+                _add_eval_harness_fields,
+                genome=genome,
+                window_size=window_size,
+                strand=strand,
+            )
+        )
+        for strand in strands
+    ]
+    out = datasets.concatenate_datasets(parts)
+    if "label" in out.column_names:
+        out = out.rename_column("label", "target")
+    sort_keys = [
+        c for c in ("chrom", "pos", "ref", "alt", "strand") if c in out.column_names
+    ]
+    return out.sort(sort_keys)
