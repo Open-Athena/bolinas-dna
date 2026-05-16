@@ -29,12 +29,13 @@ relying on manual paste.
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import re
 import subprocess
 from datetime import date
 from pathlib import Path
-from typing import NamedTuple
+from typing import Literal, NamedTuple
 
 import polars as pl
 import yaml
@@ -89,10 +90,9 @@ EVALS_V2_MODELS: list[EvalsV2Method] = [
     EvalsV2Method("exp58-animals", "exp58-animals", "CDS, animals"),
     EvalsV2Method("exp59-mammals", "exp59-mammals", "downstream, mammals"),
     EvalsV2Method("exp136-proj_v30", "exp136-proj_v30", "enhancers, mammals"),
-    # Older `exp166-p1B` (step-16398, HF) retained for #162/#172 only — its
-    # mendelian slot in #161 was replaced by `exp166-v0.1-p1B` (below) on
-    # 2026-05-16. Re-include here on complex/eqtl until v0.1 is also scored
-    # on those datasets.
+    # Older `exp166-p1B` (step-16398, HF) retained for #162/#172 only —
+    # superseded by `exp166-v0.1-p1B` below on mendelian, but v0.1 hasn't
+    # been scored on complex/eqtl yet.
     EvalsV2Method(
         "exp166-p1B",
         "exp166-p1B",
@@ -156,8 +156,7 @@ EVALS_V2_MODELS: list[EvalsV2Method] = [
         "CDS, vertebrates",
         datasets=("mendelian_traits",),
     ),
-    # Replaces the legacy `exp166-p1B` HF entry (step-16398) — that run has
-    # been superseded by this v0.1 c127da run at step-27329 (1.65× more steps).
+    # Supersedes the legacy `exp166-p1B` HF entry (step-16398) on mendelian.
     EvalsV2Method(
         "exp166-v0.1-p1B-step-27329",
         "exp166-v0.1-p1B",
@@ -200,7 +199,8 @@ DATASET_ISSUE = {
 # not pathogenicity reality — so Global PA over-weights methods specialized
 # for protein-coding variant interpretation. Complex / eqtl have very different
 # subset compositions where the same bias doesn't apply, so they stay on Global.
-LEADING_AGGREGATE = {
+SortAxis = Literal["macro", "global"]
+LEADING_AGGREGATE: dict[str, SortAxis] = {
     "mendelian_traits": "macro",
     "complex_traits": "global",
     "eqtl": "global",
@@ -565,6 +565,7 @@ EVALS_V2_CONFIG = (
 )
 
 
+@functools.cache
 def _load_evals_v2_sources() -> dict[str, str]:
     """Map model `name` → its `gcs_path` (or `hf://<repo>` shorthand)
     by reading `snakemake/analysis/evals_v2/config/config.yaml`. Single
@@ -753,12 +754,13 @@ def patch_issue(dataset: str, table_md: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
+    patch_group = parser.add_mutually_exclusive_group()
+    patch_group.add_argument(
         "--patch-issues",
         action="store_true",
         help="After printing, surgically PATCH the bodies of #161/#162/#172.",
     )
-    parser.add_argument(
+    patch_group.add_argument(
         "--patch-issue",
         type=int,
         action="append",
