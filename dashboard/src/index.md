@@ -9,9 +9,9 @@ Public, version-controlled leaderboards for genomic language models trained unde
 
 ## Leaderboards
 
-- [**Mendelian traits**](./leaderboards/mendelian) — matched-pair PairwiseAccuracy on `bolinas-dna/evals_mendelian_traits` (OMIM ∪ HGMD ∪ Smedley pathogenic SNVs vs gnomAD common-frequency, 1:1 gene-matched).
-
-*Complex traits and eQTL leaderboards coming soon.*
+- [**Mendelian traits**](./leaderboards/mendelian) — OMIM ∪ HGMD ∪ Smedley pathogenic SNVs vs gnomAD common-frequency, gene-matched 1:1. Sort axis: Macro Avg.
+- [**Complex traits**](./leaderboards/complex) — UKBB fine-mapped variants (`max(PIP) > 0.9`) vs non-fine-mapped, gene + MAF-matched. Sort axis: Global.
+- [**eQTL**](./leaderboards/eqtl) — GTEx v8 fine-mapped eQTLs (49 tissues pooled, `max(PIP) > 0.9`) vs non-fine-mapped. Sort axis: Global.
 
 ## Protocols / Scoring approaches
 

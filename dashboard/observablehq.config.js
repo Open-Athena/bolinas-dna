@@ -13,6 +13,8 @@ export default {
       name: "Leaderboards",
       pages: [
         {name: "Mendelian traits", path: "/leaderboards/mendelian"},
+        {name: "Complex traits", path: "/leaderboards/complex"},
+        {name: "eQTL", path: "/leaderboards/eqtl"},
       ],
     },
     {

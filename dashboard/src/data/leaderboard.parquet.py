@@ -5,9 +5,9 @@ Pulls per-(method, dataset, subset) PairwiseAccuracy + SE rows from S3 via
 ``dataset`` column, concatenates across datasets, and writes the resulting
 DataFrame as a parquet blob on stdout for the dashboard to read via DuckDB.
 
-v1 emits mendelian_traits only — the data layer is eval-agnostic so the
-remaining two datasets (complex_traits, eqtl) are a one-line add when the
-corresponding pages ship.
+Emits one parquet covering all three matched-pair eval datasets
+(mendelian_traits, complex_traits, eqtl). The dashboard pages filter by
+`dataset` column.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import polars as pl
 
 from bolinas.pipelines.evals.leaderboard import normalized_rows
 
-V1_DATASETS: tuple[str, ...] = ("mendelian_traits",)
+V1_DATASETS: tuple[str, ...] = ("mendelian_traits", "complex_traits", "eqtl")
 
 
 def main() -> None:
