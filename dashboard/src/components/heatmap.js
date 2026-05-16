@@ -27,20 +27,47 @@ const GLOBAL = "_global_";
 const MACRO = "_macro_avg_";
 const N_MIN = 30;
 
-// Sequential YlGn on [0.5, 1.0]. Below-random PA clamps to 0.5 so it just
-// reads as "no signal" instead of as a separate regime. Skip the lightest
-// 10% of the interpolator so 0.5 still has a faint yellow wash, making it
-// distinguishable from "missing cell".
-function paColor(v) {
+// ---- Color palettes -------------------------------------------------------
+//
+// `absolute` (the default): sequential YlGn on [0.5, 1.0]. Below-random PA
+// clamps to 0.5 so it reads as "no signal" rather than a separate regime.
+// `delta`: diverging RdYlGn on [-0.10, +0.10]. Negative → red, zero → yellow,
+// positive → green. Used by the protocol-comparison pages where cells
+// carry "JSD − LLR"-style differences rather than absolute PAs.
+
+const PALETTE_ABSOLUTE = "absolute";
+const PALETTE_DELTA = "delta";
+const DELTA_DOMAIN = 0.1; // ±10 percentage points
+
+function paColorAbsolute(v) {
   if (v == null) return "#ffffff";
   const clamped = Math.max(0.5, Math.min(1.0, v));
   return d3.interpolateYlGn(0.1 + 0.85 * ((clamped - 0.5) / 0.5));
 }
 
-// Text contrast against the cell background by Lab lightness.
-function textColor(v) {
+function paColorDelta(v) {
+  if (v == null) return "#ffffff";
+  const clamped = Math.max(-DELTA_DOMAIN, Math.min(DELTA_DOMAIN, v));
+  // Map [-D, +D] to [0, 1] for d3.interpolateRdYlGn (red → green).
+  return d3.interpolateRdYlGn((clamped + DELTA_DOMAIN) / (2 * DELTA_DOMAIN));
+}
+
+function paColor(v, palette = PALETTE_ABSOLUTE) {
+  return palette === PALETTE_DELTA ? paColorDelta(v) : paColorAbsolute(v);
+}
+
+function textColor(v, palette = PALETTE_ABSOLUTE) {
   if (v == null) return "#666";
-  return d3.lab(paColor(v)).l > 60 ? "#000" : "#fff";
+  return d3.lab(paColor(v, palette)).l > 60 ? "#000" : "#fff";
+}
+
+function cellLabel(v, palette = PALETTE_ABSOLUTE) {
+  const pp = v * 100;
+  if (palette === PALETTE_DELTA) {
+    const sign = pp > 0 ? "+" : "";
+    return `${sign}${pp.toFixed(1)}`;
+  }
+  return pp.toFixed(1);
 }
 
 function fmt(v, se) {
@@ -81,6 +108,8 @@ export function heatmap({
   leadingAggregate = MACRO,
   sortKey: initialSortKey,
   onSortChange,
+  palette = PALETTE_ABSOLUTE,
+  showForest = true,
 }) {
   // Group by method_id; collect cells in a Map keyed by subset.
   const byMethod = new Map();
@@ -224,13 +253,13 @@ export function heatmap({
               const c = m.cells.get(col);
               const sortedCls = col === sortKey ? " lb-col-sorted" : "";
               if (c == null) return html`<td class=${`lb-na${sortedCls}`}>—</td>`;
-              const bg = paColor(c.value);
-              const fg = textColor(c.value);
+              const bg = paColor(c.value, palette);
+              const fg = textColor(c.value, palette);
               return html`<td
                 class=${`lb-cell${sortedCls}`}
                 style=${`background-color: ${bg}; color: ${fg};`}
               >
-                ${(c.value * 100).toFixed(1)}
+                ${cellLabel(c.value, palette)}
               </td>`;
             })}
           </tr>`;
@@ -238,16 +267,22 @@ export function heatmap({
       </tbody>
     </table>`;
 
-    // Heatmap on the left, forest plot adjacent on the right. Initial
-    // forest plot uses the static `HEATMAP_HEADER_PX` / `HEATMAP_ROW_PX`
-    // estimates; a `requestAnimationFrame` callback then measures the
-    // browser's actually-rendered row positions and replaces the SVG
-    // inside `forestSlot` so each dot lands in the middle of its
-    // corresponding heatmap row.
-    const forestSlot = html`<div class="lb-forest-slot"></div>`;
-    forestSlot.appendChild(forestPlot(methods, sortKey, colLabelText(sortKey)));
-    root.append(html`<div class="lb-heatmap-row">${table}${forestSlot}</div>`);
-    requestAnimationFrame(() => realignForestPlot(table, forestSlot, methods, sortKey));
+    // Heatmap on the left, forest plot adjacent on the right (when
+    // showForest). Initial forest plot uses the static `HEATMAP_HEADER_PX`
+    // / `HEATMAP_ROW_PX` estimates; a `requestAnimationFrame` callback
+    // then measures the browser's actually-rendered row positions and
+    // replaces the SVG inside `forestSlot` so each dot lands in the
+    // middle of its corresponding heatmap row.
+    if (showForest) {
+      const forestSlot = html`<div class="lb-forest-slot"></div>`;
+      forestSlot.appendChild(forestPlot(methods, sortKey, colLabelText(sortKey)));
+      root.append(html`<div class="lb-heatmap-row">${table}${forestSlot}</div>`);
+      requestAnimationFrame(() =>
+        realignForestPlot(table, forestSlot, methods, sortKey),
+      );
+    } else {
+      root.append(html`<div class="lb-heatmap-row">${table}</div>`);
+    }
     return root;
   }
 
