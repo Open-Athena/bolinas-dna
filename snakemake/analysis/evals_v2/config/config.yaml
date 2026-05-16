@@ -79,7 +79,15 @@ models:
 
   # exp166 v0.1 — new generalist 1B run (separate from the older
   # `exp166-p1B` HF entry above which is the earlier step-16398 export).
-  # This is the final checkpoint of the c127da run that just finished.
+  # 3 HF-exported checkpoints from the c127da run: 10000, 20000, 27329 (final).
+  - name: exp166-v0.1-p1B-step-10000
+    gcs_path: gs://marin-us-east5/checkpoints/dna-bolinas-exp166-v0.1-p1B-c127da/hf/step-10000
+    window_size: 255
+    datasets: [mendelian_traits]
+  - name: exp166-v0.1-p1B-step-20000
+    gcs_path: gs://marin-us-east5/checkpoints/dna-bolinas-exp166-v0.1-p1B-c127da/hf/step-20000
+    window_size: 255
+    datasets: [mendelian_traits]
   - name: exp166-v0.1-p1B-step-27329
     gcs_path: gs://marin-us-east5/checkpoints/dna-bolinas-exp166-v0.1-p1B-c127da/hf/step-27329
     window_size: 255
