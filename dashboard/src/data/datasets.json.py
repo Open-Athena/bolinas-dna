@@ -22,7 +22,7 @@ DATASETS = {
         "positives": "OMIM ∪ HGMD ∪ Smedley et al. 2016 pathogenic SNVs (AF < 0.1%)",
         "negatives": "gnomAD high-frequency (AF > 0.1%)",
         "matching": "1:1 on gene, consequence, TSS distance, exon distance",
-        "metric": "PairwiseAccuracy ± Wald SE — fraction of `(positive, negative)` pairs where the positive scores strictly higher than its matched negative (ties count 0.5). The `n` in each column header is the matched-pair count for that subset (positive + negative, 1:1).",
+        "metric": "PairwiseAccuracy ± Wald SE — fraction of `(positive, negative)` pairs where the positive scores strictly higher than its matched negative (ties count 0.5). The `n` in each column header is the number of pairs.",
         "notes": [
             "Per-subset columns exclude subsets with `n_pairs < 30`.",
             "Sorted by Macro Avg by default — the consequence-subset distribution (~92% missense) reflects human-annotator focus on protein-coding disease variants, not the underlying prevalence of pathogenic variants; Global PA therefore over-weights protein-coding-specialist methods. Macro Avg gives equal weight to each subset.",

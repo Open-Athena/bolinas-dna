@@ -200,12 +200,12 @@ main > h1, main > h2, main > h3, main > p { max-width: 1200px; }
      ("Synonymous") with padding to spare; the model column takes the
      remainder. */
   table-layout: fixed;
-  width: 1120px;
+  width: 1170px;
 }
 .lb-heatmap thead th:not(.lb-method-header) { width: 90px; }
-.lb-heatmap th.lb-method-header { width: 220px; }
+.lb-heatmap th.lb-method-header { width: 210px; }
 .lb-heatmap th, .lb-heatmap td {
-  padding: 6px 8px;
+  padding: 6px 4px;
   border: 1px solid #ddd;
 }
 /* Explicit row heights so the forest plot to the right (which uses fixed
