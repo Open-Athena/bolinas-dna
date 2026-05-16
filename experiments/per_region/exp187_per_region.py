@@ -341,6 +341,29 @@ def _hf_save_steps(num_train_steps: int) -> int:
     return max(1, num_train_steps // EVALS_PER_RUN)
 
 
+def _train_remote_env_vars() -> dict[str, str]:
+    """Env vars baked into the train ``remote()`` call.
+
+    Iris workers don't inherit ``-e`` flags from the launcher's ``iris job run``
+    command — the orchestrator passes them to its own process tree, but child
+    tasks (the TPU pod running ``run_levanter_train_lm``) get a fresh env.
+    Per ``experiments/README.md:59-67`` and the working pattern in
+    ``experiments/parity/exp179_eval_only.py:124-130``, capture the key vars
+    from the launcher env here and bake them into the remote spec.
+
+    Missing ``WANDB_API_KEY`` here was the cause of ``/gonzalo/exp187-smoke2``
+    failing with ``wandb.UsageError: No API key configured`` after ~45 min of
+    successful tokenize work.
+    """
+    env: dict[str, str] = {
+        "HF_HUB_DOWNLOAD_TIMEOUT": "120",
+        "UV_LOCK_TIMEOUT": "7200",
+    }
+    if "WANDB_API_KEY" in os.environ:
+        env["WANDB_API_KEY"] = os.environ["WANDB_API_KEY"]
+    return env
+
+
 def _build_train_step(strategy: str, dataset: str) -> ExecutorStep:
     steps_per_eval = max(1, NUM_TRAIN_STEPS // EVALS_PER_RUN)
     run_name = f"dna-exp{EXP_ISSUE}-zoonomia-v1-1b-{strategy}-{VERSION}"
@@ -407,7 +430,11 @@ def _build_train_step(strategy: str, dataset: str) -> ExecutorStep:
     )
     return ExecutorStep(
         name=os.path.join("checkpoints", run_name),
-        fn=remote(run_levanter_train_lm, resources=ResourceConfig.with_cpu()),
+        fn=remote(
+            run_levanter_train_lm,
+            resources=ResourceConfig.with_cpu(),
+            env_vars=_train_remote_env_vars(),
+        ),
         config=pod_config,
     )
 

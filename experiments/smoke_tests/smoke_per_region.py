@@ -63,6 +63,7 @@ from experiments.per_region.exp187_per_region import (
     _build_model_config,
     _build_optimizer,
     _eval_harness_config,
+    _train_remote_env_vars,
 )
 
 # Smoke-test overrides. Everything else (model, optimizer, mixture, eval task,
@@ -131,7 +132,11 @@ def _smoke_train_step() -> ExecutorStep:
     )
     return ExecutorStep(
         name=os.path.join("checkpoints", run_name),
-        fn=remote(run_levanter_train_lm, resources=ResourceConfig.with_cpu()),
+        fn=remote(
+            run_levanter_train_lm,
+            resources=ResourceConfig.with_cpu(),
+            env_vars=_train_remote_env_vars(),
+        ),
         config=pod_config,
     )
 
