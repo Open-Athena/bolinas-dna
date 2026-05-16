@@ -94,7 +94,14 @@ rule materialize_eval_harness_dataset:
     run:
         genome = Genome(params.genome_path)
         ds = Dataset.from_parquet(input.parquet)
+        n_in = len(ds)
         ds = materialize_sequences(ds, genome, int(wildcards.window_size))
+        # Sanity: two rows per input variant, exactly the two strand tags.
+        assert len(ds) == 2 * n_in, (
+            f"expected {2 * n_in} rows (2x input), got {len(ds)}"
+        )
+        strands = set(ds.unique("strand"))
+        assert strands == {"+", "-"}, f"unexpected strand set: {strands}"
         ds.to_parquet(output[0])
 
 

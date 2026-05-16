@@ -194,6 +194,10 @@ METRIC_REGISTRY: dict[str, dict] = {
 }
 
 
+# The aggregation averages transformed scores per variant, not raw LLR. For
+# transforms that commute with averaging (``identity``, ``negate``) this is
+# equivalent to averaging LLR and then transforming — matching the offline
+# ``bolinas.model.runner`` path. ``abs`` does not commute and will diverge.
 LLR_TRANSFORMS: dict[str, Callable[[float], float]] = {
     "identity": lambda x: x,
     "negate": lambda x: -x,
