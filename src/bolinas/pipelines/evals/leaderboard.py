@@ -22,6 +22,7 @@ legacy issue-body patching CLI (``snakemake/evals/scratch/leaderboard_gen.py``).
 from __future__ import annotations
 
 import functools
+import os
 from dataclasses import dataclass
 from typing import Literal
 
@@ -88,11 +89,22 @@ def _score_type(family: str, dataset: str) -> str:
     return st if isinstance(st, str) else st[dataset]
 
 
+def _storage_options() -> dict[str, str] | None:
+    """Toggle anonymous S3 reads via ``BOLINAS_S3_ANON=1``.
+
+    Lets the GitHub Action build against a public-read bucket prefix
+    without requiring AWS credentials. With anything else (default), polars
+    walks the standard credential chain (env vars → ~/.aws → IMDS)."""
+    if os.environ.get("BOLINAS_S3_ANON") in ("1", "true"):
+        return {"aws_skip_signature": "true", "aws_region": "us-east-2"}
+    return None
+
+
 @functools.lru_cache(maxsize=None)
 def _read_parquet(path: str) -> pl.DataFrame:
     """Cached S3 read so families that share a per-dataset parquet
     (conservation, alphagenome, gpn_star) only fetch once per process."""
-    return pl.read_parquet(path)
+    return pl.read_parquet(path, storage_options=_storage_options())
 
 
 def _parquet_path(method: Method, dataset: str) -> str:

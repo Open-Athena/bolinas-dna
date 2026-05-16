@@ -594,6 +594,40 @@ def test_leading_aggregate_constants_cover_all_datasets():
     assert set(LEADING_AGGREGATE.keys()) == set(ALL_DATASETS)
 
 
+# ---- BOLINAS_S3_ANON env toggle --------------------------------------------
+
+
+def test_storage_options_off_by_default(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("BOLINAS_S3_ANON", raising=False)
+    from bolinas.pipelines.evals.leaderboard import _storage_options
+
+    assert _storage_options() is None
+
+
+def test_storage_options_anonymous_when_env_set(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("BOLINAS_S3_ANON", "1")
+    from bolinas.pipelines.evals.leaderboard import _storage_options
+
+    opts = _storage_options()
+    assert opts is not None
+    assert opts["aws_skip_signature"] == "true"
+    assert opts["aws_region"] == "us-east-2"
+
+
+def test_storage_options_anonymous_accepts_true(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("BOLINAS_S3_ANON", "true")
+    from bolinas.pipelines.evals.leaderboard import _storage_options
+
+    assert _storage_options() is not None
+
+
+def test_storage_options_ignores_other_values(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("BOLINAS_S3_ANON", "no")
+    from bolinas.pipelines.evals.leaderboard import _storage_options
+
+    assert _storage_options() is None
+
+
 # ---- normalized_rows --------------------------------------------------------
 
 
