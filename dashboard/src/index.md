@@ -41,7 +41,7 @@ const hfUrl = `https://huggingface.co/datasets/${meta.hf_repo}/tree/${meta.hf_co
 display(html`<div class="card">
   <table class="dataset-meta">
     <tr><td><b>HF dataset</b></td><td><a href=${hfUrl}><code>${meta.hf_repo} @ ${meta.hf_commit}</code></a></td></tr>
-    <tr><td><b>Split</b></td><td><code>${meta.split}</code> (test held out for final-eval)</td></tr>
+    <tr><td><b>Split</b></td><td><code>${meta.split}</code> (used for both training and development; test held out for final-eval)</td></tr>
   </table>
   <div class="dataset-bullets">
     <div><b>Positives:</b> ${meta.positives}</div>
@@ -200,10 +200,10 @@ main > h1, main > h2, main > h3, main > p { max-width: 1200px; }
      ("Synonymous") with padding to spare; the model column takes the
      remainder. */
   table-layout: fixed;
-  width: 1120px;
+  width: 1152px;
 }
 .lb-heatmap thead th:not(.lb-method-header) { width: 90px; }
-.lb-heatmap th.lb-method-header { width: 220px; }
+.lb-heatmap th.lb-method-header { width: 252px; }
 .lb-heatmap th, .lb-heatmap td {
   padding: 6px 8px;
   border: 1px solid #ddd;

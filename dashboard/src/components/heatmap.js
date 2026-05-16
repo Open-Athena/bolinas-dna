@@ -165,7 +165,7 @@ export function heatmap({rows, modelById, leadingAggregate = MACRO}) {
 
     const table = html`<table class="lb-heatmap">
       <colgroup>
-        <col style="width: 220px"></col>
+        <col style="width: 252px"></col>
         ${columns.map(() => html`<col style="width: 90px"></col>`)}
       </colgroup>
       <thead>
@@ -261,7 +261,7 @@ function forestPlot(methods, columnKey, columnText, headerPx, rowPx) {
     return html`<div class="lb-forest-empty">No values for ${columnText}.</div>`;
   }
 
-  const width = 300;
+  const width = 268;
   const margin = {top: headerPx ?? HEATMAP_HEADER_PX, right: 42, bottom: 32, left: 16};
   const rowH = rowPx ?? HEATMAP_ROW_PX;
   const height = margin.top + visible.length * rowH + margin.bottom;
