@@ -1,9 +1,13 @@
-"""Score Mendelian-traits matched-pair variants with an Evo2 model.
+"""Score matched-pair variants (mendelian or complex traits) with Evo2.
 
-Entry for issue #131's leaderboard ride-along (issue #161). Per-variant
-score bundle (LLR + next-token JSD) over an 8192-bp window, FWD+RC
-averaged by default, followed by PairwiseAccuracy ± SE per consequence
-subset. One model per run.
+Entry for issue #131's leaderboard ride-along (issues #161, #162).
+Per-variant score bundle (LLR + next-token JSD, FWD/RC/avg) over an
+8192-bp window, followed by PairwiseAccuracy ± SE per consequence
+subset on every score column. One model per run.
+
+Default dataset: ``bolinas-dna/evals_mendelian_traits``; override with
+``--dataset-name complex_traits`` (auto-derives the HF path and the
+output dir) or pass ``--dataset-hf-path`` explicitly.
 
 Single-GPU execution only — Evo2's Vortex backend handles its own
 multi-GPU sharding (e.g. 40B on GH200's 96 GB sits on one device). We do
@@ -44,9 +48,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _evo2_scoring import compute_evo2_bundle  # noqa: E402, I001
 
 
-DATASET_HF_PATH = "bolinas-dna/evals_mendelian_traits"
-SCORE_COLUMN = "minus_llr"
-DATASET_NAME = "mendelian_traits"
 # Schema of the matched-pair eval datasets. Same tuple as
 # `bolinas.pipelines.evals.conservation.REQUIRED_VARIANT_COLUMNS`, hardcoded
 # here to avoid importing conservation.py (which triggers a top-level
@@ -60,12 +61,31 @@ REQUIRED_VARIANT_COLUMNS = (
     "subset",
     "match_group",
 )
+# Bundle output columns we score through compute_pairwise_metrics. Each
+# applies to FWD+RC-averaged + per-strand variants when rc_avg is on.
+# `minus_llr` is the mendelian leaderboard's canonical column;
+# `abs_llr` is complex_traits' canonical column; `next_token_jsd_mean`
+# is direction-agnostic by construction (always ≥ 0) — included on both
+# datasets for cross-method comparison.
+SCORE_COLUMN_BASES = ("minus_llr", "abs_llr", "next_token_jsd_mean")
 
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--model", required=True, choices=EVO2_MODEL_CHOICES)
     p.add_argument("--split", default="train")
+    p.add_argument(
+        "--dataset-name",
+        default="mendelian_traits",
+        help="Short dataset name (e.g. 'mendelian_traits' or 'complex_traits'). "
+        "Drives the HF path default (bolinas-dna/evals_{name}) and the output "
+        "directory (results/evo2_{name}/).",
+    )
+    p.add_argument(
+        "--dataset-hf-path",
+        default=None,
+        help="HF dataset ID. Defaults to bolinas-dna/evals_{dataset_name}.",
+    )
     p.add_argument(
         "--genome-path",
         default="results/genome.fa.gz",
@@ -74,14 +94,14 @@ def main() -> None:
     p.add_argument(
         "--output",
         default=None,
-        help="Scores parquet path. "
-        "Defaults to results/evo2_mendelian_traits/{model}_{split}.parquet",
+        help="Scores parquet path. Defaults to "
+        "results/evo2_{dataset_name}/{model}_{split}.parquet",
     )
     p.add_argument(
         "--output-metrics",
         default=None,
-        help="Metrics parquet path. "
-        "Defaults to results/evo2_mendelian_traits/{model}_{split}_metrics.parquet",
+        help="Metrics parquet path. Defaults to "
+        "results/evo2_{dataset_name}/{model}_{split}_metrics.parquet",
     )
     p.add_argument("--window-size", type=int, default=8192)
     p.add_argument(
@@ -115,14 +135,15 @@ def main() -> None:
     )
     args = p.parse_args()
 
+    if args.dataset_hf_path is None:
+        args.dataset_hf_path = f"bolinas-dna/evals_{args.dataset_name}"
+    out_dir = f"results/evo2_{args.dataset_name}"
     if args.output is None:
-        args.output = f"results/evo2_mendelian_traits/{args.model}_{args.split}.parquet"
+        args.output = f"{out_dir}/{args.model}_{args.split}.parquet"
     if args.output_metrics is None:
-        args.output_metrics = (
-            f"results/evo2_mendelian_traits/{args.model}_{args.split}_metrics.parquet"
-        )
+        args.output_metrics = f"{out_dir}/{args.model}_{args.split}_metrics.parquet"
 
-    ds = load_dataset(DATASET_HF_PATH, split=args.split).to_pandas()
+    ds = load_dataset(args.dataset_hf_path, split=args.split).to_pandas()
     missing = [c for c in REQUIRED_VARIANT_COLUMNS if c not in ds.columns]
     assert not missing, f"dataset is missing required columns: {missing}"
     assert ds["label"].isna().sum() == 0, "label column contains NaN"
@@ -182,14 +203,17 @@ def main() -> None:
         f"jsd mean={out.next_token_jsd_mean.mean():.4f}"
     )
 
-    # Score `minus_llr` (the leaderboard's canonical FWD+RC-averaged column),
-    # plus the per-strand `minus_llr_fwd` / `minus_llr_rev` if present (when
-    # rc_avg is on). Lets downstream callers verify #175's patterns —
-    # fwd ≈ rev individually, but their average improves PA (especially
-    # for splicing).
-    score_cols = [SCORE_COLUMN] + [
-        c for c in (f"{SCORE_COLUMN}_fwd", f"{SCORE_COLUMN}_rev") if c in out.columns
-    ]
+    # Score each base (minus_llr, abs_llr, next_token_jsd_mean) on its
+    # avg + per-strand variants when present. Lets us verify #175's
+    # patterns (avg > single strand) and compare LLR-based vs JSD-based
+    # signal on both mendelian (canonical: minus_llr) and complex_traits
+    # (canonical: abs_llr).
+    score_cols: list[str] = []
+    for base in SCORE_COLUMN_BASES:
+        for suffix in ("", "_fwd", "_rev"):
+            col = f"{base}{suffix}"
+            if col in out.columns:
+                score_cols.append(col)
     try:
         metrics = compute_pairwise_metrics(
             dataset=out[list(REQUIRED_VARIANT_COLUMNS)],
@@ -203,7 +227,7 @@ def main() -> None:
         print(f"[evo2] WARNING: skipping metrics ({e})", flush=True)
         return
     metrics["model"] = args.model
-    metrics["dataset"] = DATASET_NAME
+    metrics["dataset"] = args.dataset_name
     metrics["split"] = args.split
 
     metrics_path = Path(args.output_metrics)

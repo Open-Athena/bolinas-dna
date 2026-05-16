@@ -38,6 +38,7 @@ file_mounts:
 
 envs:
   MODEL: evo2_1b_base
+  DATASET: mendelian_traits  # or `complex_traits`; drives HF path + output dir
   LIMIT: ""
   BATCH_SIZE: ""
   SKIP_SELF_TEST: ""
@@ -93,6 +94,7 @@ run: |
     -e NO_RC_AVG="${NO_RC_AVG:-}" \
     -e SUBSET="${SUBSET:-}" \
     -e OUTPUT_SUFFIX="${OUTPUT_SUFFIX:-}" \
+    -e DATASET="${DATASET:-mendelian_traits}" \
     -e CUDA_VISIBLE_DEVICES=0 \
     -e PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
     -e OMP_NUM_THREADS=8 \
@@ -116,11 +118,13 @@ run: |
       if [ -n "${NO_RC_AVG:-}" ]; then RC_ARG="--no-rc-avg"; fi
       SUBSET_ARG=""
       if [ -n "${SUBSET:-}" ]; then SUBSET_ARG="--subset ${SUBSET}"; fi
-      OUT="results/evo2_mendelian_traits/${MODEL}_train${OUTPUT_SUFFIX:-}.parquet"
-      OUT_METRICS="results/evo2_mendelian_traits/${MODEL}_train${OUTPUT_SUFFIX:-}_metrics.parquet"
+      DS_NAME="${DATASET:-mendelian_traits}"
+      OUT="results/evo2_${DS_NAME}/${MODEL}_train${OUTPUT_SUFFIX:-}.parquet"
+      OUT_METRICS="results/evo2_${DS_NAME}/${MODEL}_train${OUTPUT_SUFFIX:-}_metrics.parquet"
       python scripts/evo2_eval/mendelian_traits.py \
         --model "$MODEL" \
         --split train \
+        --dataset-name "$DS_NAME" \
         --genome-path results/genome.fa.gz \
         --output "$OUT" --output-metrics "$OUT_METRICS" \
         ${LIMIT_ARG} ${BS_ARG} ${RC_ARG} ${SUBSET_ARG}
