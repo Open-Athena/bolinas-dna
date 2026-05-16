@@ -195,7 +195,12 @@ main > h1, main > h2, main > h3, main > p { max-width: 1200px; }
   font-variant-numeric: tabular-nums;
   font-size: 0.85em;
   margin: 1em 0;
+  /* Fixed layout so all data columns share one width (model column
+     takes the remainder via `width: auto` on its header). */
+  table-layout: fixed;
 }
+.lb-heatmap thead th:not(.lb-method-header) { width: 62px; }
+.lb-heatmap th.lb-method-header { width: 230px; }
 .lb-heatmap th, .lb-heatmap td {
   padding: 6px 8px;
   border: 1px solid #ddd;
@@ -220,7 +225,6 @@ main > h1, main > h2, main > h3, main > p { max-width: 1200px; }
   text-align: center;
   cursor: pointer;
   user-select: none;
-  min-width: 46px;
 }
 .lb-heatmap td.lb-cell { font-variant-numeric: tabular-nums; padding: 6px 4px; }
 .lb-heatmap thead th:hover { background: #eee; }
