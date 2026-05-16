@@ -1,29 +1,16 @@
-"""Generate leaderboard markdown tables for issues #161 / #162 / #172.
+"""Generate leaderboard markdown tables for issues #161 / #162 / #172 and
+optionally PATCH the issue bodies in-place.
 
-Pulls per-(method, dataset, subset) PairwiseAccuracy + SE from S3:
-  - conservation_eval: 7 conservation tracks
-  - evals_v2: 5 model checkpoints
-  - alphagenome_eval: AlphaGenome variant scorer
-  - gpn_star_eval: GPN-Star V/M/P (calibrated variants; predictions
-    scored externally by TraitGym)
+This script is a thin CLI on top of ``bolinas.pipelines.evals.leaderboard``
+(which holds the metric aggregation + markdown rendering) and
+``bolinas.pipelines.evals.methods`` (which loads the method registry from
+``dashboard/methods.yaml``). It exists for the transition window while the
+issue-body tables are still live; once those issues are closed in favour of
+the dashboard, this script can be deleted.
 
-Combines into one table per dataset. n_pairs ≥ 30 cutoff for per-subset
-columns. Two aggregate columns are prepended:
-
-  - Global: PA across ALL pairs (no n filter). Sourced from the `_global_`
-    row written by `compute_pairwise_metrics`.
-  - Macro Avg: unweighted mean of per-subset PAs over n≥30 subsets. Sourced
-    from the `_macro_avg_` row.
-
-Methods are sorted by `Global` PA descending so the best-overall method
-appears at the top of each table.
-
-Bolding rule (top method per column, plus any within 0.01 of the top) applies
-to every column including the aggregates.
-
-Outputs three markdown chunks ready to drop into the leaderboard issues. With
-`--patch-issues`, surgically PATCHes the bodies of #161/#162/#172 instead of
-relying on manual paste.
+The body-rewrite helpers below are issue-body-specific (intro paragraph
+phrasing, reproducibility table, changelog entries) and stay here rather than
+moving into the library.
 """
 
 from __future__ import annotations
@@ -35,357 +22,19 @@ import re
 import subprocess
 from datetime import date
 from pathlib import Path
-from typing import Literal, NamedTuple
 
-import polars as pl
 import yaml
 
-from bolinas.pipelines.evals.gpn_star import GPN_STAR_MODELS, GPN_STAR_SCORE_COLUMN
-from bolinas.pipelines.evals.metrics import GLOBAL_SUBSET, MACRO_AVG_SUBSET
+from bolinas.pipelines.evals.leaderboard import (
+    DATASET_ISSUE,
+    LEADING_AGGREGATE,
+    _FAMILY_SCORE_TYPE,
+    build_table,
+)
+from bolinas.pipelines.evals.methods import Method, methods_for_dataset
 
-# Per-dataset score_type per pipeline.
-SCORE_TYPE = {
-    "evals_v2": {
-        "mendelian_traits": "minus_llr",
-        "complex_traits": "abs_llr",
-        "eqtl": "abs_llr",
-    },
-    "conservation": "score",
-    "alphagenome": "alphagenome_max_l2",
-    # GPN-Star ships with both calibrated and uncalibrated variants in the
-    # metrics parquet; the leaderboard renders the calibrated one (see
-    # `bolinas.pipelines.evals.gpn_star.GPN_STAR_SCORE_COLUMN`).
-    "gpn_star": GPN_STAR_SCORE_COLUMN,
-}
-
-
-class EvalsV2Method(NamedTuple):
-    """One row of the evals_v2 section of the leaderboard.
-
-    ``parquet`` is the model name as it appears under
-    ``s3://oa-bolinas/snakemake/analysis/evals_v2/results/metrics/{parquet}/{dataset}.parquet``
-    — same string as the ``name`` field in `snakemake/analysis/evals_v2/config/config.yaml`.
-
-    ``display`` is what's shown in the leaderboard ``method`` column. For the
-    legacy single-step entries it equals ``parquet``; for the newer per-step
-    entries (e.g. ``exp21-promoters-yolo-step-22000``) it's stripped to the
-    run's short name (``exp21-promoters-yolo``) — the step lives in the
-    Reproducibility section.
-
-    ``datasets`` are the datasets this entry has metrics for. Older entries
-    span all three; entries added with ``datasets: [mendelian_traits]`` in
-    the evals_v2 config only show up in the mendelian leaderboard.
-    """
-
-    parquet: str
-    display: str
-    comment: str | None
-    datasets: tuple[str, ...] = ("mendelian_traits", "complex_traits", "eqtl")
-
-
-EVALS_V2_MODELS: list[EvalsV2Method] = [
-    # Legacy single-step entries — evaluated on all 3 leaderboard datasets.
-    EvalsV2Method("exp55-mammals", "exp55-mammals", "promoters, mammals"),
-    EvalsV2Method("exp58-mammals", "exp58-mammals", "CDS, mammals"),
-    EvalsV2Method("exp58-animals", "exp58-animals", "CDS, animals"),
-    EvalsV2Method("exp59-mammals", "exp59-mammals", "downstream, mammals"),
-    EvalsV2Method("exp136-proj_v30", "exp136-proj_v30", "enhancers, mammals"),
-    # Older `exp166-p1B` (step-16398, HF) retained for #162/#172 only —
-    # superseded by `exp166-v0.1-p1B` below on mendelian, but v0.1 hasn't
-    # been scored on complex/eqtl yet.
-    EvalsV2Method(
-        "exp166-p1B",
-        "exp166-p1B",
-        "zoonomia, generalist, 1B",
-        datasets=("complex_traits", "eqtl"),
-    ),
-    # Convergence-style entries (final checkpoint only here per
-    # "last checkpoint per run" convention). All scored on mendelian only
-    # in the evals_v2 config, so they appear only in #161.
-    EvalsV2Method(
-        "exp21-promoters-yolo-step-22000",
-        "exp21-promoters-yolo",
-        "promoters, animals, 1.7B",
-        datasets=("mendelian_traits",),
-    ),
-    EvalsV2Method(
-        "exp13-mixture-equal-step-26000",
-        "exp13-mixture-equal",
-        "50/50 promoter+CDS, animals, 1.7B",
-        datasets=("mendelian_traits",),
-    ),
-    EvalsV2Method(
-        "exp13-mixture-proportional-step-26000",
-        "exp13-mixture-proportional",
-        "10/90 promoter+CDS, animals, 1.7B",
-        datasets=("mendelian_traits",),
-    ),
-    EvalsV2Method(
-        "exp27-cds-yolo-step-34000",
-        "exp27-cds-yolo",
-        "CDS, animals, 1.7B",
-        datasets=("mendelian_traits",),
-    ),
-    EvalsV2Method(
-        "exp55-humans-step-16999",
-        "exp55-humans",
-        "promoters, humans",
-        datasets=("mendelian_traits",),
-    ),
-    EvalsV2Method(
-        "exp55-primates-step-16999",
-        "exp55-primates",
-        "promoters, primates",
-        datasets=("mendelian_traits",),
-    ),
-    EvalsV2Method(
-        "exp55-vertebrates-step-16999",
-        "exp55-vertebrates",
-        "promoters, vertebrates",
-        datasets=("mendelian_traits",),
-    ),
-    EvalsV2Method(
-        "exp55-animals-step-16999",
-        "exp55-animals",
-        "promoters, animals",
-        datasets=("mendelian_traits",),
-    ),
-    EvalsV2Method(
-        "exp58-vertebrates-step-16999",
-        "exp58-vertebrates",
-        "CDS, vertebrates",
-        datasets=("mendelian_traits",),
-    ),
-    # Supersedes the legacy `exp166-p1B` HF entry (step-16398) on mendelian.
-    EvalsV2Method(
-        "exp166-v0.1-p1B-step-27329",
-        "exp166-v0.1-p1B",
-        "zoonomia, generalist, 1B, v0.1",
-        datasets=("mendelian_traits",),
-    ),
-]
-CONSERVATION_TRACKS = [
-    "phastCons_100v",
-    "phastCons_43p",
-    "phastCons_470m",
-    "phyloP_100v",
-    "phyloP_241m",
-    "phyloP_447m",
-    "phyloP_470m",
-]
-
-SUBSET_DISPLAY = {
-    "missense_variant": "Missense",
-    "splicing": "Splicing",
-    "5_prime_UTR_variant": "5' UTR",
-    "distal": "Distal",
-    "3_prime_UTR_variant": "3' UTR",
-    "tss_proximal": "Promoter",
-    "non_coding_transcript_exon_variant": "ncRNA",
-    "synonymous_variant": "Synonymous",
-}
-
-DATASETS = ("mendelian_traits", "complex_traits", "eqtl")
-DATASET_ISSUE = {
-    "mendelian_traits": 161,
-    "complex_traits": 162,
-    "eqtl": 172,
-}
-
-# Which aggregate is the "headline" for each dataset — controls (a) the sort
-# axis (top of table = top method on this aggregate) and (b) which of the two
-# aggregate columns appears leftmost. Mendelian uses Macro Avg because the
-# variant composition is ~92% missense — a ClinVar annotator-history artifact,
-# not pathogenicity reality — so Global PA over-weights methods specialized
-# for protein-coding variant interpretation. Complex / eqtl have very different
-# subset compositions where the same bias doesn't apply, so they stay on Global.
-SortAxis = Literal["macro", "global"]
-LEADING_AGGREGATE: dict[str, SortAxis] = {
-    "mendelian_traits": "macro",
-    "complex_traits": "global",
-    "eqtl": "global",
-}
-S3 = "s3://oa-bolinas"
-SPLIT = "train"
-N_MIN = 30
+DATASETS: tuple[str, ...] = ("mendelian_traits", "complex_traits", "eqtl")
 REPO = "Open-Athena/bolinas-dna"
-
-
-def fmt(value: float, se: float) -> str:
-    return f"{value:.3f} ± {se:.3f}"
-
-
-def gather_methods(dataset: str) -> list[tuple[str, str | None, pl.DataFrame]]:
-    """Return [(method_name, comment, full_df), ...] for one dataset.
-
-    full_df includes both per-subset rows and the aggregate `_global_` /
-    `_macro_avg_` rows."""
-    rows: list[tuple[str, str | None, pl.DataFrame]] = []
-
-    # 1. conservation tracks
-    cons = pl.read_parquet(
-        f"{S3}/snakemake/conservation_eval/results/{dataset}/metrics_{SPLIT}.parquet"
-    )
-    for track in CONSERVATION_TRACKS:
-        df = cons.filter(pl.col("score_name") == track).select(
-            ["subset", "value", "se", "n_pairs"]
-        )
-        rows.append((f"`{track}`", None, df))
-
-    # 2. evals_v2 models — skip entries that weren't scored on this dataset
-    # (per-(model, dataset) inclusion). The legacy single-step entries cover
-    # all 3 datasets; convergence-style entries are mendelian-only.
-    sct = SCORE_TYPE["evals_v2"][dataset]
-    for entry in EVALS_V2_MODELS:
-        if dataset not in entry.datasets:
-            continue
-        df = pl.read_parquet(
-            f"{S3}/snakemake/analysis/evals_v2/results/metrics/{entry.parquet}/{dataset}.parquet"
-        )
-        df = df.filter(pl.col("score_type") == sct).filter(pl.col("split") == SPLIT)
-        df = df.select(["subset", "value", "se", "n_pairs"])
-        rows.append((f"`{entry.display}`", entry.comment, df))
-
-    # 3. alphagenome
-    try:
-        ag = pl.read_parquet(
-            f"{S3}/snakemake/alphagenome_eval/results/metrics/{dataset}.parquet"
-        )
-        ag = ag.filter(pl.col("score_type") == SCORE_TYPE["alphagenome"]).filter(
-            pl.col("split") == SPLIT
-        )
-        rows.append(
-            (
-                "`AlphaGenome`",
-                "variant scorer, API",
-                ag.select(["subset", "value", "se", "n_pairs"]),
-            )
-        )
-    except Exception as exc:  # noqa: BLE001
-        print(f"  ! alphagenome metrics missing for {dataset}: {exc}")
-
-    # 4. gpn_star — calibrated variants only (uncalibrated numbers live in
-    # the #145 eval comment for reference). One row per model V/M/P. Catch
-    # only the S3 read so a present-but-malformed parquet fails loud rather
-    # than getting silently treated as "metrics missing".
-    try:
-        gs = pl.read_parquet(
-            f"{S3}/snakemake/gpn_star_eval/results/metrics/{dataset}.parquet"
-        )
-    except Exception as exc:  # noqa: BLE001
-        print(f"  ! gpn_star metrics missing for {dataset}: {exc}")
-        gs = None
-    if gs is not None:
-        gs = gs.filter(pl.col("score_type") == SCORE_TYPE["gpn_star"][dataset]).filter(
-            pl.col("split") == SPLIT
-        )
-        for model in GPN_STAR_MODELS:
-            df = gs.filter(pl.col("model") == f"GPN-Star-{model}").select(
-                ["subset", "value", "se", "n_pairs"]
-            )
-            assert df.height > 0, (
-                f"no GPN-Star-{model} rows for {dataset!r} in metrics parquet"
-            )
-            rows.append((f"`GPN-Star-{model}`", None, df))
-
-    return rows
-
-
-def _split_method(
-    df: pl.DataFrame,
-) -> tuple[pl.DataFrame, tuple[float, float, int], tuple[float, float, int]]:
-    """Split a method's metrics frame into per-subset rows, _global_, and
-    _macro_avg_ aggregate tuples (value, se, n)."""
-    per_sub = df.filter(~pl.col("subset").is_in([GLOBAL_SUBSET, MACRO_AVG_SUBSET]))
-    g = df.filter(pl.col("subset") == GLOBAL_SUBSET)
-    m = df.filter(pl.col("subset") == MACRO_AVG_SUBSET)
-    assert g.height == 1 and m.height == 1, (
-        f"expected one _global_ and one _macro_avg_ row, got {g.height}/{m.height}"
-    )
-    g_tup = (g[0, "value"], g[0, "se"], int(g[0, "n_pairs"]))
-    m_tup = (m[0, "value"], m[0, "se"], int(m[0, "n_pairs"]))
-    return per_sub, g_tup, m_tup
-
-
-def build_table(dataset: str) -> str:
-    rows = gather_methods(dataset)
-
-    # Pre-split each method once: per-subset rows + the two aggregate tuples.
-    methods = [(method, comment, *_split_method(df)) for method, comment, df in rows]
-
-    # Sort descending on the leading aggregate (Global for most datasets,
-    # Macro Avg for mendelian — see LEADING_AGGREGATE for the rationale).
-    # Python's sort is stable, so ties keep insertion order (conservation →
-    # evals_v2 → AlphaGenome → GPN-Star).
-    leading = LEADING_AGGREGATE[dataset]
-    sort_idx = 3 if leading == "global" else 4  # 3 = global tuple, 4 = macro tuple
-    methods.sort(key=lambda m: -m[sort_idx][0])
-
-    subset_n: dict[str, int] = {}
-    for _, _, per_sub, _, _ in methods:
-        for s, n in per_sub.select(["subset", "n_pairs"]).iter_rows():
-            subset_n[s] = max(subset_n.get(s, 0), int(n))
-    subsets = [
-        s
-        for s, n in sorted(subset_n.items(), key=lambda kv: -kv[1])
-        if n >= N_MIN and s in SUBSET_DISPLAY
-    ]
-    if not subsets:
-        return f"# {dataset}\n\nNo subset has n_pairs ≥ {N_MIN}.\n"
-
-    # Per-subset cell values + per-column top (for bolding).
-    cell_pa: dict[tuple[str, str], tuple[float, float]] = {}
-    top_subset: dict[str, float] = {}
-    for method, _, per_sub, _, _ in methods:
-        for s, v, se, _ in per_sub.iter_rows():
-            if s in subsets:
-                cell_pa[(method, s)] = (v, se)
-                top_subset[s] = max(top_subset.get(s, -1.0), v)
-
-    top_global = max(g[0] for _, _, _, g, _ in methods)
-    top_macro = max(m[0] for _, _, _, _, m in methods)
-
-    # Aggregate-column counts are constant across methods (same match_groups).
-    _, _, _, (_, _, global_n), (_, _, macro_k) = methods[0]
-
-    # Column order: leading aggregate first, secondary aggregate after — so
-    # the leftmost cell of the top row matches the sort axis.
-    global_header = f"Global<br>(n={global_n})"
-    macro_header = f"Macro Avg<br>({macro_k} subsets)"
-    aggregate_headers = (
-        [macro_header, global_header]
-        if leading == "macro"
-        else [global_header, macro_header]
-    )
-    header_cols = aggregate_headers + [
-        f"{SUBSET_DISPLAY[s]}<br>(n={subset_n[s]})" for s in subsets
-    ]
-    header = "| method | " + " | ".join(header_cols) + " |"
-    sep = "|---|" + "|".join(["---"] * len(header_cols)) + "|"
-    lines = [header, sep]
-
-    for method, comment, _, (gv, gse, _), (mv, mse, _) in methods:
-        label = method + (f" ({comment})" if comment else "")
-        global_cell = f"**{fmt(gv, gse)}**" if gv >= top_global - 0.01 else fmt(gv, gse)
-        macro_cell = f"**{fmt(mv, mse)}**" if mv >= top_macro - 0.01 else fmt(mv, mse)
-        cells = (
-            [macro_cell, global_cell]
-            if leading == "macro"
-            else [global_cell, macro_cell]
-        )
-        for s in subsets:
-            if (method, s) not in cell_pa:
-                cells.append("—")
-                continue
-            v, se = cell_pa[(method, s)]
-            text = fmt(v, se)
-            if v >= top_subset[s] - 0.01:
-                text = f"**{text}**"
-            cells.append(text)
-        lines.append(f"| {label} | " + " | ".join(cells) + " |")
-
-    return "\n".join(lines)
-
 
 # ---- Issue body PATCH ------------------------------------------------------
 
@@ -566,30 +215,43 @@ EVALS_V2_CONFIG = (
 
 
 @functools.cache
-def _load_evals_v2_sources() -> dict[str, str]:
-    """Map model `name` → its `gcs_path` (or `hf://<repo>` shorthand)
-    by reading `snakemake/analysis/evals_v2/config/config.yaml`. Single
-    source of truth for Reproducibility-section regeneration."""
+def _load_evals_v2_config_models() -> dict[str, dict]:
+    """Map evals_v2 model `name` → its raw config dict.
+
+    Single source of truth for the cross-check that every bolinas entry in
+    `dashboard/methods.yaml` is actually scored by the pipeline."""
     cfg = yaml.safe_load(EVALS_V2_CONFIG.read_text())
-    sources: dict[str, str] = {}
-    for m in cfg["models"]:
-        if "gcs_path" in m:
-            sources[m["name"]] = m["gcs_path"]
-        elif "hf_repo" in m:
-            sources[m["name"]] = f"hf://{m['hf_repo']}"
-        else:
-            raise RuntimeError(f"model {m['name']!r} has neither gcs_path nor hf_repo")
-    return sources
+    return {m["name"]: m for m in cfg["models"]}
 
 
-def _render_glm_repro_row(entry: "EvalsV2Method", source: str, dataset: str) -> str:
-    """One row of the Reproducibility table for an evals_v2 gLM entry."""
+def _method_source_uri(method: Method) -> str:
+    """Return the canonical source URI for a bolinas method's checkpoint:
+    its GCS path if present, else ``hf://<repo>``."""
+    assert method.family == "bolinas", method.id
+    assert method.checkpoint is not None, method.id
+    if method.checkpoint.gcs:
+        return method.checkpoint.gcs
+    assert method.checkpoint.hf, method.id
+    return f"hf://{method.checkpoint.hf}"
+
+
+def _wandb_run_name(method: Method) -> str | None:
+    """Extract the wandb run name from a GCS checkpoint path of the shape
+    ``gs://…/checkpoints/<run_name>/hf/step-<N>``. Returns None when the
+    checkpoint is HF-hosted (no wandb mirror in that case)."""
+    if method.checkpoint is None or not method.checkpoint.gcs:
+        return None
+    m = re.search(r"checkpoints/([^/]+)/hf/step-\d+", method.checkpoint.gcs)
+    return m.group(1) if m else None
+
+
+def _render_glm_repro_row(method: Method, dataset: str) -> str:
+    """One row of the Reproducibility table for a bolinas method entry."""
+    source = _method_source_uri(method)
     if source.startswith("gs://"):
         m = re.search(r"checkpoints/([^/]+)/hf/step-(\d+)", source)
         if m is None:
-            raise RuntimeError(
-                f"unexpected gcs_path shape for {entry.parquet}: {source}"
-            )
+            raise RuntimeError(f"unexpected gcs_path shape for {method.id}: {source}")
         run_name, step = m.group(1), m.group(2)
         source_md = f"`{source}`"
         wandb_md = f"[run](https://wandb.ai/gonzalobenegas/marin/runs/{run_name})"
@@ -600,12 +262,12 @@ def _render_glm_repro_row(entry: "EvalsV2Method", source: str, dataset: str) -> 
         source_md = f"HF Hub [`{repo}`](https://huggingface.co/{repo})"
         wandb_md = "–"
     else:
-        raise RuntimeError(f"unrecognized source URI for {entry.parquet}: {source!r}")
+        raise RuntimeError(f"unrecognized source URI for {method.id}: {source!r}")
     parquet = (
         f"`s3://oa-bolinas/snakemake/analysis/evals_v2/results/metrics/"
-        f"{entry.parquet}/{dataset}.parquet`"
+        f"{method.id}/{dataset}.parquet`"
     )
-    return f"| `{entry.display}` | {step} | {source_md} | {wandb_md} | {parquet} |"
+    return f"| `{method.display}` | {step} | {source_md} | {wandb_md} | {parquet} |"
 
 
 # Stable HTML-comment anchors around the auto-regenerated gLM block.
@@ -626,14 +288,13 @@ REPRO_GLM_LEGACY_RE = re.compile(
 
 
 def _update_repro_glm_block(body: str, dataset: str) -> str:
-    """Regenerate the gLM rows of the Reproducibility table from
-    EVALS_V2_MODELS. Preserves the surrounding static rows (conservation,
-    GPN-Star, AlphaGenome) untouched."""
-    sources = _load_evals_v2_sources()
+    """Regenerate the gLM rows of the Reproducibility table from methods.yaml.
+    Preserves the surrounding static rows (conservation, GPN-Star, AlphaGenome)
+    untouched."""
     new_rows = [
-        _render_glm_repro_row(entry, sources[entry.parquet], dataset)
-        for entry in EVALS_V2_MODELS
-        if dataset in entry.datasets and entry.parquet in sources
+        _render_glm_repro_row(m, dataset)
+        for m in methods_for_dataset(dataset)
+        if m.family == "bolinas"
     ]
     if not new_rows:
         return body
@@ -749,7 +410,9 @@ def patch_issue(dataset: str, table_md: str) -> None:
         f"`_global_` / `_macro_avg_` rows in `compute_pairwise_metrics` "
         f"(`src/bolinas/evals/metrics.py`); all 3 metric pipelines re-run.",
     )
-    calibrated = SCORE_TYPE["gpn_star"][dataset]
+    gpn_star_score_lookup = _FAMILY_SCORE_TYPE["gpn_star"]
+    assert isinstance(gpn_star_score_lookup, dict)
+    calibrated = gpn_star_score_lookup[dataset]
     raw = calibrated.replace("_calibrated", "")
     new_body = _prepend_changelog_entry(
         new_body,
@@ -771,25 +434,31 @@ def patch_issue(dataset: str, table_md: str) -> None:
     print(f"  ↳ patched #{issue_number}.")
 
 
-def _check_evals_v2_consistency() -> None:
-    """Fail loud at script start if `EVALS_V2_MODELS` references a `parquet`
-    name that's not in the live evals_v2 config — catches drift between the
-    leaderboard's frozen list and the pipeline's source of truth (e.g. a
-    config rename without a corresponding update here)."""
-    sources = _load_evals_v2_sources()
+def _check_methods_yaml_consistency() -> None:
+    """Fail loud if a bolinas entry in dashboard/methods.yaml has no
+    corresponding model in the live evals_v2 config — catches drift between
+    the leaderboard's curated list and the pipeline's source of truth (e.g.
+    a config rename without a corresponding methods.yaml update)."""
+    config_models = _load_evals_v2_config_models()
     missing = [
-        entry.parquet for entry in EVALS_V2_MODELS if entry.parquet not in sources
+        m.id
+        for ds in DATASETS
+        for m in methods_for_dataset(ds)
+        if m.family == "bolinas" and m.id not in config_models
     ]
+    # Dedup while preserving order.
+    seen: set[str] = set()
+    missing = [i for i in missing if not (i in seen or seen.add(i))]
     if missing:
         raise RuntimeError(
-            f"EVALS_V2_MODELS references parquet names not found in "
+            f"bolinas methods in dashboard/methods.yaml not found in "
             f"{EVALS_V2_CONFIG}: {missing}. Either add them to the config "
-            f"or remove them from EVALS_V2_MODELS."
+            f"or remove them from methods.yaml."
         )
 
 
 def main() -> None:
-    _check_evals_v2_consistency()
+    _check_methods_yaml_consistency()
     parser = argparse.ArgumentParser()
     patch_group = parser.add_mutually_exclusive_group()
     patch_group.add_argument(

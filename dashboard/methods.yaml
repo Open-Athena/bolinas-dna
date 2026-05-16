@@ -1,0 +1,370 @@
+# Source of truth for every method on the leaderboard.
+#
+# Consumed by:
+#   - `src/bolinas/pipelines/evals/leaderboard.py` — aggregates S3 metrics into
+#     normalized leaderboard rows for the dashboard and for the legacy
+#     `leaderboard_gen.py --patch-issues` CLI.
+#   - `dashboard/src/data/methods.json.py` — emits a JSON build artifact for
+#     the Observable Framework site.
+#
+# To add a method:
+#   1. Append a YAML block here in registry order (entries with `datasets:` that
+#      include the dataset show up on that dataset's leaderboard).
+#   2. For `family: bolinas`, also add the model to
+#      `snakemake/analysis/evals_v2/config/config.yaml` so the pipeline knows
+#      where its checkpoint lives.
+#   3. Run the pipeline → parquet on S3.
+#   4. `git push`. Dashboard CI rebuilds and the new row shows up.
+#
+# Schema:
+#   id           string  primary key; matches the S3 parquet name (bolinas) or
+#                        the score_name / model filter value (conservation,
+#                        gpn_star).
+#   display      string  what the leaderboard table renders.
+#   family       enum    bolinas | conservation | alphagenome | gpn_star.
+#                        Drives parquet path + per-method filter in the library.
+#   description  string  short tag for cards + (some) inline labels.
+#   datasets     [str]   subset of {mendelian_traits, complex_traits, eqtl}.
+#   training     dict    (bolinas only) data, params, window_size, objective.
+#   experiment   int     (optional) experiment number — for grouping.
+#   issue        url     (optional) GitHub issue tracking the experiment.
+#   wandb        url     (optional) wandb run.
+#   checkpoint   dict    (bolinas only) gcs and/or hf path to weights.
+#   paper        url     (optional) reference paper (conservation/external).
+#   msa          string  (gpn_star only) producer's MSA suffix (e.g. v100-200m).
+
+# ---------------------------------------------------------------------------
+# Conservation tracks — 7 phyloP / phastCons baselines, present on all three
+# leaderboards. Same parquet path per dataset; per-track filter on score_name.
+# ---------------------------------------------------------------------------
+
+- id: phastCons_100v
+  display: phastCons_100v
+  family: conservation
+  description: phastCons across 100 vertebrates
+  datasets: [mendelian_traits, complex_traits, eqtl]
+
+- id: phastCons_43p
+  display: phastCons_43p
+  family: conservation
+  description: phastCons across 43 primates
+  datasets: [mendelian_traits, complex_traits, eqtl]
+
+- id: phastCons_470m
+  display: phastCons_470m
+  family: conservation
+  description: phastCons across 470 mammals
+  datasets: [mendelian_traits, complex_traits, eqtl]
+
+- id: phyloP_100v
+  display: phyloP_100v
+  family: conservation
+  description: phyloP across 100 vertebrates
+  datasets: [mendelian_traits, complex_traits, eqtl]
+
+- id: phyloP_241m
+  display: phyloP_241m
+  family: conservation
+  description: phyloP across 241 mammals (Zoonomia)
+  datasets: [mendelian_traits, complex_traits, eqtl]
+
+- id: phyloP_447m
+  display: phyloP_447m
+  family: conservation
+  description: phyloP across 447 mammals
+  datasets: [mendelian_traits, complex_traits, eqtl]
+
+- id: phyloP_470m
+  display: phyloP_470m
+  family: conservation
+  description: phyloP across 470 mammals
+  datasets: [mendelian_traits, complex_traits, eqtl]
+
+# ---------------------------------------------------------------------------
+# bolinas gLMs — evals_v2 pipeline. Registry order matches the legacy
+# EVALS_V2_MODELS list so stable-sort ties resolve identically across the
+# refactor. New entries append at the bottom.
+# ---------------------------------------------------------------------------
+
+- id: exp55-mammals
+  display: exp55-mammals
+  family: bolinas
+  description: promoters, mammals
+  training:
+    data: promoters_mammals
+    window_size: 256
+    objective: CLM
+  experiment: 55
+  issue: https://github.com/Open-Athena/bolinas-dna/issues/55
+  wandb: https://wandb.ai/gonzalobenegas/marin/runs/exp55-mammals-r01-52f413
+  checkpoint:
+    gcs: gs://marin-dna-us-central1/checkpoints/exp55-mammals-r01-52f413/hf/step-16999
+  datasets: [mendelian_traits, complex_traits, eqtl]
+
+- id: exp58-mammals
+  display: exp58-mammals
+  family: bolinas
+  description: CDS, mammals
+  training:
+    data: cds_mammals
+    window_size: 256
+    objective: CLM
+  experiment: 58
+  issue: https://github.com/Open-Athena/bolinas-dna/issues/58
+  wandb: https://wandb.ai/gonzalobenegas/marin/runs/exp58-mammals-r01-23d451
+  checkpoint:
+    gcs: gs://marin-dna-us-central1/checkpoints/exp58-mammals-r01-23d451/hf/step-16999
+  datasets: [mendelian_traits, complex_traits, eqtl]
+
+- id: exp58-animals
+  display: exp58-animals
+  family: bolinas
+  description: CDS, animals
+  training:
+    data: cds_animals
+    window_size: 256
+    objective: CLM
+  experiment: 58
+  issue: https://github.com/Open-Athena/bolinas-dna/issues/58
+  wandb: https://wandb.ai/gonzalobenegas/marin/runs/exp58-animals-r01-1e3682
+  checkpoint:
+    gcs: gs://marin-dna-us-central1/checkpoints/exp58-animals-r01-1e3682/hf/step-16999
+  datasets: [mendelian_traits, complex_traits, eqtl]
+
+- id: exp59-mammals
+  display: exp59-mammals
+  family: bolinas
+  description: downstream, mammals
+  training:
+    data: downstream_mammals
+    window_size: 256
+    objective: CLM
+  experiment: 59
+  issue: https://github.com/Open-Athena/bolinas-dna/issues/59
+  wandb: https://wandb.ai/gonzalobenegas/marin/runs/exp59-mammals-r01-1d9235
+  checkpoint:
+    gcs: gs://marin-dna-us-central1/checkpoints/exp59-mammals-r01-1d9235/hf/step-16999
+  datasets: [mendelian_traits, complex_traits, eqtl]
+
+- id: exp136-proj_v30
+  display: exp136-proj_v30
+  family: bolinas
+  description: enhancers, mammals
+  training:
+    data: enhancers_mammals_proj_v30
+    window_size: 255
+    objective: CLM
+  experiment: 136
+  issue: https://github.com/Open-Athena/bolinas-dna/issues/136
+  wandb: https://wandb.ai/gonzalobenegas/marin/runs/dna-bolinas-enhancer-curation-v0.1-proj_v30-6692f0
+  checkpoint:
+    gcs: gs://marin-us-central1/checkpoints/dna-bolinas-enhancer-curation-v0.1-proj_v30-6692f0/hf/step-9999
+  datasets: [mendelian_traits, complex_traits, eqtl]
+
+# Legacy `exp166-p1B` (step-16398 on HF) — retained for #162/#172 only.
+# Superseded by `exp166-v0.1-p1B-step-27329` on mendelian; that v0.1 run
+# hasn't been scored on complex/eqtl yet.
+- id: exp166-p1B
+  display: exp166-p1B
+  family: bolinas
+  description: zoonomia, generalist, 1B
+  training:
+    data: zoonomia_v1
+    params: 1.0e9
+    window_size: 255
+    objective: CLM
+  experiment: 166
+  issue: https://github.com/Open-Athena/bolinas-dna/issues/166
+  checkpoint:
+    hf: bolinas-dna/exp166-p1B-step-16398
+  datasets: [complex_traits, eqtl]
+
+# Convergence-style entries (final checkpoint only here per "last checkpoint
+# per run" convention). Scored on mendelian only in the evals_v2 config.
+
+- id: exp21-promoters-yolo-step-22000
+  display: exp21-promoters-yolo
+  family: bolinas
+  description: promoters, animals, 1.7B
+  training:
+    data: promoters_animals
+    params: 1.7e9
+    window_size: 512
+    objective: CLM
+  experiment: 21
+  issue: https://github.com/Open-Athena/bolinas-dna/issues/21
+  wandb: https://wandb.ai/gonzalobenegas/marin/runs/animal-promoters-yolo-r01-213a8e
+  checkpoint:
+    gcs: gs://marin-dna-us-central1/checkpoints/animal-promoters-yolo-r01-213a8e/hf/step-22000
+  datasets: [mendelian_traits]
+
+- id: exp13-mixture-equal-step-26000
+  display: exp13-mixture-equal
+  family: bolinas
+  description: 50/50 promoter+CDS, animals, 1.7B
+  training:
+    data: promoter_cds_mixture_equal
+    params: 1.7e9
+    window_size: 512
+    objective: CLM
+  experiment: 13
+  issue: https://github.com/Open-Athena/bolinas-dna/issues/13
+  wandb: https://wandb.ai/gonzalobenegas/marin/runs/promoter-cds-mixture-equal-r01-b67fd1
+  checkpoint:
+    gcs: gs://marin-dna-us-central1/checkpoints/promoter-cds-mixture-equal-r01-b67fd1/hf/step-26000
+  datasets: [mendelian_traits]
+
+- id: exp13-mixture-proportional-step-26000
+  display: exp13-mixture-proportional
+  family: bolinas
+  description: 10/90 promoter+CDS, animals, 1.7B
+  training:
+    data: promoter_cds_mixture_proportional
+    params: 1.7e9
+    window_size: 512
+    objective: CLM
+  experiment: 13
+  issue: https://github.com/Open-Athena/bolinas-dna/issues/13
+  wandb: https://wandb.ai/gonzalobenegas/marin/runs/promoter-cds-mixture-proportional-r01-6705f1
+  checkpoint:
+    gcs: gs://marin-dna-us-central1/checkpoints/promoter-cds-mixture-proportional-r01-6705f1/hf/step-26000
+  datasets: [mendelian_traits]
+
+- id: exp27-cds-yolo-step-34000
+  display: exp27-cds-yolo
+  family: bolinas
+  description: CDS, animals, 1.7B
+  training:
+    data: cds_animals
+    params: 1.7e9
+    window_size: 512
+    objective: CLM
+  experiment: 27
+  issue: https://github.com/Open-Athena/bolinas-dna/issues/27
+  wandb: https://wandb.ai/gonzalobenegas/marin/runs/animal-cds-yolo-repeat-weight-0.01-r01-e8cb9b
+  checkpoint:
+    gcs: gs://marin-dna-us-central1/checkpoints/animal-cds-yolo-repeat-weight-0.01-r01-e8cb9b/hf/step-34000
+  datasets: [mendelian_traits]
+
+- id: exp55-humans-step-16999
+  display: exp55-humans
+  family: bolinas
+  description: promoters, humans
+  training:
+    data: promoters_humans
+    window_size: 256
+    objective: CLM
+  experiment: 55
+  issue: https://github.com/Open-Athena/bolinas-dna/issues/55
+  wandb: https://wandb.ai/gonzalobenegas/marin/runs/exp55-humans-r01-0fa9f3
+  checkpoint:
+    gcs: gs://marin-dna-us-central1/checkpoints/exp55-humans-r01-0fa9f3/hf/step-16999
+  datasets: [mendelian_traits]
+
+- id: exp55-primates-step-16999
+  display: exp55-primates
+  family: bolinas
+  description: promoters, primates
+  training:
+    data: promoters_primates
+    window_size: 256
+    objective: CLM
+  experiment: 55
+  issue: https://github.com/Open-Athena/bolinas-dna/issues/55
+  wandb: https://wandb.ai/gonzalobenegas/marin/runs/exp55-primates-r01-70b1a5
+  checkpoint:
+    gcs: gs://marin-dna-us-central1/checkpoints/exp55-primates-r01-70b1a5/hf/step-16999
+  datasets: [mendelian_traits]
+
+- id: exp55-vertebrates-step-16999
+  display: exp55-vertebrates
+  family: bolinas
+  description: promoters, vertebrates
+  training:
+    data: promoters_vertebrates
+    window_size: 256
+    objective: CLM
+  experiment: 55
+  issue: https://github.com/Open-Athena/bolinas-dna/issues/55
+  wandb: https://wandb.ai/gonzalobenegas/marin/runs/exp55-vertebrates-r01-64b0da
+  checkpoint:
+    gcs: gs://marin-dna-us-central1/checkpoints/exp55-vertebrates-r01-64b0da/hf/step-16999
+  datasets: [mendelian_traits]
+
+- id: exp55-animals-step-16999
+  display: exp55-animals
+  family: bolinas
+  description: promoters, animals
+  training:
+    data: promoters_animals
+    window_size: 256
+    objective: CLM
+  experiment: 55
+  issue: https://github.com/Open-Athena/bolinas-dna/issues/55
+  wandb: https://wandb.ai/gonzalobenegas/marin/runs/exp55-animals-r01-c5dd2f
+  checkpoint:
+    gcs: gs://marin-dna-us-central1/checkpoints/exp55-animals-r01-c5dd2f/hf/step-16999
+  datasets: [mendelian_traits]
+
+- id: exp58-vertebrates-step-16999
+  display: exp58-vertebrates
+  family: bolinas
+  description: CDS, vertebrates
+  training:
+    data: cds_vertebrates
+    window_size: 256
+    objective: CLM
+  experiment: 58
+  issue: https://github.com/Open-Athena/bolinas-dna/issues/58
+  wandb: https://wandb.ai/gonzalobenegas/marin/runs/exp58-vertebrates-r01-771c3a
+  checkpoint:
+    gcs: gs://marin-dna-us-central1/checkpoints/exp58-vertebrates-r01-771c3a/hf/step-16999
+  datasets: [mendelian_traits]
+
+# Supersedes the legacy `exp166-p1B` HF entry (step-16398) on mendelian.
+- id: exp166-v0.1-p1B-step-27329
+  display: exp166-v0.1-p1B
+  family: bolinas
+  description: zoonomia, generalist, 1B, v0.1
+  training:
+    data: zoonomia_v0.1
+    params: 1.0e9
+    window_size: 255
+    objective: CLM
+  experiment: 166
+  issue: https://github.com/Open-Athena/bolinas-dna/issues/166
+  wandb: https://wandb.ai/gonzalobenegas/marin/runs/dna-bolinas-exp166-v0.1-p1B-c127da
+  checkpoint:
+    gcs: gs://marin-us-east5/checkpoints/dna-bolinas-exp166-v0.1-p1B-c127da/hf/step-27329
+  datasets: [mendelian_traits]
+
+# ---------------------------------------------------------------------------
+# External baselines (AlphaGenome, GPN-Star).
+# ---------------------------------------------------------------------------
+
+- id: AlphaGenome
+  display: AlphaGenome
+  family: alphagenome
+  description: variant scorer, API
+  datasets: [mendelian_traits, complex_traits, eqtl]
+
+- id: GPN-Star-V
+  display: GPN-Star-V
+  family: gpn_star
+  description: vertebrate, 100-way MSA
+  msa: v100-200m
+  datasets: [mendelian_traits, complex_traits, eqtl]
+
+- id: GPN-Star-M
+  display: GPN-Star-M
+  family: gpn_star
+  description: mammal, 447-way MSA
+  msa: m447-200m
+  datasets: [mendelian_traits, complex_traits, eqtl]
+
+- id: GPN-Star-P
+  display: GPN-Star-P
+  family: gpn_star
+  description: primate, 243-way MSA
+  msa: p243-200m
+  datasets: [mendelian_traits, complex_traits, eqtl]
