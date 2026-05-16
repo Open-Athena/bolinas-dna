@@ -164,6 +164,10 @@ export function heatmap({rows, modelById, leadingAggregate = MACRO}) {
     const root = html`<div class="lb-heatmap-wrap"></div>`;
 
     const table = html`<table class="lb-heatmap">
+      <colgroup>
+        <col style="width: 220px"></col>
+        ${columns.map(() => html`<col style="width: 90px"></col>`)}
+      </colgroup>
       <thead>
         <tr>
           <th class="lb-method-header">Model</th>
@@ -204,7 +208,7 @@ export function heatmap({rows, modelById, leadingAggregate = MACRO}) {
                 class=${`lb-cell${sortedCls}`}
                 style=${`background-color: ${bg}; color: ${fg};`}
               >
-                ${Math.round(c.value * 100)}
+                ${(c.value * 100).toFixed(1)}
               </td>`;
             })}
           </tr>`;
@@ -257,7 +261,7 @@ function forestPlot(methods, columnKey, columnText, headerPx, rowPx) {
     return html`<div class="lb-forest-empty">No values for ${columnText}.</div>`;
   }
 
-  const width = 360;
+  const width = 300;
   const margin = {top: headerPx ?? HEATMAP_HEADER_PX, right: 42, bottom: 32, left: 16};
   const rowH = rowPx ?? HEATMAP_ROW_PX;
   const height = margin.top + visible.length * rowH + margin.bottom;
@@ -267,13 +271,14 @@ function forestPlot(methods, columnKey, columnText, headerPx, rowPx) {
   const xPx = (v) =>
     margin.left + ((Math.max(xMin, Math.min(xMax, v)) - xMin) / (xMax - xMin)) * innerW;
   const xTicks = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
+  const tickLabel = (t) => (t * 100).toFixed(0);
 
   return svg`<svg class="lb-forest" viewBox=${`0 0 ${width} ${height}`} width=${width} style="flex: 0 0 auto;">
     ${xTicks.map(
       (t) => svg`<g>
         <line x1=${xPx(t)} x2=${xPx(t)} y1=${margin.top} y2=${height - margin.bottom}
               stroke=${t === xMin ? "#999" : "#eee"}></line>
-        <text x=${xPx(t)} y=${margin.top - 8} text-anchor="middle" font-size="10" fill="#666">${t.toFixed(1)}</text>
+        <text x=${xPx(t)} y=${margin.top - 8} text-anchor="middle" font-size="10" fill="#666">${tickLabel(t)}</text>
       </g>`,
     )}
     ${visible.map(({cell}, i) => {
@@ -286,7 +291,7 @@ function forestPlot(methods, columnKey, columnText, headerPx, rowPx) {
         <line x1=${lo} x2=${hi} y1=${y} y2=${y} stroke="#666" stroke-width="1"></line>
         <circle cx=${cx} cy=${y} r="4.5" fill=${fill} stroke="#333" stroke-width="0.5"></circle>
         <text x=${hi + 5} y=${y} dy="0.32em" font-size="10.5" fill="#444"
-              font-variant-numeric="tabular-nums">${cell.value.toFixed(3)}</text>
+              font-variant-numeric="tabular-nums">${(cell.value * 100).toFixed(1)}</text>
       </g>`;
     })}
     <text x=${margin.left + innerW / 2} y=${height - 14} text-anchor="middle"
@@ -320,7 +325,7 @@ export function colorLegend({width = 280, height = 16} = {}) {
     ${ticks.map(
       (v) => svg`<g transform=${`translate(${x(v)},0)`}>
         <line y1=${height} y2=${height + 4} stroke="#666"></line>
-        <text y=${height + 16} text-anchor="middle" font-size="10" fill="#555">${v.toFixed(1)}</text>
+        <text y=${height + 16} text-anchor="middle" font-size="10" fill="#555">${(v * 100).toFixed(0)}</text>
       </g>`,
     )}
   </svg>`;

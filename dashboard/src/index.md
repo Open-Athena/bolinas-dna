@@ -195,12 +195,15 @@ main > h1, main > h2, main > h3, main > p { max-width: 1200px; }
   font-variant-numeric: tabular-nums;
   font-size: 0.85em;
   margin: 1em 0;
-  /* Fixed layout so all data columns share one width (model column
-     takes the remainder via `width: auto` on its header). */
+  /* Fixed layout with an explicit overall width so every data column
+     shares one identical 90px width. 90px fits the widest header
+     ("Synonymous") with padding to spare; the model column takes the
+     remainder. */
   table-layout: fixed;
+  width: 1120px;
 }
-.lb-heatmap thead th:not(.lb-method-header) { width: 62px; }
-.lb-heatmap th.lb-method-header { width: 230px; }
+.lb-heatmap thead th:not(.lb-method-header) { width: 90px; }
+.lb-heatmap th.lb-method-header { width: 220px; }
 .lb-heatmap th, .lb-heatmap td {
   padding: 6px 8px;
   border: 1px solid #ddd;
