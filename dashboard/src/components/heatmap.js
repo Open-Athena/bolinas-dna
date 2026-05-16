@@ -133,6 +133,31 @@ export function heatmap({rows, modelById, leadingAggregate = MACRO}) {
     return `${SUBSET_DISPLAY[col]} (n=${subsetMaxN.get(col)})`;
   }
 
+  // After mount, read the actual rendered thead height + tbody row height
+  // and rebuild the forest plot inside `forestSlot` so each dot lands in
+  // the middle of its corresponding heatmap row, even when the browser's
+  // computed row height drifts from `HEATMAP_ROW_PX` by sub-pixel amounts
+  // (which adds up to ~10px over 26 rows).
+  function realignForestPlot(table, forestSlot, methods, columnKey) {
+    const thead = table.querySelector("thead");
+    const firstRow = table.querySelector("tbody tr");
+    const lastRow = table.querySelector("tbody tr:last-child");
+    if (!thead || !firstRow) return;
+    const headerPx = thead.getBoundingClientRect().height;
+    // Measure as the average row spacing across the whole tbody, so any
+    // accumulated sub-pixel drift is absorbed.
+    const firstRect = firstRow.getBoundingClientRect();
+    const lastRect = lastRow.getBoundingClientRect();
+    const nRows = methods.filter((m) => m.cells.get(columnKey) != null).length;
+    const rowPx =
+      nRows > 1
+        ? (lastRect.top + lastRect.height / 2 - (firstRect.top + firstRect.height / 2)) /
+          (nRows - 1)
+        : firstRect.height;
+    const fresh = forestPlot(methods, columnKey, colLabelText(columnKey), headerPx, rowPx);
+    forestSlot.replaceChildren(fresh);
+  }
+
   function render() {
     const methods = sortedMethods();
 
@@ -171,11 +196,12 @@ export function heatmap({rows, modelById, leadingAggregate = MACRO}) {
             ${modelCell}
             ${columns.map((col) => {
               const c = m.cells.get(col);
-              if (c == null) return html`<td class="lb-na">—</td>`;
+              const sortedCls = col === sortKey ? " lb-col-sorted" : "";
+              if (c == null) return html`<td class=${`lb-na${sortedCls}`}>—</td>`;
               const bg = paColor(c.value);
               const fg = textColor(c.value);
               return html`<td
-                class="lb-cell"
+                class=${`lb-cell${sortedCls}`}
                 style=${`background-color: ${bg}; color: ${fg};`}
               >
                 ${Math.round(c.value * 100)}
@@ -186,14 +212,16 @@ export function heatmap({rows, modelById, leadingAggregate = MACRO}) {
       </tbody>
     </table>`;
 
-    // Heatmap on the left, forest plot adjacent on the right. Both share
-    // the same Y axis — explicit row height on the heatmap is what keeps
-    // rows aligned (see `.lb-heatmap tbody tr { height: ... }` in
-    // index.md).
-    root.append(html`<div class="lb-heatmap-row">
-      ${table}
-      ${forestPlot(methods, sortKey, colLabelText(sortKey))}
-    </div>`);
+    // Heatmap on the left, forest plot adjacent on the right. Initial
+    // forest plot uses the static `HEATMAP_HEADER_PX` / `HEATMAP_ROW_PX`
+    // estimates; a `requestAnimationFrame` callback then measures the
+    // browser's actually-rendered row positions and replaces the SVG
+    // inside `forestSlot` so each dot lands in the middle of its
+    // corresponding heatmap row.
+    const forestSlot = html`<div class="lb-forest-slot"></div>`;
+    forestSlot.appendChild(forestPlot(methods, sortKey, colLabelText(sortKey)));
+    root.append(html`<div class="lb-heatmap-row">${table}${forestSlot}</div>`);
+    requestAnimationFrame(() => realignForestPlot(table, forestSlot, methods, sortKey));
     return root;
   }
 
@@ -221,7 +249,7 @@ export function heatmap({rows, modelById, leadingAggregate = MACRO}) {
 const HEATMAP_HEADER_PX = 48;
 const HEATMAP_ROW_PX = 30;
 
-function forestPlot(methods, columnKey, columnText) {
+function forestPlot(methods, columnKey, columnText, headerPx, rowPx) {
   const visible = methods
     .map((m) => ({m, cell: m.cells.get(columnKey)}))
     .filter((x) => x.cell != null);
@@ -230,8 +258,8 @@ function forestPlot(methods, columnKey, columnText) {
   }
 
   const width = 360;
-  const margin = {top: HEATMAP_HEADER_PX, right: 42, bottom: 32, left: 16};
-  const rowH = HEATMAP_ROW_PX;
+  const margin = {top: headerPx ?? HEATMAP_HEADER_PX, right: 42, bottom: 32, left: 16};
+  const rowH = rowPx ?? HEATMAP_ROW_PX;
   const height = margin.top + visible.length * rowH + margin.bottom;
   const xMin = 0.5;
   const xMax = 1.0;
@@ -256,8 +284,6 @@ function forestPlot(methods, columnKey, columnText) {
       const fill = paColor(cell.value);
       return svg`<g>
         <line x1=${lo} x2=${hi} y1=${y} y2=${y} stroke="#666" stroke-width="1"></line>
-        <line x1=${lo} x2=${lo} y1=${y - 3} y2=${y + 3} stroke="#666"></line>
-        <line x1=${hi} x2=${hi} y1=${y - 3} y2=${y + 3} stroke="#666"></line>
         <circle cx=${cx} cy=${y} r="4.5" fill=${fill} stroke="#333" stroke-width="0.5"></circle>
         <text x=${hi + 5} y=${y} dy="0.32em" font-size="10.5" fill="#444"
               font-variant-numeric="tabular-nums">${cell.value.toFixed(3)}</text>

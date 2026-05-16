@@ -229,7 +229,11 @@ main > h1, main > h2, main > h3, main > p { max-width: 1200px; }
 .lb-heatmap td.lb-cell { font-variant-numeric: tabular-nums; padding: 6px 4px; }
 .lb-heatmap thead th:hover { background: #eee; }
 .lb-col-label { white-space: nowrap; }
-.lb-col-sorted { background: #e8f0e8 !important; font-weight: 600; }
+.lb-heatmap thead th.lb-col-sorted { background: #d6e8d6; font-weight: 600; }
+/* Bold left/right borders + slight inset shadow mark the sorted column
+   on the body rows (not just the header). */
+.lb-heatmap td.lb-col-sorted { border-left: 2px solid #5c8a5c; border-right: 2px solid #5c8a5c; }
+.lb-heatmap thead th.lb-col-sorted { border-left: 2px solid #5c8a5c; border-right: 2px solid #5c8a5c; border-bottom: 2px solid #5c8a5c; }
 .lb-method-header { text-align: left !important; cursor: default !important; }
 .lb-method { white-space: nowrap; }
 .lb-method a { text-decoration: none; }
