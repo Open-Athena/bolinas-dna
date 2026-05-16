@@ -270,7 +270,9 @@ def test_aggregation_pushes_per_subset_to_levanter_tracker(monkeypatch):
 
     assert len(pushed) == 1
     payload, step = pushed[0]
-    assert step == 0
+    # step=None lets the tracker backend fill in its current step — works for
+    # both eval-only (step=0) and mid-training (step=current_training_step).
+    assert step is None
     assert all(k.startswith("lm_eval/mendelian_traits_255/") for k in payload)
     expected = {
         f"lm_eval/mendelian_traits_255/{sub}/{tag}/pairwise_accuracy"

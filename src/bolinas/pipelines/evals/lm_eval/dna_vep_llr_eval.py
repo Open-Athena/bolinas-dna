@@ -163,10 +163,13 @@ class _PairwiseAccuracyAggregation:
         return float(global_avg["value"].iloc[0])
 
     def _push_per_subset_to_tracker(self) -> None:
-        """Log ``results_store`` as wandb history at ``step=0``.
+        """Log ``results_store`` as wandb history at the tracker's current step.
 
-        ``log(step=0)`` (not ``log_summary``) so the cells land in both the
-        run history (workspace charts) and the summary panel.
+        ``log`` (not ``log_summary``) so cells land in both the run history
+        (workspace charts) and the summary panel. ``step=None`` lets the
+        backend fill in its current step — required when this aggregator
+        runs inside a training-loop eval (a literal ``step=0`` would trip
+        levanter's "cowardly refusing to log past steps" guard).
         """
         try:
             import levanter.tracker
@@ -179,7 +182,7 @@ class _PairwiseAccuracyAggregation:
             f"{prefix}/{key}": value for key, value in self.results_store.items()
         }
         try:
-            levanter.tracker.log(payload, step=0)
+            levanter.tracker.log(payload, step=None)
         except Exception as exc:
             # NoopTracker / no current tracker / serialization issue: log at
             # debug so silent dashboard failures are still discoverable.
