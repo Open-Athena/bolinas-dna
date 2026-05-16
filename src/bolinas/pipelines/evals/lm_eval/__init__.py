@@ -1,28 +1,20 @@
 """Custom lm-eval-harness tasks for DNA experiments.
 
-This package's directory is the ``include_path`` passed to lm-eval at runtime.
-``importlib.resources.files("bolinas.pipelines.evals.lm_eval")`` resolves to the on-disk
-location of this directory (uv installs bolinas in editable mode), letting
-lm-eval scan it for task YAMLs and import the referenced ``!function`` classes.
+Importing this module installs two idempotent monkeypatches:
 
-Importing this module patches ``lm_eval.tasks.TaskManager`` so it always
-includes this directory on its search path. Marin's current
-``LmEvalHarnessConfig`` no longer accepts ``include_path`` (the kwarg was
-dropped between dna-dev and main), so without this patch the custom tasks
-defined here are unreachable from a marin-launched run. The patch applies
-once, idempotently, only when lm-eval is installed (i.e. under the ``marin``
-dependency group).
+1. ``lm_eval.tasks.TaskManager.__init__`` — appends this package's directory
+   to ``include_path`` so the YAML task definitions here are discoverable.
+   Marin's ``LmEvalHarnessConfig`` no longer exposes ``include_path``, so
+   without the patch our tasks are unreachable from a marin-launched run.
 
-Also patches ``levanter.eval_harness.LmEvalHarnessConfig._rename_tasks_for_eval_harness``
-to handle plain ``lm_eval.api.task.Task`` subclasses (rather than only
-``ConfigurableTask`` + dict). Our ``DnaVepLlrEvalTask`` extends ``Task``
-directly because ``ConfigurableTask``'s ``__init__`` eagerly walks fewshot
-docs and hangs on large datasets; the rename logic for plain Tasks is a
-no-op (our ``self._task_name`` is already correct, no per-task aliasing
-needed).
+2. ``levanter.eval_harness.LmEvalHarnessConfig._rename_tasks_for_eval_harness``
+   — passes plain ``lm_eval.api.task.Task`` subclasses through untouched.
+   Upstream only handles ``dict`` and ``ConfigurableTask`` and raises
+   ``ValueError`` otherwise. ``DnaVepLlrEvalTask`` extends ``Task`` directly
+   because ``ConfigurableTask.__init__`` eagerly walks fewshot docs and hangs
+   on large datasets.
 """
 
-import importlib.resources
 import logging
 import pathlib
 from functools import wraps
@@ -34,16 +26,15 @@ def _install_task_manager_patch() -> None:
     try:
         from lm_eval.tasks import TaskManager
     except ImportError:
-        # lm-eval not installed (default `uv sync`). Nothing to patch.
+        # lm-eval not installed (default `uv sync`).
         return
 
     if getattr(TaskManager, "_bolinas_dna_patched", False):
         return
 
-    # Use __file__.parent rather than importlib.resources.files() to avoid
-    # surprises with editable installs / namespace packages where files()
-    # can return a MultiplexedPath whose str() doesn't resolve to a real
-    # filesystem path. __file__ is always the actual __init__.py location.
+    # `__file__.parent` rather than `importlib.resources.files()` — the latter
+    # can return a MultiplexedPath under editable installs / namespace
+    # packages whose `str()` doesn't resolve to a filesystem path.
     bolinas_dna_path = str(pathlib.Path(__file__).parent)
     yaml_files = sorted(pathlib.Path(bolinas_dna_path).glob("*.yaml"))
     _logger.info(
@@ -70,16 +61,6 @@ def _install_task_manager_patch() -> None:
 
 
 def _install_levanter_rename_patch() -> None:
-    """Teach ``levanter.eval_harness.LmEvalHarnessConfig._rename_tasks_for_eval_harness``
-    about plain ``Task`` subclasses.
-
-    The upstream method only handles ``dict`` and ``ConfigurableTask`` and raises
-    ``ValueError: Unknown task type`` for anything else — which traps any
-    custom task class (like ``DnaVepLlrEvalTask``) that extends ``Task``
-    directly. Wrap it so a plain ``Task`` instance falls through as a no-op
-    (no rename needed — the task already has the right name via its YAML
-    ``task:`` field, and we don't use multi-instance fewshot variants).
-    """
     try:
         from levanter.eval_harness import LmEvalHarnessConfig
         from lm_eval.api.task import Task
@@ -93,10 +74,6 @@ def _install_levanter_rename_patch() -> None:
 
     @wraps(original_rename)
     def patched_rename(self, this_task, lm_eval_task_name, our_name):
-        # Plain Task subclasses (non-ConfigurableTask) pass through unchanged.
-        # Our DnaVepLlrEvalTask doesn't have a `config.task` to rename and the
-        # rename hack is only needed for multi-instance fewshot variants of
-        # the same lm-eval task — which we don't use.
         from lm_eval.api.task import ConfigurableTask
 
         if (

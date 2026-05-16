@@ -133,7 +133,7 @@ def test_inconsistent_target_within_variant_fails_loud():
         (0.5, 1, "missense", ("1", 11, "G", "A"), 1, "+"),
         (0.6, 0, "missense", ("1", 11, "G", "A"), 1, "-"),  # contradicting target
     ]
-    with pytest.raises(AssertionError, match="inconsistent target"):
+    with pytest.raises(AssertionError, match="inconsistent meta"):
         _run_aggregation(items)
 
 
@@ -142,7 +142,7 @@ def test_inconsistent_subset_within_variant_fails_loud():
         (0.5, 1, "missense", ("1", 11, "G", "A"), 1, "+"),
         (0.6, 1, "splicing", ("1", 11, "G", "A"), 1, "-"),
     ]
-    with pytest.raises(AssertionError, match="inconsistent subset"):
+    with pytest.raises(AssertionError, match="inconsistent meta"):
         _run_aggregation(items)
 
 
@@ -151,7 +151,7 @@ def test_inconsistent_match_group_within_variant_fails_loud():
         (0.5, 1, "missense", ("1", 11, "G", "A"), 1, "+"),
         (0.6, 1, "missense", ("1", 11, "G", "A"), 99, "-"),
     ]
-    with pytest.raises(AssertionError, match="inconsistent match_group"):
+    with pytest.raises(AssertionError, match="inconsistent meta"):
         _run_aggregation(items)
 
 
@@ -184,7 +184,7 @@ def test_heterogeneous_strand_sets_fails_loud():
         # variant B has only "+"
         (0.3, 0, "missense", ("1", 12, "T", "A"), 1, "+"),
     ]
-    with pytest.raises(AssertionError, match="heterogeneous strand sets"):
+    with pytest.raises(AssertionError, match="has strands="):
         _run_aggregation(items)
 
 

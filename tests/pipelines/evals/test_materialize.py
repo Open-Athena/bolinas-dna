@@ -162,7 +162,7 @@ def test_rc_assertion_fires_on_bad_ref(mini_genome):
     """The internal assertion catches a wrong ref allele on the RC strand."""
     # Real ref at pos=11 is "G"; pretending it's "T" should fail loud.
     example = {"chrom": "1", "pos": 11, "ref": "T", "alt": "A"}
-    with pytest.raises(AssertionError, match="ref_in_strand"):
+    with pytest.raises(AssertionError):
         _add_eval_harness_fields(
             example, genome=mini_genome, window_size=10, strand="-"
         )

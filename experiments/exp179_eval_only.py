@@ -1,44 +1,26 @@
 # Copyright The Marin Authors / Bolinas Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Eval-only run of the online lm_eval VEP scorer (mendelian_traits_255)
-on exp166-p1B — parity check for #179.
+"""Eval-only run of the online lm_eval VEP scorer on exp166-p1B — #179 parity
+check against the offline ``snakemake/analysis/evals_v2/`` rc-averaged scores.
 
-Loads the HF checkpoint ``bolinas-dna/exp166-p1B-step-16398`` on a TPU pod and
-runs the ``mendelian_traits_255`` task from ``bolinas.pipelines.evals.lm_eval``.
-The task scores every (FWD, RC) row of ``bolinas-dna/evals_mendelian_traits_harness_255``,
-emits per-subset PairwiseAccuracy split into FWD / RC / AVG, and reports
-``_global_/avg/pairwise_accuracy`` as the headline scalar. The same model +
-dataset are scored offline by ``snakemake/analysis/evals_v2/`` with
-``inference.rc_avg=true``; the two AVG numbers should match within numerical
-precision.
+We construct ``EvalHarnessMainConfig`` directly with an explicit
+``Qwen3Config`` and call ``run_eval_harness_main`` ourselves rather than going
+through ``LevanterLmEvalEvaluator``: that wrapper's
+``HFCheckpointConverter.from_hf(model_path)`` walks levanter's model registry
+and instantiates each candidate's ``hf_checkpoint_converter()``;
+``GemmaConfig`` defaults to ``reference_checkpoint="google/gemma-2b"``
+(gated), and the ``_infer_tokenizer`` call 401s. The dna-branch precedent at
+``marin@dna:experiments/dna/smoke_tests/eval_traitgym.py`` uses the same shape.
 
-Why we bypass marin's ``LevanterLmEvalEvaluator``: that wrapper calls
-``HFCheckpointConverter.from_hf(model_path)`` which walks levanter's model
-registry and instantiates each candidate's ``hf_checkpoint_converter()``.
-GemmaConfig's defaults to ``reference_checkpoint="google/gemma-2b"`` (gated
-HF repo); the ``HFCheckpointConverter.__init__`` `_infer_tokenizer` call
-fetches the gated tokenizer and 401s. So we construct the
-``EvalHarnessMainConfig`` directly with an explicit ``model=Qwen3Config(...)``
-matched to exp166's geometry, and call ``run_eval_harness_main`` ourselves —
-the same shape the dna-branch precedent
-``marin@dna:experiments/dna/smoke_tests/eval_traitgym.py`` uses.
-
-Launch (from a CPU box with iris CLI authed to the marin cluster):
+Launch from a CPU box with iris CLI authed to the marin cluster:
 
     uv run iris --cluster=marin job run \\
-        --no-wait \\
-        --user gonzalo \\
-        --job-name exp179-eval-only \\
-        --cpu 1 --memory 2g \\
-        --extra marin \\
-        --region us-east5 \\
+        --no-wait --user gonzalo --job-name exp179-eval-only \\
+        --cpu 1 --memory 2g --extra marin --region us-east5 \\
         -e WANDB_API_KEY "$(grep -A2 api.wandb.ai ~/.netrc | grep password | awk '{print $2}')" \\
-        -e HF_HUB_DOWNLOAD_TIMEOUT 120 \\
-        -e UV_LOCK_TIMEOUT 7200 \\
+        -e HF_HUB_DOWNLOAD_TIMEOUT 120 -e UV_LOCK_TIMEOUT 7200 \\
         -- python experiments/exp179_eval_only.py
-
-Then follow with ``iris job logs <id> -f``.
 """
 
 import dataclasses
@@ -56,46 +38,30 @@ from marin.evaluation.evaluation_config import convert_to_levanter_task_config
 from marin.execution.executor import ExecutorStep, executor_main
 from marin.execution.remote import remote
 
-# Importing this package triggers ``_install_task_manager_patch()``, which
-# monkeypatches ``lm_eval.tasks.TaskManager`` so the bolinas-dna custom-task
-# directory is on its search path. Without that patch ``mendelian_traits_255``
-# wouldn't be reachable from the iris-spawned worker.
 from bolinas.levanter.defaults import dna_effective_seq_len
 from bolinas.pipelines.evals.lm_eval.task_configs import MENDELIAN_TRAITS_255
 
 logger = logging.getLogger(__name__)
 
 
-# `bolinas-dna/exp166-p1B-step-16398` is the same checkpoint
-# `snakemake/analysis/evals_v2/config/config.yaml` scores offline (entry
-# `exp166-p1B`). Comparing the two PairwiseAccuracy numbers is the parity
-# check this script exists for.
 MODEL_NAME = "exp166-p1B-step-16398"
 MODEL_PATH = "bolinas-dna/exp166-p1B-step-16398"
 TOKENIZER = "bolinas-dna/tokenizer-char-bos"
 
-# Qwen3 1B geometry derived in marin@dna:experiments/dna/exp166_zoonomia_1ep_scaling.py
-# via CompletedAdamHHeuristic._build_model_config(hidden_size=1920). Verified
-# inline so the eval doesn't need to import heuristic / scaling-sweep code.
+# Qwen3 1B geometry from marin@dna:experiments/dna/exp166_zoonomia_1ep_scaling.py
+# via CompletedAdamHHeuristic._build_model_config(hidden_size=1920). Inlined
+# to avoid pulling in the heuristic / scaling-sweep dependency tree.
 DNA_BASE_SEQ_LEN = 255
 HIDDEN_DIM = 1920
-INTERMEDIATE_DIM = HIDDEN_DIM * 4  # mlp_ratio=4
-NUM_HEADS = HIDDEN_DIM // 128  # hidden_head_ratio=128 → 15 heads
-NUM_LAYERS = 19  # round(1920 / (64 + log2(1920)*4 - 9)) = 19
+INTERMEDIATE_DIM = HIDDEN_DIM * 4
+NUM_HEADS = HIDDEN_DIM // 128
+NUM_LAYERS = 19
 
-# v5p-8 — matches exp166's training and exp160_parity. The "bad node" theory
-# from r1/r6/.../r17 was wrong — the real cause was missing libtpu (see
-# _EVAL_DEPENDENCY_GROUPS comment below); JAX falls back to CPU and trainer.initialize()
-# raises "No accelerator found", which iris classifies as the bad-node
-# signature. With `tpu` in deps, v5p-8 is the right choice.
 TPU_TYPES: tuple[str, ...] = ("v5p-8",)
 
-# `marin` pulls lm-eval, levanter, jax, transformers; `tpu` pulls libtpu via
-# `marin[tpu]`. **Both are required to actually run on TPU** — without `tpu`,
-# JAX falls back to CPU and trainer.initialize() fails with "No accelerator
-# found" (looks identical to the iris bad-node retry pattern, but the actual
-# cause is `Failed to open libtpu.so` in the JAX backend init). This was the
-# real cause of the all-day-2026-05-15 / 2026-05-16-morning failure chain.
+# `tpu` pulls libtpu via `marin[tpu]`; without it JAX falls back to CPU and
+# `trainer.initialize()` raises "No accelerator found" — which iris misreads
+# as a bad-node signature and retries forever.
 _EVAL_DEPENDENCY_GROUPS = ["marin", "tpu"]
 
 WANDB_PROJECT = "marin"
@@ -104,7 +70,6 @@ WANDB_TAGS = ("dna", "exp179", "mendelian-traits-rc-eval-only", "parity")
 
 
 def _build_model_config(seq_len: int) -> Qwen3Config:
-    """Qwen3 1B config matched to exp166-p1B's training geometry."""
     return Qwen3Config(
         hidden_dim=HIDDEN_DIM,
         intermediate_dim=INTERMEDIATE_DIM,
@@ -118,36 +83,17 @@ def _build_model_config(seq_len: int) -> Qwen3Config:
 
 @dataclasses.dataclass(frozen=True)
 class _EvalConfig:
-    """Empty placeholder — ExecutorStep requires a config dataclass; the eval
-    invariants (model path, tokenizer, geometry) are captured as module-level
-    constants and built by ``_run_eval_harness_only`` below.
-    """
+    """ExecutorStep requires a config dataclass; the eval is fully parameterized
+    by module-level constants."""
 
 
 def _run_eval_harness_only(_config: _EvalConfig) -> None:
-    """Worker-side function: construct EvalHarnessMainConfig with explicit
-    Qwen3Config and run levanter's standalone eval-harness entrypoint.
-
-    Runs on the TPU pod (called via remote()). Bypasses
-    ``marin.evaluation.run.evaluate`` so we avoid the
-    ``HFCheckpointConverter.from_hf`` registry walk that 401s on gated
-    google/gemma-2b (see module docstring).
-
-    The ``bolinas.pipelines.evals.lm_eval`` import is intentionally inside
-    the function body, not module-top. Iris's ``Entrypoint.from_callable``
-    sees this file as ``__main__`` (no ``__package__`` / ``__spec__``) and
-    runs ``cloudpickle.register_pickle_by_value(__main__)``, which captures
-    the function's bytecode but does NOT trigger module-top imports on the
-    worker. So a module-top import here would never fire on the TPU pod,
-    and the lm_eval TaskManager / levanter rename patches would never
-    install — discovered in r19/r20 (no "patching TaskManager.__init__"
-    log line from the worker). Putting the import inside the function
-    guarantees the side-effect patches fire on the worker.
-    """
-    # Side effect: installs lm_eval TaskManager patch + levanter rename patch.
-    # MENDELIAN_TRAITS_255 is module-top imported (used in main()), but the
-    # __init__.py side effects only fire if the import happens IN the
-    # worker process — see docstring.
+    # This import MUST be inside the function body. Iris's
+    # `Entrypoint.from_callable` cloudpickles `__main__` by-value, which
+    # captures function bytecode but does not re-import the module on the
+    # worker. A module-top `import bolinas.pipelines.evals.lm_eval` therefore
+    # never fires on the TPU pod, and the lm-eval / levanter monkeypatches
+    # never install.
     import bolinas.pipelines.evals.lm_eval  # noqa: F401
 
     seq_len = dna_effective_seq_len(DNA_BASE_SEQ_LEN, TOKENIZER)
@@ -174,10 +120,9 @@ def _run_eval_harness_only(_config: _EvalConfig) -> None:
 
 
 def main() -> None:
-    # Coordinator forwards these to the iris-spawned TPU worker; bolinas-dna
-    # marin workers need them per `experiments/README.md` (HF parquet-manifest
-    # fetch is slow at the default 10s timeout, and many concurrent uv syncs
-    # on a single VM serialize on a uv lock with a 300s default).
+    # HF parquet-manifest fetch is slow at the default 10s timeout; concurrent
+    # uv syncs on one VM serialize on a uv lock with a 300s default. See
+    # `experiments/README.md`.
     env_vars: dict[str, str] = {
         "HF_HUB_DOWNLOAD_TIMEOUT": "120",
         "UV_LOCK_TIMEOUT": "7200",
