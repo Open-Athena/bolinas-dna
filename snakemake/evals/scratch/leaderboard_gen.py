@@ -192,6 +192,19 @@ DATASET_ISSUE = {
     "complex_traits": 162,
     "eqtl": 172,
 }
+
+# Which aggregate is the "headline" for each dataset — controls (a) the sort
+# axis (top of table = top method on this aggregate) and (b) which of the two
+# aggregate columns appears leftmost. Mendelian uses Macro Avg because the
+# variant composition is ~92% missense — a ClinVar annotator-history artifact,
+# not pathogenicity reality — so Global PA over-weights methods specialized
+# for protein-coding variant interpretation. Complex / eqtl have very different
+# subset compositions where the same bias doesn't apply, so they stay on Global.
+LEADING_AGGREGATE = {
+    "mendelian_traits": "macro",
+    "complex_traits": "global",
+    "eqtl": "global",
+}
 S3 = "s3://oa-bolinas"
 SPLIT = "train"
 N_MIN = 30
@@ -300,11 +313,13 @@ def build_table(dataset: str) -> str:
     # Pre-split each method once: per-subset rows + the two aggregate tuples.
     methods = [(method, comment, *_split_method(df)) for method, comment, df in rows]
 
-    # Sort by Global PA descending so the top of the table = current best
-    # method on the headline aggregate. Python's sort is stable, so methods
-    # tied on Global keep their insertion order (conservation → evals_v2 →
-    # AlphaGenome → GPN-Star).
-    methods.sort(key=lambda m: -m[3][0])
+    # Sort descending on the leading aggregate (Global for most datasets,
+    # Macro Avg for mendelian — see LEADING_AGGREGATE for the rationale).
+    # Python's sort is stable, so ties keep insertion order (conservation →
+    # evals_v2 → AlphaGenome → GPN-Star).
+    leading = LEADING_AGGREGATE[dataset]
+    sort_idx = 3 if leading == "global" else 4  # 3 = global tuple, 4 = macro tuple
+    methods.sort(key=lambda m: -m[sort_idx][0])
 
     subset_n: dict[str, int] = {}
     for _, _, per_sub, _, _ in methods:
@@ -333,20 +348,31 @@ def build_table(dataset: str) -> str:
     # Aggregate-column counts are constant across methods (same match_groups).
     _, _, _, (_, _, global_n), (_, _, macro_k) = methods[0]
 
-    header_cols = [
-        f"Global<br>(n={global_n})",
-        f"Macro Avg<br>({macro_k} subsets)",
-    ] + [f"{SUBSET_DISPLAY[s]}<br>(n={subset_n[s]})" for s in subsets]
+    # Column order: leading aggregate first, secondary aggregate after — so
+    # the leftmost cell of the top row matches the sort axis.
+    global_header = f"Global<br>(n={global_n})"
+    macro_header = f"Macro Avg<br>({macro_k} subsets)"
+    aggregate_headers = (
+        [macro_header, global_header]
+        if leading == "macro"
+        else [global_header, macro_header]
+    )
+    header_cols = aggregate_headers + [
+        f"{SUBSET_DISPLAY[s]}<br>(n={subset_n[s]})" for s in subsets
+    ]
     header = "| method | " + " | ".join(header_cols) + " |"
     sep = "|---|" + "|".join(["---"] * len(header_cols)) + "|"
     lines = [header, sep]
 
     for method, comment, _, (gv, gse, _), (mv, mse, _) in methods:
         label = method + (f" ({comment})" if comment else "")
-        cells = [
-            f"**{fmt(gv, gse)}**" if gv >= top_global - 0.01 else fmt(gv, gse),
-            f"**{fmt(mv, mse)}**" if mv >= top_macro - 0.01 else fmt(mv, mse),
-        ]
+        global_cell = f"**{fmt(gv, gse)}**" if gv >= top_global - 0.01 else fmt(gv, gse)
+        macro_cell = f"**{fmt(mv, mse)}**" if mv >= top_macro - 0.01 else fmt(mv, mse)
+        cells = (
+            [macro_cell, global_cell]
+            if leading == "macro"
+            else [global_cell, macro_cell]
+        )
         for s in subsets:
             if (method, s) not in cell_pa:
                 cells.append("—")
@@ -440,16 +466,38 @@ def _idempotent_replace(
     raise RuntimeError(f"could not locate {what}")
 
 
-def _update_intro_paragraph(body: str, global_n: int, macro_k: int) -> str:
-    new_intro = (
-        f"PairwiseAccuracy ± SE per method. Higher is better. Two leftmost "
-        f"columns aggregate across the per-subset cells: **Global** = PA "
-        f"across **all** matched pairs (n={global_n}), including any "
-        f"subsets below the threshold; **Macro Avg** = unweighted mean of "
-        f"per-subset PAs over the {macro_k} reported subsets. Subsets with "
-        f"`n_pairs < 30` are excluded from the per-subset columns by "
-        f"convention (held across leaderboard datasets in this repo)."
-    )
+def _update_intro_paragraph(
+    body: str, global_n: int, macro_k: int, dataset: str
+) -> str:
+    leading = LEADING_AGGREGATE[dataset]
+    if leading == "macro":
+        new_intro = (
+            f"PairwiseAccuracy ± SE per method. Higher is better. "
+            f"**Sorted by Macro Avg** for this dataset: the variant "
+            f"composition skews heavily toward missense (~92% of pairs) "
+            f"due to ClinVar annotator history, not pathogenicity reality, "
+            f"so Global PA over-weights methods specialized for "
+            f"protein-coding variant interpretation; Macro Avg gives equal "
+            f"weight to each consequence subset. Two leftmost columns "
+            f"aggregate across the per-subset cells: **Macro Avg** = "
+            f"unweighted mean of per-subset PAs over the {macro_k} "
+            f"reported subsets; **Global** = PA across **all** matched "
+            f"pairs (n={global_n}), including any subsets below the "
+            f"threshold. Subsets with `n_pairs < 30` are excluded from "
+            f"the per-subset columns by convention (held across "
+            f"leaderboard datasets in this repo)."
+        )
+    else:
+        new_intro = (
+            f"PairwiseAccuracy ± SE per method. Higher is better. Two "
+            f"leftmost columns aggregate across the per-subset cells: "
+            f"**Global** = PA across **all** matched pairs (n={global_n}), "
+            f"including any subsets below the threshold; **Macro Avg** = "
+            f"unweighted mean of per-subset PAs over the {macro_k} "
+            f"reported subsets. Subsets with `n_pairs < 30` are excluded "
+            f"from the per-subset columns by convention (held across "
+            f"leaderboard datasets in this repo)."
+        )
     old_variants = [
         # Mendelian / eqtl phrasing.
         "PairwiseAccuracy ± SE per consequence subset. Higher is better. "
@@ -460,6 +508,14 @@ def _update_intro_paragraph(body: str, global_n: int, macro_k: int) -> str:
         "Subsets with `n_pairs < 30` are excluded by convention (held across "
         "leaderboard datasets in this repo). Most consequence subsets in "
         "this dataset fall below that threshold — see Sizes for full breakdown.",
+        # Prior global-sort phrasing (in case we're switching from global → macro).
+        f"PairwiseAccuracy ± SE per method. Higher is better. Two leftmost "
+        f"columns aggregate across the per-subset cells: **Global** = PA "
+        f"across **all** matched pairs (n={global_n}), including any "
+        f"subsets below the threshold; **Macro Avg** = unweighted mean of "
+        f"per-subset PAs over the {macro_k} reported subsets. Subsets with "
+        f"`n_pairs < 30` are excluded from the per-subset columns by "
+        f"convention (held across leaderboard datasets in this repo).",
     ]
     return _idempotent_replace(body, old_variants, new_intro, "intro paragraph")
 
@@ -620,12 +676,24 @@ def patch_issue(dataset: str, table_md: str) -> None:
     macro_k = int(m_macro.group(1))
 
     new_body = _replace_table(body, table_md)
-    new_body = _update_intro_paragraph(new_body, global_n, macro_k)
+    new_body = _update_intro_paragraph(new_body, global_n, macro_k, dataset)
     new_body = _update_bold_rule(new_body)
     new_body = _update_glm_protocol(new_body)
     new_body = _update_repro_glm_block(new_body, dataset)
     new_body = _bump_last_updated(new_body, str(date.today()))
     if dataset == "mendelian_traits":
+        new_body = _prepend_changelog_entry(
+            new_body,
+            "- **2026-05-16** — sort axis switched from Global PA to "
+            "**Macro Avg** for this leaderboard only. Rationale: the "
+            "variant composition is ~92% missense (a ClinVar annotator-"
+            "history artifact, not pathogenicity reality), so Global PA "
+            "over-weights methods specialized for protein-coding variant "
+            "interpretation. Macro Avg gives equal weight to each "
+            "consequence subset. Column order updated so the leading "
+            "aggregate (Macro Avg) is leftmost. #162 / #172 continue to "
+            "sort by Global PA.",
+        )
         new_body = _prepend_changelog_entry(
             new_body,
             "- **2026-05-16** — added 10 evals_v2 gLM rows (final-checkpoint, "
