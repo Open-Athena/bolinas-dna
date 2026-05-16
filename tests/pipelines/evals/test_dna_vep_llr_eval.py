@@ -240,18 +240,22 @@ def test_se_is_finite_and_consistent_with_wald():
 
 
 def test_aggregation_pushes_per_subset_to_levanter_tracker(monkeypatch):
-    """All ``results_store`` entries are forwarded to ``levanter.tracker.log_summary``
+    """All ``results_store`` entries are forwarded to ``levanter.tracker.log``
     under the ``lm_eval/<task_name>/<key>`` prefix so per-subset/per-strand cells
     actually surface in wandb (lm-eval itself only logs the scalar return value).
+
+    Logged (not summary-only) so the wandb backend writes both run history —
+    making the cells available as workspace charts — and auto-fills the
+    summary panel from the latest logged value.
     """
     import levanter.tracker
 
-    pushed: list[dict] = []
+    pushed: list[tuple[dict, int | None]] = []
 
-    def fake_log_summary(payload):
-        pushed.append(dict(payload))
+    def fake_log(payload, *, step=None, commit=None):
+        pushed.append((dict(payload), step))
 
-    monkeypatch.setattr(levanter.tracker, "log_summary", fake_log_summary)
+    monkeypatch.setattr(levanter.tracker, "log", fake_log)
 
     per_variant: list = []
     for i in range(30):
@@ -265,8 +269,8 @@ def test_aggregation_pushes_per_subset_to_levanter_tracker(monkeypatch):
     _run_aggregation(items, task_name="mendelian_traits_255")
 
     assert len(pushed) == 1
-    payload = pushed[0]
-    # _global_, _macro_avg_, missense × {fwd, rc, avg} × {accuracy, se} = 18 keys.
+    payload, step = pushed[0]
+    assert step == 0
     assert all(k.startswith("lm_eval/mendelian_traits_255/") for k in payload)
     expected = {
         f"lm_eval/mendelian_traits_255/{sub}/{tag}/pairwise_accuracy"
@@ -283,10 +287,10 @@ def test_aggregation_skips_tracker_push_without_task_name(monkeypatch):
     """
     import levanter.tracker
 
-    def raising_log_summary(payload):
+    def raising_log(payload, *, step=None, commit=None):
         raise RuntimeError("no tracker set")
 
-    monkeypatch.setattr(levanter.tracker, "log_summary", raising_log_summary)
+    monkeypatch.setattr(levanter.tracker, "log", raising_log)
 
     per_variant: list = []
     for i in range(30):

@@ -206,10 +206,16 @@ class _PairwiseAccuracyAggregation:
         return float(global_avg["value"].iloc[0])
 
     def _push_per_subset_to_tracker(self) -> None:
-        """Push everything in ``self.results_store`` to the levanter tracker's
-        summary table, prefixed as ``lm_eval/<task_name>/<subset>/<strand>/<metric>``
-        to match the convention ``levanter.eval_harness.log_report_to_tracker``
-        uses for the scalar return value.
+        """Push everything in ``self.results_store`` to the levanter tracker as
+        logged metrics at ``step=0``, prefixed as
+        ``lm_eval/<task_name>/<subset>/<strand>/<metric>`` to match the
+        convention ``levanter.eval_harness.log_report_to_tracker`` uses for
+        the scalar return value.
+
+        Use ``log(step=0)`` (not ``log_summary``): the wandb backend then
+        writes both run history (so the cells show up as workspace charts)
+        and the summary panel (auto-filled from the latest logged value).
+        ``log_summary`` only populated the Overview-page summary table.
 
         Best-effort: silently no-ops if levanter isn't importable or no tracker
         is set (unit tests, ad-hoc scripts).
@@ -225,7 +231,7 @@ class _PairwiseAccuracyAggregation:
             f"{prefix}/{key}": value for key, value in self.results_store.items()
         }
         try:
-            levanter.tracker.log_summary(payload)
+            levanter.tracker.log(payload, step=0)
         except Exception:
             # NoopTracker / no current tracker / serialization issue: don't
             # take down the entire eval because of a logging side-channel.
