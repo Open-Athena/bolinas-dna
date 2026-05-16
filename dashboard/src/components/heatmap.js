@@ -65,11 +65,23 @@ function makeComparator(sortKey) {
  * @param {Array} opts.rows long-form (method × subset) rows; output of
  *   `bolinas.pipelines.evals.leaderboard.normalized_rows`.
  * @param {Map}   opts.modelById metadata for each method id (for links + tooltips).
- * @param {string} opts.leadingAggregate "_macro_avg_" or "_global_" — drives the
- *   default sort + which aggregate appears leftmost.
+ * @param {string} opts.leadingAggregate "_macro_avg_" or "_global_" — drives
+ *   the default sort + which aggregate appears leftmost.
+ * @param {string} [opts.sortKey] Currently-sorted column. Optional — defaults
+ *   to `leadingAggregate`. Pass this in (and `onSortChange`) to make the
+ *   sort selection survive parent re-mounts when filters/protocols change.
+ * @param {(col: string) => void} [opts.onSortChange] Invoked when a header
+ *   is clicked. The component does not re-render itself in this case — the
+ *   caller is expected to update its sortKey state and pass it back in.
  * @returns {HTMLElement}
  */
-export function heatmap({rows, modelById, leadingAggregate = MACRO}) {
+export function heatmap({
+  rows,
+  modelById,
+  leadingAggregate = MACRO,
+  sortKey: initialSortKey,
+  onSortChange,
+}) {
   // Group by method_id; collect cells in a Map keyed by subset.
   const byMethod = new Map();
   for (const r of rows) {
@@ -123,7 +135,11 @@ export function heatmap({rows, modelById, leadingAggregate = MACRO}) {
     return html`<span class="lb-col-label">${SUBSET_DISPLAY[col]}</span><br><small>n=${subsetMaxN.get(col)}</small>`;
   };
 
-  let sortKey = leadingAggregate;
+  // sortKey is owned by the caller when `onSortChange` is provided — pass
+  // the current value as a prop and re-mount the heatmap on change. Without
+  // onSortChange, sortKey is internal-only (set by header clicks) and
+  // resets to `leadingAggregate` on every re-mount.
+  let sortKey = initialSortKey ?? leadingAggregate;
   const sortedMethods = () =>
     [...byMethod.values()].sort(makeComparator(sortKey));
 
@@ -175,9 +191,15 @@ export function heatmap({rows, modelById, leadingAggregate = MACRO}) {
             (col) => html`<th
               class=${`lb-col${col === sortKey ? " lb-col-sorted" : ""}`}
               onclick=${() => {
-                sortKey = col;
-                const next = render();
-                root.replaceChildren(next);
+                if (onSortChange) {
+                  // Caller owns sortKey; it'll re-mount us with the new
+                  // value, so don't double-render here.
+                  onSortChange(col);
+                } else {
+                  sortKey = col;
+                  const next = render();
+                  root.replaceChildren(next);
+                }
               }}
               title="Click to sort by this column"
             >

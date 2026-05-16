@@ -31,6 +31,19 @@ const modelById = new Map(methods.map(m => [m.id, m]));
 const meta = datasets.mendelian_traits;
 ```
 
+```js
+// Sort column state — lives outside the heatmap so it survives
+// re-mounts when family / protocol / search filters change. This cell
+// runs once per page load (when `meta` resolves); the Mutable persists
+// across all later heatmap re-renders.
+const sortKeyState = Mutable(
+  meta.leading_aggregate === "macro_avg" ? "_macro_avg_" : "_global_",
+);
+const setSortKey = (k) => {
+  sortKeyState.value = k;
+};
+```
+
 ## Dataset
 
 ```js
@@ -439,10 +452,16 @@ main > h1, main > h2, main > h3, main > p { max-width: 1200px; }
 </div>
 
 ```js
+// Reactive on `filtered` (family/protocol/search) AND on `sortKeyState`
+// (column click). Observable Framework auto-unwraps a Mutable when read
+// from another cell — `sortKeyState` here is the current string value,
+// not the Mutable instance.
 display(
   heatmap({
     rows: filtered,
     modelById,
+    sortKey: sortKeyState,
+    onSortChange: setSortKey,
     leadingAggregate: meta.leading_aggregate === "macro_avg" ? "_macro_avg_" : "_global_",
   }),
 );
