@@ -33,8 +33,11 @@ import json
 import re
 import subprocess
 from datetime import date
+from pathlib import Path
+from typing import NamedTuple
 
 import polars as pl
+import yaml
 
 from bolinas.pipelines.evals.gpn_star import GPN_STAR_MODELS, GPN_STAR_SCORE_COLUMN
 from bolinas.pipelines.evals.metrics import GLOBAL_SUBSET, MACRO_AVG_SUBSET
@@ -54,13 +57,113 @@ SCORE_TYPE = {
     "gpn_star": GPN_STAR_SCORE_COLUMN,
 }
 
-EVALS_V2_MODELS = [
-    ("exp55-mammals", "promoters, mammals"),
-    ("exp58-mammals", "CDS, mammals"),
-    ("exp58-animals", "CDS, animals"),
-    ("exp59-mammals", "downstream, mammals"),
-    ("exp136-proj_v30", "enhancers, mammals"),
-    ("exp166-p1B", "zoonomia, generalist, 1B"),
+
+class EvalsV2Method(NamedTuple):
+    """One row of the evals_v2 section of the leaderboard.
+
+    ``parquet`` is the model name as it appears under
+    ``s3://oa-bolinas/snakemake/analysis/evals_v2/results/metrics/{parquet}/{dataset}.parquet``
+    — same string as the ``name`` field in `snakemake/analysis/evals_v2/config/config.yaml`.
+
+    ``display`` is what's shown in the leaderboard ``method`` column. For the
+    legacy single-step entries it equals ``parquet``; for the newer per-step
+    entries (e.g. ``exp21-promoters-yolo-step-22000``) it's stripped to the
+    run's short name (``exp21-promoters-yolo``) — the step lives in the
+    Reproducibility section.
+
+    ``datasets`` are the datasets this entry has metrics for. Older entries
+    span all three; entries added with ``datasets: [mendelian_traits]`` in
+    the evals_v2 config only show up in the mendelian leaderboard.
+    """
+
+    parquet: str
+    display: str
+    comment: str | None
+    datasets: tuple[str, ...] = ("mendelian_traits", "complex_traits", "eqtl")
+
+
+EVALS_V2_MODELS: list[EvalsV2Method] = [
+    # Legacy single-step entries — evaluated on all 3 leaderboard datasets.
+    EvalsV2Method("exp55-mammals", "exp55-mammals", "promoters, mammals"),
+    EvalsV2Method("exp58-mammals", "exp58-mammals", "CDS, mammals"),
+    EvalsV2Method("exp58-animals", "exp58-animals", "CDS, animals"),
+    EvalsV2Method("exp59-mammals", "exp59-mammals", "downstream, mammals"),
+    EvalsV2Method("exp136-proj_v30", "exp136-proj_v30", "enhancers, mammals"),
+    # Older `exp166-p1B` (step-16398, HF) retained for #162/#172 only — its
+    # mendelian slot in #161 was replaced by `exp166-v0.1-p1B` (below) on
+    # 2026-05-16. Re-include here on complex/eqtl until v0.1 is also scored
+    # on those datasets.
+    EvalsV2Method(
+        "exp166-p1B",
+        "exp166-p1B",
+        "zoonomia, generalist, 1B",
+        datasets=("complex_traits", "eqtl"),
+    ),
+    # Convergence-style entries (final checkpoint only here per
+    # "last checkpoint per run" convention). All scored on mendelian only
+    # in the evals_v2 config, so they appear only in #161.
+    EvalsV2Method(
+        "exp21-promoters-yolo-step-22000",
+        "exp21-promoters-yolo",
+        "promoters, animals, 1.7B",
+        datasets=("mendelian_traits",),
+    ),
+    EvalsV2Method(
+        "exp13-mixture-equal-step-26000",
+        "exp13-mixture-equal",
+        "50/50 promoter+CDS, animals, 1.7B",
+        datasets=("mendelian_traits",),
+    ),
+    EvalsV2Method(
+        "exp13-mixture-proportional-step-26000",
+        "exp13-mixture-proportional",
+        "10/90 promoter+CDS, animals, 1.7B",
+        datasets=("mendelian_traits",),
+    ),
+    EvalsV2Method(
+        "exp27-cds-yolo-step-34000",
+        "exp27-cds-yolo",
+        "CDS, animals, 1.7B",
+        datasets=("mendelian_traits",),
+    ),
+    EvalsV2Method(
+        "exp55-humans-step-16999",
+        "exp55-humans",
+        "promoters, humans",
+        datasets=("mendelian_traits",),
+    ),
+    EvalsV2Method(
+        "exp55-primates-step-16999",
+        "exp55-primates",
+        "promoters, primates",
+        datasets=("mendelian_traits",),
+    ),
+    EvalsV2Method(
+        "exp55-vertebrates-step-16999",
+        "exp55-vertebrates",
+        "promoters, vertebrates",
+        datasets=("mendelian_traits",),
+    ),
+    EvalsV2Method(
+        "exp55-animals-step-16999",
+        "exp55-animals",
+        "promoters, animals",
+        datasets=("mendelian_traits",),
+    ),
+    EvalsV2Method(
+        "exp58-vertebrates-step-16999",
+        "exp58-vertebrates",
+        "CDS, vertebrates",
+        datasets=("mendelian_traits",),
+    ),
+    # Replaces the legacy `exp166-p1B` HF entry (step-16398) — that run has
+    # been superseded by this v0.1 c127da run at step-27329 (1.65× more steps).
+    EvalsV2Method(
+        "exp166-v0.1-p1B-step-27329",
+        "exp166-v0.1-p1B",
+        "zoonomia, generalist, 1B, v0.1",
+        datasets=("mendelian_traits",),
+    ),
 ]
 CONSERVATION_TRACKS = [
     "phastCons_100v",
@@ -116,15 +219,19 @@ def gather_methods(dataset: str) -> list[tuple[str, str | None, pl.DataFrame]]:
         )
         rows.append((f"`{track}`", None, df))
 
-    # 2. evals_v2 models
+    # 2. evals_v2 models — skip entries that weren't scored on this dataset
+    # (per-(model, dataset) inclusion). The legacy single-step entries cover
+    # all 3 datasets; convergence-style entries are mendelian-only.
     sct = SCORE_TYPE["evals_v2"][dataset]
-    for model, comment in EVALS_V2_MODELS:
+    for entry in EVALS_V2_MODELS:
+        if dataset not in entry.datasets:
+            continue
         df = pl.read_parquet(
-            f"{S3}/snakemake/analysis/evals_v2/results/metrics/{model}/{dataset}.parquet"
+            f"{S3}/snakemake/analysis/evals_v2/results/metrics/{entry.parquet}/{dataset}.parquet"
         )
         df = df.filter(pl.col("score_type") == sct).filter(pl.col("split") == SPLIT)
         df = df.select(["subset", "value", "se", "n_pairs"])
-        rows.append((f"`{model}`", comment, df))
+        rows.append((f"`{entry.display}`", entry.comment, df))
 
     # 3. alphagenome
     try:
@@ -397,6 +504,82 @@ def _update_glm_protocol(body: str) -> str:
     return body
 
 
+EVALS_V2_CONFIG = (
+    Path(__file__).resolve().parents[2] / "analysis/evals_v2/config/config.yaml"
+)
+
+
+def _load_evals_v2_sources() -> dict[str, str]:
+    """Map model `name` → its `gcs_path` (or `hf://<repo>` shorthand)
+    by reading `snakemake/analysis/evals_v2/config/config.yaml`. Single
+    source of truth for Reproducibility-section regeneration."""
+    cfg = yaml.safe_load(EVALS_V2_CONFIG.read_text())
+    sources: dict[str, str] = {}
+    for m in cfg["models"]:
+        if "gcs_path" in m:
+            sources[m["name"]] = m["gcs_path"]
+        elif "hf_repo" in m:
+            sources[m["name"]] = f"hf://{m['hf_repo']}"
+        else:
+            raise RuntimeError(f"model {m['name']!r} has neither gcs_path nor hf_repo")
+    return sources
+
+
+def _render_glm_repro_row(entry: "EvalsV2Method", source: str, dataset: str) -> str:
+    """One row of the Reproducibility table for an evals_v2 gLM entry."""
+    if source.startswith("gs://"):
+        m = re.search(r"checkpoints/([^/]+)/hf/step-(\d+)", source)
+        if m is None:
+            raise RuntimeError(
+                f"unexpected gcs_path shape for {entry.parquet}: {source}"
+            )
+        run_name, step = m.group(1), m.group(2)
+        source_md = f"`{source}`"
+        wandb_md = f"[run](https://wandb.ai/gonzalobenegas/marin/runs/{run_name})"
+    elif source.startswith("hf://"):
+        repo = source.removeprefix("hf://")
+        step_m = re.search(r"step-(\d+)", repo)
+        step = step_m.group(1) if step_m else "–"
+        source_md = f"HF Hub [`{repo}`](https://huggingface.co/{repo})"
+        wandb_md = "–"
+    else:
+        raise RuntimeError(f"unrecognized source URI for {entry.parquet}: {source!r}")
+    parquet = (
+        f"`s3://oa-bolinas/snakemake/analysis/evals_v2/results/metrics/"
+        f"{entry.parquet}/{dataset}.parquet`"
+    )
+    return f"| `{entry.display}` | {step} | {source_md} | {wandb_md} | {parquet} |"
+
+
+# The Repro section's gLM block = a contiguous run of rows starting with
+# `| \`exp...\` |`. We don't anchor on specific entry names so the regex
+# survives EVALS_V2_MODELS edits. (The conservation / GPN-Star / AlphaGenome
+# rows start with different method prefixes so they don't match.)
+REPRO_GLM_BLOCK_RE = re.compile(
+    r"(?P<block>(?:\| `exp[^`]+` \| [^\n]+\n)+)",
+    re.MULTILINE,
+)
+
+
+def _update_repro_glm_block(body: str, dataset: str) -> str:
+    """Regenerate the gLM rows of the Reproducibility table from
+    EVALS_V2_MODELS. Preserves the surrounding static rows (conservation,
+    GPN-Star, AlphaGenome) untouched."""
+    sources = _load_evals_v2_sources()
+    new_rows = [
+        _render_glm_repro_row(entry, sources[entry.parquet], dataset)
+        for entry in EVALS_V2_MODELS
+        if dataset in entry.datasets and entry.parquet in sources
+    ]
+    if not new_rows:
+        return body
+    new_block = "\n".join(new_rows) + "\n"
+    match = REPRO_GLM_BLOCK_RE.search(body)
+    if match is None:
+        raise RuntimeError("could not find gLM block in Reproducibility section")
+    return body[: match.start()] + new_block + body[match.end() :]
+
+
 def _bump_last_updated(body: str, today: str) -> str:
     return re.sub(
         r"\*\*Last updated:\*\* [0-9]{4}-[0-9]{2}-[0-9]{2}",
@@ -440,7 +623,21 @@ def patch_issue(dataset: str, table_md: str) -> None:
     new_body = _update_intro_paragraph(new_body, global_n, macro_k)
     new_body = _update_bold_rule(new_body)
     new_body = _update_glm_protocol(new_body)
+    new_body = _update_repro_glm_block(new_body, dataset)
     new_body = _bump_last_updated(new_body, str(date.today()))
+    if dataset == "mendelian_traits":
+        new_body = _prepend_changelog_entry(
+            new_body,
+            "- **2026-05-16** — added 10 evals_v2 gLM rows (final-checkpoint, "
+            "mendelian only): `exp21-promoters-yolo` (#21), "
+            "`exp13-mixture-equal` / `exp13-mixture-proportional` (#13), "
+            "`exp27-cds-yolo` (#27), `exp55-{humans, primates, vertebrates, "
+            "animals}` (#55, promoters across evolutionary timescales), "
+            "`exp58-vertebrates` (#58, CDS across timescales). Replaced "
+            "legacy `exp166-p1B` (step-16398) with `exp166-v0.1-p1B` "
+            "(step-27329, the c127da run that just finished — 1.65× more "
+            "steps; Global PA +0.65 pp, Macro Avg −2.76 pp vs the old).",
+        )
     new_body = _prepend_changelog_entry(
         new_body,
         "- **2026-05-14** — added `exp166-p1B` (1B zoonomia-v1-v1 generalist; "
@@ -493,7 +690,29 @@ def main() -> None:
         action="store_true",
         help="After printing, surgically PATCH the bodies of #161/#162/#172.",
     )
+    parser.add_argument(
+        "--patch-issue",
+        type=int,
+        action="append",
+        default=[],
+        metavar="N",
+        help=(
+            "PATCH a specific leaderboard issue (one of 161, 162, 172). "
+            "Repeatable. Useful when only some datasets' tables changed."
+        ),
+    )
     args = parser.parse_args()
+
+    issue_to_dataset = {n: ds for ds, n in DATASET_ISSUE.items()}
+    if args.patch_issues:
+        datasets_to_patch = list(DATASETS)
+    else:
+        bad = [n for n in args.patch_issue if n not in issue_to_dataset]
+        if bad:
+            parser.error(
+                f"--patch-issue must be one of {sorted(issue_to_dataset)}, got {bad}"
+            )
+        datasets_to_patch = [issue_to_dataset[n] for n in args.patch_issue]
 
     tables: dict[str, str] = {}
     for ds in DATASETS:
@@ -502,11 +721,11 @@ def main() -> None:
         print(table)
         tables[ds] = table
 
-    if args.patch_issues:
+    if datasets_to_patch:
         print("\n" + "#" * 70)
         print("# Patching GitHub issues")
         print("#" * 70)
-        for ds in DATASETS:
+        for ds in datasets_to_patch:
             patch_issue(ds, tables[ds])
 
 
