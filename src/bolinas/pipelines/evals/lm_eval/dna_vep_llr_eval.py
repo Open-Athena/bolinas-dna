@@ -82,9 +82,15 @@ class _PairwiseAccuracyAggregation:
     as the lm-eval scalar.
     """
 
-    def __init__(self, results_store: dict, metric_name: str):
+    def __init__(
+        self, results_store: dict, metric_name: str, task_name: str | None = None
+    ):
         self.results_store = results_store
         self.metric_name = metric_name
+        # Used as the wandb-key prefix when pushing per-subset cells to the
+        # tracker (so they group under ``lm_eval/<task_name>/...`` like
+        # ``log_report_to_tracker`` does for the scalar return value).
+        self.task_name = task_name
 
     def __call__(
         self,
@@ -181,6 +187,14 @@ class _PairwiseAccuracyAggregation:
             self.results_store[key] = float(row["value"])
             self.results_store[f"{key}_se"] = float(row["se"])
 
+        # lm-eval only propagates the aggregation's scalar return value into
+        # its results JSON (later picked up by levanter's log_report_to_tracker
+        # for the wandb summary). Push the per-subset / per-strand cells we
+        # computed above to the wandb summary table directly via levanter's
+        # tracker — that's the only way they actually surface for the user.
+        # Best-effort: skip silently if no tracker is set (e.g. unit tests).
+        self._push_per_subset_to_tracker()
+
         # Headline scalar returned to lm-eval: global PA on the AVG score.
         global_avg = metrics[
             (metrics["subset"] == GLOBAL_SUBSET)
@@ -190,6 +204,32 @@ class _PairwiseAccuracyAggregation:
             "compute_pairwise_metrics did not emit a _global_ row for score_avg"
         )
         return float(global_avg["value"].iloc[0])
+
+    def _push_per_subset_to_tracker(self) -> None:
+        """Push everything in ``self.results_store`` to the levanter tracker's
+        summary table, prefixed as ``lm_eval/<task_name>/<subset>/<strand>/<metric>``
+        to match the convention ``levanter.eval_harness.log_report_to_tracker``
+        uses for the scalar return value.
+
+        Best-effort: silently no-ops if levanter isn't importable or no tracker
+        is set (unit tests, ad-hoc scripts).
+        """
+        try:
+            import levanter.tracker
+        except ImportError:
+            return
+        prefix = "lm_eval"
+        if self.task_name:
+            prefix = f"{prefix}/{self.task_name}"
+        payload = {
+            f"{prefix}/{key}": value for key, value in self.results_store.items()
+        }
+        try:
+            levanter.tracker.log_summary(payload)
+        except Exception:
+            # NoopTracker / no current tracker / serialization issue: don't
+            # take down the entire eval because of a logging side-channel.
+            pass
 
 
 METRIC_REGISTRY: dict[str, dict] = {
@@ -362,6 +402,7 @@ class DnaVepLlrEvalTask(Task):
             metric: METRIC_REGISTRY[metric]["aggregation_cls"](
                 results_store=self._subset_results,
                 metric_name=metric,
+                task_name=self._task_name,
             )
             for metric in self._metrics
         }

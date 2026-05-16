@@ -37,9 +37,11 @@ def _items_from_per_variant(per_variant_rows):
     return items
 
 
-def _run_aggregation(items, metric_name="pairwise_accuracy"):
+def _run_aggregation(items, metric_name="pairwise_accuracy", task_name=None):
     store: dict[str, float] = {}
-    agg = _PairwiseAccuracyAggregation(results_store=store, metric_name=metric_name)
+    agg = _PairwiseAccuracyAggregation(
+        results_store=store, metric_name=metric_name, task_name=task_name
+    )
     scalar = agg(items)
     return scalar, store
 
@@ -235,3 +237,64 @@ def test_se_is_finite_and_consistent_with_wald():
     n_pairs = 30
     expected_se = math.sqrt((20 / 30) * (1 - 20 / 30) / n_pairs)
     assert store["_global_/avg/pairwise_accuracy_se"] == pytest.approx(expected_se)
+
+
+def test_aggregation_pushes_per_subset_to_levanter_tracker(monkeypatch):
+    """All ``results_store`` entries are forwarded to ``levanter.tracker.log_summary``
+    under the ``lm_eval/<task_name>/<key>`` prefix so per-subset/per-strand cells
+    actually surface in wandb (lm-eval itself only logs the scalar return value).
+    """
+    import levanter.tracker
+
+    pushed: list[dict] = []
+
+    def fake_log_summary(payload):
+        pushed.append(dict(payload))
+
+    monkeypatch.setattr(levanter.tracker, "log_summary", fake_log_summary)
+
+    per_variant: list = []
+    for i in range(30):
+        per_variant.append(
+            (("1", 100 + i, "G", "A"), 1, "missense", i + 1, {"+": 0.9, "-": 0.8})
+        )
+        per_variant.append(
+            (("1", 200 + i, "T", "A"), 0, "missense", i + 1, {"+": 0.1, "-": 0.2})
+        )
+    items = _items_from_per_variant(per_variant)
+    _run_aggregation(items, task_name="mendelian_traits_255")
+
+    assert len(pushed) == 1
+    payload = pushed[0]
+    # _global_, _macro_avg_, missense × {fwd, rc, avg} × {accuracy, se} = 18 keys.
+    assert all(k.startswith("lm_eval/mendelian_traits_255/") for k in payload)
+    expected = {
+        f"lm_eval/mendelian_traits_255/{sub}/{tag}/pairwise_accuracy"
+        for sub in ("_global_", "_macro_avg_", "missense")
+        for tag in ("fwd", "rc", "avg")
+    }
+    assert expected.issubset(set(payload))
+
+
+def test_aggregation_skips_tracker_push_without_task_name(monkeypatch):
+    """When constructed without a task_name (e.g. unit tests), keys are
+    prefixed with just ``lm_eval/`` — and tracker errors are swallowed
+    so a missing/noop tracker doesn't tank the eval.
+    """
+    import levanter.tracker
+
+    def raising_log_summary(payload):
+        raise RuntimeError("no tracker set")
+
+    monkeypatch.setattr(levanter.tracker, "log_summary", raising_log_summary)
+
+    per_variant: list = []
+    for i in range(30):
+        per_variant.append((("1", 100 + i, "G", "A"), 1, "missense", i + 1, {"+": 0.9}))
+        per_variant.append((("1", 200 + i, "T", "A"), 0, "missense", i + 1, {"+": 0.1}))
+    items = _items_from_per_variant(per_variant)
+    scalar, store = _run_aggregation(
+        items
+    )  # no task_name; tracker raises; must not crash
+    assert scalar == pytest.approx(1.0)
+    assert "_global_/avg/pairwise_accuracy" in store
