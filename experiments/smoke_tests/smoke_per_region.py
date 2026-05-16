@@ -134,7 +134,8 @@ def _smoke_train_step() -> ExecutorStep:
         name=os.path.join("checkpoints", run_name),
         fn=remote(
             run_levanter_train_lm,
-            resources=ResourceConfig.with_cpu(),
+            resources=ResourceConfig.with_tpu(TPU_TYPES, ram="300g"),
+            pip_dependency_groups=["marin", "tpu"],
             env_vars=_train_remote_env_vars(),
         ),
         config=pod_config,

@@ -443,11 +443,20 @@ def _build_train_step(strategy: str, dataset: str) -> ExecutorStep:
         resources=ResourceConfig.with_tpu(TPU_TYPES, ram="300g"),
         output_path=this_output_path(),
     )
+    # The remote() call here IS the TPU worker — Fray's RemoteCallable submits
+    # the job with these resources verbatim. exp179_eval_only.py:140-145 mirrors
+    # this pattern; the old exp160_parity / exp166 pattern of CPU-orchestrator +
+    # TPU-pod-config relies on marin executor magic that no longer fires after
+    # the PR #182 / #186 rebase (smoke4 ran on a CPU worker and JAX raised
+    # "No accelerator found" at trainer.initialize). pip_dependency_groups
+    # explicitly installs ``tpu`` so libtpu is present — without it JAX
+    # silently falls back to CPU and we get the same error.
     return ExecutorStep(
         name=os.path.join("checkpoints", run_name),
         fn=remote(
             run_levanter_train_lm,
-            resources=ResourceConfig.with_cpu(),
+            resources=ResourceConfig.with_tpu(TPU_TYPES, ram="300g"),
+            pip_dependency_groups=["marin", "tpu"],
             env_vars=_train_remote_env_vars(),
         ),
         config=pod_config,
