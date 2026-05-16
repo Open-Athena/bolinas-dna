@@ -70,7 +70,7 @@ API churn.
 | `No accelerator found. Please run on a TPU or GPU.` + `iris: TPU bad-node signature detected` (repeated) | Switch zone — `--region us-east5` ↔ `--region us-central1` (the two `v5p-preemptible` regions). iris keeps allocating the same bad scale-group instance under tight capacity; the other zone's pool is fresh. |
 | `marin-iris client is too old (build <date>; minimum <floor>). Run uv sync or upgrade marin-iris and retry.` | `uv lock --upgrade-package marin-iris && uv sync --extra marin`. Marin bumps `*-latest` tags daily; the iris controller's freshness check has a 14-day floor. If `marin-finelog` or some other sister-package is missing from releases, see #168's PR thread for the source-mapping workaround. |
 | `Failed to download "marin-zephyr==0.99.dev<DATE>"` (404) | `*-latest` rotated. Same `uv lock --upgrade-package` dance. |
-| `Build failed with exit_code=1` and `marin-root` pulls in workspace versions of `marin-*` that override find-links | Don't depend on `marin-root` from a consumer. Marin's `experiments/` package ships only with marin-root, which carries `[tool.uv.sources] marin-* = { workspace = true }` — that propagates and clobbers find-links. Vendor the experiments-package symbols you need (see `experiments/parity/exp160_parity.py` bottom). |
+| `Build failed with exit_code=1` and `marin-root` pulls in workspace versions of `marin-*` that override find-links | Don't depend on `marin-root` from a consumer. Marin's `experiments/` package ships only with marin-root, which carries `[tool.uv.sources] marin-* = { workspace = true }` — that propagates and clobbers find-links. Vendor any experiments-package symbols you need inline. |
 | Parent job stuck `pending` with `Scheduler: Insufficient CPU (need 1 cores, available 0.05 cores)` | Don't over-constrain via `--zone`. Prefer `--region` so the coordinator can land in any zone in that region; only the TPU child needs the zone-specific accelerator. |
 
 ## What an experiment script needs to declare
@@ -87,4 +87,4 @@ Two pieces of marin context that aren't obvious from the python:
    `UV_LOCK_TIMEOUT` into the script's `remote()`s; don't rely on
    `iris job run -e ...` reaching tokenize/train workers.
 
-See `experiments/parity/exp160_parity.py` for a worked example.
+See `experiments/parity/exp179_eval_only.py` for a worked example.
