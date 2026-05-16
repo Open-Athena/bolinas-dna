@@ -132,7 +132,24 @@ def _run_eval_harness_only(_config: _EvalConfig) -> None:
     ``marin.evaluation.run.evaluate`` so we avoid the
     ``HFCheckpointConverter.from_hf`` registry walk that 401s on gated
     google/gemma-2b (see module docstring).
+
+    The ``bolinas.pipelines.evals.lm_eval`` import is intentionally inside
+    the function body, not module-top. Iris's ``Entrypoint.from_callable``
+    sees this file as ``__main__`` (no ``__package__`` / ``__spec__``) and
+    runs ``cloudpickle.register_pickle_by_value(__main__)``, which captures
+    the function's bytecode but does NOT trigger module-top imports on the
+    worker. So a module-top import here would never fire on the TPU pod,
+    and the lm_eval TaskManager / levanter rename patches would never
+    install — discovered in r19/r20 (no "patching TaskManager.__init__"
+    log line from the worker). Putting the import inside the function
+    guarantees the side-effect patches fire on the worker.
     """
+    # Side effect: installs lm_eval TaskManager patch + levanter rename patch.
+    # MENDELIAN_TRAITS_255 is module-top imported (used in main()), but the
+    # __init__.py side effects only fire if the import happens IN the
+    # worker process — see docstring.
+    import bolinas.pipelines.evals.lm_eval  # noqa: F401
+
     seq_len = dna_effective_seq_len(DNA_BASE_SEQ_LEN, TOKENIZER)
     eval_config = eval_harness.EvalHarnessMainConfig(
         eval_harness=eval_harness.LmEvalHarnessConfig(
