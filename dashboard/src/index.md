@@ -212,13 +212,17 @@ main > h1, main > h2, main > h3, main > p { max-width: 1200px; }
   flex-wrap: nowrap;
   overflow-x: auto;
 }
+/* Drop the table's outer top margin inside the side-by-side row so the
+   heatmap's top edge lines up with the forest plot's. */
+.lb-heatmap-row .lb-heatmap { margin: 0; }
 .lb-heatmap thead th {
   background: #f7f7f7;
   text-align: center;
   cursor: pointer;
   user-select: none;
-  min-width: 56px;
+  min-width: 46px;
 }
+.lb-heatmap td.lb-cell { font-variant-numeric: tabular-nums; padding: 6px 4px; }
 .lb-heatmap thead th:hover { background: #eee; }
 .lb-col-label { white-space: nowrap; }
 .lb-col-sorted { background: #e8f0e8 !important; font-weight: 600; }

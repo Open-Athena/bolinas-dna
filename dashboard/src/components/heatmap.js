@@ -178,7 +178,7 @@ export function heatmap({rows, modelById, leadingAggregate = MACRO}) {
                 class="lb-cell"
                 style=${`background-color: ${bg}; color: ${fg};`}
               >
-                ${c.value.toFixed(3)}
+                ${Math.round(c.value * 100)}
               </td>`;
             })}
           </tr>`;
@@ -212,11 +212,14 @@ export function heatmap({rows, modelById, leadingAggregate = MACRO}) {
 
 // Side-by-side with the heatmap: the heatmap's leftmost column already
 // labels the models, so the forest plot drops its left margin and shares
-// the same row order/height (28px, set explicitly on `.lb-heatmap tbody tr`).
-// `HEATMAP_HEADER_PX` matches the rendered height of the heatmap's <thead>
-// row so the forest plot's first dot lines up with the first heatmap row.
-const HEATMAP_HEADER_PX = 40;
-const HEATMAP_ROW_PX = 28;
+// the same row order/height. `HEATMAP_HEADER_PX` + `HEATMAP_ROW_PX`
+// match the *rendered* heights of the heatmap's <thead> and tbody rows
+// — the CSS `height` declarations are only a minimum, browsers expand
+// rows to fit content, so these constants reflect what the browser
+// actually paints (measured at 14px base font in Observable Framework's
+// default theme).
+const HEATMAP_HEADER_PX = 48;
+const HEATMAP_ROW_PX = 30;
 
 function forestPlot(methods, columnKey, columnText) {
   const visible = methods
