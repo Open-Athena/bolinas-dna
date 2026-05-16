@@ -148,7 +148,7 @@ export function modelPopoverContent(m) {
       });
       return html`<div class="lb-pop-links">${out}</div>`;
     })()}
-    <a class="lb-pop-more" href=${`./models#${encodeURIComponent(m.id)}`}>full card →</a>
+    <a class="lb-pop-more" href=${`/models#${encodeURIComponent(m.id)}`}>full card →</a>
   </div>`;
 }
 

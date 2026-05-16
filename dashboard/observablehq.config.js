@@ -9,7 +9,19 @@ export default {
   // Sidebar navigation. v1 ships Mendelian only; complex_traits / eqtl
   // will be added later (see the dashboard plan).
   pages: [
-    {name: "Mendelian", path: "/"},
+    {
+      name: "Leaderboards",
+      pages: [
+        {name: "Mendelian traits", path: "/leaderboards/mendelian"},
+      ],
+    },
+    {
+      name: "Protocols",
+      pages: [
+        {name: "Bolinas (LLR vs JSD)", path: "/protocols/bolinas"},
+        {name: "GPN-Star (cLLR vs LLR)", path: "/protocols/gpn-star"},
+      ],
+    },
     {name: "Models", path: "/models"},
     {name: "About", path: "/about"},
   ],
