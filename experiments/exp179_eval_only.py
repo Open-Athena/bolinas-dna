@@ -83,20 +83,20 @@ INTERMEDIATE_DIM = HIDDEN_DIM * 4  # mlp_ratio=4
 NUM_HEADS = HIDDEN_DIM // 128  # hidden_head_ratio=128 → 15 heads
 NUM_LAYERS = 19  # round(1920 / (64 + log2(1920)*4 - 9)) = 19
 
-# v6e-8 — switched on 2026-05-16 because the v5p-preemptible-8 scale group
-# (BOTH us-east5-a and us-central1-a) is in a persistent bad-node retry loop
-# (r1/r6/r7/r9/r14/r15: "No accelerator found"); GCP isn't repopulating
-# this single-host pool. Other users' jobs on different pools (v5p-32
-# us-east5-a, v6e-8) are landing fine the same hours; the issue is
-# specifically the v5p-8 scale group. v6e-8 has its own quota pool and is
-# plenty for a 1B-param eval.
-TPU_TYPES: tuple[str, ...] = ("v6e-8",)
+# v5p-8 — matches exp166's training and exp160_parity. The "bad node" theory
+# from r1/r6/.../r17 was wrong — the real cause was missing libtpu (see
+# _EVAL_DEPENDENCY_GROUPS comment below); JAX falls back to CPU and trainer.initialize()
+# raises "No accelerator found", which iris classifies as the bad-node
+# signature. With `tpu` in deps, v5p-8 is the right choice.
+TPU_TYPES: tuple[str, ...] = ("v5p-8",)
 
-# bolinas-dna's `marin` extra transitively pulls lm-eval, levanter, jax,
-# transformers — same substitution exp160_parity.py uses for its tokenize step
-# (substituting marin's EVAL_DEPENDENCY_GROUPS=["eval","vllm","tpu"] which
-# bolinas-dna doesn't define).
-_EVAL_DEPENDENCY_GROUPS = ["marin"]
+# `marin` pulls lm-eval, levanter, jax, transformers; `tpu` pulls libtpu via
+# `marin[tpu]`. **Both are required to actually run on TPU** — without `tpu`,
+# JAX falls back to CPU and trainer.initialize() fails with "No accelerator
+# found" (looks identical to the iris bad-node retry pattern, but the actual
+# cause is `Failed to open libtpu.so` in the JAX backend init). This was the
+# real cause of the all-day-2026-05-15 / 2026-05-16-morning failure chain.
+_EVAL_DEPENDENCY_GROUPS = ["marin", "tpu"]
 
 WANDB_PROJECT = "marin"
 WANDB_RUN_NAME = "dna-exp179-mendelian-traits-rc-eval-only"
