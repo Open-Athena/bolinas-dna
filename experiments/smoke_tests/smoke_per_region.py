@@ -49,7 +49,7 @@ from levanter.trainer import TrainerConfig
 from levanter.utils.mesh import MeshConfig
 from marin.execution.executor import ExecutorStep, executor_main, this_output_path
 from marin.execution.remote import remote
-from marin.training.training import TrainLmOnPodConfig, run_levanter_train_lm
+from marin.training.training import TrainLmOnPodConfig
 
 # Reuse builders from the per-region script. These imports double as a sanity
 # check on the per-region module's importability.
@@ -63,6 +63,7 @@ from experiments.per_region.exp187_per_region import (
     _build_model_config,
     _build_optimizer,
     _eval_harness_config,
+    _run_train_with_bolinas_imports,
     _train_remote_env_vars,
 )
 
@@ -133,7 +134,7 @@ def _smoke_train_step() -> ExecutorStep:
     return ExecutorStep(
         name=os.path.join("checkpoints", run_name),
         fn=remote(
-            run_levanter_train_lm,
+            _run_train_with_bolinas_imports,
             resources=ResourceConfig.with_tpu(TPU_TYPES, ram="300g"),
             pip_dependency_groups=["marin", "tpu"],
             env_vars=_train_remote_env_vars(),

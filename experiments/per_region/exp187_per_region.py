@@ -341,6 +341,30 @@ def _hf_save_steps(num_train_steps: int) -> int:
     return max(1, num_train_steps // EVALS_PER_RUN)
 
 
+def _run_train_with_bolinas_imports(pod_config: TrainLmOnPodConfig) -> None:
+    """Wrap ``run_levanter_train_lm`` with the in-function bolinas imports the
+    TPU worker needs.
+
+    Iris's ``Entrypoint.from_callable`` cloudpickles ``__main__`` by-value,
+    capturing function bytecode but NOT re-importing modules on the worker.
+    Module-top imports in this script (``bolinas.levanter.formats``,
+    ``bolinas.pipelines.evals.lm_eval.task_configs``) never fire on the TPU
+    pod, so the side-effecting registrations (``@register_subclass("dna")``
+    for ``DNALmDatasetFormat``; the lm-eval task-manager patch) never
+    install. Trainer init then fails with
+    ``ValueError: Unknown format DNALmDatasetFormat(...)`` when deserializing
+    the data config (smoke5 confirmed this).
+
+    Exp179_eval_only.py:91-96 has the same pattern for the eval path. The
+    fix is the same here: bake the imports into the function body that the
+    TPU worker actually runs.
+    """
+    import bolinas.levanter.formats  # noqa: F401  # registers "dna" LmDatasetFormat
+    import bolinas.pipelines.evals.lm_eval  # noqa: F401  # patches lm_eval TaskManager
+
+    run_levanter_train_lm(pod_config)
+
+
 def _train_remote_env_vars() -> dict[str, str]:
     """Env vars baked into the train ``remote()`` call.
 
@@ -454,7 +478,7 @@ def _build_train_step(strategy: str, dataset: str) -> ExecutorStep:
     return ExecutorStep(
         name=os.path.join("checkpoints", run_name),
         fn=remote(
-            run_levanter_train_lm,
+            _run_train_with_bolinas_imports,
             resources=ResourceConfig.with_tpu(TPU_TYPES, ram="300g"),
             pip_dependency_groups=["marin", "tpu"],
             env_vars=_train_remote_env_vars(),
