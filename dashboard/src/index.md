@@ -178,14 +178,17 @@ const filtered = mendelian.filter(r => {
 ```
 
 <style>
-/* Observable Framework's default theme caps prose elements at 640px.
-   Override on this page so the intro paragraph + dataset card align
-   with the wider leaderboard table below. */
+/* Observable Framework's default theme caps prose elements at 640px and
+   constrains main to ~1072px even on a wide page. Override both so the
+   heatmap and the side-by-side forest plot fit on one row. */
+:root { --observablehq-max-width: 2200px; }
 main > p, main > h1, main > h2, main > h3, main > .card {
   max-width: none;
 }
 main > h1, main > h2, main > h3, main > p { max-width: 1200px; }
 .card { max-width: 1200px; }
+.lb-heatmap-row { width: max-content; max-width: 100%; }
+.lb-heatmap, .lb-forest { flex: 0 0 auto; }
 
 .lb-heatmap {
   border-collapse: collapse;
@@ -197,12 +200,24 @@ main > h1, main > h2, main > h3, main > p { max-width: 1200px; }
   padding: 6px 8px;
   border: 1px solid #ddd;
 }
+/* Explicit row heights so the forest plot to the right (which uses fixed
+   pixel rowH) lines up dot-for-row with the heatmap. Keep in sync with
+   HEATMAP_HEADER_PX / HEATMAP_ROW_PX in dashboard/src/components/heatmap.js. */
+.lb-heatmap thead tr { height: 40px; }
+.lb-heatmap tbody tr { height: 28px; }
+.lb-heatmap-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
 .lb-heatmap thead th {
   background: #f7f7f7;
   text-align: center;
   cursor: pointer;
   user-select: none;
-  min-width: 70px;
+  min-width: 56px;
 }
 .lb-heatmap thead th:hover { background: #eee; }
 .lb-col-label { white-space: nowrap; }
@@ -228,7 +243,7 @@ main > h1, main > h2, main > h3, main > p { max-width: 1200px; }
   font-feature-settings: "tnum";
 }
 .lb-na { text-align: center; color: #aaa; }
-.lb-forest { display: block; margin: 1.5em 0 1em; }
+.lb-forest { display: block; }
 .lb-forest-empty { color: #888; margin: 1em 0; font-size: 0.9em; }
 .dataset-meta td { padding: 2px 8px; }
 .dataset-meta td:first-child { white-space: nowrap; }

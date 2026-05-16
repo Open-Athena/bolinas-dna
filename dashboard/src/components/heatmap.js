@@ -186,7 +186,14 @@ export function heatmap({rows, modelById, leadingAggregate = MACRO}) {
       </tbody>
     </table>`;
 
-    root.append(table, forestPlot(methods, sortKey, colLabelText(sortKey)));
+    // Heatmap on the left, forest plot adjacent on the right. Both share
+    // the same Y axis — explicit row height on the heatmap is what keeps
+    // rows aligned (see `.lb-heatmap tbody tr { height: ... }` in
+    // index.md).
+    root.append(html`<div class="lb-heatmap-row">
+      ${table}
+      ${forestPlot(methods, sortKey, colLabelText(sortKey))}
+    </div>`);
     return root;
   }
 
@@ -203,6 +210,14 @@ export function heatmap({rows, modelById, leadingAggregate = MACRO}) {
 // width explicit — Macro Avg whiskers are narrow (~0.02), per-subset
 // whiskers on small-n subsets can be ~0.07-0.10.
 
+// Side-by-side with the heatmap: the heatmap's leftmost column already
+// labels the models, so the forest plot drops its left margin and shares
+// the same row order/height (28px, set explicitly on `.lb-heatmap tbody tr`).
+// `HEATMAP_HEADER_PX` matches the rendered height of the heatmap's <thead>
+// row so the forest plot's first dot lines up with the first heatmap row.
+const HEATMAP_HEADER_PX = 40;
+const HEATMAP_ROW_PX = 28;
+
 function forestPlot(methods, columnKey, columnText) {
   const visible = methods
     .map((m) => ({m, cell: m.cells.get(columnKey)}))
@@ -211,9 +226,9 @@ function forestPlot(methods, columnKey, columnText) {
     return html`<div class="lb-forest-empty">No values for ${columnText}.</div>`;
   }
 
-  const width = 720;
-  const margin = {top: 28, right: 64, bottom: 26, left: 200};
-  const rowH = 22;
+  const width = 360;
+  const margin = {top: HEATMAP_HEADER_PX, right: 42, bottom: 32, left: 16};
+  const rowH = HEATMAP_ROW_PX;
   const height = margin.top + visible.length * rowH + margin.bottom;
   const xMin = 0.5;
   const xMax = 1.0;
@@ -222,32 +237,33 @@ function forestPlot(methods, columnKey, columnText) {
     margin.left + ((Math.max(xMin, Math.min(xMax, v)) - xMin) / (xMax - xMin)) * innerW;
   const xTicks = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
 
-  return svg`<svg class="lb-forest" viewBox=${`0 0 ${width} ${height}`} width=${width} style="overflow: visible;">
+  return svg`<svg class="lb-forest" viewBox=${`0 0 ${width} ${height}`} width=${width} style="flex: 0 0 auto;">
     ${xTicks.map(
       (t) => svg`<g>
         <line x1=${xPx(t)} x2=${xPx(t)} y1=${margin.top} y2=${height - margin.bottom}
-              stroke=${t === xMin ? "#999" : "#eee"} stroke-width=${t === xMin ? 1 : 1}></line>
+              stroke=${t === xMin ? "#999" : "#eee"}></line>
         <text x=${xPx(t)} y=${margin.top - 8} text-anchor="middle" font-size="10" fill="#666">${t.toFixed(1)}</text>
       </g>`,
     )}
-    ${visible.map(({m, cell}, i) => {
+    ${visible.map(({cell}, i) => {
       const y = margin.top + i * rowH + rowH / 2;
       const cx = xPx(cell.value);
       const lo = xPx(cell.value - cell.se);
       const hi = xPx(cell.value + cell.se);
       const fill = paColor(cell.value);
       return svg`<g>
-        <text x=${margin.left - 10} y=${y} text-anchor="end" dy="0.32em" font-size="11">${m.method_display}</text>
         <line x1=${lo} x2=${hi} y1=${y} y2=${y} stroke="#666" stroke-width="1"></line>
         <line x1=${lo} x2=${lo} y1=${y - 3} y2=${y + 3} stroke="#666"></line>
         <line x1=${hi} x2=${hi} y1=${y - 3} y2=${y + 3} stroke="#666"></line>
         <circle cx=${cx} cy=${y} r="4.5" fill=${fill} stroke="#333" stroke-width="0.5"></circle>
-        <text x=${hi + 6} y=${y} dy="0.32em" font-size="11" fill="#444"
+        <text x=${hi + 5} y=${y} dy="0.32em" font-size="10.5" fill="#444"
               font-variant-numeric="tabular-nums">${cell.value.toFixed(3)}</text>
       </g>`;
     })}
-    <text x=${margin.left + innerW / 2} y=${height - 6} text-anchor="middle"
-          font-size="11" fill="#666">PA on ${columnText} — dot is value, whisker is ± SE</text>
+    <text x=${margin.left + innerW / 2} y=${height - 14} text-anchor="middle"
+          font-size="10.5" font-weight="600" fill="#444">PA on ${columnText}</text>
+    <text x=${margin.left + innerW / 2} y=${height - 2} text-anchor="middle"
+          font-size="9.5" fill="#888">dot = value · whisker = ± SE</text>
   </svg>`;
 }
 
