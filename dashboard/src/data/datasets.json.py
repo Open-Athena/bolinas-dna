@@ -20,9 +20,11 @@ DATASETS = {
         "split": "train",
         "n_min_per_subset": 30,
         "description": (
-            "ClinVar pathogenic positives × gnomAD-common-frequency negatives "
-            "matched 1:1 by gene + consequence subset. Pathogenic should "
-            "score higher than benign — hence `minus_llr` (positive direction)."
+            "Mendelian disease pathogenic SNVs (HGMD ∪ OMIM ∪ Smedley et al. "
+            "2016, de-duped, AF<0.001) × gnomAD common-frequency negatives "
+            "(AN≥25k, AF>0.001), matched 1:1 within gene + consequence "
+            "subset. Pathogenic should score higher than benign — hence "
+            "`minus_llr` (positive direction)."
         ),
     },
 }

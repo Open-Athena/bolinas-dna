@@ -1,6 +1,7 @@
 ---
 title: Methods
 toc: false
+wide: true
 ---
 
 # Methods
@@ -18,7 +19,7 @@ const familyChoice = view(
   Inputs.checkbox(families, {label: "Family", value: families}),
 );
 const search = view(
-  Inputs.search({label: "Search", placeholder: "name, description, training data, …"}),
+  Inputs.text({label: "Search", placeholder: "name, description, training data, …"}),
 );
 const dataset = view(
   Inputs.select(["all", "mendelian_traits", "complex_traits", "eqtl"], {
@@ -49,6 +50,9 @@ const filtered = methods.filter(matches);
 <small>${filtered.length} of ${methods.length} methods shown.</small>
 
 <style>
+/* Lift OF's 640px prose cap so the cards grid can use the full page width. */
+main > p, main > h1, main > h2, main > h3, main > small { max-width: none; }
+
 .method-card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));

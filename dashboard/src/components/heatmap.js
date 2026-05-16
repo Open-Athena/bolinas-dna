@@ -1,12 +1,14 @@
 // Leaderboard heatmap: method × subset → PA color cell.
 //
-// Color scale is **fixed at [0.5, 1.0]** — 0.5 (random baseline) renders
-// as white, 1.0 (perfect) as deepest green. Below-random cells clamp to
-// white. This makes the encoding stable across filter selections and
-// across pages.
+// Sequential YlGn color scale fixed at [0.5, 1.0]:
+//   - 0.5 (random baseline) = pale yellow (neutral)
+//   - 1.0 (perfect)        = deep green
+// PA values below 0.5 are clamped to 0.5 — they're treated as noise rather
+// than highlighted as anti-predictive. The scale stays pinned across filter
+// selections so cells are comparable.
 
 import * as d3 from "npm:d3";
-import {html} from "npm:htl";
+import {html, svg} from "npm:htl";
 
 const SUBSET_DISPLAY = {
   missense_variant: "Missense",
@@ -23,20 +25,20 @@ const GLOBAL = "_global_";
 const MACRO = "_macro_avg_";
 const N_MIN = 30;
 
-// Sequential interpolator on the [0.5, 1.0] domain. We skip the lightest
-// 5% of `interpolateGreens` so 0.5 still has a faint green wash, making it
+// Sequential YlGn on [0.5, 1.0]. Below-random PA clamps to 0.5 so it just
+// reads as "no signal" instead of as a separate regime. Skip the lightest
+// 10% of the interpolator so 0.5 still has a faint yellow wash, making it
 // distinguishable from "missing cell".
 function paColor(v) {
   if (v == null) return "#ffffff";
-  const t = Math.max(0, Math.min(1, (v - 0.5) / 0.5));
-  return d3.interpolateGreens(0.05 + 0.85 * t);
+  const clamped = Math.max(0.5, Math.min(1.0, v));
+  return d3.interpolateYlGn(0.1 + 0.85 * ((clamped - 0.5) / 0.5));
 }
 
-// Black/white text contrast switch — green gets darker toward the top so
-// past ~0.78 we flip to white for readability.
+// Text contrast against the cell background by Lab lightness.
 function textColor(v) {
   if (v == null) return "#666";
-  return v >= 0.78 ? "#fff" : "#000";
+  return d3.lab(paColor(v)).l > 60 ? "#000" : "#fff";
 }
 
 function fmt(v, se) {
@@ -156,16 +158,12 @@ export function heatmap({rows, methodById, leadingAggregate = MACRO}) {
             ${methodCell}
             ${columns.map((col) => {
               const c = m.cells.get(col);
-              if (c == null) {
-                return html`<td class="lb-na" title="not evaluated">—</td>`;
-              }
+              if (c == null) return html`<td class="lb-na">—</td>`;
               const bg = paColor(c.value);
               const fg = textColor(c.value);
-              const nLabel = col === MACRO ? `${c.n_pairs} subsets` : `n=${c.n_pairs}`;
               return html`<td
                 class="lb-cell"
                 style=${`background-color: ${bg}; color: ${fg};`}
-                title=${`${m.method_display} · ${col === GLOBAL ? "Global" : col === MACRO ? "Macro Avg" : SUBSET_DISPLAY[col]}\nPA = ${fmt(c.value, c.se)}\n${nLabel} · ${c.n_ties} ties`}
               >
                 ${c.value.toFixed(3)}
               </td>`;
@@ -187,29 +185,29 @@ export function heatmap({rows, methodById, leadingAggregate = MACRO}) {
 
 // ---- Color legend ----------------------------------------------------------
 
-export function colorLegend({width = 280, height = 28} = {}) {
+export function colorLegend({width = 280, height = 16} = {}) {
+  // Domain endpoints + intermediates.
   const ticks = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
-  const ticksWithPos = ticks.map((v) => ({
-    v,
-    x: ((v - 0.5) / 0.5) * width,
-  }));
-  const stops = d3.range(0, 1.01, 0.05).map((t) => ({
-    offset: `${t * 100}%`,
-    color: paColor(0.5 + t * 0.5),
-  }));
-  return html`<svg viewBox=${`0 0 ${width} ${height + 16}`} width=${width} style="overflow: visible;">
+  const domainMin = 0.5;
+  const domainMax = 1.0;
+  const x = (v) => ((v - domainMin) / (domainMax - domainMin)) * width;
+  const stops = d3.range(0, 1.001, 1 / 40).map((t) => {
+    const v = domainMin + t * (domainMax - domainMin);
+    return {offset: `${t * 100}%`, color: paColor(v)};
+  });
+  return svg`<svg viewBox=${`0 0 ${width} ${height + 18}`} width=${width} style="overflow: visible;">
     <defs>
       <linearGradient id="lb-legend-grad" x1="0" x2="1">
         ${stops.map(
-          (s) => html`<stop offset=${s.offset} stop-color=${s.color}></stop>`,
+          (s) => svg`<stop offset=${s.offset} stop-color=${s.color}></stop>`,
         )}
       </linearGradient>
     </defs>
-    <rect x="0" y="0" width=${width} height=${height} fill="url(#lb-legend-grad)" stroke="#aaa"></rect>
-    ${ticksWithPos.map(
-      (t) => html`<g transform=${`translate(${t.x},0)`}>
+    <rect x="0" y="0" width=${width} height=${height} fill="url(#lb-legend-grad)" stroke="#888"></rect>
+    ${ticks.map(
+      (v) => svg`<g transform=${`translate(${x(v)},0)`}>
         <line y1=${height} y2=${height + 4} stroke="#666"></line>
-        <text y=${height + 14} text-anchor="middle" font-size="11" fill="#444">${t.v.toFixed(1)}</text>
+        <text y=${height + 16} text-anchor="middle" font-size="10" fill="#555">${v.toFixed(1)}</text>
       </g>`,
     )}
   </svg>`;

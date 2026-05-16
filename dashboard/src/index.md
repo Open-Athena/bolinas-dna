@@ -1,11 +1,12 @@
 ---
 title: Mendelian Traits Leaderboard
 toc: false
+wide: true
 ---
 
 # Mendelian Traits Leaderboard
 
-Matched-pair PairwiseAccuracy per method on the [`bolinas-dna/evals_mendelian_traits`](https://huggingface.co/datasets/bolinas-dna/evals_mendelian_traits) dataset (ClinVar pathogenic vs. gnomAD-common-frequency, 1:1 gene-matched within consequence subset). Higher is better; random baseline is 0.5.
+Matched-pair PairwiseAccuracy per method on the [`bolinas-dna/evals_mendelian_traits`](https://huggingface.co/datasets/bolinas-dna/evals_mendelian_traits) dataset (HGMD ∪ OMIM ∪ Smedley 2016 pathogenic SNVs vs. gnomAD common-frequency, 1:1 gene-matched within consequence subset). Higher is better; random baseline is 0.5.
 
 ```js
 const leaderboard = await FileAttachment("data/leaderboard.parquet").parquet();
@@ -45,7 +46,6 @@ display(html`<div class="card">
     <tr><td><b>Score column</b></td><td><code>${meta.score_type}</code> (higher should be more pathogenic)</td></tr>
     <tr><td><b>Subset threshold</b></td><td><code>n_pairs ≥ ${meta.n_min_per_subset}</code></td></tr>
     <tr><td><b>Sort axis</b></td><td>Macro Avg by default (rationale: ~92% missense over-weights protein-coding-specialist methods on Global). Click any column header to re-sort.</td></tr>
-    <tr><td><b>Tracking issue</b></td><td><a href=${meta.issue}>${meta.issue.replace("https://github.com/", "")}</a></td></tr>
   </table>
   <p>${meta.description}</p>
 </div>`);
@@ -55,14 +55,52 @@ display(html`<div class="card">
 
 ```js
 const families = ["bolinas", "conservation", "alphagenome", "gpn_star"];
-const familyChoice = view(
-  Inputs.checkbox(families, {
-    label: "Family",
-    value: families,
-  }),
-);
+```
+
+```js
+function FamilyToggle(allFamilies, initial = allFamilies) {
+  const state = new Set(initial);
+  const node = html`<div class="lb-family-toggle"></div>`;
+  let _value = [...state];
+  Object.defineProperty(node, "value", {get: () => _value});
+  function fire() {
+    _value = [...state];
+    node.dispatchEvent(new Event("input", {bubbles: true}));
+  }
+  function setAll(next) {
+    state.clear();
+    next.forEach((f) => state.add(f));
+    render();
+    fire();
+  }
+  function render() {
+    node.replaceChildren(html`<div class="lb-family-toggle-row">
+      ${allFamilies.map(
+        (f) => html`<button
+          type="button"
+          class=${`lb-pill family-${f}${state.has(f) ? " active" : ""}`}
+          aria-pressed=${state.has(f) ? "true" : "false"}
+          onclick=${() => {
+            state.has(f) ? state.delete(f) : state.add(f);
+            render();
+            fire();
+          }}
+        >${f}</button>`,
+      )}
+      <span class="lb-toggle-actions">
+        <button type="button" class="lb-link" onclick=${() => setAll(allFamilies)}>all</button>
+        <span aria-hidden="true">·</span>
+        <button type="button" class="lb-link" onclick=${() => setAll([])}>none</button>
+      </span>
+    </div>`);
+  }
+  render();
+  return node;
+}
+
+const familyChoice = view(FamilyToggle(families));
 const search = view(
-  Inputs.search({
+  Inputs.text({
     label: "Method name",
     placeholder: "filter by method (e.g. exp166, phyloP)",
   }),
@@ -78,6 +116,15 @@ const filtered = mendelian.filter(r => {
 ```
 
 <style>
+/* Observable Framework's default theme caps prose elements at 640px.
+   Override on this page so the intro paragraph + dataset card align
+   with the wider leaderboard table below. */
+main > p, main > h1, main > h2, main > h3, main > .card {
+  max-width: none;
+}
+main > h1, main > h2, main > h3, main > p { max-width: 1200px; }
+.card { max-width: 1200px; }
+
 .lb-heatmap {
   border-collapse: collapse;
   font-variant-numeric: tabular-nums;
@@ -125,12 +172,61 @@ const filtered = mendelian.filter(r => {
   margin: 0.5em 0 1em;
   font-size: 0.85em; color: #444;
 }
+
+/* Family pill toggle */
+.lb-family-toggle-row {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  margin: 0.25em 0 0.75em;
+}
+.lb-pill {
+  appearance: none;
+  border: 1.5px solid transparent;
+  background: transparent;
+  border-radius: 9999px;
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 0.85em;
+  cursor: pointer;
+  transition: background 80ms, border-color 80ms, color 80ms;
+  color: #999;
+}
+.lb-pill:not(.active) {
+  border-color: #ddd;
+}
+.lb-pill:not(.active):hover {
+  border-color: #999;
+  color: #555;
+}
+.lb-pill.active {
+  color: #fff;
+  border-color: transparent;
+}
+.lb-pill.active.family-bolinas      { background: #1f77b4; }
+.lb-pill.active.family-conservation { background: #7f7f7f; }
+.lb-pill.active.family-alphagenome  { background: #d62728; }
+.lb-pill.active.family-gpn_star     { background: #9467bd; }
+.lb-toggle-actions {
+  margin-left: 6px;
+  color: #888;
+  font-size: 0.82em;
+}
+.lb-toggle-actions .lb-link {
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 0 2px;
+  font: inherit;
+  font-size: inherit;
+  color: #3a7bd5;
+  cursor: pointer;
+}
+.lb-toggle-actions .lb-link:hover { text-decoration: underline; }
 </style>
 
 <div class="legend-row">
   <span>Color: PA, fixed scale</span>
   ${colorLegend({width: 240, height: 14})}
-  <span>· Hover a cell for SE + n_pairs · Click a column header to re-sort</span>
+  <span>· Click a column header to re-sort</span>
 </div>
 
 ```js
@@ -142,11 +238,3 @@ display(
   }),
 );
 ```
-
-## Notes
-
-- **Bolding has been dropped**: cell colors carry the same ranking signal more cleanly than `**bold**` did in the old issue tables. Hover any cell for `PA ± SE`, `n_pairs`, and `n_ties`.
-- **Below random (< 0.5)** clamps to white. A method underperforming random on a subset reads as "no signal" rather than as a separate red regime.
-- **Missing cells (—)** mean the method wasn't evaluated on that subset (e.g. mendelian-only entries on the `5' UTR` column for a conservation-track-only run, where applicable).
-
-For the raw data, see `/data/leaderboard.parquet` (long-form) and `/data/methods.json`; the [About page](./about) documents the full schema.
