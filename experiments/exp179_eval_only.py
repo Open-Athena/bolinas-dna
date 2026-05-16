@@ -83,11 +83,14 @@ INTERMEDIATE_DIM = HIDDEN_DIM * 4  # mlp_ratio=4
 NUM_HEADS = HIDDEN_DIM // 128  # hidden_head_ratio=128 → 15 heads
 NUM_LAYERS = 19  # round(1920 / (64 + log2(1920)*4 - 9)) = 19
 
-# v5p-8 — matches exp166's training (and exp160_parity). Switching back from
-# v4-8 us-central2 on 2026-05-16 because that pool's autoscaler queue was
-# stuck (r11, r13). v5p-preemptible's bad-node retry loop yesterday
-# (r1/r6/r7/r9) may have cleared after the overnight iris postmortem fix.
-TPU_TYPES: tuple[str, ...] = ("v5p-8",)
+# v6e-8 — switched on 2026-05-16 because the v5p-preemptible-8 scale group
+# (BOTH us-east5-a and us-central1-a) is in a persistent bad-node retry loop
+# (r1/r6/r7/r9/r14/r15: "No accelerator found"); GCP isn't repopulating
+# this single-host pool. Other users' jobs on different pools (v5p-32
+# us-east5-a, v6e-8) are landing fine the same hours; the issue is
+# specifically the v5p-8 scale group. v6e-8 has its own quota pool and is
+# plenty for a 1B-param eval.
+TPU_TYPES: tuple[str, ...] = ("v6e-8",)
 
 # bolinas-dna's `marin` extra transitively pulls lm-eval, levanter, jax,
 # transformers — same substitution exp160_parity.py uses for its tokenize step
