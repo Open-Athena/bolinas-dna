@@ -200,10 +200,10 @@ main > h1, main > h2, main > h3, main > p { max-width: 1200px; }
      ("Synonymous") with padding to spare; the model column takes the
      remainder. */
   table-layout: fixed;
-  width: 1152px;
+  width: 1120px;
 }
 .lb-heatmap thead th:not(.lb-method-header) { width: 90px; }
-.lb-heatmap th.lb-method-header { width: 252px; }
+.lb-heatmap th.lb-method-header { width: 220px; }
 .lb-heatmap th, .lb-heatmap td {
   padding: 6px 8px;
   border: 1px solid #ddd;
@@ -238,8 +238,21 @@ main > h1, main > h2, main > h3, main > p { max-width: 1200px; }
 .lb-heatmap td.lb-col-sorted { border-left: 2px solid #5c8a5c; border-right: 2px solid #5c8a5c; }
 .lb-heatmap thead th.lb-col-sorted { border-left: 2px solid #5c8a5c; border-right: 2px solid #5c8a5c; border-bottom: 2px solid #5c8a5c; }
 .lb-method-header { text-align: left !important; cursor: default !important; }
-.lb-method { white-space: nowrap; }
-.lb-method a { text-decoration: none; }
+.lb-method {
+  /* Long model names truncate with an ellipsis. Hover popover surfaces
+     the full name + family + links, so info is one hover away. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lb-method a {
+  text-decoration: none;
+  display: inline-block;
+  max-width: calc(100% - 22px); /* room for the family swatch + margin */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
 .lb-method a:hover { text-decoration: underline; }
 .lb-desc { color: #666; font-size: 0.92em; }
 .lb-family {
