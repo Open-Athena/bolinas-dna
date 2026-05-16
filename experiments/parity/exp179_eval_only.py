@@ -20,7 +20,7 @@ Launch from a CPU box with iris CLI authed to the marin cluster:
         --cpu 1 --memory 2g --extra marin --region us-east5 \\
         -e WANDB_API_KEY "$(grep -A2 api.wandb.ai ~/.netrc | grep password | awk '{print $2}')" \\
         -e HF_HUB_DOWNLOAD_TIMEOUT 120 -e UV_LOCK_TIMEOUT 7200 \\
-        -- python experiments/exp179_eval_only.py
+        -- python experiments/parity/exp179_eval_only.py
 """
 
 import dataclasses
