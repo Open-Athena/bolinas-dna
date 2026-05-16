@@ -359,8 +359,23 @@ def _train_remote_env_vars() -> dict[str, str]:
         "HF_HUB_DOWNLOAD_TIMEOUT": "120",
         "UV_LOCK_TIMEOUT": "7200",
     }
-    if "WANDB_API_KEY" in os.environ:
-        env["WANDB_API_KEY"] = os.environ["WANDB_API_KEY"]
+    # Reject empty WANDB_API_KEY — the launch command's shell ordering can
+    # silently substitute an empty value (``VAR=$(...) cmd -e VAR "$VAR"``
+    # resolves ``$VAR`` *before* the prefix assignment). Wandb's UsageError
+    # in that case is delayed until trainer init on the TPU pod, after ~45
+    # min of tokenize work has succeeded — costly. Fail loud at launch time
+    # instead.
+    wandb_key = os.environ.get("WANDB_API_KEY", "")
+    if wandb_key:
+        env["WANDB_API_KEY"] = wandb_key
+    else:
+        raise RuntimeError(
+            "WANDB_API_KEY is not set in the launcher's environment "
+            "(or is empty). The recommended launch pattern is to use "
+            "inline ``$(...)`` substitution in ``-e WANDB_API_KEY ...`` "
+            "per experiments/README.md — not a ``VAR=... cmd`` prefix, "
+            "which has a shell-ordering bug."
+        )
     return env
 
 
