@@ -83,12 +83,11 @@ INTERMEDIATE_DIM = HIDDEN_DIM * 4  # mlp_ratio=4
 NUM_HEADS = HIDDEN_DIM // 128  # hidden_head_ratio=128 → 15 heads
 NUM_LAYERS = 19  # round(1920 / (64 + log2(1920)*4 - 9)) = 19
 
-# v4-8 in us-central2 — switching back from v6e-4 (eu-west4 was tier_blocked
-# by quota-pool monotonicity). v4 is the marin default for levanter eval and
-# previously made it onto the autoscaler queue (r5; just slow). Inference fits
-# in v4-8 HBM (~32 GB/chip) comfortably for 1B params. Pin --region us-central2
-# at the iris CLI submit call — that's where v4-8 quota lives.
-TPU_TYPES: tuple[str, ...] = ("v4-8",)
+# v5p-8 — matches exp166's training (and exp160_parity). Switching back from
+# v4-8 us-central2 on 2026-05-16 because that pool's autoscaler queue was
+# stuck (r11, r13). v5p-preemptible's bad-node retry loop yesterday
+# (r1/r6/r7/r9) may have cleared after the overnight iris postmortem fix.
+TPU_TYPES: tuple[str, ...] = ("v5p-8",)
 
 # bolinas-dna's `marin` extra transitively pulls lm-eval, levanter, jax,
 # transformers — same substitution exp160_parity.py uses for its tokenize step
