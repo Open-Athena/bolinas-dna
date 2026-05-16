@@ -13,8 +13,8 @@ include: "rules/metrics.smk"
 
 rule all:
     input:
-        expand(
-            "results/metrics/{model}/{dataset}.parquet",
-            model=[m["name"] for m in config["models"]],
-            dataset=[d["name"] for d in config["datasets"]],
-        ),
+        [
+            f"results/metrics/{m['name']}/{d}.parquet"
+            for m in config["models"]
+            for d in get_model_datasets(m["name"])
+        ],

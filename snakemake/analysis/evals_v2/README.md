@@ -41,11 +41,14 @@ results/
 
 - **Train split only.** Test is held out for the final-eval pass; train is
   the development split.
-- **Two context conventions are supported.** Per-model `window_size` config
-  field selects the number of DNA bases extracted (255 or 256). The
-  tokenizer loaded from each checkpoint handles BOS itself.
+- **Three context conventions are supported.** Per-model `window_size`
+  config field selects the number of DNA bases extracted. The tokenizer
+  loaded from each checkpoint handles BOS itself.
   - 255 = BOS-using runs (e.g. `exp136-proj_v30`, `exp166-p1B`).
-  - 256 = no-BOS runs (e.g. `exp55/58/59`).
+  - 256 = no-BOS runs at 256-token context (e.g. `exp55/58/59`).
+  - 512 = no-BOS runs trained at 512 bp context (e.g. `exp21` promoter-yolo).
+    Pair with a per-model `batch_size:` override to fit on an A10G; the
+    global default of 128 is tuned for 256-context.
 
 ## Setup
 
@@ -88,7 +91,7 @@ at `s3://oa-bolinas/snakemake/analysis/evals_v2/`.
 | `genome_path` | Canonical GRCh38 FASTA. fsspec URI (e.g. `s3://...`) or local path. The S3 path requires `--group genome-s3` at install time. |
 | `split` | `train` (or `test` once held-out eval is unlocked). |
 | `datasets` | List of `{name, score_column}`. |
-| `models` | List of `{name, window_size, ...}`. Each entry has exactly one of `gcs_path` (full GCS URI incl. `/hf/step-{N}`) or `hf_repo` (HuggingFace Hub repo ID). |
+| `models` | List of `{name, window_size, ...}`. Each entry has exactly one of `gcs_path` (full GCS URI incl. `/hf/step-{N}`) or `hf_repo` (HuggingFace Hub repo ID), plus two optional fields: `datasets: [...]` to restrict which `datasets` this checkpoint evaluates on (defaults to all), and `batch_size: N` to override the global `inference.batch_size` for this checkpoint (useful when context size differs from the global default's tuning). |
 | `inference.*` | Batch size, workers, `data_transform_on_the_fly`, `torch_compile`, `rc_avg` (FWD+RC averaging — doubles inference time). |
 
 ## Library

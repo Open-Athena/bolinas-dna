@@ -22,15 +22,19 @@ rule download_model:
     wildcard_constraints:
         model="|".join(MODELS),
     params:
-        cfg=lambda wc: get_model_config(wc.model),
+        # Only the source URL/repo affects the download output. Other
+        # per-model fields (window_size, batch_size, datasets, …) don't,
+        # so they intentionally stay out of `params:` and won't trigger
+        # a re-download when tuned.
+        gcs_path=lambda wc: get_model_config(wc.model).get("gcs_path", ""),
+        hf_repo=lambda wc: get_model_config(wc.model).get("hf_repo", ""),
     run:
-        cfg = params.cfg
         out = output[0]
-        if "gcs_path" in cfg:
-            shell(f"mkdir -p {out} && gcloud storage cp -r '{cfg['gcs_path']}/*' {out}/")
-        elif "hf_repo" in cfg:
+        if params.gcs_path:
+            shell(f"mkdir -p {out} && gcloud storage cp -r '{params.gcs_path}/*' {out}/")
+        elif params.hf_repo:
             from huggingface_hub import snapshot_download
-            snapshot_download(repo_id=cfg["hf_repo"], local_dir=out)
+            snapshot_download(repo_id=params.hf_repo, local_dir=out)
         else:
             raise ValueError(
                 f"model {wildcards.model!r} needs `gcs_path` or `hf_repo`"

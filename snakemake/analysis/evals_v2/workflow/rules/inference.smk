@@ -16,10 +16,19 @@ rule compute_scores:
     params:
         # 255 for BOS-using checkpoints (e.g. exp136), 256 for older runs;
         # the tokenizer baked into each checkpoint handles BOS itself.
+        # NOTE: only output-affecting fields belong in `params:` — values
+        # here are tracked by snakemake's `params` rerun trigger. Execution-
+        # only knobs (e.g. batch_size) are read inside `run:` instead so
+        # tuning them doesn't force a re-run of finished work.
         window_size=lambda wc: get_model_config(wc.model)["window_size"],
         hf_path=lambda wc: f"{config['input_hf_prefix']}_{wc.dataset}",
     threads: config["inference"]["num_workers"]
     run:
+        # batch_size is per-model but execution-only (numerics are batch-
+        # size-invariant modulo float-reduction noise), so we read it here
+        # rather than declare it as a snakemake param. See note in `params:`.
+        batch_size = get_model_batch_size(wildcards.model)
+
         ds = load_dataset(params.hf_path, split=config["split"]).to_pandas()
         for col in REQUIRED_VARIANT_COLUMNS:
             assert col in ds.columns, f"dataset missing column {col!r}"
@@ -31,7 +40,7 @@ rule compute_scores:
             # no full download. Requires `--group genome-s3`.
             genome_path=config["genome_path"],
             context_size=params.window_size,
-            batch_size=config["inference"]["batch_size"],
+            batch_size=batch_size,
             num_workers=config["inference"]["num_workers"],
             data_transform_on_the_fly=config["inference"]["data_transform_on_the_fly"],
             torch_compile=config["inference"]["torch_compile"],

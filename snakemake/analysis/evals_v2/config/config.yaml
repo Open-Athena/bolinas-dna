@@ -28,6 +28,15 @@ datasets:
 # `window_size` is the number of DNA bases extracted per variant context.
 # 256 = old convention (no BOS, e.g. exp55/58/59).
 # 255 = new convention (BOS prepended, e.g. exp136 / exp166-p1B).
+# 512 = older 512-context runs trained without BOS (e.g. exp21 promoter-yolo);
+#       pair with a per-model `batch_size` override to fit on an A10G.
+#
+# Optional per-model fields:
+#   - `datasets: [name, …]`  Restrict evaluation to a subset of the configured
+#                            `datasets`. Omit to run on all of them.
+#   - `batch_size: N`        Override `inference.batch_size` for this checkpoint.
+#                            Useful when the global default is tuned for a
+#                            different context size.
 models:
   - name: exp55-mammals
     gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-mammals-r01-52f413/hf/step-16999
@@ -52,6 +61,484 @@ models:
   - name: exp166-p1B
     hf_repo: bolinas-dna/exp166-p1B-step-16398   # 1B zoonomia-v1-v1 generalist
     window_size: 255
+
+  # exp136 — enhancer-curation proj_v30, intermediate checkpoints (issue #136).
+  # Native Levanter checkpoints were saved at every num_train_steps // 3 step
+  # (CHECKPOINTS_PER_RUN = 3 in marin's exp136_enhancer_curation.py); the
+  # 3333/6666 intermediates were exported to HF after the fact (the original
+  # `hf/` only had step-9999 — see `exp136-proj_v30` entry above for that
+  # final checkpoint). Scoped to mendelian_traits for the convergence curve.
+  - name: exp136-proj_v30-step-3333
+    gcs_path: gs://marin-us-central1/checkpoints/dna-bolinas-enhancer-curation-v0.1-proj_v30-6692f0/hf/step-3333
+    window_size: 255
+    datasets: [mendelian_traits]
+  - name: exp136-proj_v30-step-6666
+    gcs_path: gs://marin-us-central1/checkpoints/dna-bolinas-enhancer-curation-v0.1-proj_v30-6692f0/hf/step-6666
+    window_size: 255
+    datasets: [mendelian_traits]
+
+  # exp166 v0.1 — new generalist 1B run (separate from the older
+  # `exp166-p1B` HF entry above which is the earlier step-16398 export).
+  # 3 HF-exported checkpoints from the c127da run: 10000, 20000, 27329 (final).
+  - name: exp166-v0.1-p1B-step-10000
+    gcs_path: gs://marin-us-east5/checkpoints/dna-bolinas-exp166-v0.1-p1B-c127da/hf/step-10000
+    window_size: 255
+    datasets: [mendelian_traits]
+  - name: exp166-v0.1-p1B-step-20000
+    gcs_path: gs://marin-us-east5/checkpoints/dna-bolinas-exp166-v0.1-p1B-c127da/hf/step-20000
+    window_size: 255
+    datasets: [mendelian_traits]
+  - name: exp166-v0.1-p1B-step-27329
+    gcs_path: gs://marin-us-east5/checkpoints/dna-bolinas-exp166-v0.1-p1B-c127da/hf/step-27329
+    window_size: 255
+    datasets: [mendelian_traits]
+
+  # exp21 — animal-promoters-yolo (issue #21, wandb animal-promoters-yolo-r01-213a8e).
+  # 512 bp context, no BOS. Scoped to mendelian_traits only: complex/eqtl signal
+  # was weak in #21, and the matched-pair mendelian dataset is the one of
+  # interest for tracking promoter-relevant convergence over training steps.
+  # batch_size: 64 fits within A10G VRAM at 512-context (~32% VRAM at 32 →
+  # ~65% at 64); validated mid-run by nvidia-smi after the first compute_scores.
+  - name: exp21-promoters-yolo-step-2000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-promoters-yolo-r01-213a8e/hf/step-2000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp21-promoters-yolo-step-6000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-promoters-yolo-r01-213a8e/hf/step-6000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp21-promoters-yolo-step-10000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-promoters-yolo-r01-213a8e/hf/step-10000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp21-promoters-yolo-step-12000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-promoters-yolo-r01-213a8e/hf/step-12000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp21-promoters-yolo-step-14000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-promoters-yolo-r01-213a8e/hf/step-14000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp21-promoters-yolo-step-16000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-promoters-yolo-r01-213a8e/hf/step-16000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp21-promoters-yolo-step-18000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-promoters-yolo-r01-213a8e/hf/step-18000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp21-promoters-yolo-step-20000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-promoters-yolo-r01-213a8e/hf/step-20000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp21-promoters-yolo-step-22000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-promoters-yolo-r01-213a8e/hf/step-22000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+
+  # exp13/exp27 — promoter × CDS mixture sweep (issue #13). 4-way comparison
+  # of Qwen3-1.7B trained on: 100% promoters (exp21 above), 50/50 mix (exp13
+  # equal), 10/90 mix (exp13 proportional), 100% CDS (exp27 cds-yolo). All
+  # 512 bp context, no BOS. Step list 2000/6000/10000/14000/18000/22000 is
+  # the harmonized intersection that aligns with exp21's GCS ceiling; +26000
+  # added for the 3 runs that trained that far. mendelian_traits only.
+
+  # exp27 — animal-cds-yolo-repeat-weight-0.01-r01-e8cb9b (100% CDS).
+  - name: exp27-cds-yolo-step-2000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-cds-yolo-repeat-weight-0.01-r01-e8cb9b/hf/step-2000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp27-cds-yolo-step-6000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-cds-yolo-repeat-weight-0.01-r01-e8cb9b/hf/step-6000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp27-cds-yolo-step-10000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-cds-yolo-repeat-weight-0.01-r01-e8cb9b/hf/step-10000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp27-cds-yolo-step-14000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-cds-yolo-repeat-weight-0.01-r01-e8cb9b/hf/step-14000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp27-cds-yolo-step-18000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-cds-yolo-repeat-weight-0.01-r01-e8cb9b/hf/step-18000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp27-cds-yolo-step-22000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-cds-yolo-repeat-weight-0.01-r01-e8cb9b/hf/step-22000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp27-cds-yolo-step-26000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-cds-yolo-repeat-weight-0.01-r01-e8cb9b/hf/step-26000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp27-cds-yolo-step-34000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-cds-yolo-repeat-weight-0.01-r01-e8cb9b/hf/step-34000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+
+  # exp13 — promoter-cds-mixture-equal-r01-b67fd1 (50% promoter / 50% CDS).
+  - name: exp13-mixture-equal-step-2000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/promoter-cds-mixture-equal-r01-b67fd1/hf/step-2000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp13-mixture-equal-step-6000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/promoter-cds-mixture-equal-r01-b67fd1/hf/step-6000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp13-mixture-equal-step-10000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/promoter-cds-mixture-equal-r01-b67fd1/hf/step-10000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp13-mixture-equal-step-14000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/promoter-cds-mixture-equal-r01-b67fd1/hf/step-14000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp13-mixture-equal-step-18000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/promoter-cds-mixture-equal-r01-b67fd1/hf/step-18000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp13-mixture-equal-step-22000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/promoter-cds-mixture-equal-r01-b67fd1/hf/step-22000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp13-mixture-equal-step-26000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/promoter-cds-mixture-equal-r01-b67fd1/hf/step-26000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+
+  # exp13 — promoter-cds-mixture-proportional-r01-6705f1 (10% promoter / 90% CDS).
+  - name: exp13-mixture-proportional-step-2000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/promoter-cds-mixture-proportional-r01-6705f1/hf/step-2000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp13-mixture-proportional-step-6000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/promoter-cds-mixture-proportional-r01-6705f1/hf/step-6000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp13-mixture-proportional-step-10000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/promoter-cds-mixture-proportional-r01-6705f1/hf/step-10000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp13-mixture-proportional-step-14000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/promoter-cds-mixture-proportional-r01-6705f1/hf/step-14000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp13-mixture-proportional-step-18000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/promoter-cds-mixture-proportional-r01-6705f1/hf/step-18000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp13-mixture-proportional-step-22000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/promoter-cds-mixture-proportional-r01-6705f1/hf/step-22000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+  - name: exp13-mixture-proportional-step-26000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/promoter-cds-mixture-proportional-r01-6705f1/hf/step-26000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
+
+  # exp55/exp58 — promoters/CDS across evolutionary timescales (issues #55, #58).
+  # 256 bp context, no BOS (older convention; smaller models than exp21/13/27).
+  # Step list 1000/2000/3000/4000/5000/9000/13000/16999 (16999 is the final
+  # checkpoint — no step-17000). For exp55-mammals, exp58-mammals, exp58-animals
+  # the step-16999 slot is already covered by the existing single-step entries
+  # above (which have datasets: unset = all three eval datasets), so it's not
+  # duplicated here. Datasets scoped to mendelian_traits to mirror the issue
+  # plots; uses global inference.batch_size (128).
+
+  # exp55 humans — promoters trained on humans timescale (issue #55).
+  - name: exp55-humans-step-1000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-humans-r01-0fa9f3/hf/step-1000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-humans-step-2000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-humans-r01-0fa9f3/hf/step-2000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-humans-step-3000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-humans-r01-0fa9f3/hf/step-3000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-humans-step-4000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-humans-r01-0fa9f3/hf/step-4000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-humans-step-5000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-humans-r01-0fa9f3/hf/step-5000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-humans-step-9000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-humans-r01-0fa9f3/hf/step-9000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-humans-step-13000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-humans-r01-0fa9f3/hf/step-13000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-humans-step-16999
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-humans-r01-0fa9f3/hf/step-16999
+    window_size: 256
+    datasets: [mendelian_traits]
+
+  # exp55 primates — promoters trained on primates timescale (issue #55).
+  - name: exp55-primates-step-1000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-primates-r01-70b1a5/hf/step-1000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-primates-step-2000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-primates-r01-70b1a5/hf/step-2000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-primates-step-3000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-primates-r01-70b1a5/hf/step-3000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-primates-step-4000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-primates-r01-70b1a5/hf/step-4000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-primates-step-5000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-primates-r01-70b1a5/hf/step-5000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-primates-step-9000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-primates-r01-70b1a5/hf/step-9000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-primates-step-13000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-primates-r01-70b1a5/hf/step-13000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-primates-step-16999
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-primates-r01-70b1a5/hf/step-16999
+    window_size: 256
+    datasets: [mendelian_traits]
+
+  # exp55 mammals — promoters trained on mammals timescale (issue #55).
+  # step-16999 already covered by the existing `exp55-mammals` entry above.
+  - name: exp55-mammals-step-1000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-mammals-r01-52f413/hf/step-1000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-mammals-step-2000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-mammals-r01-52f413/hf/step-2000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-mammals-step-3000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-mammals-r01-52f413/hf/step-3000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-mammals-step-4000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-mammals-r01-52f413/hf/step-4000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-mammals-step-5000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-mammals-r01-52f413/hf/step-5000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-mammals-step-9000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-mammals-r01-52f413/hf/step-9000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-mammals-step-13000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-mammals-r01-52f413/hf/step-13000
+    window_size: 256
+    datasets: [mendelian_traits]
+
+  # exp55 vertebrates — promoters trained on vertebrates timescale (issue #55).
+  - name: exp55-vertebrates-step-1000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-vertebrates-r01-64b0da/hf/step-1000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-vertebrates-step-2000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-vertebrates-r01-64b0da/hf/step-2000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-vertebrates-step-3000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-vertebrates-r01-64b0da/hf/step-3000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-vertebrates-step-4000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-vertebrates-r01-64b0da/hf/step-4000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-vertebrates-step-5000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-vertebrates-r01-64b0da/hf/step-5000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-vertebrates-step-9000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-vertebrates-r01-64b0da/hf/step-9000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-vertebrates-step-13000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-vertebrates-r01-64b0da/hf/step-13000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-vertebrates-step-16999
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-vertebrates-r01-64b0da/hf/step-16999
+    window_size: 256
+    datasets: [mendelian_traits]
+
+  # exp55 animals — promoters trained on animals timescale (issue #55).
+  - name: exp55-animals-step-1000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-animals-r01-c5dd2f/hf/step-1000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-animals-step-2000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-animals-r01-c5dd2f/hf/step-2000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-animals-step-3000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-animals-r01-c5dd2f/hf/step-3000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-animals-step-4000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-animals-r01-c5dd2f/hf/step-4000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-animals-step-5000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-animals-r01-c5dd2f/hf/step-5000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-animals-step-9000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-animals-r01-c5dd2f/hf/step-9000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-animals-step-13000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-animals-r01-c5dd2f/hf/step-13000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp55-animals-step-16999
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-animals-r01-c5dd2f/hf/step-16999
+    window_size: 256
+    datasets: [mendelian_traits]
+
+  # exp58 mammals — CDS trained on mammals timescale (issue #58).
+  # step-16999 already covered by the existing `exp58-mammals` entry above.
+  - name: exp58-mammals-step-1000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp58-mammals-r01-23d451/hf/step-1000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp58-mammals-step-2000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp58-mammals-r01-23d451/hf/step-2000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp58-mammals-step-3000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp58-mammals-r01-23d451/hf/step-3000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp58-mammals-step-4000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp58-mammals-r01-23d451/hf/step-4000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp58-mammals-step-5000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp58-mammals-r01-23d451/hf/step-5000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp58-mammals-step-9000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp58-mammals-r01-23d451/hf/step-9000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp58-mammals-step-13000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp58-mammals-r01-23d451/hf/step-13000
+    window_size: 256
+    datasets: [mendelian_traits]
+
+  # exp58 vertebrates — CDS trained on vertebrates timescale (issue #58).
+  - name: exp58-vertebrates-step-1000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp58-vertebrates-r01-771c3a/hf/step-1000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp58-vertebrates-step-2000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp58-vertebrates-r01-771c3a/hf/step-2000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp58-vertebrates-step-3000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp58-vertebrates-r01-771c3a/hf/step-3000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp58-vertebrates-step-4000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp58-vertebrates-r01-771c3a/hf/step-4000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp58-vertebrates-step-5000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp58-vertebrates-r01-771c3a/hf/step-5000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp58-vertebrates-step-9000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp58-vertebrates-r01-771c3a/hf/step-9000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp58-vertebrates-step-13000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp58-vertebrates-r01-771c3a/hf/step-13000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp58-vertebrates-step-16999
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp58-vertebrates-r01-771c3a/hf/step-16999
+    window_size: 256
+    datasets: [mendelian_traits]
+
+  # exp58 animals — CDS trained on animals timescale (issue #58).
+  # step-16999 already covered by the existing `exp58-animals` entry above.
+  - name: exp58-animals-step-1000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp58-animals-r01-1e3682/hf/step-1000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp58-animals-step-2000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp58-animals-r01-1e3682/hf/step-2000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp58-animals-step-3000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp58-animals-r01-1e3682/hf/step-3000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp58-animals-step-4000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp58-animals-r01-1e3682/hf/step-4000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp58-animals-step-5000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp58-animals-r01-1e3682/hf/step-5000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp58-animals-step-9000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp58-animals-r01-1e3682/hf/step-9000
+    window_size: 256
+    datasets: [mendelian_traits]
+  - name: exp58-animals-step-13000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/exp58-animals-r01-1e3682/hf/step-13000
+    window_size: 256
+    datasets: [mendelian_traits]
 
 inference:
   batch_size: 128       # Was 64 with output_hidden_states=True keeping all
