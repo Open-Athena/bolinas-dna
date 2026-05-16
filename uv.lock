@@ -471,6 +471,7 @@ dependencies = [
 
 [package.optional-dependencies]
 marin = [
+    { name = "dupekit", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "lm-eval", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "marin", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "marin-iris", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -513,6 +514,7 @@ requires-dist = [
     { name = "biopython", specifier = ">=1.85" },
     { name = "cyvcf2" },
     { name = "datasets" },
+    { name = "dupekit", marker = "extra == 'marin'" },
     { name = "einops" },
     { name = "huggingface-hub" },
     { name = "jaxtyping" },
@@ -1107,6 +1109,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/58/c4/410761a85ba7d1e5867863e153c626480bf85d68b630171b6f9a0dab1832/duckdb-1.6.0.dev12-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:1f4fb584c00da67528baccd4ea6811bd123afc5666cfa90779b9ab83f8efaf27", size = 13750349, upload-time = "2026-03-20T12:05:36.21Z" },
     { url = "https://files.pythonhosted.org/packages/96/8c/59226ee21f7d788d4a734458f0cd3f8da723c92a6fc4cb55028886eb2f2d/duckdb-1.6.0.dev12-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:20725806e6fb2282304570489aa05a238b2d99c68d47442e208502e7b6a33130", size = 18945769, upload-time = "2026-03-20T12:05:39.137Z" },
     { url = "https://files.pythonhosted.org/packages/de/ae/94004809aae5a2637581e5515b3045b7bf251bef3956f5daa293768cf454/duckdb-1.6.0.dev12-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:c7ce571230208f479b508b5a1bdf93948c519a782e283336688db75bb37a851f", size = 21006239, upload-time = "2026-03-20T12:05:41.989Z" },
+]
+
+[[package]]
+name = "dupekit"
+version = "0.1.0"
+source = { registry = "https://github.com/marin-community/marin/releases/expanded_assets/dupekit-0.1.0-40ac799" }
+sdist = { url = "https://github.com/marin-community/marin/releases/download/dupekit-0.1.0-40ac799/dupekit-0.1.0.tar.gz" }
+wheels = [
+    { url = "https://github.com/marin-community/marin/releases/download/dupekit-0.1.0-40ac799/dupekit-0.1.0-cp311-abi3-manylinux_2_28_aarch64.whl" },
+    { url = "https://github.com/marin-community/marin/releases/download/dupekit-0.1.0-40ac799/dupekit-0.1.0-cp311-abi3-manylinux_2_28_x86_64.whl" },
+    { url = "https://github.com/marin-community/marin/releases/download/dupekit-0.1.0-40ac799/dupekit-0.1.0-cp311-abi3-macosx_10_12_x86_64.whl" },
+    { url = "https://github.com/marin-community/marin/releases/download/dupekit-0.1.0-40ac799/dupekit-0.1.0-cp311-abi3-macosx_11_0_arm64.whl" },
 ]
 
 [[package]]
