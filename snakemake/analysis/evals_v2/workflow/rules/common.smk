@@ -29,9 +29,9 @@ def get_model_config(name):
 for _m in config["models"]:
     _has_gcs = "gcs_path" in _m
     _has_hf = "hf_repo" in _m
-    assert _has_gcs ^ _has_hf, (
-        f"model {_m['name']!r} must have exactly one of `gcs_path` or `hf_repo`"
-    )
+    assert (
+        _has_gcs ^ _has_hf
+    ), f"model {_m['name']!r} must have exactly one of `gcs_path` or `hf_repo`"
 
 
 # Wildcard alternations used across rules.
@@ -58,6 +58,10 @@ def get_model_datasets(model_name):
 
 def get_model_batch_size(model_name):
     """Per-model ``batch_size`` if set, else the global ``inference.batch_size``."""
-    return get_model_config(model_name).get(
+    bs = get_model_config(model_name).get(
         "batch_size", config["inference"]["batch_size"]
     )
+    assert (
+        isinstance(bs, int) and bs > 0
+    ), f"model {model_name!r} `batch_size` must be a positive int, got {bs!r}"
+    return bs

@@ -608,12 +608,19 @@ def _render_glm_repro_row(entry: "EvalsV2Method", source: str, dataset: str) -> 
     return f"| `{entry.display}` | {step} | {source_md} | {wandb_md} | {parquet} |"
 
 
-# The Repro section's gLM block = a contiguous run of rows starting with
-# `| \`exp...\` |`. We don't anchor on specific entry names so the regex
-# survives EVALS_V2_MODELS edits. (The conservation / GPN-Star / AlphaGenome
-# rows start with different method prefixes so they don't match.)
-REPRO_GLM_BLOCK_RE = re.compile(
-    r"(?P<block>(?:\| `exp[^`]+` \| [^\n]+\n)+)",
+# Stable HTML-comment anchors around the auto-regenerated gLM block.
+# GitHub-flavored markdown hides HTML comments in rendered output, so these
+# are invisible to readers but unmissable for the regex. On first run against
+# a body that pre-dates the anchors, we fall back to the legacy `exp`-prefix
+# regex and emit the anchors so future runs use the stable markers.
+REPRO_GLM_ANCHOR_START = "<!-- evals_v2-glm-rows:start -->"
+REPRO_GLM_ANCHOR_END = "<!-- evals_v2-glm-rows:end -->"
+REPRO_GLM_ANCHORED_RE = re.compile(
+    re.escape(REPRO_GLM_ANCHOR_START) + r"\n.*?\n" + re.escape(REPRO_GLM_ANCHOR_END),
+    re.DOTALL,
+)
+REPRO_GLM_LEGACY_RE = re.compile(
+    r"(?:\| `exp[^`]+` \| [^\n]+\n)+",
     re.MULTILINE,
 )
 
@@ -630,11 +637,23 @@ def _update_repro_glm_block(body: str, dataset: str) -> str:
     ]
     if not new_rows:
         return body
-    new_block = "\n".join(new_rows) + "\n"
-    match = REPRO_GLM_BLOCK_RE.search(body)
-    if match is None:
-        raise RuntimeError("could not find gLM block in Reproducibility section")
-    return body[: match.start()] + new_block + body[match.end() :]
+    anchored_block = (
+        REPRO_GLM_ANCHOR_START
+        + "\n"
+        + "\n".join(new_rows)
+        + "\n"
+        + REPRO_GLM_ANCHOR_END
+    )
+    if match := REPRO_GLM_ANCHORED_RE.search(body):
+        return body[: match.start()] + anchored_block + body[match.end() :]
+    # First-time migration: locate the existing exp-prefixed gLM block and
+    # replace it with the anchored version. Subsequent runs use anchors.
+    if match := REPRO_GLM_LEGACY_RE.search(body):
+        return body[: match.start()] + anchored_block + "\n" + body[match.end() :]
+    raise RuntimeError(
+        "could not find gLM block in Reproducibility section "
+        "(neither anchored nor legacy `exp`-prefixed rows matched)"
+    )
 
 
 def _bump_last_updated(body: str, today: str) -> str:
@@ -752,7 +771,25 @@ def patch_issue(dataset: str, table_md: str) -> None:
     print(f"  ↳ patched #{issue_number}.")
 
 
+def _check_evals_v2_consistency() -> None:
+    """Fail loud at script start if `EVALS_V2_MODELS` references a `parquet`
+    name that's not in the live evals_v2 config — catches drift between the
+    leaderboard's frozen list and the pipeline's source of truth (e.g. a
+    config rename without a corresponding update here)."""
+    sources = _load_evals_v2_sources()
+    missing = [
+        entry.parquet for entry in EVALS_V2_MODELS if entry.parquet not in sources
+    ]
+    if missing:
+        raise RuntimeError(
+            f"EVALS_V2_MODELS references parquet names not found in "
+            f"{EVALS_V2_CONFIG}: {missing}. Either add them to the config "
+            f"or remove them from EVALS_V2_MODELS."
+        )
+
+
 def main() -> None:
+    _check_evals_v2_consistency()
     parser = argparse.ArgumentParser()
     patch_group = parser.add_mutually_exclusive_group()
     patch_group.add_argument(
