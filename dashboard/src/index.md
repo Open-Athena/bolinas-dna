@@ -42,11 +42,15 @@ display(html`<div class="card">
   <table class="dataset-meta">
     <tr><td><b>HF dataset</b></td><td><a href=${hfUrl}><code>${meta.hf_repo} @ ${meta.hf_commit}</code></a></td></tr>
     <tr><td><b>Split</b></td><td><code>${meta.split}</code> (test held out for final-eval)</td></tr>
-    <tr><td><b>Score column</b></td><td><code>${meta.score_type}</code> (higher should be more pathogenic)</td></tr>
-    <tr><td><b>Subset threshold</b></td><td><code>n_pairs ≥ ${meta.n_min_per_subset}</code></td></tr>
-    <tr><td><b>Sort axis</b></td><td>Macro Avg by default (rationale: ~92% missense over-weights protein-coding-specialist methods on Global). Click any column header to re-sort.</td></tr>
   </table>
-  <p>${meta.description}</p>
+  <div class="dataset-bullets">
+    <div><b>Positives:</b> ${meta.positives}</div>
+    <div><b>Negatives:</b> ${meta.negatives}</div>
+    <div><b>Matching:</b> ${meta.matching}</div>
+  </div>
+  <div class="dataset-notes">
+    ${meta.notes.map((n) => html`<div>${n}</div>`)}
+  </div>
 </div>`);
 ```
 
@@ -216,6 +220,10 @@ main > h1, main > h2, main > h3, main > p { max-width: 1200px; }
 .lb-na { text-align: center; color: #aaa; }
 .dataset-meta td { padding: 2px 8px; }
 .dataset-meta td:first-child { white-space: nowrap; }
+.dataset-bullets { margin: 0.5em 0 0.25em; }
+.dataset-bullets div { margin: 2px 0; }
+.dataset-notes { margin-top: 0.5em; color: #666; font-size: 0.9em; }
+.dataset-notes div { margin: 2px 0; }
 .legend-row {
   display: flex; align-items: center; gap: 12px;
   margin: 0.5em 0 1em;

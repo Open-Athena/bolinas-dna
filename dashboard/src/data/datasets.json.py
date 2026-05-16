@@ -19,13 +19,13 @@ DATASETS = {
         "issue": "https://github.com/Open-Athena/bolinas-dna/issues/161",
         "split": "train",
         "n_min_per_subset": 30,
-        "description": (
-            "Mendelian disease pathogenic SNVs (HGMD ∪ OMIM ∪ Smedley et al. "
-            "2016, de-duped, AF<0.001) × gnomAD common-frequency negatives "
-            "(AN≥25k, AF>0.001), matched 1:1 within gene + consequence "
-            "subset. Pathogenic should score higher than benign — hence "
-            "`minus_llr` (positive direction)."
-        ),
+        "positives": "HGMD ∪ OMIM ∪ Smedley et al. 2016 pathogenic SNVs (de-duped, AF<0.001)",
+        "negatives": "gnomAD common-frequency variants (AN≥25k, AF>0.001)",
+        "matching": "1:1 within gene + consequence subset",
+        "notes": [
+            "Per-subset columns exclude subsets with `n_pairs < 30`.",
+            "Sorted by Macro Avg by default — rationale: ~92% missense over-weights protein-coding-specialist methods on Global. Click any column header to re-sort.",
+        ],
     },
 }
 
