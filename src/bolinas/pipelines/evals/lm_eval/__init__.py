@@ -23,7 +23,11 @@ needed).
 """
 
 import importlib.resources
+import logging
+import pathlib
 from functools import wraps
+
+_logger = logging.getLogger(__name__)
 
 
 def _install_task_manager_patch() -> None:
@@ -36,7 +40,19 @@ def _install_task_manager_patch() -> None:
     if getattr(TaskManager, "_bolinas_dna_patched", False):
         return
 
-    bolinas_dna_path = str(importlib.resources.files(__name__))
+    # Use __file__.parent rather than importlib.resources.files() to avoid
+    # surprises with editable installs / namespace packages where files()
+    # can return a MultiplexedPath whose str() doesn't resolve to a real
+    # filesystem path. __file__ is always the actual __init__.py location.
+    bolinas_dna_path = str(pathlib.Path(__file__).parent)
+    yaml_files = sorted(pathlib.Path(bolinas_dna_path).glob("*.yaml"))
+    _logger.info(
+        "bolinas.pipelines.evals.lm_eval: patching TaskManager.__init__ to include "
+        "%s (found %d task YAMLs: %s)",
+        bolinas_dna_path,
+        len(yaml_files),
+        [f.name for f in yaml_files],
+    )
     original_init = TaskManager.__init__
 
     @wraps(original_init)
