@@ -188,6 +188,11 @@ models:
     window_size: 512
     datasets: [mendelian_traits]
     batch_size: 64
+  - name: exp27-cds-yolo-step-34000
+    gcs_path: gs://marin-dna-us-central1/checkpoints/animal-cds-yolo-repeat-weight-0.01-r01-e8cb9b/hf/step-34000
+    window_size: 512
+    datasets: [mendelian_traits]
+    batch_size: 64
 
   # exp13 — promoter-cds-mixture-equal-r01-b67fd1 (50% promoter / 50% CDS).
   - name: exp13-mixture-equal-step-2000
