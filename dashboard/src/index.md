@@ -6,8 +6,6 @@ wide: true
 
 # Mendelian Traits Leaderboard
 
-Matched-pair PairwiseAccuracy per method on the [`bolinas-dna/evals_mendelian_traits`](https://huggingface.co/datasets/bolinas-dna/evals_mendelian_traits) dataset (HGMD ∪ OMIM ∪ Smedley 2016 pathogenic SNVs vs. gnomAD common-frequency, 1:1 gene-matched within consequence subset). Higher is better; random baseline is 0.5.
-
 ```js
 const leaderboard = await FileAttachment("data/leaderboard.parquet").parquet();
 const methods = await FileAttachment("data/methods.json").json();
@@ -143,6 +141,7 @@ main > h1, main > h2, main > h3, main > p { max-width: 1200px; }
   min-width: 70px;
 }
 .lb-heatmap thead th:hover { background: #eee; }
+.lb-col-label { white-space: nowrap; }
 .lb-col-sorted { background: #e8f0e8 !important; font-weight: 600; }
 .lb-method-header { text-align: left !important; cursor: default !important; }
 .lb-method { white-space: nowrap; }

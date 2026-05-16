@@ -39,12 +39,12 @@ function joinLinks(parts) {
 
 function methodCard(m) {
   const training = m.training ?? {};
-  const trainingFields = [
-    training.data,
-    paramsLabel(training.params),
-    training.window_size ? `ctx ${training.window_size}` : null,
-    training.objective,
-  ].filter((x) => x != null);
+  // Always render Size + Context rows; "—" for entries that don't have a
+  // model (conservation tracks) or where the value isn't known.
+  const sizeLabel = paramsLabel(training.params) ?? "—";
+  const contextLabel = training.window_size ? `${training.window_size} bp` : "—";
+  // Training data / objective only when populated (bolinas entries).
+  const trainingExtras = [training.data, training.objective].filter(Boolean);
   const checkpointLinks = [];
   if (m.checkpoint?.hf) {
     checkpointLinks.push(
@@ -70,9 +70,11 @@ function methodCard(m) {
       ${m.id !== m.display ? html`<small class="method-card-step">${m.id}</small>` : ""}
     </header>
     <p class="method-card-desc">${m.description}</p>
+    <div class="method-card-row"><span class="label">Size</span><span>${sizeLabel}</span></div>
+    <div class="method-card-row"><span class="label">Context</span><span>${contextLabel}</span></div>
     ${
-      trainingFields.length
-        ? html`<div class="method-card-row"><span class="label">Training</span><span>${trainingFields.join(" · ")}</span></div>`
+      trainingExtras.length
+        ? html`<div class="method-card-row"><span class="label">Training</span><span>${trainingExtras.join(" · ")}</span></div>`
         : ""
     }
     ${

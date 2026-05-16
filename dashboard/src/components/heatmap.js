@@ -112,9 +112,13 @@ export function heatmap({rows, methodById, leadingAggregate = MACRO}) {
   const globalN = sample?.cells.get(GLOBAL)?.n_pairs ?? 0;
   const macroK = sample?.cells.get(MACRO)?.n_pairs ?? 0;
   const headerLabel = (col) => {
-    if (col === GLOBAL) return html`Global<br><small>n=${globalN}</small>`;
-    if (col === MACRO) return html`Macro Avg<br><small>${macroK} subsets</small>`;
-    return html`${SUBSET_DISPLAY[col]}<br><small>n=${subsetMaxN.get(col)}</small>`;
+    // Wrap the label so multi-word names ("Macro Avg") stay on a single row
+    // instead of breaking across two lines when the column is tight.
+    if (col === GLOBAL)
+      return html`<span class="lb-col-label">Global</span><br><small>n=${globalN}</small>`;
+    if (col === MACRO)
+      return html`<span class="lb-col-label">Macro Avg</span><br><small>${macroK} subsets</small>`;
+    return html`<span class="lb-col-label">${SUBSET_DISPLAY[col]}</span><br><small>n=${subsetMaxN.get(col)}</small>`;
   };
 
   let sortKey = leadingAggregate;

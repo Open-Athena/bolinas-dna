@@ -353,6 +353,8 @@
   family: gpn_star
   description: vertebrate, 100-way MSA
   msa: v100-200m
+  training:
+    params: 2.0e8       # 200M, from the "-200m" suffix in the MSA tag
   datasets: [mendelian_traits, complex_traits, eqtl]
 
 - id: GPN-Star-M
@@ -360,6 +362,8 @@
   family: gpn_star
   description: mammal, 447-way MSA
   msa: m447-200m
+  training:
+    params: 2.0e8
   datasets: [mendelian_traits, complex_traits, eqtl]
 
 - id: GPN-Star-P
@@ -367,4 +371,6 @@
   family: gpn_star
   description: primate, 243-way MSA
   msa: p243-200m
+  training:
+    params: 2.0e8
   datasets: [mendelian_traits, complex_traits, eqtl]
