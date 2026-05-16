@@ -10,6 +10,8 @@
 import * as d3 from "npm:d3";
 import {html, svg} from "npm:htl";
 
+import {attachModelPopover} from "./model-cards.js";
+
 const SUBSET_DISPLAY = {
   missense_variant: "Missense",
   splicing: "Splicing",
@@ -62,12 +64,12 @@ function makeComparator(sortKey) {
  * @param {object} opts
  * @param {Array} opts.rows long-form (method × subset) rows; output of
  *   `bolinas.pipelines.evals.leaderboard.normalized_rows`.
- * @param {Map}   opts.methodById metadata for each method id (for links + tooltips).
+ * @param {Map}   opts.modelById metadata for each method id (for links + tooltips).
  * @param {string} opts.leadingAggregate "_macro_avg_" or "_global_" — drives the
  *   default sort + which aggregate appears leftmost.
  * @returns {HTMLElement}
  */
-export function heatmap({rows, methodById, leadingAggregate = MACRO}) {
+export function heatmap({rows, modelById, leadingAggregate = MACRO}) {
   // Group by method_id; collect cells in a Map keyed by subset.
   const byMethod = new Map();
   for (const r of rows) {
@@ -125,6 +127,12 @@ export function heatmap({rows, methodById, leadingAggregate = MACRO}) {
   const sortedMethods = () =>
     [...byMethod.values()].sort(makeComparator(sortKey));
 
+  function colLabelText(col) {
+    if (col === GLOBAL) return `Global (n=${globalN})`;
+    if (col === MACRO) return `Macro Avg (${macroK} subsets)`;
+    return `${SUBSET_DISPLAY[col]} (n=${subsetMaxN.get(col)})`;
+  }
+
   function render() {
     const methods = sortedMethods();
 
@@ -133,7 +141,7 @@ export function heatmap({rows, methodById, leadingAggregate = MACRO}) {
     const table = html`<table class="lb-heatmap">
       <thead>
         <tr>
-          <th class="lb-method-header">Method</th>
+          <th class="lb-method-header">Model</th>
           ${columns.map(
             (col) => html`<th
               class=${`lb-col${col === sortKey ? " lb-col-sorted" : ""}`}
@@ -151,15 +159,16 @@ export function heatmap({rows, methodById, leadingAggregate = MACRO}) {
       </thead>
       <tbody>
         ${methods.map((m) => {
-          const meta = methodById.get(m.method_id);
+          const meta = modelById.get(m.method_id);
           const family = m.family;
-          const methodCell = html`<td class="lb-method">
+          const anchor = html`<a href=${`./models#${encodeURIComponent(m.method_id)}`}><code>${m.method_display}</code></a>`;
+          if (meta) attachModelPopover(anchor, meta);
+          const modelCell = html`<td class="lb-method">
             <span class=${`lb-family lb-family-${family}`} title=${family}></span>
-            <a href=${`./methods#${encodeURIComponent(m.method_id)}`}><code>${m.method_display}</code></a>
-            ${meta?.description ? html`<span class="lb-desc"> ${meta.description}</span>` : ""}
+            ${anchor}
           </td>`;
           return html`<tr>
-            ${methodCell}
+            ${modelCell}
             ${columns.map((col) => {
               const c = m.cells.get(col);
               if (c == null) return html`<td class="lb-na">—</td>`;
@@ -177,7 +186,7 @@ export function heatmap({rows, methodById, leadingAggregate = MACRO}) {
       </tbody>
     </table>`;
 
-    root.append(table);
+    root.append(table, forestPlot(methods, sortKey, colLabelText(sortKey)));
     return root;
   }
 
@@ -185,6 +194,61 @@ export function heatmap({rows, methodById, leadingAggregate = MACRO}) {
   // We return one stable node so reactive consumers don't need to re-mount.
   const initial = render();
   return initial;
+}
+
+// ---- Forest plot (PA ± SE for the currently sorted column) -----------------
+//
+// One row per method, in current sort order. A colored dot at the PA value
+// with a horizontal whisker spanning [value − SE, value + SE] makes SE
+// width explicit — Macro Avg whiskers are narrow (~0.02), per-subset
+// whiskers on small-n subsets can be ~0.07-0.10.
+
+function forestPlot(methods, columnKey, columnText) {
+  const visible = methods
+    .map((m) => ({m, cell: m.cells.get(columnKey)}))
+    .filter((x) => x.cell != null);
+  if (visible.length === 0) {
+    return html`<div class="lb-forest-empty">No values for ${columnText}.</div>`;
+  }
+
+  const width = 720;
+  const margin = {top: 28, right: 64, bottom: 26, left: 200};
+  const rowH = 22;
+  const height = margin.top + visible.length * rowH + margin.bottom;
+  const xMin = 0.5;
+  const xMax = 1.0;
+  const innerW = width - margin.left - margin.right;
+  const xPx = (v) =>
+    margin.left + ((Math.max(xMin, Math.min(xMax, v)) - xMin) / (xMax - xMin)) * innerW;
+  const xTicks = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
+
+  return svg`<svg class="lb-forest" viewBox=${`0 0 ${width} ${height}`} width=${width} style="overflow: visible;">
+    ${xTicks.map(
+      (t) => svg`<g>
+        <line x1=${xPx(t)} x2=${xPx(t)} y1=${margin.top} y2=${height - margin.bottom}
+              stroke=${t === xMin ? "#999" : "#eee"} stroke-width=${t === xMin ? 1 : 1}></line>
+        <text x=${xPx(t)} y=${margin.top - 8} text-anchor="middle" font-size="10" fill="#666">${t.toFixed(1)}</text>
+      </g>`,
+    )}
+    ${visible.map(({m, cell}, i) => {
+      const y = margin.top + i * rowH + rowH / 2;
+      const cx = xPx(cell.value);
+      const lo = xPx(cell.value - cell.se);
+      const hi = xPx(cell.value + cell.se);
+      const fill = paColor(cell.value);
+      return svg`<g>
+        <text x=${margin.left - 10} y=${y} text-anchor="end" dy="0.32em" font-size="11">${m.method_display}</text>
+        <line x1=${lo} x2=${hi} y1=${y} y2=${y} stroke="#666" stroke-width="1"></line>
+        <line x1=${lo} x2=${lo} y1=${y - 3} y2=${y + 3} stroke="#666"></line>
+        <line x1=${hi} x2=${hi} y1=${y - 3} y2=${y + 3} stroke="#666"></line>
+        <circle cx=${cx} cy=${y} r="4.5" fill=${fill} stroke="#333" stroke-width="0.5"></circle>
+        <text x=${hi + 6} y=${y} dy="0.32em" font-size="11" fill="#444"
+              font-variant-numeric="tabular-nums">${cell.value.toFixed(3)}</text>
+      </g>`;
+    })}
+    <text x=${margin.left + innerW / 2} y=${height - 6} text-anchor="middle"
+          font-size="11" fill="#666">PA on ${columnText} — dot is value, whisker is ± SE</text>
+  </svg>`;
 }
 
 // ---- Color legend ----------------------------------------------------------

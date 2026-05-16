@@ -1,7 +1,7 @@
 """Aggregate matched-pair evaluation metrics from S3 into leaderboard rows.
 
 Reads pre-computed PairwiseAccuracy parquets emitted by these snakemake
-pipelines, then collapses them into one ``MethodMetrics`` object per registered
+pipelines, then collapses them into one ``ModelMetrics`` object per registered
 method × dataset:
 
   - ``snakemake/analysis/evals_v2/``  → one parquet per ``(model, dataset)``,
@@ -13,8 +13,8 @@ method × dataset:
   - ``snakemake/gpn_star_eval/``      → one parquet per dataset, filter by
     ``score_type`` + ``split`` + ``model``.
 
-Method registry (display name, family, training metadata, etc.) lives in
-``dashboard/methods.yaml`` and is loaded via ``methods.load_methods``. This
+Model registry (display name, family, training metadata, etc.) lives in
+``dashboard/models.yaml`` and is loaded via ``methods.load_models``. This
 module is the data layer for both the dashboard (``dashboard/``) and the
 legacy issue-body patching CLI (``snakemake/evals/scratch/leaderboard_gen.py``).
 """
@@ -29,7 +29,7 @@ from typing import Literal
 
 import polars as pl
 
-from bolinas.pipelines.evals.methods import ALL_DATASETS, Method, methods_for_dataset
+from bolinas.pipelines.evals.models import ALL_DATASETS, Model, models_for_dataset
 from bolinas.pipelines.evals.metrics import GLOBAL_SUBSET, MACRO_AVG_SUBSET
 
 S3 = "s3://oa-bolinas"
@@ -138,7 +138,7 @@ def _read_parquet(path: str) -> pl.DataFrame:
     return pl.read_parquet(path, storage_options=_storage_options())
 
 
-def _parquet_path(method: Method, dataset: str) -> str:
+def _parquet_path(method: Model, dataset: str) -> str:
     match method.family:
         case "bolinas":
             return (
@@ -159,7 +159,7 @@ def _parquet_path(method: Method, dataset: str) -> str:
 
 
 def fetch_method_metrics(
-    method: Method, dataset: str, protocol: str | None = None
+    method: Model, dataset: str, protocol: str | None = None
 ) -> pl.DataFrame:
     """Return rows ``[subset, value, se, n_pairs, n_ties]`` for one
     ``(method, dataset, protocol)`` — including the ``_global_`` and
@@ -217,10 +217,10 @@ class Aggregate:
 
 
 @dataclass(frozen=True)
-class MethodMetrics:
+class ModelMetrics:
     """One method × dataset, split into per-subset rows + both aggregates."""
 
-    method: Method
+    method: Model
     per_subset: pl.DataFrame  # cols: subset, value, se, n_pairs, n_ties
     global_: Aggregate
     macro_avg: Aggregate
@@ -257,7 +257,7 @@ _SOFT_FAIL_FAMILIES: frozenset[str] = frozenset({"alphagenome", "gpn_star"})
 
 def gather_metrics(
     dataset: str, protocols: dict[str, str] | None = None
-) -> list[MethodMetrics]:
+) -> list[ModelMetrics]:
     """Fetch + split metrics for every method registered for ``dataset``,
     in registry order.
 
@@ -268,8 +268,8 @@ def gather_metrics(
     families fail loud.
     """
     overrides = protocols or {}
-    out: list[MethodMetrics] = []
-    for method in methods_for_dataset(dataset):
+    out: list[ModelMetrics] = []
+    for method in models_for_dataset(dataset):
         protocol = overrides.get(method.family, DEFAULT_PROTOCOL[method.family])
         try:
             df = fetch_method_metrics(method, dataset, protocol)
@@ -283,11 +283,11 @@ def gather_metrics(
                 continue
             raise
         per, g, m = _split(df)
-        out.append(MethodMetrics(method=method, per_subset=per, global_=g, macro_avg=m))
+        out.append(ModelMetrics(method=method, per_subset=per, global_=g, macro_avg=m))
     return out
 
 
-def sort_by_leading(metrics: list[MethodMetrics], dataset: str) -> list[MethodMetrics]:
+def sort_by_leading(metrics: list[ModelMetrics], dataset: str) -> list[ModelMetrics]:
     """Stable descending sort by the leading aggregate for this dataset."""
     axis = LEADING_AGGREGATE[dataset]
     if axis == "global":
@@ -304,7 +304,7 @@ def fmt(value: float, se: float) -> str:
     return f"{value:.3f} ± {se:.3f}"
 
 
-def _method_label(mm: MethodMetrics) -> str:
+def _model_label(mm: ModelMetrics) -> str:
     """Inline label for the leaderboard ``method`` column.
 
     Convention from the legacy ``leaderboard_gen.py``:
@@ -344,7 +344,7 @@ def build_table(dataset: str) -> str:
     cell: dict[tuple[str, str], tuple[float, float]] = {}
     top_subset: dict[str, float] = {}
     for mm in metrics:
-        label = _method_label(mm)
+        label = _model_label(mm)
         for row in mm.per_subset.iter_rows(named=True):
             s = row["subset"]
             if s in subsets:
@@ -373,7 +373,7 @@ def build_table(dataset: str) -> str:
     lines = [header, sep]
 
     for mm in metrics:
-        label = _method_label(mm)
+        label = _model_label(mm)
         gv, gse = mm.global_.value, mm.global_.se
         mv, mse = mm.macro_avg.value, mm.macro_avg.se
         global_cell = f"**{fmt(gv, gse)}**" if gv >= top_global - 0.01 else fmt(gv, gse)
@@ -413,9 +413,9 @@ def normalized_rows(dataset: str) -> pl.DataFrame:
     log a warning and are skipped rather than failing the build.
 
     Columns:
-      - ``method_id``       — ``Method.id`` (primary key for a row's method)
-      - ``method_display``  — ``Method.display``
-      - ``family``          — ``Method.family``
+      - ``method_id``       — ``Model.id`` (primary key for a row's method)
+      - ``method_display``  — ``Model.display``
+      - ``family``          — ``Model.family``
       - ``protocol``        — protocol name (e.g. ``LLR``, ``JSD``, ``cLLR``)
       - ``subset``          — consequence subset OR ``_global_`` / ``_macro_avg_``
       - ``value``           — PairwiseAccuracy
@@ -424,7 +424,7 @@ def normalized_rows(dataset: str) -> pl.DataFrame:
       - ``n_ties``          — tied-pair count
     """
     rows: list[dict] = []
-    for method in methods_for_dataset(dataset):
+    for method in models_for_dataset(dataset):
         for protocol in PROTOCOLS[method.family]:
             try:
                 df = fetch_method_metrics(method, dataset, protocol)

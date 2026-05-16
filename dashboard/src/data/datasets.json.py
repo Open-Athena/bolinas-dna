@@ -19,12 +19,13 @@ DATASETS = {
         "issue": "https://github.com/Open-Athena/bolinas-dna/issues/161",
         "split": "train",
         "n_min_per_subset": 30,
-        "positives": "HGMD ∪ OMIM ∪ Smedley et al. 2016 pathogenic SNVs (de-duped, AF<0.001)",
-        "negatives": "gnomAD common-frequency variants (AN≥25k, AF>0.001)",
-        "matching": "1:1 within gene + consequence subset",
+        "positives": "OMIM ∪ HGMD ∪ Smedley et al. 2016 pathogenic SNVs (AF < 0.1%)",
+        "negatives": "gnomAD high-frequency (AF > 0.1%)",
+        "matching": "1:1 on gene, consequence, TSS distance, exon distance",
+        "metric": "PairwiseAccuracy ± Wald SE — fraction of `(positive, negative)` pairs where the positive scores strictly higher than its matched negative (ties count 0.5).",
         "notes": [
             "Per-subset columns exclude subsets with `n_pairs < 30`.",
-            "Sorted by Macro Avg by default — rationale: ~92% missense over-weights protein-coding-specialist methods on Global. Click any column header to re-sort.",
+            "Sorted by Macro Avg by default — the consequence-subset distribution (~92% missense) reflects human-annotator focus on protein-coding disease variants, not the underlying prevalence of pathogenic variants; Global PA therefore over-weights protein-coding-specialist methods. Macro Avg gives equal weight to each subset.",
         ],
     },
 }

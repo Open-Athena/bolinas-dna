@@ -3,8 +3,8 @@ optionally PATCH the issue bodies in-place.
 
 This script is a thin CLI on top of ``bolinas.pipelines.evals.leaderboard``
 (which holds the metric aggregation + markdown rendering) and
-``bolinas.pipelines.evals.methods`` (which loads the method registry from
-``dashboard/methods.yaml``). It exists for the transition window while the
+``bolinas.pipelines.evals.models`` (which loads the method registry from
+``dashboard/models.yaml``). It exists for the transition window while the
 issue-body tables are still live; once those issues are closed in favour of
 the dashboard, this script can be deleted.
 
@@ -31,7 +31,7 @@ from bolinas.pipelines.evals.leaderboard import (
     build_table,
     score_type_for,
 )
-from bolinas.pipelines.evals.methods import Method, methods_for_dataset
+from bolinas.pipelines.evals.models import Model, models_for_dataset
 
 DATASETS: tuple[str, ...] = ("mendelian_traits", "complex_traits", "eqtl")
 REPO = "Open-Athena/bolinas-dna"
@@ -219,12 +219,12 @@ def _load_evals_v2_config_models() -> dict[str, dict]:
     """Map evals_v2 model `name` → its raw config dict.
 
     Single source of truth for the cross-check that every bolinas entry in
-    `dashboard/methods.yaml` is actually scored by the pipeline."""
+    `dashboard/models.yaml` is actually scored by the pipeline."""
     cfg = yaml.safe_load(EVALS_V2_CONFIG.read_text())
     return {m["name"]: m for m in cfg["models"]}
 
 
-def _method_source_uri(method: Method) -> str:
+def _model_source_uri(method: Model) -> str:
     """Return the canonical source URI for a bolinas method's checkpoint:
     its GCS path if present, else ``hf://<repo>``."""
     assert method.family == "bolinas", method.id
@@ -235,7 +235,7 @@ def _method_source_uri(method: Method) -> str:
     return f"hf://{method.checkpoint.hf}"
 
 
-def _wandb_run_name(method: Method) -> str | None:
+def _wandb_run_name(method: Model) -> str | None:
     """Extract the wandb run name from a GCS checkpoint path of the shape
     ``gs://…/checkpoints/<run_name>/hf/step-<N>``. Returns None when the
     checkpoint is HF-hosted (no wandb mirror in that case)."""
@@ -245,9 +245,9 @@ def _wandb_run_name(method: Method) -> str | None:
     return m.group(1) if m else None
 
 
-def _render_glm_repro_row(method: Method, dataset: str) -> str:
+def _render_glm_repro_row(method: Model, dataset: str) -> str:
     """One row of the Reproducibility table for a bolinas method entry."""
-    source = _method_source_uri(method)
+    source = _model_source_uri(method)
     if source.startswith("gs://"):
         m = re.search(r"checkpoints/([^/]+)/hf/step-(\d+)", source)
         if m is None:
@@ -288,12 +288,12 @@ REPRO_GLM_LEGACY_RE = re.compile(
 
 
 def _update_repro_glm_block(body: str, dataset: str) -> str:
-    """Regenerate the gLM rows of the Reproducibility table from methods.yaml.
+    """Regenerate the gLM rows of the Reproducibility table from models.yaml.
     Preserves the surrounding static rows (conservation, GPN-Star, AlphaGenome)
     untouched."""
     new_rows = [
         _render_glm_repro_row(m, dataset)
-        for m in methods_for_dataset(dataset)
+        for m in models_for_dataset(dataset)
         if m.family == "bolinas"
     ]
     if not new_rows:
@@ -433,15 +433,15 @@ def patch_issue(dataset: str, table_md: str) -> None:
 
 
 def _check_methods_yaml_consistency() -> None:
-    """Fail loud if a bolinas entry in dashboard/methods.yaml has no
+    """Fail loud if a bolinas entry in dashboard/models.yaml has no
     corresponding model in the live evals_v2 config — catches drift between
     the leaderboard's curated list and the pipeline's source of truth (e.g.
-    a config rename without a corresponding methods.yaml update)."""
+    a config rename without a corresponding models.yaml update)."""
     config_models = _load_evals_v2_config_models()
     missing = [
         m.id
         for ds in DATASETS
-        for m in methods_for_dataset(ds)
+        for m in models_for_dataset(ds)
         if m.family == "bolinas" and m.id not in config_models
     ]
     # Dedup while preserving order.
@@ -449,9 +449,9 @@ def _check_methods_yaml_consistency() -> None:
     missing = [i for i in missing if not (i in seen or seen.add(i))]
     if missing:
         raise RuntimeError(
-            f"bolinas methods in dashboard/methods.yaml not found in "
+            f"bolinas methods in dashboard/models.yaml not found in "
             f"{EVALS_V2_CONFIG}: {missing}. Either add them to the config "
-            f"or remove them from methods.yaml."
+            f"or remove them from models.yaml."
         )
 
 

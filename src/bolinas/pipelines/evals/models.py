@@ -1,4 +1,4 @@
-"""Load and validate ``dashboard/methods.yaml``.
+"""Load and validate ``dashboard/models.yaml``.
 
 The YAML file is the single source of truth for every method that appears on
 any leaderboard — its display name, family (which drives parquet path +
@@ -40,7 +40,7 @@ class CheckpointMeta:
 
 
 @dataclass(frozen=True)
-class Method:
+class Model:
     id: str
     display: str
     family: Family
@@ -63,12 +63,12 @@ def _find_repo_root(start: Path) -> Path:
     raise RuntimeError(f"could not find pyproject.toml above {start}")
 
 
-METHODS_YAML: Path = (
-    _find_repo_root(Path(__file__).resolve()) / "dashboard" / "methods.yaml"
+MODELS_YAML: Path = (
+    _find_repo_root(Path(__file__).resolve()) / "dashboard" / "models.yaml"
 )
 
 
-def _coerce(raw: dict) -> Method:
+def _coerce(raw: dict) -> Model:
     family = raw["family"]
     assert family in ALL_FAMILIES, (
         f"unknown family {family!r} for id={raw.get('id')!r}; expected one of {ALL_FAMILIES}"
@@ -87,7 +87,7 @@ def _coerce(raw: dict) -> Method:
         assert checkpoint.gcs or checkpoint.hf, (
             f"family=bolinas requires checkpoint.gcs or checkpoint.hf (id={raw['id']!r})"
         )
-    return Method(
+    return Model(
         id=raw["id"],
         display=raw["display"],
         family=family,
@@ -105,11 +105,11 @@ def _coerce(raw: dict) -> Method:
 
 
 @cache
-def load_methods(path: Path = METHODS_YAML) -> tuple[Method, ...]:
-    """Load and validate ``dashboard/methods.yaml``. Cached per (process, path)."""
+def load_models(path: Path = MODELS_YAML) -> tuple[Model, ...]:
+    """Load and validate ``dashboard/models.yaml``. Cached per (process, path)."""
     raw_list = yaml.safe_load(path.read_text())
     assert isinstance(raw_list, list), (
-        f"methods.yaml must be a top-level list, got {type(raw_list).__name__}"
+        f"models.yaml must be a top-level list, got {type(raw_list).__name__}"
     )
     methods = tuple(_coerce(r) for r in raw_list)
     seen: set[str] = set()
@@ -119,7 +119,7 @@ def load_methods(path: Path = METHODS_YAML) -> tuple[Method, ...]:
     return methods
 
 
-def methods_for_dataset(dataset: str) -> tuple[Method, ...]:
+def models_for_dataset(dataset: str) -> tuple[Model, ...]:
     """Methods registered for ``dataset``, in registry order."""
     assert dataset in ALL_DATASETS, f"unknown dataset {dataset!r}"
-    return tuple(m for m in load_methods() if dataset in m.datasets)
+    return tuple(m for m in load_models() if dataset in m.datasets)

@@ -10,7 +10,7 @@ export default {
   // will be added later (see the dashboard plan).
   pages: [
     {name: "Mendelian", path: "/"},
-    {name: "Methods", path: "/methods"},
+    {name: "Models", path: "/models"},
     {name: "About", path: "/about"},
   ],
 
@@ -24,5 +24,5 @@ export default {
   // the markdown body instead, alongside dataset metadata).
   header: "",
   footer: ({path}) =>
-    `Source: <a href="https://github.com/Open-Athena/bolinas-dna/blob/main/dashboard/src${path}.md">dashboard/src${path}.md</a> · <a href="https://github.com/Open-Athena/bolinas-dna/blob/main/dashboard/methods.yaml">methods.yaml</a>`,
+    `Source: <a href="https://github.com/Open-Athena/bolinas-dna/blob/main/dashboard/src${path}.md">dashboard/src${path}.md</a> · <a href="https://github.com/Open-Athena/bolinas-dna/blob/main/dashboard/models.yaml">models.yaml</a>`,
 };

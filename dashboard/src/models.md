@@ -9,8 +9,8 @@ wide: true
 Every entry on the leaderboard, with its family, training metadata, and links out to wandb / source / HF / GCS / tracking issues. Links from the heatmap on the [Mendelian page](./) deep-link to a method's anchor here.
 
 ```js
-const methods = await FileAttachment("data/methods.json").json();
-import {methodCards} from "./components/method-cards.js";
+const methods = await FileAttachment("data/models.json").json();
+import {modelCards} from "./components/model-cards.js";
 ```
 
 ```js
@@ -47,7 +47,7 @@ function matches(m) {
 const filtered = methods.filter(matches);
 ```
 
-<small>${filtered.length} of ${methods.length} methods shown.</small>
+<small>${filtered.length} of ${methods.length} models shown.</small>
 
 <style>
 /* Lift OF's 640px prose cap so the cards grid can use the full page width. */
@@ -106,5 +106,5 @@ main > p, main > h1, main > h2, main > h3, main > small { max-width: none; }
 </style>
 
 ```js
-display(methodCards(filtered));
+display(modelCards(filtered));
 ```

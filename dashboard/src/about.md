@@ -27,8 +27,8 @@ Each method × dataset emits two aggregate rows alongside the per-subset cells:
 
 The dashboard is a presentation layer over plain-text source files. To consume the data programmatically, fetch one of:
 
-- **`dashboard/methods.yaml`** in the repo — canonical metadata for every method. `gh api repos/Open-Athena/bolinas-dna/contents/dashboard/methods.yaml` or `git show main:dashboard/methods.yaml`.
-- **`/data/methods.json`** under this site — methods.yaml normalized to JSON. Same fields as the YAML.
+- **`dashboard/models.yaml`** in the repo — canonical metadata for every method. `gh api repos/Open-Athena/bolinas-dna/contents/dashboard/models.yaml` or `git show main:dashboard/models.yaml`.
+- **`/data/models.json`** under this site — models.yaml normalized to JSON. Same fields as the YAML.
 - **`/data/leaderboard.parquet`** under this site — long-form `(method × dataset × subset)` PA + SE + n_pairs + n_ties. Readable from Python (`pl.read_parquet(URL)`) or DuckDB (`SELECT * FROM read_parquet('URL')`).
 - **`/data/datasets.json`** under this site — per-dataset metadata (HF commit, score type, etc.).
 
@@ -36,9 +36,9 @@ Every field shown in a table or tooltip is present in those files; the rendered 
 
 ## Adding a new method
 
-1. Append a YAML block to [`dashboard/methods.yaml`](https://github.com/Open-Athena/bolinas-dna/blob/main/dashboard/methods.yaml) (registry order; tag the appropriate `datasets`).
+1. Append a YAML block to [`dashboard/models.yaml`](https://github.com/Open-Athena/bolinas-dna/blob/main/dashboard/models.yaml) (registry order; tag the appropriate `datasets`).
 2. For `family: bolinas`, also add the model to [`snakemake/analysis/evals_v2/config/config.yaml`](https://github.com/Open-Athena/bolinas-dna/blob/main/snakemake/analysis/evals_v2/config/config.yaml).
 3. Run the evals_v2 pipeline → parquet written to S3.
 4. Open a PR; CI rebuilds this site and the new row appears.
 
-The schema is documented at the top of methods.yaml.
+The schema is documented at the top of models.yaml.

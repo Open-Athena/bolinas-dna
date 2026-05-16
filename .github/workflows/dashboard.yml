@@ -20,7 +20,7 @@ on:
     paths:
       - dashboard/**
       - src/bolinas/pipelines/evals/leaderboard.py
-      - src/bolinas/pipelines/evals/methods.py
+      - src/bolinas/pipelines/evals/models.py
       - src/bolinas/pipelines/evals/metrics.py
       - src/bolinas/pipelines/evals/gpn_star.py
       - .github/workflows/dashboard.yml

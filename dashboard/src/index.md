@@ -8,7 +8,7 @@ wide: true
 
 ```js
 const leaderboard = await FileAttachment("data/leaderboard.parquet").parquet();
-const methods = await FileAttachment("data/methods.json").json();
+const methods = await FileAttachment("data/models.json").json();
 const datasets = await FileAttachment("data/datasets.json").json();
 import {heatmap, colorLegend} from "./components/heatmap.js";
 ```
@@ -27,7 +27,7 @@ const allRows = leaderboard.toArray().map(r => ({
   dataset: String(r.dataset),
 }));
 const mendelian = allRows.filter(r => r.dataset === "mendelian_traits");
-const methodById = new Map(methods.map(m => [m.id, m]));
+const modelById = new Map(methods.map(m => [m.id, m]));
 const meta = datasets.mendelian_traits;
 ```
 
@@ -47,6 +47,7 @@ display(html`<div class="card">
     <div><b>Positives:</b> ${meta.positives}</div>
     <div><b>Negatives:</b> ${meta.negatives}</div>
     <div><b>Matching:</b> ${meta.matching}</div>
+    <div><b>Metric:</b> ${meta.metric}</div>
   </div>
   <div class="dataset-notes">
     ${meta.notes.map((n) => html`<div>${n}</div>`)}
@@ -58,6 +59,15 @@ display(html`<div class="card">
 
 ```js
 const families = ["bolinas", "conservation", "alphagenome", "gpn_star"];
+// Display labels for families (used in pill toggle, protocol picker,
+// popover chip). The slug stays the data-layer key (PROTOCOLS, parquet
+// rows, CSS classes); only the rendered text is humanised.
+const FAMILY_LABEL = {
+  bolinas: "bolinas",
+  conservation: "conservation",
+  alphagenome: "AlphaGenome",
+  gpn_star: "GPN-Star",
+};
 // Protocol options per family. Mirror of `PROTOCOLS` in
 // src/bolinas/pipelines/evals/leaderboard.py — keep in sync when adding
 // a protocol. Defaults match `DEFAULT_PROTOCOL`.
@@ -101,7 +111,7 @@ function FamilyToggle(allFamilies, initial = allFamilies) {
             render();
             fire();
           }}
-        >${f}</button>`,
+        >${FAMILY_LABEL[f] ?? f}</button>`,
       )}
       <span class="lb-toggle-actions">
         <button type="button" class="lb-link" onclick=${() => setAll(allFamilies)}>all</button>
@@ -132,7 +142,7 @@ function ProtocolPicker(options, defaults) {
     for (const [fam, protos] of Object.entries(options)) {
       if (protos.length < 2) continue;
       groups.push(html`<span class="lb-protocol-group">
-        <span class=${`lb-family-tag family-${fam}`}>${fam}</span>
+        <span class=${`lb-family-tag family-${fam}`}>${FAMILY_LABEL[fam] ?? fam}</span>
         <span class="lb-protocol-segmented">${protos.map(p => html`<button
           type="button"
           class=${`lb-protocol-btn${state[fam] === p ? " active" : ""}`}
@@ -149,7 +159,7 @@ function ProtocolPicker(options, defaults) {
 const protocolChoice = view(ProtocolPicker(PROTOCOL_OPTIONS, PROTOCOL_DEFAULTS));
 const search = view(
   Inputs.text({
-    label: "Method name",
+    label: "Model name",
     placeholder: "filter by method (e.g. exp166, phyloP)",
   }),
 );
@@ -218,6 +228,8 @@ main > h1, main > h2, main > h3, main > p { max-width: 1200px; }
   font-feature-settings: "tnum";
 }
 .lb-na { text-align: center; color: #aaa; }
+.lb-forest { display: block; margin: 1.5em 0 1em; }
+.lb-forest-empty { color: #888; margin: 1em 0; font-size: 0.9em; }
 .dataset-meta td { padding: 2px 8px; }
 .dataset-meta td:first-child { white-space: nowrap; }
 .dataset-bullets { margin: 0.5em 0 0.25em; }
@@ -324,6 +336,57 @@ main > h1, main > h2, main > h3, main > p { max-width: 1200px; }
   background: #333;
   color: #fff;
 }
+
+/* Model popover on heatmap method-name hover */
+.lb-method-popover {
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  font-size: 0.85em;
+  line-height: 1.4;
+  padding: 10px 12px;
+  min-width: 280px;
+  max-width: 360px;
+}
+.lb-pop-header { display: flex; flex-direction: column; gap: 3px; margin-bottom: 4px; }
+.lb-pop-family {
+  display: inline-block;
+  font-size: 0.7em;
+  padding: 1px 7px;
+  border-radius: 9999px;
+  color: #fff;
+  width: fit-content;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.lb-pop-family.family-bolinas      { background: #1f77b4; }
+.lb-pop-family.family-conservation { background: #7f7f7f; }
+.lb-pop-family.family-alphagenome  { background: #d62728; }
+.lb-pop-family.family-gpn_star     { background: #9467bd; }
+.lb-pop-display { font-size: 0.98em; font-weight: 600; }
+.lb-pop-desc { color: #555; margin: 4px 0 6px; font-size: 0.92em; }
+.lb-pop-specs { margin: 6px 0; }
+.lb-pop-row {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  gap: 10px;
+  align-items: baseline;
+  margin: 2px 0;
+}
+.lb-pop-key {
+  color: #888; text-transform: uppercase; font-size: 0.72em;
+  letter-spacing: 0.04em;
+}
+.lb-pop-val { font-size: 0.92em; }
+.lb-pop-links { margin: 6px 0 2px; font-size: 0.9em; }
+.lb-pop-more {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 0.82em;
+  color: #3a7bd5;
+}
+.muted { color: #aaa; }
 </style>
 
 <div class="legend-row">
@@ -336,7 +399,7 @@ main > h1, main > h2, main > h3, main > p { max-width: 1200px; }
 display(
   heatmap({
     rows: filtered,
-    methodById,
+    modelById,
     leadingAggregate: meta.leading_aggregate === "macro_avg" ? "_macro_avg_" : "_global_",
   }),
 );

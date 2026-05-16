@@ -17,9 +17,9 @@ from bolinas.pipelines.evals.leaderboard import (
     LEADING_AGGREGATE,
     PROTOCOLS,
     Aggregate,
-    MethodMetrics,
+    ModelMetrics,
     SUBSET_DISPLAY,
-    _method_label,
+    _model_label,
     _split,
     build_table,
     fetch_method_metrics,
@@ -28,7 +28,7 @@ from bolinas.pipelines.evals.leaderboard import (
     score_type_for,
     sort_by_leading,
 )
-from bolinas.pipelines.evals.methods import Method
+from bolinas.pipelines.evals.models import Model
 from bolinas.pipelines.evals.metrics import GLOBAL_SUBSET, MACRO_AVG_SUBSET
 
 
@@ -80,7 +80,7 @@ def test_split_fails_without_global():
         _split(df)
 
 
-# ---- _method_label ----------------------------------------------------------
+# ---- _model_label ----------------------------------------------------------
 
 
 def _mk_method(
@@ -90,8 +90,8 @@ def _mk_method(
     description: str = "desc",
     datasets: tuple[str, ...] = ("mendelian_traits",),
     **extra,
-) -> Method:
-    return Method(
+) -> Model:
+    return Model(
         id=id,
         display=display,
         family=family,  # type: ignore[arg-type]
@@ -101,8 +101,8 @@ def _mk_method(
     )
 
 
-def _mk_mm(method: Method) -> MethodMetrics:
-    return MethodMetrics(
+def _mk_mm(method: Model) -> ModelMetrics:
+    return ModelMetrics(
         method=method,
         per_subset=pl.DataFrame(
             {"subset": [], "value": [], "se": [], "n_pairs": [], "n_ties": []}
@@ -118,7 +118,7 @@ def test_method_label_bolinas_includes_description():
             display="exp55-mammals", family="bolinas", description="promoters, mammals"
         )
     )
-    assert _method_label(mm) == "`exp55-mammals` (promoters, mammals)"
+    assert _model_label(mm) == "`exp55-mammals` (promoters, mammals)"
 
 
 def test_method_label_alphagenome_includes_description():
@@ -129,7 +129,7 @@ def test_method_label_alphagenome_includes_description():
             description="variant scorer, API",
         )
     )
-    assert _method_label(mm) == "`AlphaGenome` (variant scorer, API)"
+    assert _model_label(mm) == "`AlphaGenome` (variant scorer, API)"
 
 
 def test_method_label_conservation_excludes_description():
@@ -140,7 +140,7 @@ def test_method_label_conservation_excludes_description():
             description="phyloP across 241 mammals",
         )
     )
-    assert _method_label(mm) == "`phyloP_241m`"
+    assert _model_label(mm) == "`phyloP_241m`"
 
 
 def test_method_label_gpn_star_excludes_description():
@@ -149,7 +149,7 @@ def test_method_label_gpn_star_excludes_description():
             display="GPN-Star-M", family="gpn_star", description="mammal, 447-way MSA"
         )
     )
-    assert _method_label(mm) == "`GPN-Star-M`"
+    assert _model_label(mm) == "`GPN-Star-M`"
 
 
 # ---- sort_by_leading --------------------------------------------------------
@@ -157,8 +157,8 @@ def test_method_label_gpn_star_excludes_description():
 
 def _mk_mm_with_aggs(
     display: str, family: str, global_value: float, macro_value: float
-) -> MethodMetrics:
-    return MethodMetrics(
+) -> ModelMetrics:
+    return ModelMetrics(
         method=_mk_method(id=display, display=display, family=family),
         per_subset=pl.DataFrame(
             {"subset": [], "value": [], "se": [], "n_pairs": [], "n_ties": []}
@@ -229,11 +229,11 @@ def _patch_read_parquet(
 
 def _patch_methods(
     monkeypatch: pytest.MonkeyPatch,
-    methods: tuple[Method, ...],
+    methods: tuple[Model, ...],
 ) -> None:
-    """Bypass the real methods.yaml so build_table operates on a small fixture."""
+    """Bypass the real models.yaml so build_table operates on a small fixture."""
     monkeypatch.setattr(
-        "bolinas.pipelines.evals.methods.load_methods",
+        "bolinas.pipelines.evals.models.load_models",
         lambda: methods,
     )
 
@@ -593,7 +593,7 @@ def test_bolinas_missing_metrics_hard_fails(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_leading_aggregate_constants_cover_all_datasets():
-    from bolinas.pipelines.evals.methods import ALL_DATASETS
+    from bolinas.pipelines.evals.models import ALL_DATASETS
 
     assert set(LEADING_AGGREGATE.keys()) == set(ALL_DATASETS)
 
