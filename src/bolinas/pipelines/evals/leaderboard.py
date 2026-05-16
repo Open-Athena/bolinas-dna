@@ -23,33 +23,69 @@ from __future__ import annotations
 
 import functools
 import os
+import sys
 from dataclasses import dataclass
 from typing import Literal
 
 import polars as pl
 
-from bolinas.pipelines.evals.gpn_star import GPN_STAR_SCORE_COLUMN
-from bolinas.pipelines.evals.methods import Method, methods_for_dataset
+from bolinas.pipelines.evals.methods import ALL_DATASETS, Method, methods_for_dataset
 from bolinas.pipelines.evals.metrics import GLOBAL_SUBSET, MACRO_AVG_SUBSET
 
 S3 = "s3://oa-bolinas"
 SPLIT = "train"
 N_MIN = 30
 
-# Per-family score-column lookup. Drives the ``score_type`` filter on the
-# pipeline's metrics parquet. Most families use a single column across all
-# three datasets; bolinas + gpn_star vary by dataset (different score
-# definitions per benchmark type).
-_FAMILY_SCORE_TYPE: dict[str, str | dict[str, str]] = {
+# Per-family scoring protocols. Each protocol maps a dataset → the parquet
+# `score_type` column to filter on. The DEFAULT protocol is the one the
+# issue-body CLI and legacy code paths use. The dashboard exposes the
+# non-default protocols (where present) as per-family toggle options.
+#
+# All protocols here are expected to be in the precomputed metrics parquet
+# on S3. Adding a new protocol means: (1) extend `metrics.smk` to compute
+# pairwise PA for that score column, (2) re-run `compute_metrics`, (3) add
+# the protocol entry here.
+PROTOCOLS: dict[str, dict[str, dict[str, str]]] = {
     "bolinas": {
-        "mendelian_traits": "minus_llr",
-        "complex_traits": "abs_llr",
-        "eqtl": "abs_llr",
+        "LLR": {
+            "mendelian_traits": "minus_llr",
+            "complex_traits": "abs_llr",
+            "eqtl": "abs_llr",
+        },
+        "JSD": {d: "next_token_jsd_mean" for d in ALL_DATASETS},
     },
-    "conservation": "score",
-    "alphagenome": "alphagenome_max_l2",
-    "gpn_star": GPN_STAR_SCORE_COLUMN,
+    "conservation": {
+        "score": {d: "score" for d in ALL_DATASETS},
+    },
+    "alphagenome": {
+        "L2": {d: "alphagenome_max_l2" for d in ALL_DATASETS},
+    },
+    "gpn_star": {
+        "cLLR": {
+            "mendelian_traits": "minus_llr_calibrated",
+            "complex_traits": "abs_llr_calibrated",
+            "eqtl": "abs_llr_calibrated",
+        },
+        "LLR": {
+            "mendelian_traits": "minus_llr",
+            "complex_traits": "abs_llr",
+            "eqtl": "abs_llr",
+        },
+    },
 }
+
+DEFAULT_PROTOCOL: dict[str, str] = {
+    "bolinas": "LLR",
+    "conservation": "score",
+    "alphagenome": "L2",
+    "gpn_star": "cLLR",
+}
+
+
+def score_type_for(family: str, protocol: str, dataset: str) -> str:
+    """Score-column name for one (family, protocol, dataset) combination."""
+    return PROTOCOLS[family][protocol][dataset]
+
 
 SortAxis = Literal["macro", "global"]
 
@@ -82,11 +118,6 @@ DATASET_ISSUE: dict[str, int] = {
     "complex_traits": 162,
     "eqtl": 172,
 }
-
-
-def _score_type(family: str, dataset: str) -> str:
-    st = _FAMILY_SCORE_TYPE[family]
-    return st if isinstance(st, str) else st[dataset]
 
 
 def _storage_options() -> dict[str, str] | None:
@@ -127,34 +158,47 @@ def _parquet_path(method: Method, dataset: str) -> str:
             raise ValueError(f"unknown family {method.family!r}")
 
 
-def fetch_method_metrics(method: Method, dataset: str) -> pl.DataFrame:
-    """Return per-method, per-dataset rows with columns
-    ``[subset, value, se, n_pairs, n_ties]`` — including the
-    ``_global_`` and ``_macro_avg_`` aggregate rows."""
+def fetch_method_metrics(
+    method: Method, dataset: str, protocol: str | None = None
+) -> pl.DataFrame:
+    """Return rows ``[subset, value, se, n_pairs, n_ties]`` for one
+    ``(method, dataset, protocol)`` — including the ``_global_`` and
+    ``_macro_avg_`` aggregate rows.
+
+    When ``protocol`` is ``None``, defaults to ``DEFAULT_PROTOCOL[family]``.
+    """
     assert dataset in method.datasets, (
         f"{method.id!r} is not registered for dataset {dataset!r}"
     )
+    protocol = protocol or DEFAULT_PROTOCOL[method.family]
+    assert protocol in PROTOCOLS[method.family], (
+        f"unknown protocol {protocol!r} for family {method.family!r}; "
+        f"options: {list(PROTOCOLS[method.family])}"
+    )
+    score_type = PROTOCOLS[method.family][protocol][dataset]
     path = _parquet_path(method, dataset)
     df = _read_parquet(path)
-    sct = _score_type(method.family, dataset)
     match method.family:
-        case "bolinas":
-            df = df.filter(pl.col("score_type") == sct).filter(pl.col("split") == SPLIT)
+        case "bolinas" | "alphagenome":
+            df = df.filter(pl.col("score_type") == score_type).filter(
+                pl.col("split") == SPLIT
+            )
         case "conservation":
             df = df.filter(pl.col("score_name") == method.id)
-        case "alphagenome":
-            df = df.filter(pl.col("score_type") == sct).filter(pl.col("split") == SPLIT)
         case "gpn_star":
             df = (
-                df.filter(pl.col("score_type") == sct)
+                df.filter(pl.col("score_type") == score_type)
                 .filter(pl.col("split") == SPLIT)
                 .filter(pl.col("model") == method.id)
             )
-            assert df.height > 0, (
-                f"no rows for GPN-Star method {method.id!r} on {dataset!r} in {path}"
-            )
         case _:
             raise ValueError(f"unknown family {method.family!r}")
+    if df.height == 0:
+        raise LookupError(
+            f"no metrics rows for {method.id!r} on {dataset!r} with protocol "
+            f"{protocol!r} (score_type={score_type!r}) in {path}. The pipeline "
+            f"may need to be re-run with this protocol included."
+        )
     return df.select(["subset", "value", "se", "n_pairs", "n_ties"])
 
 
@@ -211,20 +255,30 @@ def _split(df: pl.DataFrame) -> tuple[pl.DataFrame, Aggregate, Aggregate]:
 _SOFT_FAIL_FAMILIES: frozenset[str] = frozenset({"alphagenome", "gpn_star"})
 
 
-def gather_metrics(dataset: str) -> list[MethodMetrics]:
+def gather_metrics(
+    dataset: str, protocols: dict[str, str] | None = None
+) -> list[MethodMetrics]:
     """Fetch + split metrics for every method registered for ``dataset``,
-    in registry order. Missing parquets for external families
+    in registry order.
+
+    ``protocols`` (family → protocol name) overrides the default protocol
+    on a per-family basis; families not present in the dict use
+    ``DEFAULT_PROTOCOL``. Missing parquets for external families
     (``alphagenome`` / ``gpn_star``) print a warning and skip; first-party
-    families fail loud."""
+    families fail loud.
+    """
+    overrides = protocols or {}
     out: list[MethodMetrics] = []
     for method in methods_for_dataset(dataset):
+        protocol = overrides.get(method.family, DEFAULT_PROTOCOL[method.family])
         try:
-            df = fetch_method_metrics(method, dataset)
+            df = fetch_method_metrics(method, dataset, protocol)
         except Exception as exc:  # noqa: BLE001
             if method.family in _SOFT_FAIL_FAMILIES:
                 print(
                     f"  ! {method.family} metrics missing for "
-                    f"{method.id} ({dataset}): {exc}"
+                    f"{method.id} ({dataset}, {protocol}): {exc}",
+                    file=sys.stderr,
                 )
                 continue
             raise
@@ -351,45 +405,48 @@ def build_table(dataset: str) -> str:
 def normalized_rows(dataset: str) -> pl.DataFrame:
     """Long-form table of all metrics for one dataset.
 
+    Emits one row per ``(method, protocol, subset)`` — so each method
+    contributes one row block per protocol registered for its family.
+
+    Protocols whose metrics aren't in the parquet yet (e.g. the JSD path
+    before ``compute_metrics`` has been re-run with the new score column)
+    log a warning and are skipped rather than failing the build.
+
     Columns:
-      - ``method_id`` — Method.id (primary key)
-      - ``method_display`` — Method.display
-      - ``family`` — Method.family
-      - ``subset`` — consequence subset name OR ``_global_`` / ``_macro_avg_``
-      - ``value`` — PairwiseAccuracy
-      - ``se`` — Wald binomial SE
-      - ``n_pairs`` — pair count (or K = qualifying subsets for ``_macro_avg_``)
-      - ``n_ties`` — tied-pair count
+      - ``method_id``       — ``Method.id`` (primary key for a row's method)
+      - ``method_display``  — ``Method.display``
+      - ``family``          — ``Method.family``
+      - ``protocol``        — protocol name (e.g. ``LLR``, ``JSD``, ``cLLR``)
+      - ``subset``          — consequence subset OR ``_global_`` / ``_macro_avg_``
+      - ``value``           — PairwiseAccuracy
+      - ``se``              — Wald binomial SE
+      - ``n_pairs``         — pair count (or K = qualifying subsets for ``_macro_avg_``)
+      - ``n_ties``          — tied-pair count
     """
     rows: list[dict] = []
-    for mm in gather_metrics(dataset):
-        for row in mm.per_subset.iter_rows(named=True):
-            rows.append(
-                {
-                    "method_id": mm.method.id,
-                    "method_display": mm.method.display,
-                    "family": mm.method.family,
-                    "subset": row["subset"],
-                    "value": float(row["value"]),
-                    "se": float(row["se"]),
-                    "n_pairs": int(row["n_pairs"]),
-                    "n_ties": int(row["n_ties"]),
-                }
-            )
-        for subset, agg in (
-            (GLOBAL_SUBSET, mm.global_),
-            (MACRO_AVG_SUBSET, mm.macro_avg),
-        ):
-            rows.append(
-                {
-                    "method_id": mm.method.id,
-                    "method_display": mm.method.display,
-                    "family": mm.method.family,
-                    "subset": subset,
-                    "value": agg.value,
-                    "se": agg.se,
-                    "n_pairs": agg.n,
-                    "n_ties": 0,
-                }
-            )
+    for method in methods_for_dataset(dataset):
+        for protocol in PROTOCOLS[method.family]:
+            try:
+                df = fetch_method_metrics(method, dataset, protocol)
+            except Exception as exc:  # noqa: BLE001
+                print(
+                    f"  ! {method.family}/{protocol} skip for {method.id} "
+                    f"({dataset}): {exc}",
+                    file=sys.stderr,
+                )
+                continue
+            for row in df.iter_rows(named=True):
+                rows.append(
+                    {
+                        "method_id": method.id,
+                        "method_display": method.display,
+                        "family": method.family,
+                        "protocol": protocol,
+                        "subset": row["subset"],
+                        "value": float(row["value"]),
+                        "se": float(row["se"]),
+                        "n_pairs": int(row["n_pairs"]),
+                        "n_ties": int(row["n_ties"]),
+                    }
+                )
     return pl.DataFrame(rows)

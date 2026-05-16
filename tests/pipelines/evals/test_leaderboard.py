@@ -13,15 +13,19 @@ import pytest
 
 from bolinas.pipelines.evals import leaderboard
 from bolinas.pipelines.evals.leaderboard import (
-    Aggregate,
+    DEFAULT_PROTOCOL,
     LEADING_AGGREGATE,
+    PROTOCOLS,
+    Aggregate,
     MethodMetrics,
     SUBSET_DISPLAY,
     _method_label,
     _split,
     build_table,
+    fetch_method_metrics,
     fmt,
     normalized_rows,
+    score_type_for,
     sort_by_leading,
 )
 from bolinas.pipelines.evals.methods import Method
@@ -594,6 +598,171 @@ def test_leading_aggregate_constants_cover_all_datasets():
     assert set(LEADING_AGGREGATE.keys()) == set(ALL_DATASETS)
 
 
+# ---- Protocols --------------------------------------------------------------
+
+
+def test_default_protocol_keys_match_protocols():
+    assert set(DEFAULT_PROTOCOL) == set(PROTOCOLS)
+    for fam, default in DEFAULT_PROTOCOL.items():
+        assert default in PROTOCOLS[fam], (
+            f"family {fam!r} default {default!r} not in PROTOCOLS[{fam!r}]"
+        )
+
+
+def test_score_type_for_returns_dataset_specific_column():
+    assert score_type_for("bolinas", "LLR", "mendelian_traits") == "minus_llr"
+    assert score_type_for("bolinas", "LLR", "complex_traits") == "abs_llr"
+    assert score_type_for("bolinas", "JSD", "mendelian_traits") == "next_token_jsd_mean"
+    assert (
+        score_type_for("gpn_star", "cLLR", "mendelian_traits") == "minus_llr_calibrated"
+    )
+    assert score_type_for("gpn_star", "LLR", "mendelian_traits") == "minus_llr"
+
+
+def test_fetch_method_metrics_unknown_protocol_raises(monkeypatch: pytest.MonkeyPatch):
+    methods = (
+        _mk_method(
+            id="exp55-mammals",
+            display="exp55-mammals",
+            family="bolinas",
+            description="promoters, mammals",
+            datasets=("mendelian_traits",),
+            checkpoint=None,
+        ),
+    )
+    _patch_methods(monkeypatch, methods)
+    _patch_read_parquet(monkeypatch, {})
+    with pytest.raises(AssertionError, match="unknown protocol"):
+        fetch_method_metrics(methods[0], "mendelian_traits", protocol="not_a_protocol")
+
+
+def test_normalized_rows_emits_one_block_per_protocol(monkeypatch: pytest.MonkeyPatch):
+    """gpn_star has cLLR + LLR protocols; both must appear in normalized_rows."""
+    methods = (
+        _mk_method(
+            id="GPN-Star-M",
+            display="GPN-Star-M",
+            family="gpn_star",
+            description="mammal",
+            datasets=("mendelian_traits",),
+        ),
+    )
+    _patch_methods(monkeypatch, methods)
+
+    # Build a parquet that has BOTH calibrated and uncalibrated rows.
+    def gpn_rows(score_type, value):
+        return [
+            {
+                "score_type": score_type,
+                "split": "train",
+                "model": "GPN-Star-M",
+                "subset": "missense_variant",
+                "value": value,
+                "se": 0.02,
+                "n_pairs": 100,
+                "n_ties": 0,
+            },
+            {
+                "score_type": score_type,
+                "split": "train",
+                "model": "GPN-Star-M",
+                "subset": GLOBAL_SUBSET,
+                "value": value,
+                "se": 0.02,
+                "n_pairs": 100,
+                "n_ties": 0,
+            },
+            {
+                "score_type": score_type,
+                "split": "train",
+                "model": "GPN-Star-M",
+                "subset": MACRO_AVG_SUBSET,
+                "value": value,
+                "se": 0.02,
+                "n_pairs": 1,
+                "n_ties": 0,
+            },
+        ]
+
+    gpn_df = pl.DataFrame(
+        gpn_rows("minus_llr_calibrated", 0.85) + gpn_rows("minus_llr", 0.80)
+    )
+    _patch_read_parquet(
+        monkeypatch,
+        {
+            "s3://oa-bolinas/snakemake/gpn_star_eval/results/metrics/"
+            "mendelian_traits.parquet": gpn_df,
+        },
+    )
+    df = normalized_rows("mendelian_traits")
+    assert set(df["protocol"].unique().to_list()) == {"cLLR", "LLR"}
+    # Each protocol contributes one block (per_subset + global + macro_avg)
+    by_protocol = df.group_by("protocol").agg(pl.len())
+    counts = dict(by_protocol.iter_rows())
+    assert counts["cLLR"] == counts["LLR"]
+
+
+def test_normalized_rows_skips_missing_protocol_gracefully(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """When a parquet doesn't have a protocol's score_type rows yet (e.g.
+    bolinas JSD before the pipeline rerun), normalized_rows logs + skips."""
+    methods = (
+        _mk_method(
+            id="exp55-mammals",
+            display="exp55-mammals",
+            family="bolinas",
+            description="promoters, mammals",
+            datasets=("mendelian_traits",),
+        ),
+    )
+    _patch_methods(monkeypatch, methods)
+    # Parquet only has LLR rows; JSD filter will yield 0 rows.
+    bolinas_df = pl.DataFrame(
+        [
+            {
+                "score_type": "minus_llr",
+                "split": "train",
+                "subset": "missense_variant",
+                "value": 0.75,
+                "se": 0.02,
+                "n_pairs": 100,
+                "n_ties": 0,
+            },
+            {
+                "score_type": "minus_llr",
+                "split": "train",
+                "subset": GLOBAL_SUBSET,
+                "value": 0.74,
+                "se": 0.02,
+                "n_pairs": 100,
+                "n_ties": 0,
+            },
+            {
+                "score_type": "minus_llr",
+                "split": "train",
+                "subset": MACRO_AVG_SUBSET,
+                "value": 0.75,
+                "se": 0.02,
+                "n_pairs": 1,
+                "n_ties": 0,
+            },
+        ]
+    )
+    _patch_read_parquet(
+        monkeypatch,
+        {
+            "s3://oa-bolinas/snakemake/analysis/evals_v2/results/metrics/"
+            "exp55-mammals/mendelian_traits.parquet": bolinas_df,
+        },
+    )
+    df = normalized_rows("mendelian_traits")
+    # Only LLR rows present; JSD silently skipped with a stderr warning.
+    assert df["protocol"].unique().to_list() == ["LLR"]
+    captured = capsys.readouterr()
+    assert "bolinas/JSD skip" in captured.err
+
+
 # ---- BOLINAS_S3_ANON env toggle --------------------------------------------
 
 
@@ -698,9 +867,13 @@ def test_normalized_rows_includes_aggregates_and_per_subset(
         "method_id",
         "method_display",
         "family",
+        "protocol",
         "subset",
         "value",
         "se",
         "n_pairs",
         "n_ties",
     }
+    # Only the conservation family is exercised in this test; the protocol
+    # column should be the family's only option ("score").
+    assert df["protocol"].unique().to_list() == ["score"]

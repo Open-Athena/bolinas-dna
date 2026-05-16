@@ -18,6 +18,7 @@ const allRows = leaderboard.toArray().map(r => ({
   method_id: String(r.method_id),
   method_display: String(r.method_display),
   family: String(r.family),
+  protocol: String(r.protocol),
   subset: String(r.subset),
   value: Number(r.value),
   se: Number(r.se),
@@ -53,6 +54,19 @@ display(html`<div class="card">
 
 ```js
 const families = ["bolinas", "conservation", "alphagenome", "gpn_star"];
+// Protocol options per family. Mirror of `PROTOCOLS` in
+// src/bolinas/pipelines/evals/leaderboard.py — keep in sync when adding
+// a protocol. Defaults match `DEFAULT_PROTOCOL`.
+const PROTOCOL_OPTIONS = {
+  bolinas: ["LLR", "JSD"],
+  gpn_star: ["cLLR", "LLR"],
+};
+const PROTOCOL_DEFAULTS = {
+  bolinas: "LLR",
+  conservation: "score",
+  alphagenome: "L2",
+  gpn_star: "cLLR",
+};
 ```
 
 ```js
@@ -97,6 +111,38 @@ function FamilyToggle(allFamilies, initial = allFamilies) {
 }
 
 const familyChoice = view(FamilyToggle(families));
+```
+
+```js
+function ProtocolPicker(options, defaults) {
+  // options: {family: [protocol_name, ...]}; defaults: {family: protocol_name}.
+  // Only families with multiple options get rendered as a toggle.
+  const state = {...defaults};
+  const node = html`<div class="lb-protocol-picker"></div>`;
+  Object.defineProperty(node, "value", {get: () => ({...state})});
+  function fire() {
+    node.dispatchEvent(new Event("input", {bubbles: true}));
+  }
+  function render() {
+    const groups = [];
+    for (const [fam, protos] of Object.entries(options)) {
+      if (protos.length < 2) continue;
+      groups.push(html`<span class="lb-protocol-group">
+        <span class=${`lb-family-tag family-${fam}`}>${fam}</span>
+        <span class="lb-protocol-segmented">${protos.map(p => html`<button
+          type="button"
+          class=${`lb-protocol-btn${state[fam] === p ? " active" : ""}`}
+          onclick=${() => { state[fam] = p; render(); fire(); }}
+        >${p}</button>`)}</span>
+      </span>`);
+    }
+    node.replaceChildren(html`<div class="lb-protocol-picker-row">${groups}</div>`);
+  }
+  render();
+  return node;
+}
+
+const protocolChoice = view(ProtocolPicker(PROTOCOL_OPTIONS, PROTOCOL_DEFAULTS));
 const search = view(
   Inputs.text({
     label: "Method name",
@@ -108,6 +154,10 @@ const search = view(
 ```js
 const filtered = mendelian.filter(r => {
   if (!familyChoice.includes(r.family)) return false;
+  // One protocol per family. Falls back to DEFAULTS for families that
+  // don't appear in `protocolChoice` (single-option families).
+  const wantedProtocol = protocolChoice[r.family] ?? PROTOCOL_DEFAULTS[r.family];
+  if (r.protocol !== wantedProtocol) return false;
   if (search && !r.method_display.toLowerCase().includes(search.toLowerCase())) return false;
   return true;
 });
@@ -220,6 +270,52 @@ main > h1, main > h2, main > h3, main > p { max-width: 1200px; }
   cursor: pointer;
 }
 .lb-toggle-actions .lb-link:hover { text-decoration: underline; }
+
+/* Per-family protocol picker (segmented toggle row) */
+.lb-protocol-picker-row {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 16px;
+  margin: 0.25em 0 0.75em;
+  font-size: 0.85em;
+}
+.lb-protocol-group {
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.lb-family-tag {
+  display: inline-block;
+  font-family: var(--monospace);
+  font-size: 0.85em;
+  padding: 1px 7px;
+  border-radius: 9999px;
+  color: #fff;
+}
+.lb-family-tag.family-bolinas      { background: #1f77b4; }
+.lb-family-tag.family-conservation { background: #7f7f7f; }
+.lb-family-tag.family-alphagenome  { background: #d62728; }
+.lb-family-tag.family-gpn_star     { background: #9467bd; }
+.lb-protocol-segmented {
+  display: inline-flex;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.lb-protocol-btn {
+  appearance: none;
+  background: #fff;
+  border: none;
+  border-left: 1px solid #ccc;
+  padding: 2px 9px;
+  font: inherit;
+  font-size: 0.95em;
+  color: #555;
+  cursor: pointer;
+  transition: background 80ms, color 80ms;
+}
+.lb-protocol-btn:first-child { border-left: none; }
+.lb-protocol-btn:hover:not(.active) { background: #f4f4f4; color: #000; }
+.lb-protocol-btn.active {
+  background: #333;
+  color: #fff;
+}
 </style>
 
 <div class="legend-row">

@@ -28,8 +28,8 @@ import yaml
 from bolinas.pipelines.evals.leaderboard import (
     DATASET_ISSUE,
     LEADING_AGGREGATE,
-    _FAMILY_SCORE_TYPE,
     build_table,
+    score_type_for,
 )
 from bolinas.pipelines.evals.methods import Method, methods_for_dataset
 
@@ -410,10 +410,8 @@ def patch_issue(dataset: str, table_md: str) -> None:
         f"`_global_` / `_macro_avg_` rows in `compute_pairwise_metrics` "
         f"(`src/bolinas/evals/metrics.py`); all 3 metric pipelines re-run.",
     )
-    gpn_star_score_lookup = _FAMILY_SCORE_TYPE["gpn_star"]
-    assert isinstance(gpn_star_score_lookup, dict)
-    calibrated = gpn_star_score_lookup[dataset]
-    raw = calibrated.replace("_calibrated", "")
+    calibrated = score_type_for("gpn_star", "cLLR", dataset)
+    raw = score_type_for("gpn_star", "LLR", dataset)
     new_body = _prepend_changelog_entry(
         new_body,
         f"- **2026-05-13** — added `GPN-Star-V`, `GPN-Star-M`, `GPN-Star-P` "
