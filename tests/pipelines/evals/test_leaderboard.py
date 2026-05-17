@@ -91,6 +91,39 @@ def test_score_type_for_returns_dataset_specific_column():
         score_type_for("gpn_star", "cLLR", "mendelian_traits") == "minus_llr_calibrated"
     )
     assert score_type_for("gpn_star", "LLR", "mendelian_traits") == "minus_llr"
+    # evo2 follows bolinas's score-column convention so the LLR/JSD toggle
+    # gives a direct comparison with the bolinas gLMs.
+    assert score_type_for("evo2", "LLR", "mendelian_traits") == "minus_llr"
+    assert score_type_for("evo2", "LLR", "complex_traits") == "abs_llr"
+    assert score_type_for("evo2", "JSD", "mendelian_traits") == "next_token_jsd_mean"
+
+
+def test_evo2_parquet_path_resolves_to_pinned_gist():
+    """The gist URL has the pinned commit + the correct dataset-short prefix."""
+    from bolinas.pipelines.evals.leaderboard import (
+        EVO2_DATASET_SHORT,
+        EVO2_GIST_BASE,
+        EVO2_GIST_COMMIT,
+        _parquet_path,
+    )
+
+    method = _mk_method(
+        id="evo2_7b",
+        display="Evo 2 (7B)",
+        family="evo2",
+        description="generalist, 7B",
+        datasets=("mendelian_traits", "complex_traits"),
+    )
+    mendelian = _parquet_path(method, "mendelian_traits")
+    complex_ = _parquet_path(method, "complex_traits")
+    # SHA-pinned, gist-hosted URLs (no S3).
+    assert mendelian.startswith(EVO2_GIST_BASE), mendelian
+    assert EVO2_GIST_COMMIT in mendelian
+    assert mendelian.endswith("/mendelian_evo2_7b_train_metrics.parquet")
+    assert complex_.endswith("/complex_evo2_7b_train_metrics.parquet")
+    # Sanity-check the dataset-short mapping is wired through.
+    assert EVO2_DATASET_SHORT["mendelian_traits"] == "mendelian"
+    assert EVO2_DATASET_SHORT["complex_traits"] == "complex"
 
 
 def test_fetch_method_metrics_unknown_protocol_raises(monkeypatch: pytest.MonkeyPatch):

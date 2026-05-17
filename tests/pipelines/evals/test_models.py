@@ -78,6 +78,23 @@ def test_bolinas_methods_have_checkpoint(tmp_path: Path):
             assert m.checkpoint.gcs or m.checkpoint.hf, m.id
 
 
+def test_evo2_methods_registered():
+    """The three Evo2 baselines exist under family=evo2 with the documented
+    dataset coverage (mendelian_traits + complex_traits, no eqtl)."""
+    methods = {m.id: m for m in load_models() if m.family == "evo2"}
+    expected = {"evo2_1b_base", "evo2_7b", "evo2_40b"}
+    assert set(methods) == expected, (
+        f"evo2 registry mismatch — expected {expected}, got {set(methods)}"
+    )
+    for m in methods.values():
+        assert set(m.datasets) == {"mendelian_traits", "complex_traits"}, (
+            f"{m.id} datasets should be mendelian_traits + complex_traits "
+            f"(not eqtl); got {m.datasets}"
+        )
+        # No checkpoint required (third-party model — like alphagenome / gpn_star).
+        assert m.checkpoint is None, f"{m.id} should not declare a checkpoint block"
+
+
 def test_invalid_family_rejected(tmp_path: Path):
     bad = tmp_path / "models.yaml"
     bad.write_text(

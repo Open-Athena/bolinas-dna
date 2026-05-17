@@ -2,43 +2,56 @@
 
 SkyPilot tasks for Evo 2 inference. Project sky conventions apply: `us-east-2`, `project=dna` label, reuse the cluster across iterations with `sky exec`.
 
-## `sky/mendelian_traits.yaml` — Evo2 on the Mendelian-traits leaderboard (#161)
+## `sky/eval_matched_pair.yaml` — Evo2 on matched-pair leaderboards (#161 mendelian, #162 complex)
 
-Produces per-variant score-bundle parquets (`llr`, `minus_llr`, `abs_llr`, `next_token_jsd_mean`) and PairwiseAccuracy ± SE metrics parquets for `evo2_1b_base`, `evo2_7b`, `evo2_40b` on `bolinas-dna/evals_mendelian_traits` (train split), at 8192-bp context, FWD+RC averaged. Uses the joint kernel from PR #184 (`compute_variant_score_bundle` via `run_variant_score_bundle(rc_avg=True)`).
+Produces per-variant score-bundle parquets (`llr`, `minus_llr`, `abs_llr`, `next_token_jsd_mean` × `{avg, _fwd, _rev}`) and PairwiseAccuracy ± SE metrics parquets for `evo2_1b_base`, `evo2_7b`, `evo2_40b` on `bolinas-dna/evals_mendelian_traits` (default) or `evals_complex_traits` (set `DATASET=complex_traits`), at 8192-bp context, FWD+RC averaged. Uses the joint-bundle pattern from PR #184; Evo2's kernel is a no-KV-cache twin in `scripts/evo2_eval/_evo2_scoring.py`.
 
 **One GH200 (96 GB) fits all three models.** Vortex does its own placement; no `torchrun`, no HF DDP. Reuse the cluster across the sweep via `sky exec` — avoids redundant Docker pulls and genome downloads, and skips GH200 capacity-out risk on re-launch.
 
 ```bash
 # Smoke test first — verify both FWD and RC passes complete on a small set.
-sky launch -c evo2-mendelian scripts/evo2_eval/sky/mendelian_traits.yaml \
+sky launch -c evo2-eval scripts/evo2_eval/sky/eval_matched_pair.yaml \
   --gpus GH200:1 --env MODEL=evo2_1b_base --env LIMIT=50
 
-# Full sweep on the same cluster.
-sky exec evo2-mendelian scripts/evo2_eval/sky/mendelian_traits.yaml \
+# Full mendelian sweep on the same cluster.
+sky exec evo2-eval scripts/evo2_eval/sky/eval_matched_pair.yaml \
   --env MODEL=evo2_1b_base
-sky exec evo2-mendelian scripts/evo2_eval/sky/mendelian_traits.yaml \
+sky exec evo2-eval scripts/evo2_eval/sky/eval_matched_pair.yaml \
   --env MODEL=evo2_7b
-sky exec evo2-mendelian scripts/evo2_eval/sky/mendelian_traits.yaml \
+sky exec evo2-eval scripts/evo2_eval/sky/eval_matched_pair.yaml \
   --env MODEL=evo2_40b
 
-# Pull results.
-rsync -avz sky-evo2-mendelian:/workspace/results/evo2_mendelian_traits/ \
+# Complex sweep on the same cluster (smaller dataset, ~10% the time).
+sky exec evo2-eval scripts/evo2_eval/sky/eval_matched_pair.yaml \
+  --env MODEL=evo2_1b_base --env DATASET=complex_traits
+sky exec evo2-eval scripts/evo2_eval/sky/eval_matched_pair.yaml \
+  --env MODEL=evo2_7b --env DATASET=complex_traits
+sky exec evo2-eval scripts/evo2_eval/sky/eval_matched_pair.yaml \
+  --env MODEL=evo2_40b --env DATASET=complex_traits
+
+# Pull results (both datasets).
+rsync -avz sky-evo2-eval:/workspace/results/evo2_mendelian_traits/ \
   results/evo2_mendelian_traits/
+rsync -avz sky-evo2-eval:/workspace/results/evo2_complex_traits/ \
+  results/evo2_complex_traits/
 ```
 
 ### Metrics aggregation + leaderboard update
 
 ```bash
-uv run python scripts/evo2_eval/mendelian_traits_metrics.py
-# writes results/evo2_mendelian_traits/metrics.parquet and results_table.md
+uv run python scripts/evo2_eval/eval_matched_pair_metrics.py \
+  --results-dir results/evo2_mendelian_traits --score-column minus_llr
+uv run python scripts/evo2_eval/eval_matched_pair_metrics.py \
+  --results-dir results/evo2_complex_traits --score-column abs_llr
+# Each writes metrics.parquet and results_table.md in the corresponding dir.
 ```
 
-The markdown rows are formatted for direct merge into issue #161's leaderboard body (per project convention: leaderboards live in the issue body, not in comments). Hand-merge into the existing table in the right sort position; preserve the body's bold convention by re-evaluating top-per-column after the merge.
+Once the unified dashboard (PR #190) sees the rows: the gist-hosted metrics parquets are referenced by `src/bolinas/pipelines/evals/leaderboard.py`'s `family: evo2` resolver (pinned to a gist commit). Re-uploading parquets means: bump the pinned `EVO2_GIST_COMMIT` constant + rebuild the dashboard.
 
 ### Tear down
 
 ```bash
-sky down evo2-mendelian
+sky down evo2-eval
 ```
 
 ## `sky/ll_gap.yaml` — LL-gap eval on functional vs non-functional tokens
