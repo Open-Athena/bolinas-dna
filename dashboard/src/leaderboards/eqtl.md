@@ -179,6 +179,21 @@ const search = view(
 ```
 
 ```js
+function PillToggle(label, initial = false) {
+  let value = initial;
+  const node = html`<button type="button" class=${`lb-pill-toggle${value ? " active" : ""}`}>${label}</button>`;
+  Object.defineProperty(node, "value", {get: () => value});
+  node.addEventListener("click", () => {
+    value = !value;
+    node.className = `lb-pill-toggle${value ? " active" : ""}`;
+    node.dispatchEvent(new Event("input", {bubbles: true}));
+  });
+  return node;
+}
+const bestOnly = view(PillToggle("Best per family", false));
+```
+
+```js
 const filtered = eqtl.filter(r => {
   if (!familyChoice.includes(r.family)) return false;
   // One protocol per family. Falls back to DEFAULTS for families that
@@ -188,6 +203,30 @@ const filtered = eqtl.filter(r => {
   if (search && !r.method_display.toLowerCase().includes(search.toLowerCase())) return false;
   return true;
 });
+```
+
+```js
+// When "Best per family" is on, keep only the top-scoring method per
+// family at the currently-sorted column. Depends on `sortKeyState` —
+// fine since the heatmap already re-mounts on sort clicks.
+const displayRows = (() => {
+  if (!bestOnly) return filtered;
+  const valueAtSort = new Map();
+  for (const r of filtered) {
+    if (r.subset === sortKeyState) valueAtSort.set(r.method_id, r.value);
+  }
+  const bestByFamily = new Map();
+  for (const r of filtered) {
+    const v = valueAtSort.get(r.method_id);
+    if (v === undefined) continue;
+    const cur = bestByFamily.get(r.family);
+    if (cur === undefined || v > cur.value) {
+      bestByFamily.set(r.family, {method_id: r.method_id, value: v});
+    }
+  }
+  const keep = new Set([...bestByFamily.values()].map(b => b.method_id));
+  return filtered.filter(r => keep.has(r.method_id));
+})();
 ```
 
 <style>
@@ -393,6 +432,27 @@ main > h1, main > h2, main > h3, main > p { max-width: 1200px; }
   color: #fff;
 }
 
+/* Standalone on/off pill (Best per family). Lives on its own row; tap
+   to toggle. */
+.lb-pill-toggle {
+  appearance: none;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 9999px;
+  padding: 3px 12px;
+  font: inherit;
+  font-size: 0.85em;
+  color: #555;
+  cursor: pointer;
+  transition: background 80ms, color 80ms, border-color 80ms;
+}
+.lb-pill-toggle:hover:not(.active) { background: #f4f4f4; color: #000; }
+.lb-pill-toggle.active {
+  background: #333;
+  color: #fff;
+  border-color: #333;
+}
+
 /* Model popover on heatmap method-name hover */
 .lb-method-popover {
   background: #fff;
@@ -458,7 +518,7 @@ main > h1, main > h2, main > h3, main > p { max-width: 1200px; }
 // not the Mutable instance.
 display(
   heatmap({
-    rows: filtered,
+    rows: displayRows,
     modelById,
     sortKey: sortKeyState,
     onSortChange: setSortKey,
