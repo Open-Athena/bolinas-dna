@@ -1,0 +1,99 @@
+name: Dashboard
+
+# Builds the bolinas-dna leaderboard dashboard (Observable Framework site
+# under `dashboard/`) and deploys it to GitHub Pages.
+#
+# Setup (one-time, by a repo admin):
+#   1. Settings → Pages → Source: "GitHub Actions".
+#   2. AWS S3 access for the data loaders via GitHub OIDC (no long-lived keys):
+#       - In the bolinas AWS account (836683583872):
+#         * GitHub OIDC identity provider for `token.actions.githubusercontent.com`
+#           with audience `sts.amazonaws.com`.
+#         * IAM policy `BolinasDnaDashboardMetricsRead` granting `s3:GetObject`
+#           on `arn:aws:s3:::oa-bolinas/snakemake/analysis/evals_v2/results/metrics/*`.
+#         * IAM role `BolinasDnaDashboardCI` trusting
+#           `repo:Open-Athena/bolinas-dna:ref:refs/heads/main` (broaden the
+#           trust policy's `sub` condition to allow PRs/other branches if you
+#           want preview builds).
+#       - In the repo: set the `AWS_ROLE_ARN` Actions *variable* (Settings →
+#         Secrets and variables → Actions → Variables) to the role's ARN.
+#         The build step assumes that role via `aws-actions/configure-aws-credentials`.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - dashboard/**
+      - src/bolinas/pipelines/evals/leaderboard.py
+      - src/bolinas/pipelines/evals/models.py
+      - src/bolinas/pipelines/evals/metrics.py
+      - src/bolinas/pipelines/evals/gpn_star.py
+      - .github/workflows/dashboard.yml
+  workflow_dispatch:
+
+# A single concurrent deploy at a time; cancel in-flight runs so we always
+# ship the latest commit.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: us-east-2
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assume AWS role via GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-east-2
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: latest
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install Python deps
+        run: uv sync --frozen
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install npm deps
+        working-directory: dashboard
+        run: npm ci
+
+      - name: Build dashboard
+        working-directory: dashboard
+        run: npx observable build
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dashboard/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
