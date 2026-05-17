@@ -1,8 +1,8 @@
-"""Aggregate matched-pair evaluation metrics from S3 into leaderboard rows.
+"""S3 → tidy long-form parquet for the dashboard data loader.
 
-Reads pre-computed PairwiseAccuracy parquets emitted by these snakemake
-pipelines, then collapses them into one ``ModelMetrics`` object per registered
-method × dataset:
+Reads per-(method, dataset) pairwise-accuracy parquets emitted by the eval
+snakemake pipelines, filters by protocol / score-type, and emits one row
+per ``(method, protocol, subset)`` for the dashboard.
 
   - ``snakemake/analysis/evals_v2/``  → one parquet per ``(model, dataset)``,
     filter by ``score_type`` + ``split``.
@@ -14,9 +14,7 @@ method × dataset:
     ``score_type`` + ``split`` + ``model``.
 
 Model registry (display name, family, training metadata, etc.) lives in
-``dashboard/models.yaml`` and is loaded via ``methods.load_models``. This
-module is the data layer for both the dashboard (``dashboard/``) and the
-legacy issue-body patching CLI (``snakemake/evals/scratch/leaderboard_gen.py``).
+``dashboard/models.yaml`` and is loaded via ``models.load_models``.
 """
 
 from __future__ import annotations
@@ -24,22 +22,17 @@ from __future__ import annotations
 import functools
 import os
 import sys
-from dataclasses import dataclass
-from typing import Literal
 
 import polars as pl
 
 from bolinas.pipelines.evals.models import ALL_DATASETS, Model, models_for_dataset
-from bolinas.pipelines.evals.metrics import GLOBAL_SUBSET, MACRO_AVG_SUBSET
 
 S3 = "s3://oa-bolinas"
 SPLIT = "train"
-N_MIN = 30
 
 # Per-family scoring protocols. Each protocol maps a dataset → the parquet
-# `score_type` column to filter on. The DEFAULT protocol is the one the
-# issue-body CLI and legacy code paths use. The dashboard exposes the
-# non-default protocols (where present) as per-family toggle options.
+# `score_type` column to filter on. The dashboard exposes the non-default
+# protocols (where present) as per-family toggle options.
 #
 # All protocols here are expected to be in the precomputed metrics parquet
 # on S3. Adding a new protocol means: (1) extend `metrics.smk` to compute
@@ -87,45 +80,13 @@ def score_type_for(family: str, protocol: str, dataset: str) -> str:
     return PROTOCOLS[family][protocol][dataset]
 
 
-SortAxis = Literal["macro", "global"]
-
-# Which aggregate is the headline for each dataset — controls (a) the sort
-# axis (top of table = top method on this aggregate) and (b) which aggregate
-# column appears leftmost. Mendelian uses Macro Avg because the variant
-# composition is ~92% missense (a ClinVar annotator-history artifact, not
-# pathogenicity reality), so Global PA over-weights methods specialized for
-# protein-coding variant interpretation. Complex/eqtl have very different
-# subset compositions where the same bias doesn't apply, so they stay on Global.
-LEADING_AGGREGATE: dict[str, SortAxis] = {
-    "mendelian_traits": "macro",
-    "complex_traits": "global",
-    "eqtl": "global",
-}
-
-SUBSET_DISPLAY: dict[str, str] = {
-    "missense_variant": "Missense",
-    "splicing": "Splicing",
-    "5_prime_UTR_variant": "5' UTR",
-    "distal": "Distal",
-    "3_prime_UTR_variant": "3' UTR",
-    "tss_proximal": "Promoter",
-    "non_coding_transcript_exon_variant": "ncRNA",
-    "synonymous_variant": "Synonymous",
-}
-
-DATASET_ISSUE: dict[str, int] = {
-    "mendelian_traits": 161,
-    "complex_traits": 162,
-    "eqtl": 172,
-}
-
-
 def _storage_options() -> dict[str, str] | None:
     """Toggle anonymous S3 reads via ``BOLINAS_S3_ANON=1``.
 
-    Lets the GitHub Action build against a public-read bucket prefix
-    without requiring AWS credentials. With anything else (default), polars
-    walks the standard credential chain (env vars → ~/.aws → IMDS)."""
+    Lets a build target a public-read bucket prefix without AWS credentials.
+    With anything else (default), polars walks the standard credential
+    chain (env vars → ``~/.aws`` → IMDS); the dashboard CI uses GitHub OIDC
+    via that chain."""
     if os.environ.get("BOLINAS_S3_ANON") in ("1", "true"):
         return {"aws_skip_signature": "true", "aws_region": "us-east-2"}
     return None
@@ -200,206 +161,6 @@ def fetch_method_metrics(
             f"may need to be re-run with this protocol included."
         )
     return df.select(["subset", "value", "se", "n_pairs", "n_ties"])
-
-
-# -- Per-method aggregation --------------------------------------------------
-
-
-@dataclass(frozen=True)
-class Aggregate:
-    """One aggregate row (`_global_` or `_macro_avg_`) collapsed to its
-    headline triple. For `_macro_avg_`, ``n`` is the number of qualifying
-    subsets K, not pair count — see ``compute_pairwise_metrics``."""
-
-    value: float
-    se: float
-    n: int
-
-
-@dataclass(frozen=True)
-class ModelMetrics:
-    """One method × dataset, split into per-subset rows + both aggregates."""
-
-    method: Model
-    per_subset: pl.DataFrame  # cols: subset, value, se, n_pairs, n_ties
-    global_: Aggregate
-    macro_avg: Aggregate
-
-
-def _split(df: pl.DataFrame) -> tuple[pl.DataFrame, Aggregate, Aggregate]:
-    per_sub = df.filter(~pl.col("subset").is_in([GLOBAL_SUBSET, MACRO_AVG_SUBSET]))
-    g = df.filter(pl.col("subset") == GLOBAL_SUBSET)
-    m = df.filter(pl.col("subset") == MACRO_AVG_SUBSET)
-    assert g.height == 1 and m.height == 1, (
-        f"expected exactly one _global_ and one _macro_avg_ row, got "
-        f"global={g.height}, macro_avg={m.height}"
-    )
-    return (
-        per_sub,
-        Aggregate(
-            value=float(g[0, "value"]),
-            se=float(g[0, "se"]),
-            n=int(g[0, "n_pairs"]),
-        ),
-        Aggregate(
-            value=float(m[0, "value"]),
-            se=float(m[0, "se"]),
-            n=int(m[0, "n_pairs"]),
-        ),
-    )
-
-
-# Families with externally-sourced metrics that we tolerate as missing
-# (separate pipelines that may not have produced output for this dataset yet);
-# first-party families ("bolinas", "conservation") fail loud.
-_SOFT_FAIL_FAMILIES: frozenset[str] = frozenset({"alphagenome", "gpn_star"})
-
-
-def gather_metrics(
-    dataset: str, protocols: dict[str, str] | None = None
-) -> list[ModelMetrics]:
-    """Fetch + split metrics for every method registered for ``dataset``,
-    in registry order.
-
-    ``protocols`` (family → protocol name) overrides the default protocol
-    on a per-family basis; families not present in the dict use
-    ``DEFAULT_PROTOCOL``. Missing parquets for external families
-    (``alphagenome`` / ``gpn_star``) print a warning and skip; first-party
-    families fail loud.
-    """
-    overrides = protocols or {}
-    out: list[ModelMetrics] = []
-    for method in models_for_dataset(dataset):
-        protocol = overrides.get(method.family, DEFAULT_PROTOCOL[method.family])
-        try:
-            df = fetch_method_metrics(method, dataset, protocol)
-        except Exception as exc:  # noqa: BLE001
-            if method.family in _SOFT_FAIL_FAMILIES:
-                print(
-                    f"  ! {method.family} metrics missing for "
-                    f"{method.id} ({dataset}, {protocol}): {exc}",
-                    file=sys.stderr,
-                )
-                continue
-            raise
-        per, g, m = _split(df)
-        out.append(ModelMetrics(method=method, per_subset=per, global_=g, macro_avg=m))
-    return out
-
-
-def sort_by_leading(metrics: list[ModelMetrics], dataset: str) -> list[ModelMetrics]:
-    """Stable descending sort by the leading aggregate for this dataset."""
-    axis = LEADING_AGGREGATE[dataset]
-    if axis == "global":
-        key = lambda mm: -mm.global_.value  # noqa: E731
-    else:
-        key = lambda mm: -mm.macro_avg.value  # noqa: E731
-    return sorted(metrics, key=key)
-
-
-# -- Markdown rendering -------------------------------------------------------
-
-
-def fmt(value: float, se: float) -> str:
-    return f"{value:.3f} ± {se:.3f}"
-
-
-def _model_label(mm: ModelMetrics) -> str:
-    """Inline label for the leaderboard ``method`` column.
-
-    Convention from the legacy ``leaderboard_gen.py``:
-      - bolinas / alphagenome → ``` `display` (description) ```
-      - conservation / gpn_star → ``` `display` ``` (no parenthetical)
-    """
-    name = f"`{mm.method.display}`"
-    if mm.method.family in {"bolinas", "alphagenome"} and mm.method.description:
-        return f"{name} ({mm.method.description})"
-    return name
-
-
-def build_table(dataset: str) -> str:
-    """Render the per-dataset markdown leaderboard table.
-
-    Format and ordering are preserved byte-for-byte from the pre-refactor
-    ``leaderboard_gen.py`` so issue-body diffs stay clean during the
-    transition to the dashboard."""
-    metrics = sort_by_leading(gather_metrics(dataset), dataset)
-    if not metrics:
-        return f"# {dataset}\n\nNo methods registered.\n"
-
-    leading = LEADING_AGGREGATE[dataset]
-
-    subset_n: dict[str, int] = {}
-    for mm in metrics:
-        for s, n in mm.per_subset.select(["subset", "n_pairs"]).iter_rows():
-            subset_n[s] = max(subset_n.get(s, 0), int(n))
-    subsets = [
-        s
-        for s, n in sorted(subset_n.items(), key=lambda kv: -kv[1])
-        if n >= N_MIN and s in SUBSET_DISPLAY
-    ]
-    if not subsets:
-        return f"# {dataset}\n\nNo subset has n_pairs ≥ {N_MIN}.\n"
-
-    cell: dict[tuple[str, str], tuple[float, float]] = {}
-    top_subset: dict[str, float] = {}
-    for mm in metrics:
-        label = _model_label(mm)
-        for row in mm.per_subset.iter_rows(named=True):
-            s = row["subset"]
-            if s in subsets:
-                v, se = float(row["value"]), float(row["se"])
-                cell[(label, s)] = (v, se)
-                top_subset[s] = max(top_subset.get(s, -1.0), v)
-
-    top_global = max(mm.global_.value for mm in metrics)
-    top_macro = max(mm.macro_avg.value for mm in metrics)
-
-    global_n = metrics[0].global_.n
-    macro_k = metrics[0].macro_avg.n
-
-    global_header = f"Global<br>(n={global_n})"
-    macro_header = f"Macro Avg<br>({macro_k} subsets)"
-    aggregate_headers = (
-        [macro_header, global_header]
-        if leading == "macro"
-        else [global_header, macro_header]
-    )
-    header_cols = aggregate_headers + [
-        f"{SUBSET_DISPLAY[s]}<br>(n={subset_n[s]})" for s in subsets
-    ]
-    header = "| method | " + " | ".join(header_cols) + " |"
-    sep = "|---|" + "|".join(["---"] * len(header_cols)) + "|"
-    lines = [header, sep]
-
-    for mm in metrics:
-        label = _model_label(mm)
-        gv, gse = mm.global_.value, mm.global_.se
-        mv, mse = mm.macro_avg.value, mm.macro_avg.se
-        global_cell = f"**{fmt(gv, gse)}**" if gv >= top_global - 0.01 else fmt(gv, gse)
-        macro_cell = f"**{fmt(mv, mse)}**" if mv >= top_macro - 0.01 else fmt(mv, mse)
-        cells = (
-            [macro_cell, global_cell]
-            if leading == "macro"
-            else [global_cell, macro_cell]
-        )
-        for s in subsets:
-            if (label, s) not in cell:
-                cells.append("—")
-                continue
-            v, se = cell[(label, s)]
-            text = fmt(v, se)
-            if v >= top_subset[s] - 0.01:
-                text = f"**{text}**"
-            cells.append(text)
-        lines.append(f"| {label} | " + " | ".join(cells) + " |")
-
-    return "\n".join(lines)
-
-
-# -- Normalized "long" form for downstream consumers --------------------------
-# Used by ``dashboard/src/data/leaderboard.parquet.py`` to build one tidy
-# parquet per dataset that the Observable Framework site reads via DuckDB.
 
 
 def normalized_rows(dataset: str) -> pl.DataFrame:

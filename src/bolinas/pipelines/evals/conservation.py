@@ -222,7 +222,7 @@ def _build_markdown(metrics: pd.DataFrame, score_names: list[str]) -> str:
     """
     # Drop aggregate rows so this per-pipeline report stays per-subset. The
     # aggregates still flow through to the returned metrics DataFrame (and
-    # downstream parquet), where leaderboard_gen.py picks them up.
+    # downstream parquet), where the dashboard data loader picks them up.
     metrics = metrics[~metrics["subset"].isin([GLOBAL_SUBSET, MACRO_AVG_SUBSET])]
 
     def _pivot(values_col: str) -> pd.DataFrame:

@@ -2,9 +2,8 @@
 #
 # Consumed by:
 #   - `src/bolinas/pipelines/evals/leaderboard.py` — aggregates S3 metrics into
-#     normalized leaderboard rows for the dashboard and for the legacy
-#     `leaderboard_gen.py --patch-issues` CLI.
-#   - `dashboard/src/data/methods.json.py` — emits a JSON build artifact for
+#     the long-form parquet the dashboard data loader writes.
+#   - `dashboard/src/data/models.json.py` — emits a JSON build artifact for
 #     the Observable Framework site.
 #
 # To add a method:
