@@ -32,12 +32,7 @@ import torch.nn.functional as F
 from pyfaidx import Fasta
 from tqdm import tqdm
 
-
-COMPLEMENT = str.maketrans("ACGTNacgtn", "TGCANtgcan")
-
-
-def _reverse_complement(seq: str) -> str:
-    return seq.translate(COMPLEMENT)[::-1]
+from bolinas.data.dna import complement_base, reverse_complement
 
 
 def _get_variant_window(
@@ -82,10 +77,10 @@ def _get_variant_window(
         )
         return seq, var_pos, alt
     else:
-        seq_rc = _reverse_complement(seq)
+        seq_rc = reverse_complement(seq)
         var_pos = window_size - 1 - left
-        ref_rc = ref.translate(COMPLEMENT)
-        alt_rc = alt.translate(COMPLEMENT)
+        ref_rc = complement_base(ref)
+        alt_rc = complement_base(alt)
         assert seq_rc[var_pos] == ref_rc, (
             f"ref mismatch at {chrom}:{pos} (RC): expected {ref_rc!r}, "
             f"got {seq_rc[var_pos]!r} in seq_rc[{var_pos}]"
@@ -179,13 +174,18 @@ def _build_token_arrays(
     input_ids = np.empty((n, window_size), dtype=np.int64)
     alt_token_ids = np.empty(n, dtype=np.int64)
     var_pos_canonical: int | None = None
-    for i, (_, row) in enumerate(df.iterrows()):
+    nuc_id = {b: int(tokenizer.tokenize(b)[0]) for b in "ACGT"}
+    chroms = df["chrom"].to_numpy()
+    positions = df["pos"].to_numpy()
+    refs = df["ref"].to_numpy()
+    alts = df["alt"].to_numpy()
+    for i in range(n):
         seq, var_pos, alt_in_window = _get_variant_window(
             fa,
-            row["chrom"],
-            int(row["pos"]),
-            row["ref"],
-            row["alt"],
+            chroms[i],
+            int(positions[i]),
+            refs[i],
+            alts[i],
             window_size,
             strand,
         )
@@ -198,7 +198,7 @@ def _build_token_arrays(
             f"tokenizer emitted {len(tokens)} tokens for {window_size}-bp window"
         )
         input_ids[i] = tokens
-        alt_token_ids[i] = int(tokenizer.tokenize(alt_in_window)[0])
+        alt_token_ids[i] = nuc_id[alt_in_window]
     assert var_pos_canonical is not None
     return input_ids, alt_token_ids, var_pos_canonical
 

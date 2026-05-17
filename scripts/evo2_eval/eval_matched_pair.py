@@ -1,6 +1,5 @@
 """Score matched-pair variants (mendelian or complex traits) with Evo2.
 
-Entry for issue #131's leaderboard ride-along (issues #161, #162).
 Per-variant score bundle (LLR + next-token JSD, FWD/RC/avg) over an
 8192-bp window, followed by PairwiseAccuracy ± SE per consequence
 subset on every score column. One model per run.
