@@ -763,6 +763,117 @@ def test_normalized_rows_skips_missing_protocol_gracefully(
     assert "bolinas/JSD skip" in captured.err
 
 
+def test_normalized_rows_propagates_unexpected_exceptions(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """The soft-fail in `normalized_rows` is intentionally narrow: only
+    `LookupError` / `ComputeError` / `FileNotFoundError` (the "protocol not
+    yet in parquet" cases) are swallowed. Everything else — config bugs,
+    runtime errors, programmer mistakes — must propagate so a broken
+    registry doesn't silently yield an empty dashboard."""
+    methods = (
+        _mk_method(
+            id="exp55-mammals",
+            display="exp55-mammals",
+            family="bolinas",
+            description="promoters, mammals",
+            datasets=("mendelian_traits",),
+        ),
+    )
+    _patch_methods(monkeypatch, methods)
+
+    def boom(*_a, **_k):
+        raise RuntimeError("simulated config bug")
+
+    monkeypatch.setattr(leaderboard, "fetch_method_metrics", boom)
+    with pytest.raises(RuntimeError, match="simulated config bug"):
+        normalized_rows("mendelian_traits")
+
+
+# ---- build_table markdown snapshot -----------------------------------------
+#
+# Locks the exact markdown shape the legacy `leaderboard_gen.py` CLI emits
+# into the issue bodies (#161/#162/#172). Library edits that change the
+# output (column order, bolding rule, header format, etc.) will fail this
+# test and force an explicit review before the issue tables drift.
+
+
+def test_build_table_markdown_snapshot(monkeypatch: pytest.MonkeyPatch):
+    methods = (
+        _mk_method(
+            id="phyloP_241m",
+            display="phyloP_241m",
+            family="conservation",
+            description="phyloP across 241 mammals",
+            datasets=("mendelian_traits",),
+        ),
+        _mk_method(
+            id="exp55-mammals",
+            display="exp55-mammals",
+            family="bolinas",
+            description="promoters, mammals",
+            datasets=("mendelian_traits",),
+        ),
+    )
+    _patch_methods(monkeypatch, methods)
+
+    def rows_for(model: str, value: float):
+        return [
+            {
+                "subset": "missense_variant",
+                "value": value,
+                "se": 0.02,
+                "n_pairs": 100,
+                "n_ties": 0,
+            },
+            {
+                "subset": GLOBAL_SUBSET,
+                "value": value,
+                "se": 0.02,
+                "n_pairs": 100,
+                "n_ties": 0,
+            },
+            {
+                "subset": MACRO_AVG_SUBSET,
+                "value": value,
+                "se": 0.02,
+                "n_pairs": 1,
+                "n_ties": 0,
+            },
+        ]
+
+    conservation_df = pl.DataFrame(
+        [{"score_name": "phyloP_241m", **r} for r in rows_for("phyloP_241m", 0.81)]
+    )
+    bolinas_df = pl.DataFrame(
+        [
+            {"score_type": "minus_llr", "split": "train", **r}
+            for r in rows_for("exp55-mammals", 0.76)
+        ]
+    )
+    _patch_read_parquet(
+        monkeypatch,
+        {
+            "s3://oa-bolinas/snakemake/conservation_eval/results/"
+            "mendelian_traits/metrics_train.parquet": conservation_df,
+            "s3://oa-bolinas/snakemake/analysis/evals_v2/results/metrics/"
+            "exp55-mammals/mendelian_traits.parquet": bolinas_df,
+        },
+    )
+
+    table = build_table("mendelian_traits")
+    expected = (
+        "| method | Macro Avg<br>(1 subsets) | Global<br>(n=100) | "
+        "Missense<br>(n=100) |\n"
+        "|---|---|---|---|\n"
+        "| `phyloP_241m` | **0.810 ± 0.020** | **0.810 ± 0.020** | "
+        "**0.810 ± 0.020** |\n"
+        "| `exp55-mammals` (promoters, mammals) | 0.760 ± 0.020 | "
+        "0.760 ± 0.020 | 0.760 ± 0.020 |"
+    )
+    assert table == expected, f"table drift:\nexpected:\n{expected}\n\ngot:\n{table}"
+
+
 # ---- BOLINAS_S3_ANON env toggle --------------------------------------------
 
 

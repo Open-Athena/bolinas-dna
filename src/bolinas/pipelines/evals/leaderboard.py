@@ -423,12 +423,27 @@ def normalized_rows(dataset: str) -> pl.DataFrame:
       - ``n_pairs``         — pair count (or K = qualifying subsets for ``_macro_avg_``)
       - ``n_ties``          — tied-pair count
     """
+    # Soft-fail surface, intentionally narrow: only the two legitimate
+    # "no data for this protocol yet" exception types.
+    #   * `LookupError` — `fetch_method_metrics` raises this when the
+    #     parquet exists but has no rows for the requested protocol's
+    #     `score_type` (e.g. bolinas JSD before `metrics.smk` was rerun
+    #     with the new score column).
+    #   * `pl.exceptions.ComputeError` — `pl.read_parquet` raises this
+    #     when the parquet file isn't on S3 yet (e.g. a freshly added
+    #     external-family entry that the eval pipeline hasn't produced
+    #     output for). `FileNotFoundError` covers the local-path case in
+    #     tests.
+    # Everything else (`AssertionError`, `KeyError` from a malformed
+    # registry, `ValueError`, etc.) propagates so config bugs fail loud
+    # instead of yielding a silently-empty dashboard.
+    soft_fail = (LookupError, pl.exceptions.ComputeError, FileNotFoundError)
     rows: list[dict] = []
     for method in models_for_dataset(dataset):
         for protocol in PROTOCOLS[method.family]:
             try:
                 df = fetch_method_metrics(method, dataset, protocol)
-            except Exception as exc:  # noqa: BLE001
+            except soft_fail as exc:
                 print(
                     f"  ! {method.family}/{protocol} skip for {method.id} "
                     f"({dataset}): {exc}",
