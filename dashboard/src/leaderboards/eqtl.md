@@ -74,7 +74,7 @@ display(html`<div class="card">
 ## Leaderboard
 
 ```js
-const families = ["bolinas", "conservation", "alphagenome", "gpn_star", "evo2"];
+const families = ["bolinas", "conservation", "alphagenome", "gpn_star"];
 const familyChoice = view(FamilyToggle(families));
 ```
 
