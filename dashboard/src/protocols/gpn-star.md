@@ -9,12 +9,19 @@ wide: true
 ```js
 const leaderboard = await FileAttachment("../data/leaderboard.parquet").parquet();
 const methods = await FileAttachment("../data/models.json").json();
+const datasets = await FileAttachment("../data/datasets.json").json();
 import {heatmap, colorLegend} from "../components/heatmap.js";
 ```
 
 ```js
 const FAMILY = "gpn_star";
 const PROTOCOLS = ["cLLR", "LLR"];
+const DATASETS = ["mendelian_traits", "complex_traits", "eqtl"];
+const DATASET_LABEL = {
+  mendelian_traits: "Mendelian traits",
+  complex_traits: "Complex traits",
+  eqtl: "eQTL",
+};
 
 const allRows = leaderboard.toArray().map(r => ({
   method_id: String(r.method_id),
@@ -29,27 +36,106 @@ const allRows = leaderboard.toArray().map(r => ({
   dataset: String(r.dataset),
 }));
 
+const modelById = new Map(methods.map(m => [m.id, m]));
+```
+
+```js
+function PillSelect(options, initial, formatter = (o) => o) {
+  let value = initial;
+  const node = html`<span class="lb-protocol-segmented"></span>`;
+  Object.defineProperty(node, "value", {get: () => value});
+  function fire() { node.dispatchEvent(new Event("input", {bubbles: true})); }
+  function render() {
+    node.replaceChildren(...options.map(o => html`<button
+      type="button"
+      class=${`lb-protocol-btn${value === o ? " active" : ""}`}
+      onclick=${() => { if (value !== o) { value = o; render(); fire(); } }}
+    >${formatter(o)}</button>`));
+  }
+  render();
+  return node;
+}
+
+function DirectionPicker(protos, initialFrom, initialTo) {
+  const pairs = [];
+  for (const a of protos) for (const b of protos) if (a !== b) pairs.push([a, b]);
+  let from = initialFrom, to = initialTo;
+  const node = html`<span class="lb-protocol-segmented"></span>`;
+  Object.defineProperty(node, "value", {get: () => ({from, to})});
+  function fire() { node.dispatchEvent(new Event("input", {bubbles: true})); }
+  function render() {
+    node.replaceChildren(...pairs.map(([a, b]) => html`<button
+      type="button"
+      class=${`lb-protocol-btn${from === a && to === b ? " active" : ""}`}
+      onclick=${() => { from = a; to = b; render(); fire(); }}
+    >${a} → ${b}</button>`));
+  }
+  render();
+  return node;
+}
+```
+
+```js
+function labeledRow(label, inner, hint) {
+  const wrapper = html`<span class="lb-control-row">
+    <span class="lb-control-label">${label}</span>
+    ${inner}
+    ${hint ? html`<span class="lb-control-hint">${hint}</span>` : null}
+  </span>`;
+  Object.defineProperty(wrapper, "value", {get: () => inner.value});
+  return wrapper;
+}
+```
+
+```js
+const dataset = view(
+  labeledRow("Dataset", PillSelect(DATASETS, "mendelian_traits", (d) => DATASET_LABEL[d])),
+);
+```
+
+```js
+const direction = view(
+  labeledRow(
+    "Compare",
+    DirectionPicker(PROTOCOLS, "cLLR", "LLR"),
+    html`Cells show <b>right − left</b>, in pp.`,
+  ),
+);
+```
+
+```js
+// `direction` from the cell above is the latest yielded value of the
+// view's Generator — accessible only from a downstream cell, not from
+// the cell that calls `view(...)`. Split so `.from` / `.to` resolve.
+const baseline = direction.from;
+const alternative = direction.to;
+```
+
+```js
+const meta = datasets[dataset];
+const leadingAggregate = meta.leading_aggregate === "macro_avg" ? "_macro_avg_" : "_global_";
+```
+
+```js
+const sortKeyState = Mutable("_macro_avg_");
+const setSortKey = (k) => { sortKeyState.value = k; };
+```
+
+```js
+{
+  setSortKey(leadingAggregate);
+}
+```
+
+```js
 const grouped = new Map();
 for (const r of allRows) {
-  if (r.family !== FAMILY || r.dataset !== "mendelian_traits") continue;
+  if (r.family !== FAMILY || r.dataset !== dataset) continue;
   const key = r.method_id + "\0" + r.subset;
   if (!grouped.has(key)) grouped.set(key, {method_id: r.method_id, method_display: r.method_display, subset: r.subset});
   grouped.get(key)[r.protocol] = r;
 }
 
-const modelById = new Map(methods.map(m => [m.id, m]));
-```
-
-```js
-const baseline = view(
-  Inputs.select(PROTOCOLS, {label: "Baseline", value: "cLLR"}),
-);
-const alternative = view(
-  Inputs.select(PROTOCOLS, {label: "Compared with", value: "LLR"}),
-);
-```
-
-```js
 const deltaRows = [];
 if (baseline !== alternative) {
   for (const cell of grouped.values()) {
@@ -66,20 +152,15 @@ if (baseline !== alternative) {
       se: 0,
       n_pairs: d.n_pairs,
       n_ties: 0,
-      dataset: "mendelian_traits",
+      dataset: dataset,
     });
   }
 }
 ```
 
-```js
-const sortKeyState = Mutable("_macro_avg_");
-const setSortKey = (k) => { sortKeyState.value = k; };
-```
-
 Each cell below is **${alternative} PA − ${baseline} PA**, in percentage points. Green = ${alternative} scores higher than ${baseline}; red = the reverse. cLLR is the producer's recommended protocol on this leaderboard ([Benegas et al. #145](https://github.com/Open-Athena/bolinas-dna/issues/145)) — calibration subtracts pentanucleotide-context background, `llr_calibrated = llr − E[llr | 5-mer, mut]`.
 
-Same matched pairs as the [Mendelian leaderboard](../leaderboards/mendelian); only the `score_type` filter changes.
+Same matched pairs as the [${DATASET_LABEL[dataset]} leaderboard](../leaderboards/${dataset === "mendelian_traits" ? "mendelian" : dataset === "complex_traits" ? "complex" : "eqtl"}); only the `score_type` filter changes.
 
 <style>
 :root { --observablehq-max-width: 1920px; }
@@ -114,6 +195,7 @@ main > p, main > h1, main > h2, main > h3 { max-width: 1100px; }
 .lb-heatmap thead th.lb-col-sorted { background: #d6e8d6; font-weight: 600; }
 .lb-heatmap td.lb-col-sorted { border-left: 2px solid #5c8a5c; border-right: 2px solid #5c8a5c; }
 .lb-heatmap thead th.lb-col-sorted { border-left: 2px solid #5c8a5c; border-right: 2px solid #5c8a5c; border-bottom: 2px solid #5c8a5c; }
+.lb-method-header { text-align: left !important; cursor: default !important; }
 .lb-method {
   white-space: nowrap;
   overflow: hidden;
@@ -141,6 +223,89 @@ main > p, main > h1, main > h2, main > h3 { max-width: 1100px; }
 .lb-family-gpn_star     { background: #9467bd; }
 .lb-cell { text-align: center; font-feature-settings: "tnum"; }
 .lb-na { text-align: center; color: #aaa; }
+
+/* Control row (dataset + direction pickers) */
+.lb-control-row {
+  display: inline-flex; align-items: center; gap: 10px;
+  margin: 0.25em 1.5em 0.25em 0;
+  font-size: 0.85em;
+}
+.lb-control-label {
+  color: #555; text-transform: uppercase; font-size: 0.72em;
+  letter-spacing: 0.04em;
+}
+.lb-control-hint { color: #888; font-size: 0.85em; }
+
+/* Segmented pill toggle */
+.lb-protocol-segmented {
+  display: inline-flex;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.lb-protocol-btn {
+  appearance: none;
+  background: #fff;
+  border: none;
+  border-left: 1px solid #ccc;
+  padding: 3px 11px;
+  font: inherit;
+  font-size: 0.95em;
+  color: #555;
+  cursor: pointer;
+  transition: background 80ms, color 80ms;
+}
+.lb-protocol-btn:first-child { border-left: none; }
+.lb-protocol-btn:hover:not(.active) { background: #f4f4f4; color: #000; }
+.lb-protocol-btn.active { background: #333; color: #fff; }
+
+/* Model popover on heatmap method-name hover */
+.lb-method-popover {
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  font-size: 0.85em;
+  line-height: 1.4;
+  padding: 10px 12px;
+  min-width: 280px;
+  max-width: 360px;
+}
+.lb-pop-header { display: flex; flex-direction: column; gap: 3px; margin-bottom: 4px; }
+.lb-pop-family {
+  display: inline-block;
+  font-size: 0.7em;
+  padding: 1px 7px;
+  border-radius: 9999px;
+  color: #fff;
+  width: fit-content;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.lb-pop-family.family-bolinas      { background: #1f77b4; }
+.lb-pop-family.family-conservation { background: #7f7f7f; }
+.lb-pop-family.family-alphagenome  { background: #d62728; }
+.lb-pop-family.family-gpn_star     { background: #9467bd; }
+.lb-pop-display { font-size: 0.98em; font-weight: 600; }
+.lb-pop-desc { color: #555; margin: 4px 0 6px; font-size: 0.92em; }
+.lb-pop-specs { margin: 6px 0; }
+.lb-pop-row {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  gap: 10px;
+  align-items: baseline;
+  margin: 2px 0;
+}
+.lb-pop-key { color: #888; text-transform: uppercase; font-size: 0.72em; letter-spacing: 0.04em; }
+.lb-pop-val { font-size: 0.92em; }
+.lb-pop-links { margin: 6px 0 2px; font-size: 0.9em; }
+.lb-pop-more {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 0.82em;
+  color: #3a7bd5;
+}
+.muted { color: #aaa; }
 </style>
 
 ```js
@@ -150,11 +315,11 @@ display(
     modelById,
     sortKey: sortKeyState,
     onSortChange: setSortKey,
-    leadingAggregate: "_macro_avg_",
+    leadingAggregate,
     palette: "delta",
     showForest: false,
   }),
 );
 ```
 
-<small>Color scale clamps at ±10 percentage points. Sort by clicking any column header — sort survives navigation. The model column links to the model card on the [Models](/models) page.</small>
+<small>Color scale clamps at ±10 percentage points. Sort by clicking any column header — sort follows the dataset's natural rank axis after a dataset switch. The model column links to the model card on the [Models](/models) page.</small>
