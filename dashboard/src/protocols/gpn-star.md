@@ -10,7 +10,8 @@ wide: true
 const leaderboard = await FileAttachment("../data/leaderboard.parquet").parquet();
 const methods = await FileAttachment("../data/models.json").json();
 const datasets = await FileAttachment("../data/datasets.json").json();
-import {heatmap, colorLegend} from "../components/heatmap.js";
+import {heatmap, colorLegend, leadingAggregateSubset} from "../components/heatmap.js";
+import {PillSelect, DirectionPicker, labeledRow} from "../components/controls.js";
 ```
 
 ```js
@@ -40,54 +41,6 @@ const modelById = new Map(methods.map(m => [m.id, m]));
 ```
 
 ```js
-function PillSelect(options, initial, formatter = (o) => o) {
-  let value = initial;
-  const node = html`<span class="lb-protocol-segmented"></span>`;
-  Object.defineProperty(node, "value", {get: () => value});
-  function fire() { node.dispatchEvent(new Event("input", {bubbles: true})); }
-  function render() {
-    node.replaceChildren(...options.map(o => html`<button
-      type="button"
-      class=${`lb-protocol-btn${value === o ? " active" : ""}`}
-      onclick=${() => { if (value !== o) { value = o; render(); fire(); } }}
-    >${formatter(o)}</button>`));
-  }
-  render();
-  return node;
-}
-
-function DirectionPicker(protos, initialFrom, initialTo) {
-  const pairs = [];
-  for (const a of protos) for (const b of protos) if (a !== b) pairs.push([a, b]);
-  let from = initialFrom, to = initialTo;
-  const node = html`<span class="lb-protocol-segmented"></span>`;
-  Object.defineProperty(node, "value", {get: () => ({from, to})});
-  function fire() { node.dispatchEvent(new Event("input", {bubbles: true})); }
-  function render() {
-    node.replaceChildren(...pairs.map(([a, b]) => html`<button
-      type="button"
-      class=${`lb-protocol-btn${from === a && to === b ? " active" : ""}`}
-      onclick=${() => { from = a; to = b; render(); fire(); }}
-    >${a} → ${b}</button>`));
-  }
-  render();
-  return node;
-}
-```
-
-```js
-function labeledRow(label, inner, hint) {
-  const wrapper = html`<span class="lb-control-row">
-    <span class="lb-control-label">${label}</span>
-    ${inner}
-    ${hint ? html`<span class="lb-control-hint">${hint}</span>` : null}
-  </span>`;
-  Object.defineProperty(wrapper, "value", {get: () => inner.value});
-  return wrapper;
-}
-```
-
-```js
 const dataset = view(
   labeledRow("Dataset", PillSelect(DATASETS, "mendelian_traits", (d) => DATASET_LABEL[d])),
 );
@@ -113,7 +66,7 @@ const alternative = direction.to;
 
 ```js
 const meta = datasets[dataset];
-const leadingAggregate = meta.leading_aggregate === "macro_avg" ? "_macro_avg_" : "_global_";
+const leadingAggregate = leadingAggregateSubset(meta);
 ```
 
 ```js

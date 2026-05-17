@@ -23,9 +23,16 @@ const SUBSET_DISPLAY = {
   synonymous_variant: "Synonymous",
 };
 
-const GLOBAL = "_global_";
-const MACRO = "_macro_avg_";
+export const GLOBAL = "_global_";
+export const MACRO = "_macro_avg_";
 const N_MIN = 30;
+
+// Resolve the dashboard's chosen leading aggregate (string "macro_avg" /
+// "global", as emitted by `datasets.json.py`) to the subset key the
+// heatmap and parquet rows use. Single source of truth — page-level
+// cells read this instead of re-mapping the string inline.
+export const leadingAggregateSubset = (meta) =>
+  meta.leading_aggregate === "macro_avg" ? MACRO : GLOBAL;
 
 // ---- Color palettes -------------------------------------------------------
 //

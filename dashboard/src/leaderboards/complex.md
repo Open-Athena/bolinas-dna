@@ -10,7 +10,15 @@ wide: true
 const leaderboard = await FileAttachment("../data/leaderboard.parquet").parquet();
 const methods = await FileAttachment("../data/models.json").json();
 const datasets = await FileAttachment("../data/datasets.json").json();
-import {heatmap, colorLegend} from "../components/heatmap.js";
+import {heatmap, colorLegend, leadingAggregateSubset} from "../components/heatmap.js";
+import {
+  FAMILY_LABEL,
+  PROTOCOL_OPTIONS,
+  PROTOCOL_DEFAULTS,
+  FamilyToggle,
+  ProtocolPicker,
+  PillToggle,
+} from "../components/controls.js";
 ```
 
 ```js
@@ -32,16 +40,11 @@ const meta = datasets.complex_traits;
 ```
 
 ```js
-// Sort column state — lives outside the heatmap so it survives
-// re-mounts when family / protocol / search filters change. This cell
-// runs once per page load (when `meta` resolves); the Mutable persists
+// Sort column state — lives outside the heatmap so it survives re-mounts
+// when family / protocol / search filters change. Mutable persists
 // across all later heatmap re-renders.
-const sortKeyState = Mutable(
-  meta.leading_aggregate === "macro_avg" ? "_macro_avg_" : "_global_",
-);
-const setSortKey = (k) => {
-  sortKeyState.value = k;
-};
+const sortKeyState = Mutable(leadingAggregateSubset(meta));
+const setSortKey = (k) => { sortKeyState.value = k; };
 ```
 
 ## Dataset
@@ -72,103 +75,10 @@ display(html`<div class="card">
 
 ```js
 const families = ["bolinas", "conservation", "alphagenome", "gpn_star"];
-// Display labels for families (used in pill toggle, protocol picker,
-// popover chip). The slug stays the data-layer key (PROTOCOLS, parquet
-// rows, CSS classes); only the rendered text is humanised.
-const FAMILY_LABEL = {
-  bolinas: "bolinas",
-  conservation: "conservation",
-  alphagenome: "AlphaGenome",
-  gpn_star: "GPN-Star",
-};
-// Protocol options per family. Mirror of `PROTOCOLS` in
-// src/bolinas/pipelines/evals/leaderboard.py — keep in sync when adding
-// a protocol. Defaults match `DEFAULT_PROTOCOL`.
-const PROTOCOL_OPTIONS = {
-  bolinas: ["LLR", "JSD"],
-  gpn_star: ["cLLR", "LLR"],
-};
-const PROTOCOL_DEFAULTS = {
-  bolinas: "LLR",
-  conservation: "score",
-  alphagenome: "L2",
-  gpn_star: "cLLR",
-};
-```
-
-```js
-function FamilyToggle(allFamilies, initial = allFamilies) {
-  const state = new Set(initial);
-  const node = html`<div class="lb-family-toggle"></div>`;
-  let _value = [...state];
-  Object.defineProperty(node, "value", {get: () => _value});
-  function fire() {
-    _value = [...state];
-    node.dispatchEvent(new Event("input", {bubbles: true}));
-  }
-  function setAll(next) {
-    state.clear();
-    next.forEach((f) => state.add(f));
-    render();
-    fire();
-  }
-  function render() {
-    node.replaceChildren(html`<div class="lb-family-toggle-row">
-      ${allFamilies.map(
-        (f) => html`<button
-          type="button"
-          class=${`lb-pill family-${f}${state.has(f) ? " active" : ""}`}
-          aria-pressed=${state.has(f) ? "true" : "false"}
-          onclick=${() => {
-            state.has(f) ? state.delete(f) : state.add(f);
-            render();
-            fire();
-          }}
-        >${FAMILY_LABEL[f] ?? f}</button>`,
-      )}
-      <span class="lb-toggle-actions">
-        <button type="button" class="lb-link" onclick=${() => setAll(allFamilies)}>all</button>
-        <span aria-hidden="true">·</span>
-        <button type="button" class="lb-link" onclick=${() => setAll([])}>none</button>
-      </span>
-    </div>`);
-  }
-  render();
-  return node;
-}
-
 const familyChoice = view(FamilyToggle(families));
 ```
 
 ```js
-function ProtocolPicker(options, defaults) {
-  // options: {family: [protocol_name, ...]}; defaults: {family: protocol_name}.
-  // Only families with multiple options get rendered as a toggle.
-  const state = {...defaults};
-  const node = html`<div class="lb-protocol-picker"></div>`;
-  Object.defineProperty(node, "value", {get: () => ({...state})});
-  function fire() {
-    node.dispatchEvent(new Event("input", {bubbles: true}));
-  }
-  function render() {
-    const groups = [];
-    for (const [fam, protos] of Object.entries(options)) {
-      if (protos.length < 2) continue;
-      groups.push(html`<span class="lb-protocol-group">
-        <span class=${`lb-family-tag family-${fam}`}>${FAMILY_LABEL[fam] ?? fam}</span>
-        <span class="lb-protocol-segmented">${protos.map(p => html`<button
-          type="button"
-          class=${`lb-protocol-btn${state[fam] === p ? " active" : ""}`}
-          onclick=${() => { state[fam] = p; render(); fire(); }}
-        >${p}</button>`)}</span>
-      </span>`);
-    }
-    node.replaceChildren(html`<div class="lb-protocol-picker-row">${groups}</div>`);
-  }
-  render();
-  return node;
-}
-
 const protocolChoice = view(ProtocolPicker(PROTOCOL_OPTIONS, PROTOCOL_DEFAULTS));
 const search = view(
   Inputs.text({
@@ -179,17 +89,6 @@ const search = view(
 ```
 
 ```js
-function PillToggle(label, initial = false) {
-  let value = initial;
-  const node = html`<button type="button" class=${`lb-pill-toggle${value ? " active" : ""}`}>${label}</button>`;
-  Object.defineProperty(node, "value", {get: () => value});
-  node.addEventListener("click", () => {
-    value = !value;
-    node.className = `lb-pill-toggle${value ? " active" : ""}`;
-    node.dispatchEvent(new Event("input", {bubbles: true}));
-  });
-  return node;
-}
 const bestOnly = view(PillToggle("Best per family", false));
 ```
 
