@@ -5,14 +5,19 @@ name: Dashboard
 #
 # Setup (one-time, by a repo admin):
 #   1. Settings → Pages → Source: "GitHub Actions".
-#   2. S3 access for the data loaders — pick one:
-#       (a) Make the metrics prefix `s3://oa-bolinas/snakemake/.../results/metrics/`
-#           public-read AND set a repo variable `BOLINAS_S3_ANON=1` (Settings
-#           → Secrets and variables → Actions → Variables). The data loader
-#           passes `aws_skip_signature=true` to polars. No AWS creds needed.
-#       (b) Or, add `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` as repo
-#           secrets (a read-only IAM user on the metrics prefix). Don't set
-#           the BOLINAS_S3_ANON variable. The workflow picks them up below.
+#   2. AWS S3 access for the data loaders via GitHub OIDC (no long-lived keys):
+#       - In the bolinas AWS account (836683583872):
+#         * GitHub OIDC identity provider for `token.actions.githubusercontent.com`
+#           with audience `sts.amazonaws.com`.
+#         * IAM policy `BolinasDnaDashboardMetricsRead` granting `s3:GetObject`
+#           on `arn:aws:s3:::oa-bolinas/snakemake/analysis/evals_v2/results/metrics/*`.
+#         * IAM role `BolinasDnaDashboardCI` trusting
+#           `repo:Open-Athena/bolinas-dna:ref:refs/heads/main` (broaden the
+#           trust policy's `sub` condition to allow PRs/other branches if you
+#           want preview builds).
+#       - In the repo: set the `AWS_ROLE_ARN` Actions *variable* (Settings →
+#         Secrets and variables → Actions → Variables) to the role's ARN.
+#         The build step assumes that role via `aws-actions/configure-aws-credentials`.
 
 on:
   push:
@@ -41,12 +46,15 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION: us-east-2
-      BOLINAS_S3_ANON: ${{ vars.BOLINAS_S3_ANON }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Assume AWS role via GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-east-2
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v3
