@@ -3,6 +3,11 @@ name: Dashboard
 # Builds the bolinas-dna leaderboard dashboard (Observable Framework site
 # under `dashboard/`) and deploys it to GitHub Pages.
 #
+# Runs on push to main *and* on pull requests against main, so the build
+# acts as a required status check before merge — same workflow, two
+# different entry points. The deploy job is gated to push-to-main only;
+# PR runs build + upload the artifact but never publish.
+#
 # Setup (one-time, by a repo admin):
 #   1. Settings → Pages → Source: "GitHub Actions".
 #   2. AWS S3 access for the data loaders via GitHub OIDC (no long-lived keys):
@@ -10,14 +15,22 @@ name: Dashboard
 #         * GitHub OIDC identity provider for `token.actions.githubusercontent.com`
 #           with audience `sts.amazonaws.com`.
 #         * IAM policy `BolinasDnaDashboardMetricsRead` granting `s3:GetObject`
-#           on `arn:aws:s3:::oa-bolinas/snakemake/analysis/evals_v2/results/metrics/*`.
-#         * IAM role `BolinasDnaDashboardCI` trusting
-#           `repo:Open-Athena/bolinas-dna:ref:refs/heads/main` (broaden the
-#           trust policy's `sub` condition to allow PRs/other branches if you
-#           want preview builds).
+#           on the four metric prefixes (one per eval pipeline):
+#             - `arn:aws:s3:::oa-bolinas/snakemake/analysis/evals_v2/results/metrics/*`
+#             - `arn:aws:s3:::oa-bolinas/snakemake/conservation_eval/results/*`
+#             - `arn:aws:s3:::oa-bolinas/snakemake/alphagenome_eval/results/metrics/*`
+#             - `arn:aws:s3:::oa-bolinas/snakemake/gpn_star_eval/results/metrics/*`
+#         * IAM role `BolinasDnaDashboardCI` trusting the OIDC provider on
+#           two `sub` claims (so PR runs from this repo can also assume the
+#           role and run a pre-merge build):
+#             - `repo:Open-Athena/bolinas-dna:ref:refs/heads/main`
+#             - `repo:Open-Athena/bolinas-dna:pull_request`
+#           Fork PRs carry a different sub (`repo:<fork>:pull_request`) and
+#           are denied — they can't grab AWS creds.
 #       - In the repo: set the `AWS_ROLE_ARN` Actions *variable* (Settings →
 #         Secrets and variables → Actions → Variables) to the role's ARN.
-#         The build step assumes that role via `aws-actions/configure-aws-credentials`.
+#       - Branch protection: Settings → Branches → require the
+#         "Dashboard / build" status check to pass on PRs against main.
 
 on:
   push:
@@ -29,13 +42,15 @@ on:
       - src/bolinas/pipelines/evals/metrics.py
       - src/bolinas/pipelines/evals/gpn_star.py
       - .github/workflows/dashboard.yml
+  pull_request:
+    paths:
+      - dashboard/**
+      - src/bolinas/pipelines/evals/leaderboard.py
+      - src/bolinas/pipelines/evals/models.py
+      - src/bolinas/pipelines/evals/metrics.py
+      - src/bolinas/pipelines/evals/gpn_star.py
+      - .github/workflows/dashboard.yml
   workflow_dispatch:
-
-# A single concurrent deploy at a time; cancel in-flight runs so we always
-# ship the latest commit.
-concurrency:
-  group: pages
-  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -89,7 +104,16 @@ jobs:
 
   deploy:
     needs: build
+    # Only publish on pushes to main. PR runs upload the artifact (which the
+    # build step does for free) but stop here without touching Pages.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    # Single concurrent deploy at a time; cancel in-flight publishes so we
+    # always ship the latest commit. PR builds don't share this group, so
+    # they can run in parallel without interfering.
+    concurrency:
+      group: pages
+      cancel-in-progress: true
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
