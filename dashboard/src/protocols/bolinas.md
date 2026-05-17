@@ -1,10 +1,10 @@
 ---
-title: Bolinas — LLR vs JSD
+title: Bolinas protocol comparison
 toc: false
 wide: true
 ---
 
-# Bolinas — LLR vs JSD
+# Bolinas: protocol comparison
 
 ```js
 const leaderboard = await FileAttachment("../data/leaderboard.parquet").parquet();
@@ -14,8 +14,7 @@ import {heatmap, colorLegend} from "../components/heatmap.js";
 
 ```js
 const FAMILY = "bolinas";
-const DEFAULT = "LLR";
-const ALT = "JSD";
+const PROTOCOLS = ["LLR", "JSD"];
 
 const allRows = leaderboard.toArray().map(r => ({
   method_id: String(r.method_id),
@@ -31,7 +30,7 @@ const allRows = leaderboard.toArray().map(r => ({
 }));
 
 // Index every (method, subset) cell for the family by protocol so we
-// can subtract LLR from JSD.
+// can subtract one from the other below.
 const grouped = new Map();
 for (const r of allRows) {
   if (r.family !== FAMILY || r.dataset !== "mendelian_traits") continue;
@@ -40,27 +39,42 @@ for (const r of allRows) {
   grouped.get(key)[r.protocol] = r;
 }
 
-// Build rows the heatmap expects, with `value` = (alt - default).
-const deltaRows = [];
-for (const cell of grouped.values()) {
-  const d = cell[DEFAULT];
-  const a = cell[ALT];
-  if (!d || !a) continue;
-  deltaRows.push({
-    method_id: cell.method_id,
-    method_display: cell.method_display,
-    family: FAMILY,
-    protocol: ALT,
-    subset: cell.subset,
-    value: a.value - d.value,
-    se: 0,
-    n_pairs: d.n_pairs,
-    n_ties: 0,
-    dataset: "mendelian_traits",
-  });
-}
-
 const modelById = new Map(methods.map(m => [m.id, m]));
+```
+
+```js
+// Two `<select>` inputs make the comparison explicit. Each cell below
+// shows `alt − default` in percentage points, so flipping the selects
+// flips the sign.
+const baseline = view(
+  Inputs.select(PROTOCOLS, {label: "Baseline", value: "LLR"}),
+);
+const alternative = view(
+  Inputs.select(PROTOCOLS, {label: "Compared with", value: "JSD"}),
+);
+```
+
+```js
+const deltaRows = [];
+if (baseline !== alternative) {
+  for (const cell of grouped.values()) {
+    const d = cell[baseline];
+    const a = cell[alternative];
+    if (!d || !a) continue;
+    deltaRows.push({
+      method_id: cell.method_id,
+      method_display: cell.method_display,
+      family: FAMILY,
+      protocol: alternative,
+      subset: cell.subset,
+      value: a.value - d.value,
+      se: 0,
+      n_pairs: d.n_pairs,
+      n_ties: 0,
+      dataset: "mendelian_traits",
+    });
+  }
+}
 ```
 
 ```js
@@ -69,9 +83,9 @@ const sortKeyState = Mutable("_macro_avg_");
 const setSortKey = (k) => { sortKeyState.value = k; };
 ```
 
-Every cell below is **JSD PA − LLR PA**, in percentage points. Green = JSD scores higher than LLR; red = the reverse; yellow = no meaningful change.
+Each cell below is **${alternative} PA − ${baseline} PA**, in percentage points. Green = ${alternative} scores higher; red = the reverse; yellow = no meaningful change.
 
-Cells aggregate across the same matched pairs the [Mendelian leaderboard](../leaderboards/mendelian) uses — only the score column changes (`minus_llr` → `next_token_jsd_mean`). See [About](../about) for the JSD definition.
+Cells aggregate across the same matched pairs the [Mendelian leaderboard](../leaderboards/mendelian) uses — only the score column changes. See [About](../about) for the protocol definitions.
 
 <style>
 :root { --observablehq-max-width: 1920px; }

@@ -1,10 +1,10 @@
 ---
-title: GPN-Star — cLLR vs LLR
+title: GPN-Star protocol comparison
 toc: false
 wide: true
 ---
 
-# GPN-Star — calibrated vs uncalibrated LLR
+# GPN-Star: protocol comparison
 
 ```js
 const leaderboard = await FileAttachment("../data/leaderboard.parquet").parquet();
@@ -14,8 +14,7 @@ import {heatmap, colorLegend} from "../components/heatmap.js";
 
 ```js
 const FAMILY = "gpn_star";
-const DEFAULT = "cLLR";
-const ALT = "LLR";
+const PROTOCOLS = ["cLLR", "LLR"];
 
 const allRows = leaderboard.toArray().map(r => ({
   method_id: String(r.method_id),
@@ -38,26 +37,39 @@ for (const r of allRows) {
   grouped.get(key)[r.protocol] = r;
 }
 
-const deltaRows = [];
-for (const cell of grouped.values()) {
-  const d = cell[DEFAULT];
-  const a = cell[ALT];
-  if (!d || !a) continue;
-  deltaRows.push({
-    method_id: cell.method_id,
-    method_display: cell.method_display,
-    family: FAMILY,
-    protocol: ALT,
-    subset: cell.subset,
-    value: a.value - d.value,
-    se: 0,
-    n_pairs: d.n_pairs,
-    n_ties: 0,
-    dataset: "mendelian_traits",
-  });
-}
-
 const modelById = new Map(methods.map(m => [m.id, m]));
+```
+
+```js
+const baseline = view(
+  Inputs.select(PROTOCOLS, {label: "Baseline", value: "cLLR"}),
+);
+const alternative = view(
+  Inputs.select(PROTOCOLS, {label: "Compared with", value: "LLR"}),
+);
+```
+
+```js
+const deltaRows = [];
+if (baseline !== alternative) {
+  for (const cell of grouped.values()) {
+    const d = cell[baseline];
+    const a = cell[alternative];
+    if (!d || !a) continue;
+    deltaRows.push({
+      method_id: cell.method_id,
+      method_display: cell.method_display,
+      family: FAMILY,
+      protocol: alternative,
+      subset: cell.subset,
+      value: a.value - d.value,
+      se: 0,
+      n_pairs: d.n_pairs,
+      n_ties: 0,
+      dataset: "mendelian_traits",
+    });
+  }
+}
 ```
 
 ```js
@@ -65,7 +77,7 @@ const sortKeyState = Mutable("_macro_avg_");
 const setSortKey = (k) => { sortKeyState.value = k; };
 ```
 
-Every cell below is **LLR PA − cLLR PA**, in percentage points. Green = the uncalibrated LLR scores higher than the calibrated cLLR; red = the reverse. cLLR is the producer's recommended protocol on this leaderboard ([Benegas et al. #145](https://github.com/Open-Athena/bolinas-dna/issues/145)); calibration subtracts pentanucleotide-context background — `llr_calibrated = llr − E[llr | 5-mer, mut]`.
+Each cell below is **${alternative} PA − ${baseline} PA**, in percentage points. Green = ${alternative} scores higher than ${baseline}; red = the reverse. cLLR is the producer's recommended protocol on this leaderboard ([Benegas et al. #145](https://github.com/Open-Athena/bolinas-dna/issues/145)) — calibration subtracts pentanucleotide-context background, `llr_calibrated = llr − E[llr | 5-mer, mut]`.
 
 Same matched pairs as the [Mendelian leaderboard](../leaderboards/mendelian); only the `score_type` filter changes.
 
