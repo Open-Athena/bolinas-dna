@@ -373,3 +373,44 @@
   training:
     params: 2.0e8
   datasets: [mendelian_traits, complex_traits, eqtl]
+
+# ---------------------------------------------------------------------------
+# Evo 2 — Arc Institute generalist gLM. Scored via scripts/evo2_eval/
+# (a no-KV-cache twin of the bolinas variant-score bundle kernel; see
+# scripts/evo2_eval/_evo2_scoring.py for why). Metrics parquets live on
+# a gist commit pinned in leaderboard.py — no S3 staging. Only
+# mendelian_traits + complex_traits scored; eqtl not run.
+# ---------------------------------------------------------------------------
+
+- id: evo2_1b_base
+  display: Evo 2 (1B base)
+  family: evo2
+  description: generalist, 1B
+  training:
+    params: 1.0e9
+    window_size: 8192
+    objective: CLM
+  datasets: [mendelian_traits, complex_traits]
+  paper: https://arcinstitute.org/manuscripts/Evo2
+
+- id: evo2_7b
+  display: Evo 2 (7B)
+  family: evo2
+  description: generalist, 7B
+  training:
+    params: 7.0e9
+    window_size: 8192
+    objective: CLM
+  datasets: [mendelian_traits, complex_traits]
+  paper: https://arcinstitute.org/manuscripts/Evo2
+
+- id: evo2_40b
+  display: Evo 2 (40B)
+  family: evo2
+  description: generalist, 40B
+  training:
+    params: 4.0e10
+    window_size: 8192
+    objective: CLM
+  datasets: [mendelian_traits, complex_traits]
+  paper: https://arcinstitute.org/manuscripts/Evo2

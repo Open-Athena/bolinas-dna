@@ -126,12 +126,12 @@ main > p, main > h1, main > h2, main > h3 { max-width: 1100px; }
   font-size: 0.85em;
   margin: 1em 0;
   table-layout: fixed;
-  width: 1170px;
+  width: 1290px;
 }
 .lb-heatmap thead tr { height: 40px; }
 .lb-heatmap tbody tr { height: 28px; }
 .lb-heatmap-row { display: block; }
-.lb-heatmap thead th:not(.lb-method-header) { width: 96px; }
+.lb-heatmap thead th:not(.lb-method-header) { width: 108px; }
 .lb-heatmap th.lb-method-header { width: 210px; }
 .lb-heatmap th, .lb-heatmap td {
   padding: 6px 4px;

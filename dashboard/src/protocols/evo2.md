@@ -1,10 +1,10 @@
 ---
-title: Bolinas protocol comparison
+title: Evo 2 protocol comparison
 toc: false
 wide: true
 ---
 
-# Bolinas: protocol comparison
+# Evo 2: protocol comparison
 
 ```js
 const leaderboard = await FileAttachment("../data/leaderboard.parquet").parquet();
@@ -15,13 +15,13 @@ import {PillSelect, DirectionPicker, labeledRow} from "../components/controls.js
 ```
 
 ```js
-const FAMILY = "bolinas";
+const FAMILY = "evo2";
 const PROTOCOLS = ["LLR", "JSD"];
-const DATASETS = ["mendelian_traits", "complex_traits", "eqtl"];
+// Evo 2 is scored on the two matched-pair datasets; eqtl wasn't run.
+const DATASETS = ["mendelian_traits", "complex_traits"];
 const DATASET_LABEL = {
   mendelian_traits: "Mendelian traits",
   complex_traits: "Complex traits",
-  eqtl: "eQTL",
 };
 
 const allRows = leaderboard.toArray().map(r => ({
@@ -119,7 +119,7 @@ if (baseline !== alternative) {
 
 Each cell below is **${alternative} PA − ${baseline} PA**, in percentage points. Green = ${alternative} scores higher; red = the reverse; yellow = no meaningful change.
 
-Cells aggregate across the same matched pairs the [${DATASET_LABEL[dataset]} leaderboard](../leaderboards/${dataset === "mendelian_traits" ? "mendelian" : dataset === "complex_traits" ? "complex" : "eqtl"}) uses — only the score column changes. See [About](../about) for the protocol definitions.
+Cells aggregate across the same matched pairs the [${DATASET_LABEL[dataset]} leaderboard](../leaderboards/${dataset === "mendelian_traits" ? "mendelian" : "complex"}) uses — only the score column changes. See [About](../about) for the protocol definitions.
 
 <style>
 :root { --observablehq-max-width: 1920px; }
@@ -180,6 +180,7 @@ main > p, main > h1, main > h2, main > h3 { max-width: 1100px; }
 .lb-family-conservation { background: #7f7f7f; }
 .lb-family-alphagenome  { background: #d62728; }
 .lb-family-gpn_star     { background: #9467bd; }
+.lb-family-evo2         { background: #ff7f0e; }
 .lb-cell { text-align: center; font-feature-settings: "tnum"; }
 .lb-na { text-align: center; color: #aaa; }
 
@@ -245,6 +246,7 @@ main > p, main > h1, main > h2, main > h3 { max-width: 1100px; }
 .lb-pop-family.family-conservation { background: #7f7f7f; }
 .lb-pop-family.family-alphagenome  { background: #d62728; }
 .lb-pop-family.family-gpn_star     { background: #9467bd; }
+.lb-pop-family.family-evo2         { background: #ff7f0e; }
 .lb-pop-display { font-size: 0.98em; font-weight: 600; }
 .lb-pop-desc { color: #555; margin: 4px 0 6px; font-size: 0.92em; }
 .lb-pop-specs { margin: 6px 0; }

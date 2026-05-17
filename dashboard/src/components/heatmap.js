@@ -218,7 +218,7 @@ export function heatmap({
     const table = html`<table class="lb-heatmap">
       <colgroup>
         <col style="width: 210px"></col>
-        ${columns.map(() => html`<col style="width: 96px"></col>`)}
+        ${columns.map(() => html`<col style="width: 108px"></col>`)}
       </colgroup>
       <thead>
         <tr>

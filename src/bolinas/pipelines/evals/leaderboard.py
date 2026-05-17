@@ -30,6 +30,23 @@ from bolinas.pipelines.evals.models import ALL_DATASETS, Model, models_for_datas
 S3 = "s3://oa-bolinas"
 SPLIT = "train"
 
+# `family: evo2` metrics aren't in S3 — they live on a gist commit (pinned
+# below). Polars `read_parquet` handles https URLs natively via fsspec, so
+# the path resolver just hands back a stable URL string. Bump GIST_COMMIT
+# when re-uploading new Evo2 parquets to the same gist.
+EVO2_GIST_OWNER = "gonzalobenegas"
+EVO2_GIST_ID = "3649e68fb63ca1f3443e4486078eb4d8"
+EVO2_GIST_COMMIT = "362efe18b5d7f6e436e405db18932e8d149d3d07"
+EVO2_GIST_BASE = (
+    f"https://gist.githubusercontent.com/{EVO2_GIST_OWNER}/{EVO2_GIST_ID}/raw/"
+    f"{EVO2_GIST_COMMIT}"
+)
+# Filename pattern uses short dataset names matching the file we uploaded.
+EVO2_DATASET_SHORT: dict[str, str] = {
+    "mendelian_traits": "mendelian",
+    "complex_traits": "complex",
+}
+
 # Per-family scoring protocols. Each protocol maps a dataset → the parquet
 # `score_type` column to filter on. The dashboard exposes the non-default
 # protocols (where present) as per-family toggle options.
@@ -65,6 +82,16 @@ PROTOCOLS: dict[str, dict[str, dict[str, str]]] = {
             "eqtl": "abs_llr",
         },
     },
+    "evo2": {
+        # Same score-column convention as bolinas — gives the dashboard a
+        # LLR ↔ JSD toggle for direct comparison with the bolinas gLMs.
+        "LLR": {
+            "mendelian_traits": "minus_llr",
+            "complex_traits": "abs_llr",
+            "eqtl": "abs_llr",
+        },
+        "JSD": {d: "next_token_jsd_mean" for d in ALL_DATASETS},
+    },
 }
 
 DEFAULT_PROTOCOL: dict[str, str] = {
@@ -72,6 +99,7 @@ DEFAULT_PROTOCOL: dict[str, str] = {
     "conservation": "score",
     "alphagenome": "L2",
     "gpn_star": "cLLR",
+    "evo2": "LLR",
 }
 
 
@@ -115,6 +143,9 @@ def _parquet_path(method: Model, dataset: str) -> str:
             return f"{S3}/snakemake/alphagenome_eval/results/metrics/{dataset}.parquet"
         case "gpn_star":
             return f"{S3}/snakemake/gpn_star_eval/results/metrics/{dataset}.parquet"
+        case "evo2":
+            short = EVO2_DATASET_SHORT[dataset]
+            return f"{EVO2_GIST_BASE}/{short}_{method.id}_train_metrics.parquet"
         case _:
             raise ValueError(f"unknown family {method.family!r}")
 
@@ -140,7 +171,7 @@ def fetch_method_metrics(
     path = _parquet_path(method, dataset)
     df = _read_parquet(path)
     match method.family:
-        case "bolinas" | "alphagenome":
+        case "bolinas" | "alphagenome" | "evo2":
             df = df.filter(pl.col("score_type") == score_type).filter(
                 pl.col("split") == SPLIT
             )

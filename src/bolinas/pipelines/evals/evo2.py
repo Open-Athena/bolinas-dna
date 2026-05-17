@@ -1,38 +1,35 @@
-"""Evo2 inference wrappers reusing bolinas.model.runner.
+"""Evo2 inference wrappers reusing bolinas.model.runner — LL-gap path only.
 
-Provides:
+Provides ``compute_evo2_ll`` + ``aggregate_ll_gap`` for the LL-gap eval
+(uppercase=phyloP-functional, lowercase=non-functional token-bucket
+likelihoods), plus shared boilerplate (``EVO2_MODEL_CHOICES``,
+``_Evo2QuackModel`` / ``_Evo2QuackTokenizer``, ``find_max_batch_size``,
+``_load_evo2_for_inference``).
 
-- ``compute_evo2_llr`` — per-variant log-likelihood ratio (alt - ref) over a
-  genome-anchored window. Used by issue #131's TraitGym VEP eval.
-- ``compute_evo2_ll`` — per-sequence log-likelihood with case-based breakdown
-  (uppercase=phyloP-functional, lowercase=non-functional). Used by the LL-gap
-  follow-up eval.
-
-Evo2 quack-wrappers live here (not in ``bolinas.model.*``): they shim Evo2's
-native API into the duck-typed interface that ``bolinas.model.runner``
-expects (a callable returning an object with ``.logits``, plus a tokenizer
-with ``.encode/.bos_token_id/.eos_token_id``). Core stays HF-only.
+Variant scoring lives **outside** this module — in
+``scripts/evo2_eval/_evo2_scoring.py`` — because the post-PR-#184 shared
+``compute_variant_score_bundle`` kernel uses prefix-sharing via KV-cache,
+which Evo2's Vortex backend doesn't expose through the HF-shaped duck-typed
+interface. Rather than special-case Evo2 inside the shared kernel, the
+variant-scoring path is its own no-cache implementation that lives with
+the entry script.
 
 Note: the LOCAL_RANK -> CUDA_VISIBLE_DEVICES guard from
 biofoundation/examples/evo2_llr.py MUST run before importing torch / evo2.
 Do it at the top of the entry script, not here.
 """
 
-from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-import pandas as pd
 import torch.nn as nn
 
 if TYPE_CHECKING:
     from datasets import Dataset
 
 
-# Single source of truth for argparse `choices` in scripts/evo2_eval/. Display
-# ordering for the metrics aggregator (size-sorted) is a separate concern;
-# see scripts/evo2_eval/traitgym_v2_metrics.py:MODELS.
+# Single source of truth for argparse `choices` in scripts/evo2_eval/.
 EVO2_MODEL_CHOICES: tuple[str, ...] = (
     "evo2_1b_base",
     "evo2_7b",
@@ -163,91 +160,6 @@ def _load_evo2_for_inference(
     model = _Evo2QuackModel(_model)
     tokenizer = _Evo2QuackTokenizer(_model.tokenizer)
     return model, tokenizer
-
-
-def compute_evo2_llr(
-    model_name: str,
-    dataset: pd.DataFrame,
-    genome_path: str | Path,
-    window_size: int = 8192,
-    batch_size: int | None = None,
-    num_workers: int = 8,
-    data_transform_on_the_fly: bool = True,
-    tune_start: int = 64,
-) -> np.ndarray:
-    """Compute per-variant LLR using an Evo2 checkpoint.
-
-    Args:
-        model_name: One of ``evo2_1b_base``, ``evo2_7b``, ``evo2_40b`` (or any
-            name accepted by ``evo2.Evo2``).
-        dataset: DataFrame with columns ``[chrom, pos, ref, alt]``. Row order
-            of the output aligns with row order of this input.
-        genome_path: Path to genome reference FASTA (.fa / .fa.gz).
-        window_size: Context length in bp. Fixed to 8192 for the issue #131
-            eval per user request.
-        batch_size: Per-device eval batch size. If ``None`` (default), run an
-            OOM-descent tune starting from ``tune_start`` and pick the largest
-            that survives a forward pass.
-        num_workers: Dataloader workers.
-        data_transform_on_the_fly: Forwarded to ``run_variant_score_bundle``.
-        tune_start: Initial batch size to probe when ``batch_size is None``.
-
-    Returns:
-        1-D float numpy array of LLR values (alt_logprob - ref_logprob),
-        length equal to ``len(dataset)``.
-    """
-    from datasets import Dataset
-
-    from bolinas.data.genome import Genome
-    from bolinas.model.runner import run_variant_score_bundle
-
-    genome_path = Path(genome_path)
-    assert genome_path.exists(), f"genome not found: {genome_path}"
-
-    model, tokenizer = _load_evo2_for_inference(model_name)
-    genome = Genome(str(genome_path))
-
-    if batch_size is None:
-        batch_size = find_max_batch_size(
-            model, window_size=window_size, start=tune_start, seq_factor=2
-        )
-        print(f"[evo2] tuned batch_size={batch_size} (start={tune_start})")
-
-    hf_dataset = Dataset.from_pandas(dataset, preserve_index=False)
-
-    # Bundle returns [N, 2] = (LLR, next_token_jsd_mean); we only need LLR.
-    bundle = run_variant_score_bundle(
-        model,
-        tokenizer,
-        hf_dataset,
-        genome,
-        window_size,
-        data_transform_on_the_fly=data_transform_on_the_fly,
-        inference_kwargs=dict(
-            per_device_eval_batch_size=batch_size,
-            dataloader_num_workers=num_workers,
-            remove_unused_columns=False,
-        ),
-    )
-
-    llr = np.asarray(bundle)[:, 0]
-    assert llr.shape == (len(dataset),), (
-        f"LLR shape mismatch: got {llr.shape}, expected ({len(dataset)},)"
-    )
-    assert np.isfinite(llr).all(), "non-finite LLR values produced by Evo2"
-    return llr
-
-
-def scores_dataframe(llr: np.ndarray) -> pd.DataFrame:
-    """Expand a 1-D LLR array into the score DataFrame the rest of the eval code expects."""
-    llr = np.asarray(llr).reshape(-1)
-    return pd.DataFrame(
-        {
-            "llr": llr,
-            "minus_llr": -llr,
-            "abs_llr": np.abs(llr),
-        }
-    )
 
 
 def compute_evo2_ll(
