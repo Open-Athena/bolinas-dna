@@ -6,6 +6,12 @@ export default {
   root: "src",
   output: "dist",
 
+  // Pin to a single light theme. The default `air,near-midnight` flips
+  // to dark on prefers-color-scheme: dark, but the heatmap and forest
+  // plot encode meaning in color (sequential YlGn on [0.5, 1.0],
+  // diverging RdYlGn for deltas) and only read against a light page.
+  theme: "air",
+
   // Sidebar navigation. v1 ships Mendelian only; complex_traits / eqtl
   // will be added later (see the dashboard plan).
   pages: [
