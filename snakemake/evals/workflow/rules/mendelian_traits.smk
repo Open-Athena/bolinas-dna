@@ -94,9 +94,7 @@ rule mendelian_traits_dataset:
     output:
         "results/dataset_unsplit/mendelian_traits.parquet",
     run:
-        # Iter-33 locked design (issue #156). mendelian has no MAF column,
-        # so no MAF_bin.
-        V = add_subset_distance_bins(pl.read_parquet(input[0]))
+        V = pl.read_parquet(input[0])
         (
             match_features(
                 V.filter(pl.col("label")),
@@ -107,13 +105,8 @@ rule mendelian_traits_dataset:
                     "distance_exon_pc",
                     "distance_exon_nc",
                 ],
-                CAT_BASE
-                + [
-                    "distance_tss_pc_bin",
-                    "distance_tss_nc_bin",
-                    "distance_exon_pc_bin",
-                ],
-                k=1,
+                CAT_BASE,
+                k=9,
             )
             .with_columns(subset=pl.col("consequence_group"))
             .write_parquet(output[0])

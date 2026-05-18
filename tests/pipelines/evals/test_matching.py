@@ -12,15 +12,11 @@ from bolinas.pipelines.evals.matching import (
     BIN_NA,
     BIN_OOR,
     EXON_DIST_BIN_EDGES,
-    LOG_LOCAL,
-    LOG_LOCAL_N,
     MAF_BIN_EDGES,
     MAF_BIN_EDGES_5,
     MAF_BIN_EDGES_20,
-    MAF_TIERED_LOG8_DISTAL_ONLY,
     MAF_TIERED_V1,
     MATCH_GROUP_COL,
-    NCRNA_TSS_NC_DIST_BIN_EDGES,
     TSS_DIST_BIN_EDGES,
     _combine_results,
     _find_closest,
@@ -611,13 +607,8 @@ def test_bin_na_constant_distinct_from_bin_labels() -> None:
 
 
 class TestAddSubsetDistanceBins:
-    """Tests for the per-biotype distance-bin assignment helper.
-
-    The default (iter-33) only applies `distance_tss_nc_bin` to
-    `tss_proximal`; round-2 of #156 opts eqtl into also binning ncRNA via
-    `include_ncrna_tss_nc_bin=True` to close the PA=0.401 leak that
-    showed up after the Catalogue source switch.
-    """
+    """Per-biotype distance-bin assignment helper (no longer called by the
+    pipeline; kept for ad-hoc analysis)."""
 
     def _frame(self) -> pl.DataFrame:
         return pl.DataFrame(
@@ -636,62 +627,27 @@ class TestAddSubsetDistanceBins:
             }
         )
 
-    def test_default_does_not_bin_ncrna(self) -> None:
-        """Default (iter-33): only tss_proximal gets `distance_tss_nc_bin`.
-        ncRNA gets BIN_NA so existing mendelian/complex outputs are
-        byte-equivalent."""
+    def test_only_tss_proximal_gets_tss_bins(self) -> None:
         out = add_subset_distance_bins(self._frame())
         rows = {r["consequence_group"]: r for r in out.to_dicts()}
-        assert rows["tss_proximal"]["distance_tss_nc_bin"] == "b0"  # 25 ∈ [0, 50)
-        assert (
-            rows["non_coding_transcript_exon_variant"]["distance_tss_nc_bin"] == BIN_NA
-        )
-        assert rows["distal"]["distance_tss_nc_bin"] == BIN_NA
-        assert rows["splicing"]["distance_tss_nc_bin"] == BIN_NA
+        assert rows["tss_proximal"]["distance_tss_pc_bin"] == "b0"  # 25 ∈ [0, 50)
+        assert rows["tss_proximal"]["distance_tss_nc_bin"] == "b0"
+        for grp in ("splicing", "non_coding_transcript_exon_variant", "distal"):
+            assert rows[grp]["distance_tss_pc_bin"] == BIN_NA
+            assert rows[grp]["distance_tss_nc_bin"] == BIN_NA
 
-    def test_opt_in_bins_ncrna_with_wider_edges(self) -> None:
-        """`include_ncrna_tss_nc_bin=True` adds the ncRNA bin without
-        affecting other subsets."""
-        out = add_subset_distance_bins(self._frame(), include_ncrna_tss_nc_bin=True)
+    def test_only_splicing_gets_exon_bin(self) -> None:
+        out = add_subset_distance_bins(self._frame())
         rows = {r["consequence_group"]: r for r in out.to_dicts()}
-        # tss_proximal still uses the narrower TSS_DIST_BIN_EDGES (cap at 1 kb)
-        assert rows["tss_proximal"]["distance_tss_nc_bin"] == "b0"  # 25 ∈ [0, 50)
-        # ncRNA: distance 600 falls in NCRNA_TSS_NC_DIST_BIN_EDGES = [0, 200, 1000, 5000]
-        #   → bin b1 (200 ≤ x < 1000).
-        assert rows["non_coding_transcript_exon_variant"]["distance_tss_nc_bin"] == "b1"
-        # Other subsets unchanged.
-        assert rows["distal"]["distance_tss_nc_bin"] == BIN_NA
-        assert rows["splicing"]["distance_tss_nc_bin"] == BIN_NA
-        # The opt-in flag must NOT affect the other two bin columns.
-        assert (
-            rows["non_coding_transcript_exon_variant"]["distance_tss_pc_bin"] == BIN_NA
-        )
-        assert (
-            rows["non_coding_transcript_exon_variant"]["distance_exon_pc_bin"] == BIN_NA
-        )
-
-    def test_ncrna_edges_match_constant(self) -> None:
-        """NCRNA_TSS_NC_DIST_BIN_EDGES is [0, 200, 1000, 5000] — pin both
-        the constant value and the bin assignment behavior."""
-        assert NCRNA_TSS_NC_DIST_BIN_EDGES == [0, 200, 1000, 5000]
-        df = pl.DataFrame(
-            {
-                "chrom": ["1"] * 5,
-                "consequence_group": ["non_coding_transcript_exon_variant"] * 5,
-                "distance_tss_pc": [0.0] * 5,
-                "distance_tss_nc": [50.0, 500.0, 2000.0, 4999.0, 6000.0],
-                "distance_exon_pc": [0.0] * 5,
-                "distance_exon_nc": [0.0] * 5,
-            }
-        )
-        out = add_subset_distance_bins(df, include_ncrna_tss_nc_bin=True)
-        bins = out["distance_tss_nc_bin"].to_list()
-        # [0, 200): b0; [200, 1000): b1; [1000, 5000]: b2 (last bin inclusive); >5000: OOR
-        assert bins == ["b0", "b1", "b2", "b2", BIN_OOR]
+        # EXON_DIST_BIN_EDGES = [0, 5, 20, 30]; 5 ∈ [5, 20) → b1
+        assert rows["splicing"]["distance_exon_pc_bin"] == "b1"
+        for grp in ("tss_proximal", "non_coding_transcript_exon_variant", "distal"):
+            assert rows[grp]["distance_exon_pc_bin"] == BIN_NA
 
 
 class TestAddTieredMafBin:
-    """Iter 33 per-subset MAF binning helper."""
+    """Per-subset MAF binning helper (no longer called by the pipeline;
+    kept for ad-hoc analysis)."""
 
     def test_global_edges_only_assigns_bin_per_subset(self) -> None:
         df = pl.DataFrame(
@@ -721,60 +677,6 @@ class TestAddTieredMafBin:
         assert all(lab.startswith("missense") for lab in labels[:2])
         assert all(lab.startswith("distal:") for lab in labels[2:])
 
-    def test_log_local_sentinel_groups_by_log_local_group_cols(self) -> None:
-        # Two groups (chrom A vs B), each with a wide MAF range. log_local
-        # bins should be computed per group, so the same MAF lands in
-        # different absolute bins across groups but in the same bin within a
-        # group when MAFs are similar.
-        df = pl.DataFrame(
-            {
-                "MAF": [0.01, 0.05, 0.1, 0.2, 0.4, 0.001, 0.005, 0.01, 0.05, 0.1],
-                "consequence_group": ["distal"] * 10,
-                "chrom": ["A"] * 5 + ["B"] * 5,
-            }
-        )
-        out = add_tiered_maf_bin(
-            df, {"distal": LOG_LOCAL}, log_local_group_cols=["chrom"]
-        )
-        labels = out["MAF_bin"].to_list()
-        # All labels should be `ll:N` for log_local.
-        assert all(lab.startswith("ll:") for lab in labels)
-        # Min-MAF row in each group lands in bucket 0; max in bucket N-1.
-        assert labels[0] == "ll:0"  # MAF=0.01 is min in chrom-A group
-        assert labels[4] == f"ll:{LOG_LOCAL_N - 1}"  # MAF=0.4 is max in chrom-A
-        assert labels[5] == "ll:0"  # MAF=0.001 is min in chrom-B group
-        assert labels[9] == f"ll:{LOG_LOCAL_N - 1}"  # MAF=0.1 is max in chrom-B
-
-    def test_mixed_scheme_log_local_for_one_subset_only(self) -> None:
-        df = pl.DataFrame(
-            {
-                "MAF": [0.001, 0.05, 0.0001, 0.4],
-                "consequence_group": [
-                    "missense_variant",
-                    "missense_variant",  # global edges
-                    "distal",
-                    "distal",  # log_local
-                ],
-                "chrom": ["A", "A", "A", "A"],
-            }
-        )
-        scheme = {"missense_variant": MAF_BIN_EDGES_5, "distal": LOG_LOCAL}
-        out = add_tiered_maf_bin(df, scheme, log_local_group_cols=["chrom"])
-        labels = out["MAF_bin"].to_list()
-        assert labels[0].startswith("missense:") and labels[0].split(":")[1].startswith(
-            "b"
-        )
-        assert labels[1].startswith("missense:")
-        assert labels[2].startswith("ll:")
-        assert labels[3].startswith("ll:")
-
-    def test_log_local_without_group_cols_raises(self) -> None:
-        df = pl.DataFrame(
-            {"MAF": [0.001, 0.05], "consequence_group": ["distal", "distal"]}
-        )
-        with pytest.raises(ValueError, match="log_local_group_cols required"):
-            add_tiered_maf_bin(df, {"distal": LOG_LOCAL})
-
     def test_unknown_consequence_group_gets_unknown_label(self) -> None:
         # MAF_BIN_EDGES_5 = [0, 0.001, 0.01, 0.05, 0.2, 0.5] right-closed:
         # bin 0=[0,0.001], 1=(0.001,0.01], 2=(0.01,0.05], 3=(0.05,0.2], 4=(0.2,0.5]
@@ -784,77 +686,34 @@ class TestAddTieredMafBin:
         out = add_tiered_maf_bin(df, {"missense_variant": MAF_BIN_EDGES_5})
         assert out["MAF_bin"].to_list() == ["UNKNOWN", "missense:b2"]
 
-    def test_null_maf_gets_oor_label_for_both_scheme_types(self) -> None:
-        # Both fixed-edge (via bin_feature) and LOG_LOCAL must emit a
-        # consistent OOR label for null/NaN MAF, so production callers that
-        # forget to pre-filter don't get silently-collapsed distinct buckets.
+    def test_null_maf_gets_oor_label(self) -> None:
         df = pl.DataFrame(
             {
-                "MAF": [None, 0.05, None, 0.05],
-                "consequence_group": [
-                    "missense_variant",
-                    "missense_variant",  # fixed-edge
-                    "distal",
-                    "distal",  # LOG_LOCAL
-                ],
-                "chrom": ["A", "A", "A", "A"],
+                "MAF": [None, 0.05],
+                "consequence_group": ["missense_variant", "missense_variant"],
             },
             schema={
                 "MAF": pl.Float64,
                 "consequence_group": pl.String,
-                "chrom": pl.String,
             },
         )
-        out = add_tiered_maf_bin(
-            df,
-            {"missense_variant": MAF_BIN_EDGES_5, "distal": LOG_LOCAL},
-            log_local_group_cols=["chrom"],
-        )
+        out = add_tiered_maf_bin(df, {"missense_variant": MAF_BIN_EDGES_5})
         labels = out["MAF_bin"].to_list()
-        # missense (fixed-edge): null → bin_feature returns "OOR"
         assert labels[0] == "missense:OOR"
-        # missense with valid MAF=0.05 in 5bin → some "missense:bN"
         assert labels[1].startswith("missense:b")
-        # distal (LOG_LOCAL): null MAF → "ll:OOR" (not silently merged into ll:0)
-        assert labels[2] == "ll:OOR"
-        assert labels[3].startswith("ll:")
-
-    def test_log_local_handles_constant_maf_within_group(self) -> None:
-        # All rows in one group with the same MAF → width=0 → div-by-zero.
-        # Should not crash; all rows get a single bucket label (ll:0).
-        df = pl.DataFrame(
-            {
-                "MAF": [0.01, 0.01, 0.01],
-                "consequence_group": ["distal", "distal", "distal"],
-                "chrom": ["A", "A", "A"],
-            }
-        )
-        out = add_tiered_maf_bin(
-            df, {"distal": LOG_LOCAL}, log_local_group_cols=["chrom"]
-        )
-        # All rows collapse to bucket 0 (no spread → no bin distinction).
-        assert out["MAF_bin"].to_list() == ["ll:0", "ll:0", "ll:0"]
 
     def test_empty_dataframe_through_helper(self) -> None:
         df = pl.DataFrame(
             schema={
                 "MAF": pl.Float64,
                 "consequence_group": pl.String,
-                "chrom": pl.String,
             }
         )
-        out = add_tiered_maf_bin(
-            df,
-            {"distal": MAF_BIN_EDGES_5, "missense_variant": LOG_LOCAL},
-            log_local_group_cols=["chrom"],
-        )
+        out = add_tiered_maf_bin(df, {"distal": MAF_BIN_EDGES_5})
         assert out.height == 0
         assert "MAF_bin" in out.columns
 
-    def test_iter33_locked_schemes_have_expected_subsets(self) -> None:
-        # Sanity: every consequence_group seen across the three eval datasets
-        # is in MAF_TIERED_V1, and MAF_TIERED_LOG8_DISTAL_ONLY differs only by
-        # `distal`.
+    def test_v1_scheme_has_expected_subsets(self) -> None:
         expected = {
             "distal",
             "tss_proximal",
@@ -869,9 +728,3 @@ class TestAddTieredMafBin:
             "coding_sequence_variant",
         }
         assert set(MAF_TIERED_V1.keys()) == expected
-        assert set(MAF_TIERED_LOG8_DISTAL_ONLY.keys()) == expected
-        assert MAF_TIERED_LOG8_DISTAL_ONLY["distal"] == LOG_LOCAL
-        for k, v in MAF_TIERED_V1.items():
-            if k == "distal":
-                continue
-            assert MAF_TIERED_LOG8_DISTAL_ONLY[k] == v

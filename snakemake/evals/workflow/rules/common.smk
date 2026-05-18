@@ -11,18 +11,10 @@ from huggingface_hub import HfApi
 from bolinas.pipelines.evals.labeling import label_variants_by_pip
 from bolinas.pipelines.evals.materialize import materialize_sequences
 from bolinas.pipelines.evals.matching import (
-    BIN_NA,
     CAT_BASE,
-    EXON_DIST_BIN_EDGES,
-    MAF_BIN_EDGES,
-    MAF_TIERED_LOG8_DISTAL_ONLY,
-    MAF_TIERED_V1,
-    TSS_DIST_BIN_EDGES,
-    add_subset_distance_bins,
-    add_tiered_maf_bin,
-    bin_feature,
     match_features,
 )
+from bolinas.pipelines.evals.matching_qc import compute_matching_qc
 from bolinas.pipelines.evals.trait_intervals import (
     add_exon,
     add_tss,
@@ -51,6 +43,25 @@ COORDS = ["chrom", "pos", "ref", "alt"]
 # Column order for HF: coordinates, label, subset, match_group, then everything
 # else. Datasets missing any of these columns just skip them.
 PRIMARY_COLS = COORDS + ["label", "subset", "match_group"]
+
+# Continuous features over which to compute per-subset AUPRC leak in the
+# matching diagnostic. Mirrors the `continuous` list passed to
+# `match_features` in each `{task}_dataset` rule.
+QC_CONTINUOUS_FEATURES = {
+    "mendelian_traits": [
+        "distance_tss_pc",
+        "distance_tss_nc",
+        "distance_exon_pc",
+        "distance_exon_nc",
+    ],
+    "complex_traits": [
+        "distance_tss_pc",
+        "distance_tss_nc",
+        "distance_exon_pc",
+        "distance_exon_nc",
+        "MAF",
+    ],
+}
 
 
 def _reorder_columns(df):
@@ -126,3 +137,21 @@ rule hf_upload:
 
 
 ruleorder: materialize_eval_harness_dataset > split_dataset_by_chrom
+
+
+rule dataset_matching_qc:
+    """Per-subset matching diagnostics: subsampling drops + per-feature AUPRC leak."""
+    input:
+        pre="results/{dataset}/dataset_all.parquet",
+        post="results/dataset_unsplit/{dataset}.parquet",
+    output:
+        "results/qc/{dataset}.parquet",
+    wildcard_constraints:
+        dataset="|".join(QC_CONTINUOUS_FEATURES.keys()),
+    run:
+        qc = compute_matching_qc(
+            pl.read_parquet(input.pre),
+            pl.read_parquet(input.post),
+            QC_CONTINUOUS_FEATURES[wildcards.dataset],
+        )
+        qc.write_parquet(output[0])

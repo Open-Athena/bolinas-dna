@@ -191,15 +191,10 @@ rule complex_traits_dataset:
     output:
         "results/dataset_unsplit/complex_traits.parquet",
     run:
-        # Iter-33 locked design (issue #156). MAF scheme = `MAF_TIERED_V1`
-        # (per-subset global edges). NaN/null MAF dropped up-front because
-        # the upstream MAF binning needs finite values.
-        V = (
-            pl.read_parquet(input[0])
-            .filter(pl.col("MAF").is_finite() & pl.col("MAF").is_not_null())
-            .pipe(add_subset_distance_bins)
+        # RobustScaler in matching needs finite MAF; filter null/NaN up-front.
+        V = pl.read_parquet(input[0]).filter(
+            pl.col("MAF").is_finite() & pl.col("MAF").is_not_null()
         )
-        V = add_tiered_maf_bin(V, MAF_TIERED_V1)
         (
             match_features(
                 V.filter(pl.col("label")),
@@ -211,14 +206,8 @@ rule complex_traits_dataset:
                     "distance_exon_nc",
                     "MAF",
                 ],
-                CAT_BASE
-                + [
-                    "distance_tss_pc_bin",
-                    "distance_tss_nc_bin",
-                    "distance_exon_pc_bin",
-                    "MAF_bin",
-                ],
-                k=1,
+                CAT_BASE,
+                k=9,
             )
             .with_columns(subset=pl.col("consequence_group"))
             .write_parquet(output[0])
