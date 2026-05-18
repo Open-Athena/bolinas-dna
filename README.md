@@ -15,7 +15,7 @@ Tracked as GitHub issues. See the
 
 ## Leaderboard
 
-Variant effect prediction leaderboards (under construction): [openathena.ai/bolinas-dna](https://openathena.ai/bolinas-dna/)
+Variant effect prediction leaderboards (under construction): [openathena.ai/bolinas-dna](https://openathena.ai/bolinas-dna/).
 
 ## Installation
 
