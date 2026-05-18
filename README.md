@@ -13,6 +13,10 @@
 Tracked as GitHub issues. See the
 [experiment-labeled issues](https://github.com/Open-Athena/bolinas-dna/issues?q=is%3Aissue+label%3Aexperiment).
 
+## Leaderboard
+
+Variant effect prediction leaderboards (under construction): [openathena.ai/bolinas-dna](https://openathena.ai/bolinas-dna/).
+
 ## Installation
 
 ```bash

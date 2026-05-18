@@ -8,6 +8,13 @@ name: Dashboard
 # different entry points. The deploy job is gated to push-to-main only;
 # PR runs build + upload the artifact but never publish.
 #
+# PR triggers do NOT filter by paths: the build is a required status check,
+# and a required check that is gated by `paths:` will sit pending forever
+# on any PR that doesn't touch the matched files (e.g. a README-only PR),
+# blocking merge. The build is ~1.5 min — cheap enough to run on every PR.
+# Push-to-main is still path-filtered so we don't redeploy Pages on
+# unrelated commits.
+#
 # Setup (one-time, by a repo admin):
 #   1. Settings → Pages → Source: "GitHub Actions".
 #   2. AWS S3 access for the data loaders via GitHub OIDC (no long-lived keys):
@@ -43,13 +50,6 @@ on:
       - src/bolinas/pipelines/evals/gpn_star.py
       - .github/workflows/dashboard.yml
   pull_request:
-    paths:
-      - dashboard/**
-      - src/bolinas/pipelines/evals/leaderboard.py
-      - src/bolinas/pipelines/evals/models.py
-      - src/bolinas/pipelines/evals/metrics.py
-      - src/bolinas/pipelines/evals/gpn_star.py
-      - .github/workflows/dashboard.yml
   workflow_dispatch:
 
 permissions:
