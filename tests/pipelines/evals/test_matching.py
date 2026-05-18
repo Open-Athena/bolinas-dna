@@ -176,7 +176,9 @@ class TestMatchSingleGroup:
         floor(n_neg / k) = 0. `_find_closest` must handle the empty-pos
         case rather than tripping the n_neg < k assertion."""
         pos = pd.DataFrame({"cat": ["A"] * 3, "feat": [1.0, 2.0, 3.0]}).set_index("cat")
-        neg = pd.DataFrame({"cat": ["A"] * 5, "feat": [10.0, 11.0, 12.0, 13.0, 14.0]}).set_index("cat")
+        neg = pd.DataFrame(
+            {"cat": ["A"] * 5, "feat": [10.0, 11.0, 12.0, 13.0, 14.0]}
+        ).set_index("cat")
         with pytest.warns(UserWarning, match="Insufficient negatives"):
             result = _match_single_group(pos, neg, "A", ["feat"], k=9, seed=42)
         assert result is not None

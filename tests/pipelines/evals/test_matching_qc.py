@@ -15,9 +15,13 @@ def _pre(subsets: list[tuple[str, int, int]]) -> pl.DataFrame:
     rows: list[dict] = []
     for grp, n_pos, n_neg in subsets:
         for _ in range(n_pos):
-            rows.append({"label": True, "consequence_group": grp, "distance_tss_pc": 1.0})
+            rows.append(
+                {"label": True, "consequence_group": grp, "distance_tss_pc": 1.0}
+            )
         for _ in range(n_neg):
-            rows.append({"label": False, "consequence_group": grp, "distance_tss_pc": 1.0})
+            rows.append(
+                {"label": False, "consequence_group": grp, "distance_tss_pc": 1.0}
+            )
     return pl.DataFrame(rows)
 
 
@@ -32,11 +36,19 @@ class TestComputeMatchingQc:
         post_records: list[dict] = []
         for i in range(5):
             post_records.append(
-                {"label": True, "subset": "missense_variant", "distance_tss_pc": float(i)}
+                {
+                    "label": True,
+                    "subset": "missense_variant",
+                    "distance_tss_pc": float(i),
+                }
             )
             for _ in range(9):
                 post_records.append(
-                    {"label": False, "subset": "missense_variant", "distance_tss_pc": float(i)}
+                    {
+                        "label": False,
+                        "subset": "missense_variant",
+                        "distance_tss_pc": float(i),
+                    }
                 )
         post = _post(post_records)
 
@@ -57,7 +69,9 @@ class TestComputeMatchingQc:
         pre = _pre([("A", 10, 100), ("B", 5, 0)])
         post_records = []
         for i in range(10):
-            post_records.append({"label": True, "subset": "A", "distance_tss_pc": float(i)})
+            post_records.append(
+                {"label": True, "subset": "A", "distance_tss_pc": float(i)}
+            )
             for _ in range(9):
                 post_records.append(
                     {"label": False, "subset": "A", "distance_tss_pc": float(i)}
@@ -84,9 +98,7 @@ class TestComputeMatchingQc:
         k = 9
         records = []
         for x in rng.normal(size=n_pos):
-            records.append(
-                {"label": True, "subset": "S", "distance_tss_pc": float(x)}
-            )
+            records.append({"label": True, "subset": "S", "distance_tss_pc": float(x)})
             for x_neg in rng.normal(size=k):
                 records.append(
                     {"label": False, "subset": "S", "distance_tss_pc": float(x_neg)}
@@ -154,9 +166,7 @@ class TestComputeMatchingQc:
         # feat_a leaks (pos=1, neg=0); feat_b is matched (pos and neg both 0).
         records = []
         for _ in range(5):
-            records.append(
-                {"label": True, "subset": "S", "feat_a": 1.0, "feat_b": 0.0}
-            )
+            records.append({"label": True, "subset": "S", "feat_a": 1.0, "feat_b": 0.0})
             for _ in range(9):
                 records.append(
                     {"label": False, "subset": "S", "feat_a": 0.0, "feat_b": 0.0}
