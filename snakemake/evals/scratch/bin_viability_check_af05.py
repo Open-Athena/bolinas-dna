@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import polars as pl
 
-DATASET_ALL = "s3://oa-bolinas/snakemake/evals/results/mendelian_traits/dataset_all.parquet"
+DATASET_ALL = (
+    "s3://oa-bolinas/snakemake/evals/results/mendelian_traits/dataset_all.parquet"
+)
 OUT = "s3://oa-bolinas/snakemake/evals/results/scratch/bin_viability_check_af05.parquet"
 K = 9
 NEG_AF_MIN = 0.05
@@ -66,9 +68,11 @@ def main() -> None:
 
         group_cols = ["chrom"] + bin_cols
         counts = sub.group_by(group_cols + ["label"]).agg(pl.len().alias("n"))
-        wide = counts.pivot(values="n", index=group_cols, on="label").rename(
-            {"true": "n_pos", "false": "n_neg"}
-        ).fill_null(0)
+        wide = (
+            counts.pivot(values="n", index=group_cols, on="label")
+            .rename({"true": "n_pos", "false": "n_neg"})
+            .fill_null(0)
+        )
 
         strata_with_pos = wide.filter(pl.col("n_pos") > 0)
         strata_with_pos = strata_with_pos.with_columns(

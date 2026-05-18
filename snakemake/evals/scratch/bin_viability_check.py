@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import polars as pl
 
-DATASET_ALL = "s3://oa-bolinas/snakemake/evals/results/mendelian_traits/dataset_all.parquet"
+DATASET_ALL = (
+    "s3://oa-bolinas/snakemake/evals/results/mendelian_traits/dataset_all.parquet"
+)
 OUT = "s3://oa-bolinas/snakemake/evals/results/scratch/bin_viability_check.parquet"
 K = 9
 
@@ -67,9 +69,11 @@ def main() -> None:
         group_cols = ["chrom"] + bin_cols
         # Count pos/neg per stratum
         counts = sub.group_by(group_cols + ["label"]).agg(pl.len().alias("n"))
-        wide = counts.pivot(values="n", index=group_cols, on="label").rename(
-            {"true": "n_pos", "false": "n_neg"}
-        ).fill_null(0)
+        wide = (
+            counts.pivot(values="n", index=group_cols, on="label")
+            .rename({"true": "n_pos", "false": "n_neg"})
+            .fill_null(0)
+        )
 
         # Only strata with positives matter for the drop calculation
         strata_with_pos = wide.filter(pl.col("n_pos") > 0)
