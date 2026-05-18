@@ -28,7 +28,7 @@ annotation_url: http://ftp.ensembl.org/pub/release-107/gtf/homo_sapiens/Homo_sap
 consequences_repo: songlab/hg38-variant-consequences
 gnomad_full_repo: songlab/gnomad-full
 gnomad_min_AN: 25000
-gnomad_common_min_AF: 0.01
+gnomad_common_min_AF: 0.001
 tss_proximal_dist: 1000
 exon_proximal_dist: 30
 exclude_consequences:
