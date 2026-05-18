@@ -171,6 +171,19 @@ class TestMatchSingleGroup:
         pos_out, neg_out = result
         assert len(neg_out) == 6
 
+    def test_drops_all_positives_when_n_neg_below_k(self) -> None:
+        """At k=9 a stratum with < 9 negatives subsamples positives to
+        floor(n_neg / k) = 0. `_find_closest` must handle the empty-pos
+        case rather than tripping the n_neg < k assertion."""
+        pos = pd.DataFrame({"cat": ["A"] * 3, "feat": [1.0, 2.0, 3.0]}).set_index("cat")
+        neg = pd.DataFrame({"cat": ["A"] * 5, "feat": [10.0, 11.0, 12.0, 13.0, 14.0]}).set_index("cat")
+        with pytest.warns(UserWarning, match="Insufficient negatives"):
+            result = _match_single_group(pos, neg, "A", ["feat"], k=9, seed=42)
+        assert result is not None
+        pos_out, neg_out = result
+        assert len(pos_out) == 0
+        assert len(neg_out) == 0
+
 
 class TestCombineResults:
     def test_assigns_match_group(self) -> None:

@@ -355,12 +355,18 @@ def _find_closest(
     k: int,
 ) -> pd.DataFrame:
     """Find k closest negatives for each positive (Euclidean), without replacement."""
-    dist_matrix = cdist(pos[cols], neg[cols])
-    n_neg = dist_matrix.shape[1]
+    if len(pos) == 0:
+        # `_match_single_group` subsamples positives down to `n_neg // k`
+        # when the stratum has < k negatives — possibly to zero. Return an
+        # empty selection rather than running cdist on an empty pos and
+        # tripping the n_neg < k assertion below.
+        return neg.iloc[[]]
+    n_neg = len(neg)
     assert k <= n_neg, (
         f"_find_closest needs k ({k}) <= len(neg) ({n_neg}); "
         "_match_single_group is supposed to subsample positives first"
     )
+    dist_matrix = cdist(pos[cols], neg[cols])
     closest_indices: list[int] = []
 
     # argpartition is O(n) vs argsort's O(n log n) — matters at k=9 with
@@ -368,7 +374,7 @@ def _find_closest(
     # match key. After partitioning, sort just those k indices by distance
     # for a deterministic, distance-ordered output.
     for i in range(len(pos)):
-        partitioned = np.argpartition(dist_matrix[i], min(k - 1, n_neg - 1))[:k]
+        partitioned = np.argpartition(dist_matrix[i], k - 1)[:k]
         sorted_indices = partitioned[np.argsort(dist_matrix[i][partitioned])].tolist()
         closest_indices.extend(sorted_indices)
         dist_matrix[:, sorted_indices] = np.inf
