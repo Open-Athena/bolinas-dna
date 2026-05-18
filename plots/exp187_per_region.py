@@ -63,12 +63,12 @@ DIAGONAL: dict[str, set[str]] = {
 
 # 6 colorblind-friendly colors (Okabe-Ito) — one per arm.
 ARM_COLORS: dict[str, str] = {
-    "v3_cds": "#E69F00",                  # orange
-    "v3_utr3": "#56B4E9",                 # sky blue
-    "v3_ncrna_exon": "#009E73",           # bluish green
+    "v3_cds": "#E69F00",  # orange
+    "v3_utr3": "#56B4E9",  # sky blue
+    "v3_ncrna_exon": "#009E73",  # bluish green
     "v3_tss_region_and_utr5": "#F0E442",  # yellow
-    "v3_ccre_non_promoter": "#0072B2",    # blue
-    "v3_bg": "#D55E00",                   # vermillion
+    "v3_ccre_non_promoter": "#0072B2",  # blue
+    "v3_bg": "#D55E00",  # vermillion
 }
 
 
