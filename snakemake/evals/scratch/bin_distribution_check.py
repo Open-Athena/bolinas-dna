@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import polars as pl
 
-DATASET_ALL = "s3://oa-bolinas/snakemake/evals/results/mendelian_traits/dataset_all.parquet"
+DATASET_ALL = (
+    "s3://oa-bolinas/snakemake/evals/results/mendelian_traits/dataset_all.parquet"
+)
 OUT = "s3://oa-bolinas/snakemake/evals/results/scratch/bin_distribution_check.parquet"
 
 CELLS = [
@@ -47,7 +49,9 @@ def main() -> None:
         pos = sub.filter(pl.col("label"))
         neg = sub.filter(~pl.col("label"))
         n_pos, n_neg = pos.height, neg.height
-        print(f"\n=== {subset} × {feat}  (pos={n_pos:,}, neg={n_neg:,}) ===", flush=True)
+        print(
+            f"\n=== {subset} × {feat}  (pos={n_pos:,}, neg={n_neg:,}) ===", flush=True
+        )
         print("  quantile      pos        neg", flush=True)
         for q in [0.0, 0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95, 1.0]:
             p = quantile_row(pos, feat, q)
