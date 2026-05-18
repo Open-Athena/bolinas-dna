@@ -5,7 +5,7 @@ workdir: .
 resources:
   infra: aws/us-east-2
   cpus: 8+
-  memory: 64+
+  memory: 256+
   disk_size: 200
   labels:
     project: dna
@@ -19,8 +19,14 @@ setup: |
 run: |
   source $HOME/.local/bin/env 2>/dev/null || true
   cd ~/sky_workdir/snakemake/evals
+  # complex_traits_dataset's matching recipe changed (no gene-IDs in
+  # CAT_BASE, no bin columns, k=9). Force-rerun the matching rule;
+  # the QC rule downstream picks up its new input via mtime. Target is
+  # the QC parquet, which depends on dataset_unsplit/complex_traits.parquet
+  # — so we get both in one run.
   uv run snakemake \
-    --cores 4 \
+    --cores 1 \
     -p \
     --rerun-triggers=mtime \
-    -- results/dataset_unsplit/complex_traits.parquet
+    --forcerun complex_traits_dataset \
+    -- results/qc/complex_traits.parquet
