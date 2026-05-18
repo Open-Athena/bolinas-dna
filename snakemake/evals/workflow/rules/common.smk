@@ -12,6 +12,7 @@ from bolinas.pipelines.evals.labeling import label_variants_by_pip
 from bolinas.pipelines.evals.materialize import materialize_sequences
 from bolinas.pipelines.evals.matching import (
     CAT_BASE,
+    add_subset_distance_bins_v2,
     match_features,
 )
 from bolinas.pipelines.evals.matching_qc import compute_matching_qc

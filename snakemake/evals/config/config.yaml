@@ -91,6 +91,11 @@ mendelian_traits:
   smedley_url: https://ars.els-cdn.com/content/image/1-s2.0-S0002929716302786-mmc2.xlsx
   clinvar_release: "20251019"
   submission_summary_date: "2025-10"
+  # Cap positives in oversized consequence_group subsets before matching.
+  # Missense pre-cap is ~12.7k of 14.3k total positives; capping makes VEP
+  # inference ~5x faster without losing subset-AUPRC statistical signal.
+  max_positives_per_subset:
+    missense_variant: 1000
 
 # ----- Complex-traits-specific -----
 complex_traits:

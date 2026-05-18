@@ -88,16 +88,47 @@ rule mendelian_traits_dataset_all:
         ).write_parquet(output[0])
 
 
+MENDELIAN_DISTANCE_BIN_SCHEME = {
+    # Close pc-TSS / pc-exon leak in tss_proximal (positives sit close to both).
+    ("tss_proximal", "distance_tss_pc"): [0.0, 100.0, 1000.0, float("inf")],
+    ("tss_proximal", "distance_exon_pc"): [0.0, 100.0, 1000.0, float("inf")],
+    # Iter-33-style split between splice-site and near-splice.
+    ("splicing", "distance_exon_pc"): [0.0, 5.0, 30.0, float("inf")],
+    # Distal-regulatory positives concentrate near coding exons.
+    ("distal", "distance_exon_pc"): [0.0, 1000.0, 10000.0, float("inf")],
+}
+MENDELIAN_SUBSAMPLE_SEED = 42
+
+
 rule mendelian_traits_dataset:
     input:
         "results/mendelian_traits/dataset_all.parquet",
     output:
         "results/dataset_unsplit/mendelian_traits.parquet",
     run:
-        V = pl.read_parquet(input[0])
+        V = add_subset_distance_bins_v2(
+            pl.read_parquet(input[0]), MENDELIAN_DISTANCE_BIN_SCHEME
+        )
+        pos = V.filter(pl.col("label"))
+        # Per-subset positive caps (e.g. missense → 1000) — VEP inference scales
+        # linearly with row count, and >1k positives gives diminishing returns
+        # on subset-AUPRC CI tightness. Deterministic seed for reproducibility.
+        caps = config["mendelian_traits"].get("max_positives_per_subset", {}) or {}
+        if caps:
+            capped = []
+            for subset, df in pos.partition_by(
+                "consequence_group", as_dict=True
+            ).items():
+                # `partition_by` returns 1-tuple keys for single-column partitions.
+                key = subset[0] if isinstance(subset, tuple) else subset
+                cap = caps.get(key)
+                if cap is not None and df.height > cap:
+                    df = df.sample(n=cap, seed=MENDELIAN_SUBSAMPLE_SEED)
+                capped.append(df)
+            pos = pl.concat(capped)
         (
             match_features(
-                V.filter(pl.col("label")),
+                pos,
                 V.filter(~pl.col("label")),
                 [
                     "distance_tss_pc",
@@ -105,7 +136,11 @@ rule mendelian_traits_dataset:
                     "distance_exon_pc",
                     "distance_exon_nc",
                 ],
-                CAT_BASE,
+                CAT_BASE
+                + [
+                    "distance_tss_pc_bin",
+                    "distance_exon_pc_bin",
+                ],
                 k=9,
             )
             .with_columns(subset=pl.col("consequence_group"))

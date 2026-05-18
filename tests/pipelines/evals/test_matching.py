@@ -25,6 +25,7 @@ from bolinas.pipelines.evals.matching import (
     _sort_by_coordinates,
     _validate_columns,
     add_subset_distance_bins,
+    add_subset_distance_bins_v2,
     add_tiered_maf_bin,
     bin_feature,
     match_features,
@@ -658,6 +659,90 @@ class TestAddSubsetDistanceBins:
         assert rows["splicing"]["distance_exon_pc_bin"] == "b1"
         for grp in ("tss_proximal", "non_coding_transcript_exon_variant", "distal"):
             assert rows[grp]["distance_exon_pc_bin"] == BIN_NA
+
+
+class TestAddSubsetDistanceBinsV2:
+    """Per-(subset, feature) distance binning with subset-prefixed labels."""
+
+    def _frame(self) -> pl.DataFrame:
+        return pl.DataFrame(
+            {
+                "consequence_group": [
+                    "tss_proximal",
+                    "splicing",
+                    "distal",
+                    "missense_variant",
+                ],
+                "distance_tss_pc": [50.0, 5000.0, 200000.0, 10000.0],
+                "distance_exon_pc": [50.0, 3.0, 5000.0, 0.0],
+            }
+        )
+
+    def test_single_feature_single_subset(self) -> None:
+        out = add_subset_distance_bins_v2(
+            self._frame(),
+            {("tss_proximal", "distance_tss_pc"): [0, 100, 1000, float("inf")]},
+        )
+        labels = {
+            r["consequence_group"]: r["distance_tss_pc_bin"] for r in out.to_dicts()
+        }
+        # tss_proximal: distance 50 → b0 (with subset prefix)
+        assert labels["tss_proximal"] == "tss_prox:b0"
+        # other subsets: BIN_NA
+        for grp in ("splicing", "distal", "missense_variant"):
+            assert labels[grp] == BIN_NA
+
+    def test_shared_feature_across_subsets_gets_distinct_labels(self) -> None:
+        out = add_subset_distance_bins_v2(
+            self._frame(),
+            {
+                ("splicing", "distance_exon_pc"): [0, 5, 30, float("inf")],
+                ("distal", "distance_exon_pc"): [0, 1000, 10000, float("inf")],
+                ("tss_proximal", "distance_exon_pc"): [0, 100, 1000, float("inf")],
+            },
+        )
+        labels = {
+            r["consequence_group"]: r["distance_exon_pc_bin"] for r in out.to_dicts()
+        }
+        # tss_proximal: 50 ∈ [0, 100) → b0, with "tss_prox" prefix
+        assert labels["tss_proximal"] == "tss_prox:b0"
+        # splicing: 3 ∈ [0, 5) → b0, with "splicing" prefix
+        assert labels["splicing"] == "splicing:b0"
+        # distal: 5000 ∈ [1000, 10000) → b1, with "distal" prefix
+        assert labels["distal"] == "distal:b1"
+        # missense: not in scheme → BIN_NA
+        assert labels["missense_variant"] == BIN_NA
+
+    def test_multiple_features_create_multiple_columns(self) -> None:
+        out = add_subset_distance_bins_v2(
+            self._frame(),
+            {
+                ("tss_proximal", "distance_tss_pc"): [0, 100, 1000, float("inf")],
+                ("tss_proximal", "distance_exon_pc"): [0, 100, 1000, float("inf")],
+            },
+        )
+        # Both bin columns added.
+        assert "distance_tss_pc_bin" in out.columns
+        assert "distance_exon_pc_bin" in out.columns
+        tss_row = out.filter(pl.col("consequence_group") == "tss_proximal").to_dicts()[
+            0
+        ]
+        # tss_proximal: dist_tss_pc=50 → b0, dist_exon_pc=50 → b0
+        assert tss_row["distance_tss_pc_bin"] == "tss_prox:b0"
+        assert tss_row["distance_exon_pc_bin"] == "tss_prox:b0"
+
+    def test_oor_label_for_value_above_max_edge(self) -> None:
+        # distal/distance_exon_pc=5000 with edges [0, 100, 1000] would be OOR.
+        # bin_feature returns "OOR" for in-range failure (> last edge).
+        out = add_subset_distance_bins_v2(
+            self._frame(),
+            {("distal", "distance_exon_pc"): [0, 100, 1000]},
+        )
+        labels = {
+            r["consequence_group"]: r["distance_exon_pc_bin"] for r in out.to_dicts()
+        }
+        # bin_feature default is left-closed; 5000 > 1000 → OOR
+        assert labels["distal"] == "distal:OOR"
 
 
 class TestAddTieredMafBin:

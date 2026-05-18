@@ -143,6 +143,53 @@ def add_subset_distance_bins(df: pl.DataFrame) -> pl.DataFrame:
     )
 
 
+def add_subset_distance_bins_v2(
+    df: pl.DataFrame,
+    scheme: dict[tuple[str, str], list[float]],
+) -> pl.DataFrame:
+    """Per-(subset, feature) distance bins for use as exact-match categoricals.
+
+    For each ``(subset, feature) -> edges`` entry in ``scheme``, populate a
+    ``{feature}_bin`` column where the value is ``"{subset[:8]}:b{i}"`` when
+    ``consequence_group == subset``, else ``BIN_NA`` (or the value carried
+    over from another subset that targets the same feature). The subset
+    prefix keeps labels disjoint across subsets so a single ``{feature}_bin``
+    column can carry different bin schemes for different subsets without
+    collisions; ``consequence_final`` is in the categorical match key so
+    cross-subset matching is impossible anyway.
+
+    Args:
+        df: dataframe with ``consequence_group`` and the features in ``scheme``.
+        scheme: ``{(subset, feature): edges}``. Multiple subsets can share a
+            feature.
+
+    Returns:
+        ``df`` with one new column per unique feature in ``scheme``.
+    """
+    # Group by feature so we build one column per feature with subset-conditional
+    # bin assignment.
+    by_feature: dict[str, list[tuple[str, list[float]]]] = {}
+    for (subset, feat), edges in scheme.items():
+        by_feature.setdefault(feat, []).append((subset, edges))
+
+    new_cols = []
+    for feat, entries in by_feature.items():
+        expr: pl.Expr = pl.lit(BIN_NA)
+        for subset, edges in entries:
+            bin_expr = pl.format(
+                "{}:{}",
+                pl.lit(subset[:8]),
+                bin_feature(feat, edges),
+            )
+            expr = (
+                pl.when(pl.col("consequence_group") == subset)
+                .then(bin_expr)
+                .otherwise(expr)
+            )
+        new_cols.append(expr.alias(f"{feat}_bin"))
+    return df.with_columns(*new_cols)
+
+
 def add_tiered_maf_bin(
     df: pl.DataFrame,
     scheme: dict[str, list[float]],
