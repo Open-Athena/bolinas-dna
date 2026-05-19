@@ -22,7 +22,7 @@ const search = view(
   Inputs.text({label: "Search", placeholder: "name, description, training data, …"}),
 );
 const dataset = view(
-  Inputs.select(["all", "mendelian_traits", "complex_traits", "eqtl"], {
+  Inputs.select(["all", "mendelian_traits", "complex_traits"], {
     label: "Evaluated on",
     value: "all",
   }),

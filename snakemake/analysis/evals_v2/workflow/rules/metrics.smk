@@ -1,15 +1,25 @@
-"""Compute PairwiseAccuracy + binomial SE per (model, dataset).
+"""Compute AUPRC + cluster-bootstrap SE per (model, dataset).
 
 One rule, fired per (model, dataset) — no cross-model aggregation, no markdown
 rendering. The parquet is the deliverable.
 
-We always compute the dataset's primary `score_column` (the LLR-protocol
-column: `minus_llr` for mendelian, `abs_llr` for complex/eqtl). When the
-scores parquet also contains `next_token_jsd_mean` (newer runs; all current
-checkpoints do), we additionally compute pairwise PA on that column so the
-dashboard's `JSD` protocol toggle has data without a second pipeline pass.
-The output parquet has one block of `[subset × _global_ × _macro_avg_]`
-rows per score_type, distinguishable by the `score_type` column.
+The scores parquet from `compute_scores` stores per-strand LLR/JSD atoms
+only (`llr_fwd`, `llr_rc`, `jsd_fwd`, `jsd_rc`). This rule materializes
+the derived `_avg`, `minus_llr_*`, `abs_llr_*` variants in-place, then
+evaluates AUPRC + cluster-bootstrap SE (cluster = `match_group`) for each.
+
+Score-type fan-out:
+  - `{protocol}_{fwd,rc,avg}` where `protocol` is the dataset's
+    `score_protocol` (`minus_llr` for mendelian, `abs_llr` for complex).
+  - `jsd_{fwd,rc,avg}` — JSD doesn't sign-flip so we keep it as-is.
+
+`_avg` semantics: average raw LLR first, then apply the protocol
+transform (so `abs_llr_avg = |(llr_fwd + llr_rc)/2|`, matching the
+prior in-runner averaging behavior).
+
+Output parquet has one row per (subset × score_type) plus aggregate
+rows `_global_` and `_macro_avg_` per score_type — see
+`bolinas.pipelines.evals.metrics.compute_auprc_metrics`.
 """
 
 
@@ -21,24 +31,42 @@ rule compute_metrics:
     wildcard_constraints:
         model="|".join(MODELS),
         dataset="|".join(DATASETS),
+    params:
+        n_bootstrap=config["inference"]["n_bootstrap"],
+        bootstrap_seed=config["inference"]["bootstrap_seed"],
+        score_protocol=lambda wc: get_dataset_config(wc.dataset)["score_protocol"],
     run:
-        score_col = get_dataset_config(wildcards.dataset)["score_column"]
+        protocol = params.score_protocol
         df = pd.read_parquet(input[0])
         for col in REQUIRED_VARIANT_COLUMNS:
             assert col in df.columns, f"scores parquet missing column {col!r}"
 
-        # Primary score column + JSD when present (no-op for legacy scores
-        # parquets without the JSD column).
-        score_cols = [score_col]
-        if "next_token_jsd_mean" in df.columns:
-            score_cols.append("next_token_jsd_mean")
-        for c in score_cols:
-            assert c in df.columns, f"scores parquet missing score column {c!r}"
+        # Materialize _avg atoms (semantics: avg LLR, then apply protocol).
+        # The conditional makes this a no-op for rc=False scores parquets.
+        if "llr_rc" in df.columns:
+            df["llr_avg"] = (df["llr_fwd"] + df["llr_rc"]) / 2
+            df["jsd_avg"] = (df["jsd_fwd"] + df["jsd_rc"]) / 2
 
-        metrics = compute_pairwise_metrics(
+        # Apply protocol transform per strand to materialize the columns
+        # we'll feed AUPRC.
+        transform = {"minus_llr": lambda x: -x, "abs_llr": np.abs}[protocol]
+        score_cols: list[str] = []
+        for strand in ("fwd", "rc", "avg"):
+            llr_col = f"llr_{strand}"
+            jsd_col = f"jsd_{strand}"
+            if llr_col in df.columns:
+                df[f"{protocol}_{strand}"] = transform(df[llr_col])
+                score_cols.append(f"{protocol}_{strand}")
+            if jsd_col in df.columns:
+                score_cols.append(jsd_col)
+        assert score_cols, "no score columns to evaluate — scores parquet schema?"
+
+        metrics = compute_auprc_metrics(
             dataset=df[list(REQUIRED_VARIANT_COLUMNS)],
             scores=df[score_cols],
             score_columns=score_cols,
+            n_bootstrap=params.n_bootstrap,
+            bootstrap_seed=params.bootstrap_seed,
         )
         metrics["model"] = wildcards.model
         metrics["dataset"] = wildcards.dataset

@@ -386,8 +386,8 @@ def test_run_reflogprob_clm_fwd_and_rc_differ():
     doesn't export a ``run_reflogprob_clm`` wrapper, so this verifies the
     underlying ``run_inference`` + ``compute_reflogprob_clm`` +
     ``transform_reflogprob_clm`` wiring at least responds to strand —
-    rc-averaging itself is covered by the ``run_variant_score_bundle``
-    test below."""
+    per-strand return semantics are covered by the
+    ``run_variant_score_bundle`` test below."""
     torch.manual_seed(0)
     tokenizer = AutoTokenizer.from_pretrained("songlab/tokenizer-dna-mlm")
     model = AutoModelForCausalLM.from_pretrained(TINY_CLM)
@@ -420,8 +420,9 @@ def test_run_reflogprob_clm_fwd_and_rc_differ():
 class _DeterministicCausalLM(nn.Module):
     """Test double whose forward returns content-dependent logits, so that
     different input batches produce different outputs. Used to verify the
-    rc_avg=True path of ``run_variant_score_bundle`` correctly averages the
-    FWD and RC [N, 2] predictions.
+    rc=True path of ``run_variant_score_bundle`` returns distinct FWD and
+    RC [N, 2] predictions and that averaging them outside the runner
+    matches a manual per-strand pair.
 
     Mimics HF ``CausalLMOutput``: returns an object with ``.logits`` only
     (no ``.hidden_states`` — the kernel no longer requests them).
@@ -454,13 +455,14 @@ class _DeterministicCausalLM(nn.Module):
         return out
 
 
-def test_run_variant_score_bundle_rc_avg_equals_mean_of_two_passes(tmp_path):
-    """End-to-end smoke test for the [N, 2] return shape with rc_avg=True.
+def test_run_variant_score_bundle_rc_returns_both_strands(tmp_path):
+    """End-to-end smoke test for the dict return shape with rc=True.
 
-    Verifies that ``run_variant_score_bundle(rc_avg=True)`` returns the
-    element-wise mean of FWD and RC single-strand runs. Catches regressions
-    in the per-strand var_pos derivation, partial-binding, and strand
-    averaging."""
+    Verifies that ``run_variant_score_bundle(rc=True)`` returns
+    ``{"fwd": [N, 2], "rc": [N, 2]}`` and that the two strands agree
+    with single-strand runs (callable manual two-pass reference).
+    Catches regressions in the per-strand var_pos derivation,
+    partial-binding, and the new dict-shape return contract."""
     from bolinas.data.transforms import _get_special_token_counts, in_seq_var_pos
 
     torch.manual_seed(0)
@@ -480,17 +482,17 @@ def test_run_variant_score_bundle_rc_avg_equals_mean_of_two_passes(tmp_path):
     )
     var_pos_rc = in_seq_var_pos(window_size, "-") + n_prefix
 
-    fwd = run_variant_score_bundle(
+    fwd_only = run_variant_score_bundle(
         model,
         tokenizer,
         dataset,
         genome,
         window_size,
-        rc_avg=False,
+        rc=False,
         data_transform_on_the_fly=True,
         inference_kwargs=_INFERENCE_KWARGS,
     )
-    rc = run_inference(
+    rc_manual = run_inference(
         model,
         tokenizer,
         dataset,
@@ -505,24 +507,25 @@ def test_run_variant_score_bundle_rc_avg_equals_mean_of_two_passes(tmp_path):
         data_transform_on_the_fly=True,
         inference_kwargs=_INFERENCE_KWARGS,
     )
-    avg = run_variant_score_bundle(
+    both = run_variant_score_bundle(
         model,
         tokenizer,
         dataset,
         genome,
         window_size,
-        rc_avg=True,
+        rc=True,
         data_transform_on_the_fly=True,
         inference_kwargs=_INFERENCE_KWARGS,
     )
 
-    assert fwd.shape == (4, 2)
-    assert rc.shape == (4, 2)
-    assert avg.shape == (4, 2)
-    np.testing.assert_allclose(
-        avg, (np.asarray(fwd) + np.asarray(rc)) / 2, rtol=1e-5, atol=1e-6
-    )
-    assert not np.allclose(fwd, rc, atol=1e-6)
+    assert set(fwd_only.keys()) == {"fwd"}
+    assert set(both.keys()) == {"fwd", "rc"}
+    assert fwd_only["fwd"].shape == (4, 2)
+    assert both["fwd"].shape == (4, 2)
+    assert both["rc"].shape == (4, 2)
+    np.testing.assert_allclose(both["fwd"], fwd_only["fwd"], rtol=1e-5, atol=1e-6)
+    np.testing.assert_allclose(both["rc"], rc_manual, rtol=1e-5, atol=1e-6)
+    assert not np.allclose(both["fwd"], both["rc"], atol=1e-6)
 
 
 def test_run_inference_padding_roundtrip(tmp_path):
@@ -547,7 +550,7 @@ def test_run_inference_padding_roundtrip(tmp_path):
         dataset,
         genome,
         window_size,
-        rc_avg=False,
+        rc=False,
         data_transform_on_the_fly=True,
         inference_kwargs=_INFERENCE_KWARGS,  # batch_size=2 → divides 4 evenly
     )
@@ -559,14 +562,14 @@ def test_run_inference_padding_roundtrip(tmp_path):
         dataset,
         genome,
         window_size,
-        rc_avg=False,
+        rc=False,
         data_transform_on_the_fly=True,
         inference_kwargs=padded_kwargs,  # batch_size=3 → pads 4→6, slices 6→4
     )
 
-    assert no_pad.shape == (4, 2)
-    assert with_pad.shape == (4, 2)
-    np.testing.assert_allclose(no_pad, with_pad, rtol=1e-5, atol=1e-6)
+    assert no_pad["fwd"].shape == (4, 2)
+    assert with_pad["fwd"].shape == (4, 2)
+    np.testing.assert_allclose(no_pad["fwd"], with_pad["fwd"], rtol=1e-5, atol=1e-6)
 
 
 class _ContentIndependentCausalLM(nn.Module):
@@ -630,12 +633,12 @@ def test_next_token_jsd_mean_zero_when_ref_alt_logits_identical(tmp_path):
         dataset,
         genome,
         window_size,
-        rc_avg=False,
+        rc=False,
         data_transform_on_the_fly=True,
         inference_kwargs=_INFERENCE_KWARGS,
     )
-    assert out.shape == (4, 2)
-    np.testing.assert_allclose(out[:, 1], 0.0, atol=1e-7)
+    assert out["fwd"].shape == (4, 2)
+    np.testing.assert_allclose(out["fwd"][:, 1], 0.0, atol=1e-7)
 
 
 def test_compute_variant_score_bundle_prefix_sharing_correctness():

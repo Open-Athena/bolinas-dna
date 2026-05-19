@@ -84,15 +84,17 @@ def test_default_protocol_keys_match_protocols():
 
 
 def test_score_type_for_returns_dataset_specific_column():
-    assert score_type_for("bolinas", "LLR", "mendelian_traits") == "minus_llr"
-    assert score_type_for("bolinas", "LLR", "complex_traits") == "abs_llr"
-    assert score_type_for("bolinas", "JSD", "mendelian_traits") == "next_token_jsd_mean"
+    # Bolinas family migrated to per-strand atoms + derived AVG under
+    # the AUPRC pipeline; default LLR/JSD pick the _avg variants.
+    assert score_type_for("bolinas", "LLR", "mendelian_traits") == "minus_llr_avg"
+    assert score_type_for("bolinas", "LLR", "complex_traits") == "abs_llr_avg"
+    assert score_type_for("bolinas", "JSD", "mendelian_traits") == "jsd_avg"
     assert (
         score_type_for("gpn_star", "cLLR", "mendelian_traits") == "minus_llr_calibrated"
     )
     assert score_type_for("gpn_star", "LLR", "mendelian_traits") == "minus_llr"
-    # evo2 follows bolinas's score-column convention so the LLR/JSD toggle
-    # gives a direct comparison with the bolinas gLMs.
+    # evo2 still on the legacy PA gist; will be re-emitted under AUPRC in
+    # a follow-up. Score-column names match what the gist parquets use.
     assert score_type_for("evo2", "LLR", "mendelian_traits") == "minus_llr"
     assert score_type_for("evo2", "LLR", "complex_traits") == "abs_llr"
     assert score_type_for("evo2", "JSD", "mendelian_traits") == "next_token_jsd_mean"
@@ -129,7 +131,7 @@ def test_evo2_parquet_path_resolves_to_pinned_gist():
 def test_fetch_method_metrics_unknown_protocol_raises(monkeypatch: pytest.MonkeyPatch):
     methods = (
         _mk_method(
-            id="exp55-mammals",
+            id="exp55-mammals-step-16999",
             display="exp55-mammals",
             family="bolinas",
             description="promoters, mammals",
@@ -217,7 +219,7 @@ def test_normalized_rows_skips_missing_protocol_gracefully(
     bolinas JSD before the pipeline rerun), normalized_rows logs + skips."""
     methods = (
         _mk_method(
-            id="exp55-mammals",
+            id="exp55-mammals-step-16999",
             display="exp55-mammals",
             family="bolinas",
             description="promoters, mammals",
@@ -225,34 +227,36 @@ def test_normalized_rows_skips_missing_protocol_gracefully(
         ),
     )
     _patch_methods(monkeypatch, methods)
+    # New AUPRC schema: rows have score_type _avg suffix, n_groups +
+    # n_rows columns instead of n_pairs + n_ties.
     bolinas_df = pl.DataFrame(
         [
             {
-                "score_type": "minus_llr",
+                "score_type": "minus_llr_avg",
                 "split": "train",
                 "subset": "missense_variant",
                 "value": 0.75,
                 "se": 0.02,
-                "n_pairs": 100,
-                "n_ties": 0,
+                "n_groups": 100,
+                "n_rows": 1000,
             },
             {
-                "score_type": "minus_llr",
+                "score_type": "minus_llr_avg",
                 "split": "train",
                 "subset": GLOBAL_SUBSET,
                 "value": 0.74,
                 "se": 0.02,
-                "n_pairs": 100,
-                "n_ties": 0,
+                "n_groups": 100,
+                "n_rows": 1000,
             },
             {
-                "score_type": "minus_llr",
+                "score_type": "minus_llr_avg",
                 "split": "train",
                 "subset": MACRO_AVG_SUBSET,
                 "value": 0.75,
                 "se": 0.02,
-                "n_pairs": 1,
-                "n_ties": 0,
+                "n_groups": 1,
+                "n_rows": 1000,
             },
         ]
     )
@@ -260,13 +264,17 @@ def test_normalized_rows_skips_missing_protocol_gracefully(
         monkeypatch,
         {
             "s3://oa-bolinas/snakemake/analysis/evals_v2/results/metrics/"
-            "exp55-mammals/mendelian_traits.parquet": bolinas_df,
+            "exp55-mammals-step-16999/mendelian_traits.parquet": bolinas_df,
         },
     )
     df = normalized_rows("mendelian_traits")
     assert df["protocol"].unique().to_list() == ["LLR"]
     captured = capsys.readouterr()
     assert "bolinas/JSD skip" in captured.err
+    # Bolinas rows are bridged: n_groups → n_pairs; n_ties always 0.
+    bolinas_rows = df.filter(pl.col("family") == "bolinas")
+    assert set(bolinas_rows["n_pairs"].to_list()) == {1, 100}
+    assert set(bolinas_rows["n_ties"].to_list()) == {0}
 
 
 def test_normalized_rows_propagates_unexpected_exceptions(
@@ -279,7 +287,7 @@ def test_normalized_rows_propagates_unexpected_exceptions(
     registry doesn't silently yield an empty dashboard."""
     methods = (
         _mk_method(
-            id="exp55-mammals",
+            id="exp55-mammals-step-16999",
             display="exp55-mammals",
             family="bolinas",
             description="promoters, mammals",

@@ -104,10 +104,13 @@ jobs:
 
   deploy:
     needs: build
-    # TEMP: disabled while we rebuild eval datasets + switch metric to AUPRC.
-    # PR builds still upload-pages-artifact (kept as required status check);
-    # we just don't publish. Remove this `if: false` when metrics are
-    # recomputed and the dashboard is consistent again.
+    # TEMP: disabled until evals_v2 has been re-run on the AUPRC pipeline
+    # for every model in dashboard/models.yaml. The library code and the
+    # snakemake rules have been migrated, but S3 still has the old
+    # PairwiseAccuracy parquets — flipping this `if` on before the
+    # rerun would publish a dashboard whose schema and data disagree.
+    # Remove the `if: false` once the new metrics are in S3 and the
+    # dashboard build looks correct locally.
     if: false
 
     runs-on: ubuntu-latest

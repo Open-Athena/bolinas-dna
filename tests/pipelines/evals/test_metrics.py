@@ -1,15 +1,23 @@
 """Tests for the classical (AUPRC/AUROC/Spearman) metrics API and cross-run
-aggregation. Per-metric tests for ``pairwise_accuracy`` live in
+aggregation, plus the cluster-bootstrap AUPRC used by ``evals_v2``.
+Per-metric tests for ``pairwise_accuracy`` live in
 ``test_pairwise_accuracy.py``."""
 
 import tempfile
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
+import pytest
+from sklearn.metrics import average_precision_score
 
 from bolinas.pipelines.evals.metrics import (
+    GLOBAL_SUBSET,
+    MACRO_AVG_SUBSET,
     METRIC_FUNCTIONS,
     aggregate_metrics,
+    auprc_with_bootstrap_se,
+    compute_auprc_metrics,
     compute_metrics,
 )
 
@@ -152,3 +160,197 @@ def test_aggregate_metrics():
         assert set(result["dataset"]) == {"dataset1"}
         assert set(result["subset"]) == {"A", "B"}
         assert all(result["value"].notna())
+
+
+# ---------------------------------------------------------------------------
+# auprc_with_bootstrap_se
+# ---------------------------------------------------------------------------
+
+
+def _matched_pairs(
+    n_pos: int = 50, k: int = 9, separable: bool = True, seed: int = 0
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Synthesize matched-pair data: n_pos positives, each with k matched negatives.
+    If ``separable=True``, all positives score above all negatives → AUPRC=1.0."""
+    rng = np.random.default_rng(seed)
+    labels = np.concatenate([np.ones(n_pos, dtype=int), np.zeros(n_pos * k, dtype=int)])
+    match_group = np.concatenate([np.arange(n_pos), np.repeat(np.arange(n_pos), k)])
+    if separable:
+        scores = np.concatenate(
+            [rng.uniform(0.7, 1.0, n_pos), rng.uniform(0.0, 0.3, n_pos * k)]
+        )
+    else:
+        scores = rng.uniform(0.0, 1.0, n_pos * (k + 1))
+    return labels, scores, match_group
+
+
+def test_auprc_perfectly_separable_returns_one():
+    labels, scores, mg = _matched_pairs(separable=True)
+    res = auprc_with_bootstrap_se(labels, scores, mg, n_bootstrap=100, rng=0)
+    assert res["value"] == pytest.approx(1.0, abs=1e-12)
+    # Bootstrap samples from perfectly separable data all give AUPRC=1.0 →
+    # zero variance.
+    assert res["se"] == pytest.approx(0.0, abs=1e-12)
+    assert res["n_groups"] == 50
+    assert res["n_rows"] == 50 * 10
+
+
+def test_auprc_random_scores_near_baseline():
+    """Random scores → AUPRC near the 1:9 positive prevalence baseline (0.1)."""
+    labels, scores, mg = _matched_pairs(separable=False, seed=42)
+    res = auprc_with_bootstrap_se(labels, scores, mg, n_bootstrap=200, rng=0)
+    # Point estimate should land within a few SDs of the 0.1 baseline.
+    assert 0.05 < res["value"] < 0.25
+    # SE should be non-trivial.
+    assert res["se"] > 0
+
+
+def test_auprc_seed_reproducibility():
+    """Same seed → identical SE; different seeds → SE differs (sanity)."""
+    labels, scores, mg = _matched_pairs(separable=False, seed=1)
+    a = auprc_with_bootstrap_se(labels, scores, mg, n_bootstrap=100, rng=0)
+    b = auprc_with_bootstrap_se(labels, scores, mg, n_bootstrap=100, rng=0)
+    c = auprc_with_bootstrap_se(labels, scores, mg, n_bootstrap=100, rng=1)
+    assert a["se"] == b["se"]
+    assert a["se"] != c["se"]
+    # Point estimate is data-only, so it should be identical across seeds.
+    assert a["value"] == c["value"]
+
+
+def test_auprc_global_matches_sklearn():
+    """Point-estimate value equals sklearn's average_precision_score over all rows."""
+    labels, scores, mg = _matched_pairs(separable=False, seed=7)
+    res = auprc_with_bootstrap_se(labels, scores, mg, n_bootstrap=10, rng=0)
+    expected = float(average_precision_score(labels, scores))
+    assert res["value"] == pytest.approx(expected)
+
+
+def test_auprc_nan_score_raises():
+    labels, scores, mg = _matched_pairs(separable=False)
+    scores = scores.copy()
+    scores[3] = np.nan
+    with pytest.raises(AssertionError, match="NaN"):
+        auprc_with_bootstrap_se(labels, scores, mg, n_bootstrap=10, rng=0)
+
+
+def test_auprc_single_class_raises():
+    labels = np.ones(20, dtype=int)
+    scores = np.linspace(0, 1, 20)
+    mg = np.arange(20)
+    with pytest.raises(AssertionError, match="both classes"):
+        auprc_with_bootstrap_se(labels, scores, mg, n_bootstrap=10, rng=0)
+
+
+def test_auprc_length_mismatch_raises():
+    labels = np.array([1, 0, 1])
+    scores = np.array([0.5, 0.5])
+    mg = np.array([0, 1, 2])
+    with pytest.raises(AssertionError, match="length mismatch"):
+        auprc_with_bootstrap_se(labels, scores, mg, n_bootstrap=10, rng=0)
+
+
+# ---------------------------------------------------------------------------
+# compute_auprc_metrics
+# ---------------------------------------------------------------------------
+
+
+def _matched_pairs_with_subsets(
+    subsets: list[str] = ["A", "B"],
+    n_pos_per_subset: int = 40,
+    k: int = 9,
+    seed: int = 0,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Synthesize a matched-pair dataset with multiple subsets. Each subset
+    gets its own block of match_groups; no group spans subsets."""
+    rng = np.random.default_rng(seed)
+    parts_ds = []
+    parts_score = []
+    base_group = 0
+    for s in subsets:
+        labels, scores, mg = _matched_pairs(
+            n_pos=n_pos_per_subset, k=k, separable=False, seed=seed + hash(s) % 1000
+        )
+        mg = mg + base_group
+        base_group = int(mg.max()) + 1
+        parts_ds.append(pd.DataFrame({"label": labels, "subset": s, "match_group": mg}))
+        parts_score.append(
+            pd.DataFrame({"score": scores, "score2": rng.uniform(size=len(scores))})
+        )
+    return pd.concat(parts_ds, ignore_index=True), pd.concat(
+        parts_score, ignore_index=True
+    )
+
+
+def test_compute_auprc_metrics_shape():
+    """Output: one row per (score_column × subset) plus global + macro per score."""
+    dataset, scores = _matched_pairs_with_subsets(
+        subsets=["A", "B", "C"], n_pos_per_subset=40
+    )
+    metrics = compute_auprc_metrics(
+        dataset=dataset, scores=scores, n_bootstrap=20, bootstrap_seed=0
+    )
+    # 3 subsets * 2 score cols + 2 aggregates * 2 score cols = 10 rows
+    assert len(metrics) == 3 * 2 + 2 * 2
+    assert set(metrics["score_type"]) == {"score", "score2"}
+    assert set(metrics["subset"]) == {"A", "B", "C", GLOBAL_SUBSET, MACRO_AVG_SUBSET}
+    assert set(metrics.columns) == {
+        "score_type",
+        "subset",
+        "value",
+        "se",
+        "n_groups",
+        "n_rows",
+    }
+
+
+def test_compute_auprc_metrics_global_matches_sklearn():
+    """``_global_`` row's value equals sklearn's AUPRC over all rows for that score."""
+    dataset, scores = _matched_pairs_with_subsets(subsets=["A", "B"])
+    metrics = compute_auprc_metrics(
+        dataset=dataset,
+        scores=scores,
+        score_columns=["score"],
+        n_bootstrap=10,
+        bootstrap_seed=0,
+    )
+    global_row = metrics[
+        (metrics["score_type"] == "score") & (metrics["subset"] == GLOBAL_SUBSET)
+    ].iloc[0]
+    expected = float(average_precision_score(dataset["label"], scores["score"]))
+    assert global_row["value"] == pytest.approx(expected)
+    assert global_row["n_rows"] == len(dataset)
+
+
+def test_compute_auprc_metrics_macro_avg_matches_mean_of_qualifying():
+    """``_macro_avg_`` row's value equals the unweighted mean of per-subset
+    values for subsets meeting ``n_min``."""
+    dataset, scores = _matched_pairs_with_subsets(
+        subsets=["A", "B"], n_pos_per_subset=40
+    )
+    metrics = compute_auprc_metrics(
+        dataset=dataset,
+        scores=scores,
+        score_columns=["score"],
+        n_bootstrap=10,
+        bootstrap_seed=0,
+        n_min=30,
+    )
+    per_subset = metrics[
+        (metrics["score_type"] == "score")
+        & (~metrics["subset"].isin({GLOBAL_SUBSET, MACRO_AVG_SUBSET}))
+    ]
+    macro_row = metrics[
+        (metrics["score_type"] == "score") & (metrics["subset"] == MACRO_AVG_SUBSET)
+    ].iloc[0]
+    assert macro_row["value"] == pytest.approx(per_subset["value"].mean())
+    assert macro_row["n_groups"] == len(per_subset)
+
+
+def test_compute_auprc_metrics_match_group_straddle_raises():
+    """A match_group present in more than one subset → AssertionError."""
+    dataset, scores = _matched_pairs_with_subsets(subsets=["A", "B"])
+    dataset.loc[0, "subset"] = "B"  # group 0's positive now lives in subset B
+    with pytest.raises(AssertionError, match="span multiple subsets"):
+        compute_auprc_metrics(
+            dataset=dataset, scores=scores, n_bootstrap=10, bootstrap_seed=0
+        )

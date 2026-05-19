@@ -17,11 +17,10 @@ import {PillSelect, DirectionPicker, labeledRow} from "../components/controls.js
 ```js
 const FAMILY = "gpn_star";
 const PROTOCOLS = ["cLLR", "LLR"];
-const DATASETS = ["mendelian_traits", "complex_traits", "eqtl"];
+const DATASETS = ["mendelian_traits", "complex_traits"];
 const DATASET_LABEL = {
   mendelian_traits: "Mendelian traits",
   complex_traits: "Complex traits",
-  eqtl: "eQTL",
 };
 
 const allRows = leaderboard.toArray().map(r => ({
@@ -113,7 +112,7 @@ if (baseline !== alternative) {
 
 Each cell below is **${alternative} PA − ${baseline} PA**, in percentage points. Green = ${alternative} scores higher than ${baseline}; red = the reverse. cLLR is the producer's recommended protocol on this leaderboard ([Benegas et al. #145](https://github.com/Open-Athena/bolinas-dna/issues/145)) — calibration subtracts pentanucleotide-context background, `llr_calibrated = llr − E[llr | 5-mer, mut]`.
 
-Same matched pairs as the [${DATASET_LABEL[dataset]} leaderboard](../leaderboards/${dataset === "mendelian_traits" ? "mendelian" : dataset === "complex_traits" ? "complex" : "eqtl"}); only the `score_type` filter changes.
+Same matched pairs as the [${DATASET_LABEL[dataset]} leaderboard](../leaderboards/${dataset === "mendelian_traits" ? "mendelian" : "complex"}); only the `score_type` filter changes.
 
 <style>
 :root { --observablehq-max-width: 1920px; }

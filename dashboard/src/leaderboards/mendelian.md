@@ -410,7 +410,7 @@ main > h1, main > h2, main > h3, main > p { max-width: 1200px; }
 </style>
 
 <div class="legend-row">
-  <span>Color: PA, fixed scale</span>
+  <span>Color: AUPRC, fixed scale</span>
   ${colorLegend({width: 240, height: 14})}
   <span>· Click a column header to re-sort</span>
 </div>

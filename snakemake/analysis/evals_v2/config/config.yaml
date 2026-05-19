@@ -12,12 +12,16 @@ genome_path: s3://oa-bolinas/data/genomes/homo_sapiens/GRCh38/ensembl-release-11
 split: train
 
 datasets:
+  # Per-dataset `hf_revision` pins the HF dataset commit consumed by
+  # this run. Bumping the SHA triggers re-execution via snakemake's
+  # `params:` hash. Mirrors `hf_commit` in
+  # dashboard/src/data/datasets.json.py — keep the two in sync.
   - name: mendelian_traits
-    score_column: minus_llr   # pathogenic positives should score higher than gnomAD-common negatives
+    hf_revision: 4aed58e50c5dea0b878a665007af2ef9e5108e9f  # PR #194 k=9 rebuild
+    score_protocol: minus_llr   # pathogenic positives should score higher than gnomAD-common negatives
   - name: complex_traits
-    score_column: abs_llr     # fine-mapped positives — magnitude regardless of direction
-  - name: eqtl
-    score_column: abs_llr     # GTEx fine-mapped eQTLs — magnitude regardless of direction
+    hf_revision: 22f86a89c65cb8f3007ac3cc2739f40efefa4340  # PR #194 k=9 rebuild
+    score_protocol: abs_llr     # fine-mapped positives — magnitude regardless of direction
 
 # Model checkpoints. Each entry must have exactly one of:
 #   - `gcs_path`: full GCS URI to the checkpoint directory (includes /hf/step-{N});
@@ -27,7 +31,7 @@ datasets:
 #
 # `window_size` is the number of DNA bases extracted per variant context.
 # 256 = old convention (no BOS, e.g. exp55/58/59).
-# 255 = new convention (BOS prepended, e.g. exp136 / exp166-p1B).
+# 255 = new convention (BOS prepended, e.g. exp136 / exp166-v0.1).
 # 512 = older 512-context runs trained without BOS (e.g. exp21 promoter-yolo);
 #       pair with a per-model `batch_size` override to fit on an A10G.
 #
@@ -38,35 +42,31 @@ datasets:
 #                            Useful when the global default is tuned for a
 #                            different context size.
 models:
-  - name: exp55-mammals
+  - name: exp55-mammals-step-16999
     gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-mammals-r01-52f413/hf/step-16999
     window_size: 256
 
-  - name: exp58-mammals
+  - name: exp58-mammals-step-16999
     gcs_path: gs://marin-dna-us-central1/checkpoints/exp58-mammals-r01-23d451/hf/step-16999
     window_size: 256
 
-  - name: exp58-animals
+  - name: exp58-animals-step-16999
     gcs_path: gs://marin-dna-us-central1/checkpoints/exp58-animals-r01-1e3682/hf/step-16999
     window_size: 256
 
-  - name: exp59-mammals
+  - name: exp59-mammals-step-16999
     gcs_path: gs://marin-dna-us-central1/checkpoints/exp59-mammals-r01-1d9235/hf/step-16999
     window_size: 256
 
-  - name: exp136-proj_v30
+  - name: exp136-proj_v30-step-9999
     gcs_path: gs://marin-us-central1/checkpoints/dna-bolinas-enhancer-curation-v0.1-proj_v30-6692f0/hf/step-9999
     window_size: 255   # 255 bp DNA + BOS = 256 total tokens
-
-  - name: exp166-p1B
-    hf_repo: bolinas-dna/exp166-p1B-step-16398   # 1B zoonomia-v1-v1 generalist
-    window_size: 255
 
   # exp136 — enhancer-curation proj_v30, intermediate checkpoints (issue #136).
   # Native Levanter checkpoints were saved at every num_train_steps // 3 step
   # (CHECKPOINTS_PER_RUN = 3 in marin's exp136_enhancer_curation.py); the
   # 3333/6666 intermediates were exported to HF after the fact (the original
-  # `hf/` only had step-9999 — see `exp136-proj_v30` entry above for that
+  # `hf/` only had step-9999 — see `exp136-proj_v30-step-9999` entry above for that
   # final checkpoint). Scoped to mendelian_traits for the convergence curve.
   - name: exp136-proj_v30-step-3333
     gcs_path: gs://marin-us-central1/checkpoints/dna-bolinas-enhancer-curation-v0.1-proj_v30-6692f0/hf/step-3333
@@ -77,9 +77,10 @@ models:
     window_size: 255
     datasets: [mendelian_traits]
 
-  # exp166 v0.1 — new generalist 1B run (separate from the older
-  # `exp166-p1B` HF entry above which is the earlier step-16398 export).
-  # 3 HF-exported checkpoints from the c127da run: 10000, 20000, 27329 (final).
+  # exp166 v0.1 — generalist 1B run (c127da). 3 HF-exported
+  # checkpoints: 10000, 20000, 27329 (final). Scoped to
+  # mendelian_traits to mirror #161; widen `datasets:` to add complex
+  # coverage when a complex_traits leaderboard refresh is in scope.
   - name: exp166-v0.1-p1B-step-10000
     gcs_path: gs://marin-us-east5/checkpoints/dna-bolinas-exp166-v0.1-p1B-c127da/hf/step-10000
     window_size: 255
@@ -94,7 +95,7 @@ models:
     datasets: [mendelian_traits]
 
   # exp21 — animal-promoters-yolo (issue #21, wandb animal-promoters-yolo-r01-213a8e).
-  # 512 bp context, no BOS. Scoped to mendelian_traits only: complex/eqtl signal
+  # 512 bp context, no BOS. Scoped to mendelian_traits only: complex signal
   # was weak in #21, and the matched-pair mendelian dataset is the one of
   # interest for tracking promoter-relevant convergence over training steps.
   # batch_size: 64 fits within A10G VRAM at 512-context (~32% VRAM at 32 →
@@ -272,10 +273,11 @@ models:
   # 256 bp context, no BOS (older convention; smaller models than exp21/13/27).
   # Step list 1000/2000/3000/4000/5000/9000/13000/16999 (16999 is the final
   # checkpoint — no step-17000). For exp55-mammals, exp58-mammals, exp58-animals
-  # the step-16999 slot is already covered by the existing single-step entries
-  # above (which have datasets: unset = all three eval datasets), so it's not
-  # duplicated here. Datasets scoped to mendelian_traits to mirror the issue
-  # plots; uses global inference.batch_size (128).
+  # the step-16999 slot is already covered by the corresponding
+  # `*-step-16999` entries above (which have `datasets:` unset = all
+  # configured eval datasets), so it's not duplicated here. Datasets
+  # scoped to mendelian_traits to mirror the issue plots; uses global
+  # inference.batch_size (128).
 
   # exp55 humans — promoters trained on humans timescale (issue #55).
   - name: exp55-humans-step-1000
@@ -346,7 +348,7 @@ models:
     datasets: [mendelian_traits]
 
   # exp55 mammals — promoters trained on mammals timescale (issue #55).
-  # step-16999 already covered by the existing `exp55-mammals` entry above.
+  # step-16999 already covered by the existing `exp55-mammals-step-16999` entry above.
   - name: exp55-mammals-step-1000
     gcs_path: gs://marin-dna-us-central1/checkpoints/exp55-mammals-r01-52f413/hf/step-1000
     window_size: 256
@@ -445,7 +447,7 @@ models:
     datasets: [mendelian_traits]
 
   # exp58 mammals — CDS trained on mammals timescale (issue #58).
-  # step-16999 already covered by the existing `exp58-mammals` entry above.
+  # step-16999 already covered by the existing `exp58-mammals-step-16999` entry above.
   - name: exp58-mammals-step-1000
     gcs_path: gs://marin-dna-us-central1/checkpoints/exp58-mammals-r01-23d451/hf/step-1000
     window_size: 256
@@ -510,7 +512,7 @@ models:
     datasets: [mendelian_traits]
 
   # exp58 animals — CDS trained on animals timescale (issue #58).
-  # step-16999 already covered by the existing `exp58-animals` entry above.
+  # step-16999 already covered by the existing `exp58-animals-step-16999` entry above.
   - name: exp58-animals-step-1000
     gcs_path: gs://marin-dna-us-central1/checkpoints/exp58-animals-r01-1e3682/hf/step-1000
     window_size: 256
@@ -548,5 +550,12 @@ inference:
   num_workers: 4
   data_transform_on_the_fly: true
   torch_compile: true
-  rc_avg: true          # FWD + RC averaging; doubles inference time but is the
-                        # validated default per issue #175 conclusion 2.
+  rc: true              # Compute the RC strand alongside FWD; doubles
+                        # inference time but is the validated default
+                        # per issue #175 conclusion 2. AVG / minus_llr /
+                        # abs_llr columns are derived in the metrics rule.
+  n_bootstrap: 1000     # AUPRC cluster-bootstrap iterations per
+                        # (subset × score_type).
+  bootstrap_seed: 0     # 0 → reproducible across re-runs. Bumping
+                        # this triggers metric re-execution via
+                        # snakemake's `params:` hash.
