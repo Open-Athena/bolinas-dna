@@ -185,6 +185,15 @@ rule complex_traits_dataset_all:
         ).write_parquet(output[0])
 
 
+COMPLEX_DISTANCE_BIN_SCHEME = {
+    # Close pc-TSS / pc-exon leak in tss_proximal (mendelian-mirror).
+    ("tss_proximal", "distance_tss_pc"): [0.0, 100.0, 1000.0, float("inf")],
+    ("tss_proximal", "distance_exon_pc"): [0.0, 100.0, 1000.0, float("inf")],
+    # Splice-site split.
+    ("splicing", "distance_exon_pc"): [0.0, 5.0, 30.0, float("inf")],
+}
+
+
 rule complex_traits_dataset:
     input:
         "results/complex_traits/dataset_all.parquet",
@@ -192,8 +201,11 @@ rule complex_traits_dataset:
         "results/dataset_unsplit/complex_traits.parquet",
     run:
         # RobustScaler in matching needs finite MAF; filter null/NaN up-front.
-        V = pl.read_parquet(input[0]).filter(
-            pl.col("MAF").is_finite() & pl.col("MAF").is_not_null()
+        V = add_subset_distance_bins_v2(
+            pl.read_parquet(input[0]).filter(
+                pl.col("MAF").is_finite() & pl.col("MAF").is_not_null()
+            ),
+            COMPLEX_DISTANCE_BIN_SCHEME,
         )
         (
             match_features(
@@ -206,7 +218,11 @@ rule complex_traits_dataset:
                     "distance_exon_nc",
                     "MAF",
                 ],
-                CAT_BASE,
+                CAT_BASE
+                + [
+                    "distance_tss_pc_bin",
+                    "distance_exon_pc_bin",
+                ],
                 k=9,
             )
             .with_columns(subset=pl.col("consequence_group"))
