@@ -62,7 +62,13 @@ STEPS: list[int] = [1000, 2000, 3000, 4000, 4999]
 FINAL_STEP: int = 4999
 
 # 5 LL-gap val recipes used in the in-training eval (PR #171).
-VAL_RECIPES: list[str] = ["val_cds", "val_utr3", "val_ncrna", "val_tss_pc", "val_enhancer"]
+VAL_RECIPES: list[str] = [
+    "val_cds",
+    "val_utr3",
+    "val_ncrna",
+    "val_tss_pc",
+    "val_enhancer",
+]
 
 # Per-recipe → list-of-mendelian-subset(s) mapping for the scatter panels.
 RECIPE_TO_SUBSETS: dict[str, list[str]] = {
@@ -152,9 +158,7 @@ def _fit_sigmoid(x: np.ndarray, y: np.ndarray) -> np.ndarray | None:
         k0 = 5.0 if np.corrcoef(x, y)[0, 1] >= 0 else -5.0
         p0 = [y.min(), y.max(), k0, float(np.median(x))]
         bounds = ([0, 0, -np.inf, -np.inf], [1, 1, np.inf, np.inf])
-        popt, _ = optimize.curve_fit(
-            _sigmoid, x, y, p0=p0, bounds=bounds, maxfev=10000
-        )
+        popt, _ = optimize.curve_fit(_sigmoid, x, y, p0=p0, bounds=bounds, maxfev=10000)
         return popt
     except (RuntimeError, ValueError):
         return None
@@ -238,9 +242,7 @@ def load_wandb_metrics() -> tuple[pd.DataFrame, pd.DataFrame]:
             f_col = f"eval/{r}_functional/loss"
             n_col = f"eval/{r}_nonfunctional/loss"
             e[f"{r}_llgap"] = e[n_col] - e[f_col]
-        eval_frames.append(
-            e[["arm", "step"] + [f"{r}_llgap" for r in VAL_RECIPES]]
-        )
+        eval_frames.append(e[["arm", "step"] + [f"{r}_llgap" for r in VAL_RECIPES]])
 
     train_df = pd.concat(train_frames, ignore_index=True)
     eval_df = pd.concat(eval_frames, ignore_index=True)
@@ -475,9 +477,7 @@ def _llgap_at_step(
     return float(closest[col])
 
 
-def plot_llgap_vs_pa(
-    pa_df: pl.DataFrame, eval_df: pd.DataFrame, out_dir: Path
-) -> None:
+def plot_llgap_vs_pa(pa_df: pl.DataFrame, eval_df: pd.DataFrame, out_dir: Path) -> None:
     pa_llr = pa_df.filter(pl.col("score_type") == "minus_llr").to_pandas()
 
     max_cols = max(len(v) for v in RECIPE_TO_SUBSETS.values())
@@ -547,8 +547,12 @@ def plot_llgap_vs_pa(
                 )
             pearson_r = stats.pearsonr(xs_a, ys_a)
             spearman_r = stats.spearmanr(xs_a, ys_a)
-            star_p = "*" if pearson_r.pvalue / 2 < 0.05 and pearson_r.statistic > 0 else ""
-            star_s = "*" if spearman_r.pvalue / 2 < 0.05 and spearman_r.statistic > 0 else ""
+            star_p = (
+                "*" if pearson_r.pvalue / 2 < 0.05 and pearson_r.statistic > 0 else ""
+            )
+            star_s = (
+                "*" if spearman_r.pvalue / 2 < 0.05 and spearman_r.statistic > 0 else ""
+            )
             ax.text(
                 0.04,
                 0.96,
@@ -599,9 +603,7 @@ def main() -> None:
     # PA training curves × {LLR, JSD} × {with-err, no-err}.
     for score_type, label in SCORE_TYPES:
         for with_err in (True, False):
-            plot_pa_curves(
-                pa_df, score_type, label, out_dir, with_errorbars=with_err
-            )
+            plot_pa_curves(pa_df, score_type, label, out_dir, with_errorbars=with_err)
         plot_pa_heatmap(pa_df, score_type, label, out_dir)
 
     print("Fetching wandb training history (6 runs) ...")
