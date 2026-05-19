@@ -5,9 +5,7 @@ results/
 tmp/
 *.tmp
 weights/
-plots/*.png
-plots/*.pdf
-plots/*.svg
+plots/output/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

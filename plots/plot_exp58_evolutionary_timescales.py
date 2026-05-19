@@ -2,12 +2,13 @@
 timescales (mammals / vertebrates / animals), on three mendelian subsets
 (missense / synonymous / splicing).
 
-Mirrors the layout of the reference figure shared in the chat — three panels
-side-by-side, one line per arm, AUPRC on y-axis. Reads metrics parquets
-directly from S3, no local download needed.
+Reads metrics parquets directly from S3, no local download needed. Writes
+both SVG (for humans / GitHub inline rendering) and PNG (so agents can
+`Read` the figure back to visually sanity-check it) into
+`plots/output/exp58_evolutionary_timescales/`.
 
 Usage:
-    uv run python scratch/plot_exp58_evolutionary_timescales.py
+    uv run python plots/plot_exp58_evolutionary_timescales.py
 """
 
 from __future__ import annotations
@@ -39,7 +40,10 @@ SUBSET_LABELS: dict[str, str] = {
 }
 S3_BASE = "s3://oa-bolinas/snakemake/analysis/evals_v2/results/metrics"
 SCORE_TYPE = "minus_llr_avg"
-OUT_PATH = Path(__file__).parent / "exp58_evolutionary_timescales_auprc.png"
+# AGENTS.md `plots/` convention: outputs land in `plots/output/<recipe>/`,
+# emitting both SVG and PNG.
+OUT_DIR = Path(__file__).parent / "output" / Path(__file__).stem.removeprefix("plot_")
+OUT_STEM = "exp58_evolutionary_timescales_auprc"
 
 
 def load_all() -> pl.DataFrame:
@@ -116,8 +120,11 @@ def main() -> None:
         loc="center left", bbox_to_anchor=(1.02, 0.5), title="Model", frameon=False
     )
     plt.tight_layout()
-    plt.savefig(OUT_PATH, dpi=150, bbox_inches="tight")
-    print(f"wrote {OUT_PATH}")
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    for ext in ("svg", "png"):
+        out = OUT_DIR / f"{OUT_STEM}.{ext}"
+        plt.savefig(out, dpi=150, bbox_inches="tight")
+        print(f"wrote {out}")
 
 
 if __name__ == "__main__":
