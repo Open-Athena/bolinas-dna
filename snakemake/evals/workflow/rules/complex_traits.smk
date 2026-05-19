@@ -185,13 +185,9 @@ rule complex_traits_dataset_all:
         ).write_parquet(output[0])
 
 
-COMPLEX_DISTANCE_BIN_SCHEME = {
-    # Close pc-TSS / pc-exon leak in tss_proximal (mendelian-mirror).
-    ("tss_proximal", "distance_tss_pc"): [0.0, 100.0, 1000.0, float("inf")],
-    ("tss_proximal", "distance_exon_pc"): [0.0, 100.0, 1000.0, float("inf")],
-    # Splice-site split.
-    ("splicing", "distance_exon_pc"): [0.0, 5.0, 30.0, float("inf")],
-}
+# complex_traits uses the BASE scheme as-is — no leak in distal that
+# warrants the extra bin mendelian adds.
+COMPLEX_DISTANCE_BIN_SCHEME = BASE_DISTANCE_BIN_SCHEME
 
 
 rule complex_traits_dataset:

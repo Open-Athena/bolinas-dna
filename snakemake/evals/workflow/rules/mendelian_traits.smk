@@ -89,14 +89,10 @@ rule mendelian_traits_dataset_all:
 
 
 MENDELIAN_DISTANCE_BIN_SCHEME = {
-    # Close pc-TSS / pc-exon leak in tss_proximal (positives sit close to both).
-    ("tss_proximal", "distance_tss_pc"): [0.0, 100.0, 1000.0, float("inf")],
-    ("tss_proximal", "distance_exon_pc"): [0.0, 100.0, 1000.0, float("inf")],
-    # Iter-33-style split between splice-site and near-splice.
-    ("splicing", "distance_exon_pc"): [0.0, 5.0, 30.0, float("inf")],
+    **BASE_DISTANCE_BIN_SCHEME,
     # Distal-regulatory positives concentrate near coding exons. Finer bins
-    # than the other subsets — pool is huge (5.93M neg), and the coarse
-    # [0, 1000, 10000, inf] only closed the leak by 0.015.
+    # than the BASE scheme's other subsets — pool is huge (5.93M neg), and a
+    # coarser [0, 1000, 10000, inf] only closed the leak by 0.015.
     ("distal", "distance_exon_pc"): [
         0.0,
         100.0,

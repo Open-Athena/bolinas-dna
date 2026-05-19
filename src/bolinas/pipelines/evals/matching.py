@@ -402,6 +402,7 @@ def _find_closest(
     k: int,
 ) -> pd.DataFrame:
     """Find k closest negatives for each positive (Euclidean), without replacement."""
+    assert k >= 1, f"_find_closest needs k >= 1, got {k}"
     if len(pos) == 0:
         # `_match_single_group` subsamples positives down to `n_neg // k`
         # when the stratum has < k negatives — possibly to zero. Return an

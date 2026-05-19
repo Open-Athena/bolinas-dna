@@ -44,8 +44,8 @@ def _split_counts(train_path: str | Path, test_path: str | Path) -> dict:
     }
 
 
-def _retention_table(qc_path: str | Path) -> str:
-    qc = pl.read_parquet(qc_path).sort("n_positives_input", descending=True)
+def _retention_table(qc: pl.DataFrame) -> str:
+    qc = qc.sort("n_positives_input", descending=True)
     rows = [
         "| Subset | n_pos in `dataset_all` | matched (kept) | retention |",
         "|---|---:|---:|---:|",
@@ -65,8 +65,8 @@ def _retention_table(qc_path: str | Path) -> str:
     return "\n".join(rows)
 
 
-def _auprc_table(qc_path: str | Path, features: list[str]) -> str:
-    qc = pl.read_parquet(qc_path).sort("n_positives_kept", descending=True)
+def _auprc_table(qc: pl.DataFrame, features: list[str]) -> str:
+    qc = qc.sort("n_positives_kept", descending=True)
     header = "| subset | n |"
     sep = "|---|---:|"
     for f in features:
@@ -100,9 +100,10 @@ def render_mendelian(
     qc_path: str | Path,
 ) -> str:
     c = _split_counts(train_path, test_path)
-    retention = _retention_table(qc_path)
+    qc = pl.read_parquet(qc_path)
+    retention = _retention_table(qc)
     auprc = _auprc_table(
-        qc_path,
+        qc,
         ["distance_tss_pc", "distance_tss_nc", "distance_exon_pc", "distance_exon_nc"],
     )
     return f"""{_frontmatter(["variant-effect-prediction"])}
@@ -230,9 +231,10 @@ def render_complex(
     qc_path: str | Path,
 ) -> str:
     c = _split_counts(train_path, test_path)
-    retention = _retention_table(qc_path)
+    qc = pl.read_parquet(qc_path)
+    retention = _retention_table(qc)
     auprc = _auprc_table(
-        qc_path,
+        qc,
         [
             "distance_tss_pc",
             "distance_tss_nc",

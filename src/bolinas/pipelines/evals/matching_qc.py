@@ -123,12 +123,15 @@ def _per_subset_feature_auprc(
     continuous_features: list[str],
     subsets: list[str],
 ) -> pl.DataFrame:
+    # Cache the per-subset filtered frames so each feature reuses the same
+    # filter result instead of refiltering post_df F times per subset.
+    subset_frames = {s: post_df.filter(pl.col(POST_SUBSET_COL) == s) for s in subsets}
     cols: dict[str, list] = {"subset": list(subsets)}
     for feat in continuous_features:
         auprc: list[float | None] = []
         sign: list[int | None] = []
         for subset in subsets:
-            sub = post_df.filter(pl.col(POST_SUBSET_COL) == subset)
+            sub = subset_frames[subset]
             labels = sub["label"].cast(pl.Int64).to_numpy()
             scores = sub[feat].to_numpy()
             mask = ~np.isnan(scores)

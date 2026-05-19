@@ -66,6 +66,15 @@ QC_CONTINUOUS_FEATURES = {
     ],
 }
 
+# Distance-bin schemes shared across the matched datasets. mendelian extends
+# this with its own `distal` entry; complex_traits uses the base set verbatim.
+# Edges: float("inf") closes the last bin as an open upper bound.
+BASE_DISTANCE_BIN_SCHEME = {
+    ("tss_proximal", "distance_tss_pc"): [0.0, 100.0, 1000.0, float("inf")],
+    ("tss_proximal", "distance_exon_pc"): [0.0, 100.0, 1000.0, float("inf")],
+    ("splicing", "distance_exon_pc"): [0.0, 5.0, 30.0, float("inf")],
+}
+
 
 def _reorder_columns(df):
     primary = [c for c in PRIMARY_COLS if c in df.columns]
@@ -132,8 +141,8 @@ rule materialize_eval_harness_dataset:
 
 
 def _hf_qc_input(wildcards):
-    """QC parquet input — only matched datasets have one (not the harness derivative)."""
-    if wildcards.dataset.endswith("_harness_255"):
+    """QC parquet input — only matched datasets have one (not the harness derivatives)."""
+    if "_harness_" in wildcards.dataset:
         return []
     return f"results/qc/{wildcards.dataset}.parquet"
 
