@@ -104,9 +104,12 @@ jobs:
 
   deploy:
     needs: build
-    # Only publish on pushes to main. PR runs upload the artifact (which the
-    # build step does for free) but stop here without touching Pages.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # TEMP: disabled while we rebuild eval datasets + switch metric to AUPRC.
+    # PR builds still upload-pages-artifact (kept as required status check);
+    # we just don't publish. Remove this `if: false` when metrics are
+    # recomputed and the dashboard is consistent again.
+    if: false
+
     runs-on: ubuntu-latest
     # Single concurrent deploy at a time; cancel in-flight publishes so we
     # always ship the latest commit. PR builds don't share this group, so

@@ -22,7 +22,6 @@ datasets:
   - mendelian_traits
   - complex_traits
   - mendelian_traits_harness_255
-  - eqtl
 
 # ----- Shared trait-pipeline parameters -----
 annotation_url: http://ftp.ensembl.org/pub/release-107/gtf/homo_sapiens/Homo_sapiens.GRCh38.107.chr.gtf.gz
@@ -92,24 +91,15 @@ mendelian_traits:
   smedley_url: https://ars.els-cdn.com/content/image/1-s2.0-S0002929716302786-mmc2.xlsx
   clinvar_release: "20251019"
   submission_summary_date: "2025-10"
+  # Cap positives in oversized consequence_group subsets before matching.
+  # Missense pre-cap is ~12.7k of 14.3k total positives; capping makes VEP
+  # inference ~5x faster without losing subset-AUPRC statistical signal.
+  max_positives_per_subset:
+    missense_variant: 1000
 
 # ----- Complex-traits-specific -----
 complex_traits:
   finemapping_repo: gonzalobenegas/finucane-ukbb-finemapping
   ldscore_s3: s3://pan-ukb-us-east-1/ld_release/UKBB.EUR.ldscore.ht
-  pip_pos_threshold: 0.9
-  pip_neg_threshold: 0.01
-
-# ----- eQTL (eQTL Catalogue r7 GTEx v8 SuSiE fine-mapping) -----
-# Per-tissue files from `ftp://ftp.ebi.ac.uk/pub/databases/spot/eQTL/...`
-# under the QTS000015 (GTEx v8) study. All 49 tissues × `ge` quantification.
-# Two files per dataset: credible_sets.tsv.gz (~4 MB, PIP per CS member) +
-# all.tsv.gz (~3.5 GB, full nominal sumstats with MAF — this gives us the
-# rich tested-but-no-signal negative pool the Finucane file lacked).
-# Tissue list in `config/gtex_tissues.csv` (one dataset_id + tissue_label
-# per row). Public FTP, anonymous access, no auth needed.
-eqtl:
-  catalogue_study_id: QTS000015
-  tissues_csv: config/gtex_tissues.csv
   pip_pos_threshold: 0.9
   pip_neg_threshold: 0.01

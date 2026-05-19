@@ -11,10 +11,25 @@ include: "rules/smedley.smk"
 include: "rules/ldscore.smk"
 include: "rules/mendelian_traits.smk"
 include: "rules/complex_traits.smk"
-include: "rules/eqtl.smk"
 
 
+# `rule all` builds the local split parquets + matching diagnostics but does
+# NOT upload to HF. Review `results/qc/{dataset}.parquet` and inspect the
+# matched parquets, then invoke `rule upload_all` manually once approved.
 rule all:
+    input:
+        expand(
+            "results/dataset/{dataset}/{split}.parquet",
+            dataset=config["datasets"],
+            split=SPLITS,
+        ),
+        expand(
+            "results/qc/{dataset}.parquet",
+            dataset=[d for d in config["datasets"] if not d.endswith("_harness_255")],
+        ),
+
+
+rule upload_all:
     input:
         expand(
             "results/upload.done/{dataset}",

@@ -1,6 +1,7 @@
 import bioframe as bf
 import pandas as pd
 import polars as pl
+import subprocess
 from pathlib import Path
 
 from bolinas.data.genome import Genome
@@ -10,19 +11,13 @@ from huggingface_hub import HfApi
 
 from bolinas.pipelines.evals.labeling import label_variants_by_pip
 from bolinas.pipelines.evals.materialize import materialize_sequences
+from bolinas.pipelines.evals import hf_readme
 from bolinas.pipelines.evals.matching import (
-    BIN_NA,
     CAT_BASE,
-    EXON_DIST_BIN_EDGES,
-    MAF_BIN_EDGES,
-    MAF_TIERED_LOG8_DISTAL_ONLY,
-    MAF_TIERED_V1,
-    TSS_DIST_BIN_EDGES,
-    add_subset_distance_bins,
-    add_tiered_maf_bin,
-    bin_feature,
+    add_subset_distance_bins_v2,
     match_features,
 )
+from bolinas.pipelines.evals.matching_qc import compute_matching_qc
 from bolinas.pipelines.evals.trait_intervals import (
     add_exon,
     add_tss,
@@ -52,11 +47,51 @@ COORDS = ["chrom", "pos", "ref", "alt"]
 # else. Datasets missing any of these columns just skip them.
 PRIMARY_COLS = COORDS + ["label", "subset", "match_group"]
 
+# Continuous features over which to compute per-subset AUPRC leak in the
+# matching diagnostic. Mirrors the `continuous` list passed to
+# `match_features` in each `{task}_dataset` rule.
+QC_CONTINUOUS_FEATURES = {
+    "mendelian_traits": [
+        "distance_tss_pc",
+        "distance_tss_nc",
+        "distance_exon_pc",
+        "distance_exon_nc",
+    ],
+    "complex_traits": [
+        "distance_tss_pc",
+        "distance_tss_nc",
+        "distance_exon_pc",
+        "distance_exon_nc",
+        "MAF",
+    ],
+}
+
+# Distance-bin schemes shared across the matched datasets. mendelian extends
+# this with its own `distal` entry; complex_traits uses the base set verbatim.
+# Edges: float("inf") closes the last bin as an open upper bound.
+BASE_DISTANCE_BIN_SCHEME = {
+    ("tss_proximal", "distance_tss_pc"): [0.0, 100.0, 1000.0, float("inf")],
+    ("tss_proximal", "distance_exon_pc"): [0.0, 100.0, 1000.0, float("inf")],
+    ("splicing", "distance_exon_pc"): [0.0, 5.0, 30.0, float("inf")],
+}
+
 
 def _reorder_columns(df):
     primary = [c for c in PRIMARY_COLS if c in df.columns]
     rest = [c for c in df.columns if c not in primary]
     return df[primary + rest]
+
+
+# Commit SHA pinned at module-load so the HF README's pipeline permalink stays
+# stable for an entire snakemake run. Falls back to "main" if git isn't reachable
+# (shouldn't happen for sky workdir, but defensive).
+try:
+    GIT_SHA = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], text=True
+    ).strip()
+except Exception:
+    GIT_SHA = "main"
+
 
 
 rule download_genome:
@@ -105,9 +140,18 @@ rule materialize_eval_harness_dataset:
         ds.to_parquet(output[0])
 
 
+def _hf_qc_input(wildcards):
+    """QC parquet input — only matched datasets have one (not the harness derivatives)."""
+    if "_harness_" in wildcards.dataset:
+        return []
+    return f"results/qc/{wildcards.dataset}.parquet"
+
+
 rule hf_upload:
     input:
-        expand("results/dataset/{{dataset}}/{split}.parquet", split=SPLITS),
+        train="results/dataset/{dataset}/train.parquet",
+        test="results/dataset/{dataset}/test.parquet",
+        qc=_hf_qc_input,
     output:
         touch("results/upload.done/{dataset}"),
     params:
@@ -115,7 +159,22 @@ rule hf_upload:
     run:
         api = HfApi()
         api.create_repo(params.repo_name, repo_type="dataset", exist_ok=True)
-        for f in input:
+        # README: per-dataset card with splits, columns, retention, AUPRC-leak
+        # diagnostic, provenance (commit-pinned permalink to the pipeline).
+        readme = hf_readme.render(
+            wildcards.dataset,
+            sha=GIT_SHA,
+            train_path=input.train,
+            test_path=input.test,
+            qc_path=input.qc if input.qc else None,
+        )
+        api.upload_file(
+            path_or_fileobj=readme.encode(),
+            path_in_repo="README.md",
+            repo_id=params.repo_name,
+            repo_type="dataset",
+        )
+        for f in [input.train, input.test]:
             split = Path(f).stem
             api.upload_file(
                 path_or_fileobj=f,
@@ -126,3 +185,21 @@ rule hf_upload:
 
 
 ruleorder: materialize_eval_harness_dataset > split_dataset_by_chrom
+
+
+rule dataset_matching_qc:
+    """Per-subset matching diagnostics: subsampling drops + per-feature AUPRC leak."""
+    input:
+        pre="results/{dataset}/dataset_all.parquet",
+        post="results/dataset_unsplit/{dataset}.parquet",
+    output:
+        "results/qc/{dataset}.parquet",
+    wildcard_constraints:
+        dataset="|".join(QC_CONTINUOUS_FEATURES.keys()),
+    run:
+        qc = compute_matching_qc(
+            pl.read_parquet(input.pre),
+            pl.read_parquet(input.post),
+            QC_CONTINUOUS_FEATURES[wildcards.dataset],
+        )
+        qc.write_parquet(output[0])
