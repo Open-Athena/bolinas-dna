@@ -254,8 +254,8 @@ a continuous matching feature.
 
 | | |
 |---|---|
-| Positives | UKBB SuSiE+FINEMAP fine-mapped variants with PIP > 0.9 across 119 traits |
-| Negatives | PIP < 0.01 (and not null in any of the 119 traits), 1:9 matched per positive |
+| Positives | UKBB SuSiE+FINEMAP fine-mapped variants with max(PIP) > 0.9 across 119 traits |
+| Negatives | max(PIP) < 0.01 across 119 traits, 1:9 matched per positive |
 | Genome build | GRCh38 (lifted from hg19) |
 | Variant type | SNVs only |
 | Coordinates | 1-based (`pos` is 1-based; `ref`/`alt` are single bases) |
