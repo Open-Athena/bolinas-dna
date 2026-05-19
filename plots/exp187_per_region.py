@@ -1,31 +1,36 @@
 """Plots for exp187 per-region Qwen3-1B sweep (issue #187).
 
+**Metric**: AUPRC + cluster-bootstrap SE (PR #195 schema). Earlier iterations
+of this script used PairwiseAccuracy on the 1:1 matched-pair dataset from
+#186; PR #194 rebuilt the mendelian dataset at k=9 (1:9 pos:neg ratio) where
+PA is no longer valid, so AUPRC took over. Random-classifier baseline on a
+1:9 dataset is **0.10** (= prevalence), not 0.5.
+
 Outputs (all under plots/output/, gitignored). Every figure is saved as both
 `.png` (130 dpi for inline preview) and `.svg` (vector, for issue embeds):
 
-  exp187_pa_training_curves_llr.{png,svg}
-  exp187_pa_training_curves_jsd.{png,svg}
-  exp187_pa_training_curves_llr_noerr.{png,svg}
-  exp187_pa_training_curves_jsd_noerr.{png,svg}
+  exp187_auprc_training_curves_llr.{png,svg}
+  exp187_auprc_training_curves_jsd.{png,svg}
+  exp187_auprc_training_curves_llr_noerr.{png,svg}
+  exp187_auprc_training_curves_jsd_noerr.{png,svg}
       One panel per **real** mendelian subset (`_global_` and `_macro_avg_`
       sentinels are omitted by request). One line per training-region arm,
       thicker line for the plan's predicted diagonal winner. Two score_types
       × {with-errorbars, no-errorbars} = 4 figures.
 
-  exp187_pa_heatmap_llr.{png,svg}
-  exp187_pa_heatmap_jsd.{png,svg}
-      6×8 heatmap of final-checkpoint (step-4999) PA: rows = arms (plan
+  exp187_auprc_heatmap_llr.{png,svg}
+  exp187_auprc_heatmap_jsd.{png,svg}
+      6×8 heatmap of final-checkpoint (step-4999) AUPRC: rows = arms (plan
       order), columns = subsets (ordered to make the block-diagonal of
-      plan-expected winners visually obvious). Cells annotated with PA;
-      diagonal cells boxed.
+      plan-expected winners visually obvious); diagonal cells boxed; green
+      star = actual column-max.
 
   exp187_train_loss.{png,svg}
       Training loss curves pulled from WandB.
 
-  exp187_llgap_vs_pa.{png,svg}
-      Scatter of in-training LL gap (WandB) vs offline PA (this PR's
-      evals_v2 parquets) per (val_*, subset). Sigmoid fit + correlation
-      annotations (issue #8 convention).
+  exp187_llgap_vs_auprc.{png,svg}
+      Scatter of in-training LL gap (WandB) vs offline AUPRC per (val_*,
+      subset). Sigmoid fit + correlation annotations (issue #8 convention).
 
 Run:
     uv run python plots/exp187_per_region.py
@@ -120,10 +125,20 @@ ARM_COLORS: dict[str, str] = {
     "v3_bg": "#D55E00",  # vermillion
 }
 
+# PR #195 emits per-strand atoms and 3 strand-aggregations per dataset's
+# score protocol — we headline on the `_avg` strand (FWD+RC averaged, then
+# protocol-transformed). Mendelian dataset uses `minus_llr` protocol per
+# config.yaml; JSD doesn't sign-flip so keeps its raw name.
 SCORE_TYPES: list[tuple[str, str]] = [
-    ("minus_llr", "LLR"),
-    ("next_token_jsd_mean", "JSD"),
+    ("minus_llr_avg", "LLR"),
+    ("jsd_avg", "JSD"),
 ]
+
+# AUPRC random-classifier baseline = positive prevalence. The PR #194 k=9
+# dataset has a strict 1:9 pos:neg ratio per (chrom, consequence_final) stratum,
+# so per-subset baselines are 0.10. `_global_` and `_macro_avg_` are also at
+# 0.10 by construction. Used for the dotted chance line on each panel.
+AUPRC_BASELINE: float = 0.10
 
 S3_PREFIX: str = "s3://oa-bolinas/snakemake/analysis/evals_v2/results/metrics"
 WANDB_PROJECT: str = "marin"
@@ -170,19 +185,35 @@ def _fit_sigmoid(x: np.ndarray, y: np.ndarray) -> np.ndarray | None:
 
 
 def load_offline_pa() -> pl.DataFrame:
-    """Load all 30 (arm × step) metric parquets from S3."""
+    """Load the 30 (arm × step) AUPRC metric parquets from S3.
+
+    Missing parquets are tolerated (warning printed) so plots can be
+    regenerated mid-sweep — affected cells render as gaps rather than
+    crashing the whole script.
+    """
     frames: list[pl.DataFrame] = []
+    missing: list[tuple[str, int]] = []
     for arm in ARMS:
         for step in STEPS:
             uri = f"{S3_PREFIX}/exp187-{arm}-step-{step}/mendelian_traits.parquet"
-            df = pl.read_parquet(uri).with_columns(
-                pl.lit(arm).alias("arm"),
-                pl.lit(step).alias("step"),
-            )
+            try:
+                df = pl.read_parquet(uri).with_columns(
+                    pl.lit(arm).alias("arm"),
+                    pl.lit(step).alias("step"),
+                )
+            except OSError as e:
+                if "404 Not Found" in str(e):
+                    missing.append((arm, step))
+                    continue
+                raise
             frames.append(df)
-    out = pl.concat(frames, how="vertical")
-    assert out.height == 30 * 20, f"unexpected row count {out.height}"
-    return out
+    if missing:
+        print(
+            f"  WARNING: {len(missing)} parquet(s) missing on S3 — rendering with gaps:"
+        )
+        for arm, step in missing:
+            print(f"    - exp187-{arm}-step-{step}")
+    return pl.concat(frames, how="vertical")
 
 
 def _run_for_arm(api: wandb.Api, arm: str) -> "wandb.apis.public.Run":
@@ -253,11 +284,11 @@ def load_wandb_metrics() -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 # ---------------------------------------------------------------------------
-# Plot 1: PA training curves (with + without errorbars × LLR + JSD)
+# Plot 1: AUPRC training curves (with + without errorbars × LLR + JSD)
 # ---------------------------------------------------------------------------
 
 
-def plot_pa_curves(
+def plot_auprc_curves(
     df: pl.DataFrame,
     score_type: str,
     label: str,
@@ -301,9 +332,9 @@ def plot_pa_curves(
                 ax.errorbar(xs, ys, yerr=es, capsize=2, **common)
             else:
                 ax.plot(xs, ys, **common)
-        ax.axhline(0.5, linestyle=":", color="gray", linewidth=0.8)
+        ax.axhline(AUPRC_BASELINE, linestyle=":", color="gray", linewidth=0.8)
         ax.set_xlabel("step")
-        ax.set_ylabel("PairwiseAccuracy")
+        ax.set_ylabel("AUPRC")
         ax.set_title(subset, fontsize=10)
         ax.grid(True, alpha=0.3)
 
@@ -321,13 +352,14 @@ def plot_pa_curves(
     )
     err_suffix = " with SE bars" if with_errorbars else " (no error bars)"
     fig.suptitle(
-        f"exp187 — Mendelian PA training curves ({label}){err_suffix}\n"
-        "thick line = expected diagonal winner per plan; dotted = chance",
+        f"exp187 — Mendelian AUPRC training curves ({label}){err_suffix}\n"
+        f"thick line = expected diagonal winner per plan; "
+        f"dotted = chance (1:9 baseline = {AUPRC_BASELINE:.2f})",
         fontsize=12,
     )
     fig.tight_layout(rect=(0, 0.04, 1, 0.97))
 
-    stem = f"exp187_pa_training_curves_{label.lower()}"
+    stem = f"exp187_auprc_training_curves_{label.lower()}"
     if not with_errorbars:
         stem += "_noerr"
     _savefig(fig, out_dir, stem)
@@ -338,10 +370,10 @@ def plot_pa_curves(
 # ---------------------------------------------------------------------------
 
 
-def plot_pa_heatmap(
+def plot_auprc_heatmap(
     df: pl.DataFrame, score_type: str, label: str, out_dir: Path
 ) -> None:
-    """6 × 8 heatmap of PA at step-4999. Rows = arms (plan order), cols =
+    """6 × 8 heatmap of AUPRC at step-4999. Rows = arms (plan order), cols =
     subsets (SUBSET_ORDER, grouped so block-diagonal of plan-expected
     winners is visible). Diagonal cells get a thick black border."""
     sub = (
@@ -357,13 +389,16 @@ def plot_pa_heatmap(
     matrix = sub.loc[ARMS, SUBSET_ORDER]
 
     fig, ax = plt.subplots(figsize=(1.05 * len(SUBSET_ORDER) + 2, 0.7 * len(ARMS) + 2))
-    # Diverging colormap centered at 0.5 (chance). Range capped at 0.5 ± 0.3
-    # to make small differences visible across the 0.4–0.8 range.
+    # `Reds` (sequential, no diverging center) — AUPRC has a one-sided "good"
+    # direction (higher = better) and a hard prevalence floor at ~0.10, so a
+    # diverging palette centered on 0.5 wastes contrast on values that don't
+    # appear. vmax=0.6 caps the brightest cells so per-subset spread reads
+    # cleanly; nothing in this experiment is above that.
     im = ax.imshow(
         matrix.values,
-        cmap="RdBu_r",
-        vmin=0.2,
-        vmax=0.8,
+        cmap="Reds",
+        vmin=AUPRC_BASELINE,
+        vmax=0.6,
         aspect="auto",
     )
 
@@ -376,8 +411,8 @@ def plot_pa_heatmap(
     for i, arm in enumerate(ARMS):
         for j, subset in enumerate(SUBSET_ORDER):
             val = matrix.values[i, j]
-            # Text color flips at the high/low extremes for legibility.
-            txt_color = "white" if abs(val - 0.5) > 0.18 else "black"
+            # Text color flips at darker reds for legibility.
+            txt_color = "white" if val > 0.40 else "black"
             ax.text(
                 j,
                 i,
@@ -399,7 +434,7 @@ def plot_pa_heatmap(
                     )
                 )
 
-    # Mark which cell wins each column (per-column argmax → green dot).
+    # Mark which cell wins each column (per-column argmax → green star).
     col_winners = matrix.values.argmax(axis=0)
     for j, i in enumerate(col_winners):
         ax.scatter(
@@ -407,16 +442,17 @@ def plot_pa_heatmap(
         )
 
     cbar = fig.colorbar(im, ax=ax, shrink=0.85)
-    cbar.set_label(f"PA ({label}) at step-{FINAL_STEP}", fontsize=9)
+    cbar.set_label(f"AUPRC ({label}) at step-{FINAL_STEP}", fontsize=9)
     ax.set_xlabel("mendelian subset")
     ax.set_ylabel("training arm")
     ax.set_title(
-        f"exp187 — Mendelian PA heatmap ({label}, step-{FINAL_STEP})\n"
-        "black box = plan-expected winner; green star = actual column winner",
+        f"exp187 — Mendelian AUPRC heatmap ({label}, step-{FINAL_STEP})\n"
+        f"baseline = {AUPRC_BASELINE:.2f}; black box = plan-expected winner; "
+        "green star = actual column winner",
         fontsize=11,
     )
     fig.tight_layout()
-    _savefig(fig, out_dir, f"exp187_pa_heatmap_{label.lower()}")
+    _savefig(fig, out_dir, f"exp187_auprc_heatmap_{label.lower()}")
 
 
 # ---------------------------------------------------------------------------
@@ -477,8 +513,10 @@ def _llgap_at_step(
     return float(closest[col])
 
 
-def plot_llgap_vs_pa(pa_df: pl.DataFrame, eval_df: pd.DataFrame, out_dir: Path) -> None:
-    pa_llr = pa_df.filter(pl.col("score_type") == "minus_llr").to_pandas()
+def plot_llgap_vs_auprc(
+    pa_df: pl.DataFrame, eval_df: pd.DataFrame, out_dir: Path
+) -> None:
+    auprc_llr = pa_df.filter(pl.col("score_type") == "minus_llr_avg").to_pandas()
 
     max_cols = max(len(v) for v in RECIPE_TO_SUBSETS.values())
     n_rows = len(VAL_RECIPES)
@@ -501,19 +539,19 @@ def plot_llgap_vs_pa(pa_df: pl.DataFrame, eval_df: pd.DataFrame, out_dir: Path) 
             xs, ys, colors, labels_seen = [], [], [], []
             for arm in ARMS:
                 for step in STEPS:
-                    pa_row = pa_llr[
-                        (pa_llr["arm"] == arm)
-                        & (pa_llr["step"] == step)
-                        & (pa_llr["subset"] == subset)
+                    row = auprc_llr[
+                        (auprc_llr["arm"] == arm)
+                        & (auprc_llr["step"] == step)
+                        & (auprc_llr["subset"] == subset)
                     ]
-                    if pa_row.empty:
+                    if row.empty:
                         continue
-                    pa = float(pa_row["value"].iloc[0])
+                    auprc = float(row["value"].iloc[0])
                     llgap = _llgap_at_step(eval_df, arm, recipe, step)
                     if llgap is None:
                         continue
                     xs.append(llgap)
-                    ys.append(pa)
+                    ys.append(auprc)
                     colors.append(ARM_COLORS[arm])
                     labels_seen.append(arm)
 
@@ -563,9 +601,9 @@ def plot_llgap_vs_pa(pa_df: pl.DataFrame, eval_df: pd.DataFrame, out_dir: Path) 
                 bbox=dict(facecolor="white", edgecolor="gray", alpha=0.85, pad=2),
             )
 
-            ax.axhline(0.5, linestyle=":", color="gray", linewidth=0.8)
+            ax.axhline(AUPRC_BASELINE, linestyle=":", color="gray", linewidth=0.8)
             ax.set_xlabel(f"in-training LL gap on `{recipe}` (nat/token)")
-            ax.set_ylabel(f"PA (LLR) on `{subset}`")
+            ax.set_ylabel(f"AUPRC (LLR) on `{subset}`")
             ax.set_title(f"{recipe} → {subset}", fontsize=10)
             ax.grid(True, alpha=0.3)
 
@@ -579,12 +617,12 @@ def plot_llgap_vs_pa(pa_df: pl.DataFrame, eval_df: pd.DataFrame, out_dir: Path) 
         fontsize=10,
     )
     fig.suptitle(
-        "exp187 — In-training LL gap vs offline PA (red = sigmoid fit; * = one-sided p<0.05)\n"
-        "30 points per panel (6 arms × 5 steps)",
+        "exp187 — In-training LL gap vs offline AUPRC (red = sigmoid fit; * = one-sided p<0.05)\n"
+        f"30 points per panel (6 arms × 5 steps); 1:9 baseline = {AUPRC_BASELINE:.2f}",
         fontsize=12,
     )
     fig.tight_layout(rect=(0, 0.03, 1, 0.96))
-    _savefig(fig, out_dir, "exp187_llgap_vs_pa")
+    _savefig(fig, out_dir, "exp187_llgap_vs_auprc")
 
 
 # ---------------------------------------------------------------------------
@@ -596,22 +634,25 @@ def main() -> None:
     out_dir = Path(__file__).parent / "output"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    print("Loading offline PA parquets from S3 (30 files) ...")
+    print("Loading offline AUPRC parquets from S3 (30 files) ...")
     pa_df = load_offline_pa()
     print(f"  rows: {pa_df.height}")
+    print(f"  score_types present: {sorted(pa_df['score_type'].unique().to_list())}")
 
-    # PA training curves × {LLR, JSD} × {with-err, no-err}.
+    # AUPRC training curves × {LLR, JSD} × {with-err, no-err}.
     for score_type, label in SCORE_TYPES:
         for with_err in (True, False):
-            plot_pa_curves(pa_df, score_type, label, out_dir, with_errorbars=with_err)
-        plot_pa_heatmap(pa_df, score_type, label, out_dir)
+            plot_auprc_curves(
+                pa_df, score_type, label, out_dir, with_errorbars=with_err
+            )
+        plot_auprc_heatmap(pa_df, score_type, label, out_dir)
 
     print("Fetching wandb training history (6 runs) ...")
     train_df, eval_df = load_wandb_metrics()
     print(f"  train rows: {len(train_df)}, eval rows: {len(eval_df)}")
 
     plot_train_loss(train_df, out_dir)
-    plot_llgap_vs_pa(pa_df, eval_df, out_dir)
+    plot_llgap_vs_auprc(pa_df, eval_df, out_dir)
 
     print("All plots written to", out_dir)
 
