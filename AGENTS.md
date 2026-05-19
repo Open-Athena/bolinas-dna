@@ -39,7 +39,7 @@ The codebase has three main components:
 
 4. **Plots** (`plots/`) - Self-contained Python scripts that turn pipeline metric parquets into figures. One file per recipe; outputs to gitignored `plots/output/<recipe>/`.
    - Load parquets from S3 with `polars.read_parquet("s3://…")` — native object_store support, no fsspec/s3fs needed.
-   - Emit both `figure.svg` and `figure.png` to the output dir. SVG for sharing with humans (GitHub renders inline); PNG so an agent can `Read` it back to visually sanity-check (the `Read` tool renders raster but not SVG).
+   - Emit both `figure.svg` and `figure.png` to the output dir. SVG is the artifact to upload to GitHub (PR/issue/gist embeds); PNG is the local-iteration format — agents can `Read` it back to visually sanity-check (the `Read` tool renders raster but not SVG) and PNGs also render inline in agent conversations.
 
 ## Development Practices
 

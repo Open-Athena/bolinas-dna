@@ -3,8 +3,9 @@ timescales (humans / primates / mammals / vertebrates / animals), on two
 mendelian subsets (Promoter = tss_proximal, 5' UTR = 5_prime_UTR_variant).
 
 Reads metrics parquets directly from S3, no local download needed. Writes
-both SVG (for humans / GitHub inline rendering) and PNG (so agents can
-`Read` the figure back to visually sanity-check it) into
+both SVG (the artifact to upload to GitHub) and PNG (local-iteration
+format — agents can `Read` PNGs to visually sanity-check, and PNGs
+render inline in agent conversations) into
 `plots/output/exp55_evolutionary_timescales/`.
 
 Usage:
