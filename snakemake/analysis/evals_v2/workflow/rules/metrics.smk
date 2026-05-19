@@ -37,19 +37,15 @@ rule compute_metrics:
         score_protocol=lambda wc: get_dataset_config(wc.dataset)["score_protocol"],
     run:
         protocol = params.score_protocol
+        transform = SCORE_PROTOCOLS[protocol]
         df = pd.read_parquet(input[0])
         for col in REQUIRED_VARIANT_COLUMNS:
             assert col in df.columns, f"scores parquet missing column {col!r}"
 
-        # Materialize _avg atoms (semantics: avg LLR, then apply protocol).
-        # The conditional makes this a no-op for rc=False scores parquets.
         if "llr_rc" in df.columns:
             df["llr_avg"] = (df["llr_fwd"] + df["llr_rc"]) / 2
             df["jsd_avg"] = (df["jsd_fwd"] + df["jsd_rc"]) / 2
 
-        # Apply protocol transform per strand to materialize the columns
-        # we'll feed AUPRC.
-        transform = {"minus_llr": lambda x: -x, "abs_llr": np.abs}[protocol]
         score_cols: list[str] = []
         for strand in ("fwd", "rc", "avg"):
             llr_col = f"llr_{strand}"
@@ -66,7 +62,7 @@ rule compute_metrics:
             scores=df[score_cols],
             score_columns=score_cols,
             n_bootstrap=params.n_bootstrap,
-            bootstrap_seed=params.bootstrap_seed,
+            rng=params.bootstrap_seed,
         )
         metrics["model"] = wildcards.model
         metrics["dataset"] = wildcards.dataset

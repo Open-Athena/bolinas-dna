@@ -287,7 +287,7 @@ def test_compute_auprc_metrics_shape():
         subsets=["A", "B", "C"], n_pos_per_subset=40
     )
     metrics = compute_auprc_metrics(
-        dataset=dataset, scores=scores, n_bootstrap=20, bootstrap_seed=0
+        dataset=dataset, scores=scores, n_bootstrap=20, rng=0
     )
     # 3 subsets * 2 score cols + 2 aggregates * 2 score cols = 10 rows
     assert len(metrics) == 3 * 2 + 2 * 2
@@ -311,7 +311,7 @@ def test_compute_auprc_metrics_global_matches_sklearn():
         scores=scores,
         score_columns=["score"],
         n_bootstrap=10,
-        bootstrap_seed=0,
+        rng=0,
     )
     global_row = metrics[
         (metrics["score_type"] == "score") & (metrics["subset"] == GLOBAL_SUBSET)
@@ -332,7 +332,7 @@ def test_compute_auprc_metrics_macro_avg_matches_mean_of_qualifying():
         scores=scores,
         score_columns=["score"],
         n_bootstrap=10,
-        bootstrap_seed=0,
+        rng=0,
         n_min=30,
     )
     per_subset = metrics[
@@ -351,6 +351,4 @@ def test_compute_auprc_metrics_match_group_straddle_raises():
     dataset, scores = _matched_pairs_with_subsets(subsets=["A", "B"])
     dataset.loc[0, "subset"] = "B"  # group 0's positive now lives in subset B
     with pytest.raises(AssertionError, match="span multiple subsets"):
-        compute_auprc_metrics(
-            dataset=dataset, scores=scores, n_bootstrap=10, bootstrap_seed=0
-        )
+        compute_auprc_metrics(dataset=dataset, scores=scores, n_bootstrap=10, rng=0)

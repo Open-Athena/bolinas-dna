@@ -59,10 +59,9 @@ EVO2_DATASET_SHORT: dict[str, str] = {
 # the protocol entry here.
 PROTOCOLS: dict[str, dict[str, dict[str, str]]] = {
     "bolinas": {
-        # AUPRC schema (post evals_v2 AUPRC migration): per-strand FWD/RC
-        # atoms plus the derived AVG. The default LLR-protocol picks AVG
-        # to match the prior FWD+RC averaged behavior; explicit FWD/RC
-        # are exposed for diagnostic comparison.
+        # Default LLR / JSD pick the FWD+RC `_avg` columns. The per-strand
+        # `_fwd` / `_rc` columns are also in the parquet for diagnostics
+        # but aren't exposed as separate protocols here.
         "LLR": {
             "mendelian_traits": "minus_llr_avg",
             "complex_traits": "abs_llr_avg",

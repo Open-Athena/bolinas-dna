@@ -96,6 +96,17 @@ def pairwise_accuracy(
 GLOBAL_SUBSET = "_global_"
 MACRO_AVG_SUBSET = "_macro_avg_"
 
+# Per-strand LLR → score-protocol transforms. Keyed by the
+# ``score_protocol`` field in `snakemake/analysis/evals_v2/config/config.yaml`
+# and consumed by `metrics.smk` to materialize `{protocol}_{fwd,rc,avg}`
+# columns from the raw `llr_*` atoms before AUPRC. Single source of truth
+# so a typo in config fails loud with `KeyError` instead of silently
+# producing wrong scores.
+SCORE_PROTOCOLS: dict[str, Callable[[np.ndarray], np.ndarray]] = {
+    "minus_llr": lambda x: -x,
+    "abs_llr": np.abs,
+}
+
 
 def auprc_with_bootstrap_se(
     label: pd.Series,
@@ -155,11 +166,14 @@ def auprc_with_bootstrap_se(
     point = float(average_precision_score(label_arr, score_arr))
 
     rng = np.random.default_rng(rng)
-    groups, inv = np.unique(mg_arr, return_inverse=True)
-    group_to_rows: list[np.ndarray] = [
-        np.where(inv == i)[0] for i in range(len(groups))
-    ]
-    n_groups = len(groups)
+    # `groupby(mg_arr).indices` is an O(n) hash-based group → positional-
+    # index map. The earlier `[np.where(inv == i)[0] for i in groups]`
+    # form was O(n_groups · n_rows) and dominated the non-AP cost when
+    # n_groups was ~10³ within a subset.
+    group_to_rows: list[np.ndarray] = list(
+        pd.Series(mg_arr).groupby(mg_arr).indices.values()
+    )
+    n_groups = len(group_to_rows)
 
     boot = np.empty(n_bootstrap, dtype=float)
     for b in range(n_bootstrap):
@@ -187,7 +201,7 @@ def compute_auprc_metrics(
     score_columns: list[str] | None = None,
     *,
     n_bootstrap: int = 1000,
-    bootstrap_seed: int | None = 0,
+    rng: np.random.Generator | int | None = 0,
     n_min: int = 30,
 ) -> pd.DataFrame:
     """AUPRC + cluster-bootstrap SE per ``subset`` for one or more score columns.
@@ -218,8 +232,9 @@ def compute_auprc_metrics(
         score_columns: Score column names to evaluate. Defaults to all
             columns of ``scores``.
         n_bootstrap: bootstrap iterations per (subset, score_column).
-        bootstrap_seed: seed for the bootstrap RNG. ``0`` (default) →
-            reproducible; ``None`` → fresh randomness.
+        rng: ``numpy.random.Generator``, seed int, or ``None`` —
+            forwarded to ``auprc_with_bootstrap_se``. ``0`` (default) →
+            reproducible across re-runs; ``None`` → fresh randomness.
         n_min: minimum ``n_groups`` per subset to qualify for the
             macro average. Default 30 (project-wide convention for the
             leaderboard issues).
@@ -255,7 +270,7 @@ def compute_auprc_metrics(
                 score=subset_df[score_col],
                 match_group=subset_df["match_group"],
                 n_bootstrap=n_bootstrap,
-                rng=bootstrap_seed,
+                rng=rng,
             )
             row = {
                 "score_type": score_col,
@@ -274,7 +289,7 @@ def compute_auprc_metrics(
             score=merged[score_col],
             match_group=merged["match_group"],
             n_bootstrap=n_bootstrap,
-            rng=bootstrap_seed,
+            rng=rng,
         )
         rows.append(
             {
