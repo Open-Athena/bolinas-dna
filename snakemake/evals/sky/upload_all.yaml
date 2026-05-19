@@ -10,10 +10,10 @@ resources:
   labels:
     project: dna
 
-# Mount the local HuggingFace credentials so `HfApi()` can authenticate on
-# the cluster without a separate login step.
-file_mounts:
-  ~/.cache/huggingface: ~/.cache/huggingface
+# HuggingFace auth: pass the local token via sky's secrets mechanism so
+# `HfApi()` on the cluster picks it up from $HF_TOKEN.
+secrets:
+  HF_TOKEN: null
 
 setup: |
   command -v uv >/dev/null 2>&1 || curl -LsSf https://astral.sh/uv/install.sh | sh
