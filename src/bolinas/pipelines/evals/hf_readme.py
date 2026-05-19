@@ -59,7 +59,9 @@ def _retention_table(qc_path: str | Path) -> str:
         ret = f"{nk / ni:.1%}" if ni else "—"
         rows.append(f"| `{r['subset']}` | {ni:,} | {nk:,} | {ret} |")
     overall = f"{total_kept / total_in:.1%}" if total_in else "—"
-    rows.append(f"| **total** | **{total_in:,}** | **{total_kept:,}** | **{overall}** |")
+    rows.append(
+        f"| **total** | **{total_in:,}** | **{total_kept:,}** | **{overall}** |"
+    )
     return "\n".join(rows)
 
 
