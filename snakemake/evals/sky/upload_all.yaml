@@ -25,6 +25,11 @@ setup: |
 
 run: |
   source $HOME/.local/bin/env 2>/dev/null || true
+  cd ~/sky_workdir
+  # Ensure s3fs is present (sky exec doesn't re-run `setup:` on an existing
+  # cluster, so the --group genome-s3 in setup above only applies on a
+  # fresh launch). Idempotent — uv noops if already in sync.
+  uv sync --quiet --group genome-s3
   cd ~/sky_workdir/snakemake/evals
   # `rule upload_all` cascades: split_dataset_by_chrom (for matched
   # datasets) + materialize_eval_harness_dataset (for the _harness_255
