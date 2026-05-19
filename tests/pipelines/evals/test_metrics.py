@@ -352,3 +352,63 @@ def test_compute_auprc_metrics_match_group_straddle_raises():
     dataset.loc[0, "subset"] = "B"  # group 0's positive now lives in subset B
     with pytest.raises(AssertionError, match="span multiple subsets"):
         compute_auprc_metrics(dataset=dataset, scores=scores, n_bootstrap=10, rng=0)
+
+
+def test_auprc_constant_scores_equals_prevalence_baseline():
+    """When every score is identical, sklearn's ``average_precision_score``
+    returns the positive-class prevalence (the random baseline). Lock in
+    this invariant so a future refactor doesn't accidentally treat
+    all-tied scores as undefined or as a degenerate split."""
+    labels, _, mg = _matched_pairs(n_pos=20, k=9, separable=False)
+    scores = np.full_like(labels, 0.5, dtype=float)  # every score identical
+    res = auprc_with_bootstrap_se(labels, scores, mg, n_bootstrap=50, rng=0)
+    expected = labels.sum() / len(labels)  # n_pos / n_total
+    assert res["value"] == pytest.approx(expected)
+    # All bootstrap iterations also return the prevalence baseline → SE ≈ 0.
+    # (Sub-class-balance fluctuation across draws is the only source of
+    # variance; with k=9 + 1000 iters it stays tiny.)
+    assert res["se"] < 0.05
+
+
+def test_compute_auprc_metrics_n_min_excludes_small_subsets():
+    """The production scenario: some subsets fall below ``n_min`` and are
+    excluded from the macro average, but still contribute to ``_global_``.
+    This is the dominant case for complex_traits (per the dataset card,
+    only distal and missense clear n_min=30)."""
+    # Subset "small" has 10 positives (< n_min=30); "big" has 40.
+    dataset, scores = _matched_pairs_with_subsets(
+        subsets=["big"], n_pos_per_subset=40, seed=1
+    )
+    small_ds, small_scores = _matched_pairs_with_subsets(
+        subsets=["small"], n_pos_per_subset=10, seed=2
+    )
+    # Renumber small's match_groups so they don't collide with big's.
+    small_ds["match_group"] = small_ds["match_group"] + dataset["match_group"].max() + 1
+    dataset = pd.concat([dataset, small_ds], ignore_index=True)
+    scores = pd.concat([scores, small_scores], ignore_index=True)
+
+    metrics = compute_auprc_metrics(
+        dataset=dataset,
+        scores=scores,
+        score_columns=["score"],
+        n_bootstrap=10,
+        rng=0,
+        n_min=30,
+    )
+    macro_row = metrics[
+        (metrics["score_type"] == "score") & (metrics["subset"] == MACRO_AVG_SUBSET)
+    ].iloc[0]
+    big_row = metrics[
+        (metrics["score_type"] == "score") & (metrics["subset"] == "big")
+    ].iloc[0]
+    # Only "big" qualifies → macro reduces to big's value, K=1.
+    assert macro_row["value"] == pytest.approx(big_row["value"])
+    assert macro_row["n_groups"] == 1
+    # The small subset still has a per-subset row (we don't drop it; just
+    # exclude it from the macro).
+    assert (metrics["subset"] == "small").any()
+    # Global covers all 50 groups, not just the 40 qualifying ones.
+    global_row = metrics[
+        (metrics["score_type"] == "score") & (metrics["subset"] == GLOBAL_SUBSET)
+    ].iloc[0]
+    assert global_row["n_groups"] == 50

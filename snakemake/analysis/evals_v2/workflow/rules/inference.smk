@@ -23,8 +23,9 @@ rule compute_scores:
         window_size=lambda wc: get_model_config(wc.model)["window_size"],
         hf_path=lambda wc: f"{config['input_hf_prefix']}_{wc.dataset}",
         # Pin the HF dataset commit. Bumping it triggers rerun via the
-        # `params:` hash; the assertion below also fails loud if the
-        # resolved revision diverges from the requested one.
+        # `params:` hash. `load_dataset(revision=…)` raises
+        # `RevisionNotFoundError` on an unknown SHA — no silent fallback
+        # to `main`.
         hf_revision=lambda wc: get_dataset_config(wc.dataset)["hf_revision"],
         rc=config["inference"]["rc"],
     threads: config["inference"]["num_workers"]

@@ -40,6 +40,11 @@ def pairwise_accuracy(
     scores higher than the negative (ties = 0.5).
 
     Asserts each ``match_group`` has exactly one positive and one negative.
+    Do **not** call this on the new 1:k matched-pair datasets from PR #194
+    — the assertion will fire and the Wald SE assumes paired comparisons.
+    Use ``auprc_with_bootstrap_se`` on those instead. This function is
+    retained for the ``conservation_eval`` pipeline, which still produces
+    1:1 datasets.
 
     Args:
         label: 0/1 (or bool) per row. Cast to int internally.
@@ -220,7 +225,12 @@ def compute_auprc_metrics(
       ``sqrt(sum(SE_s^2)) / K`` over qualifying subsets — same form the
       pairwise pipeline uses (``compute_pairwise_metrics``); the
       bootstrap unit is the same (groups), so the formula is consistent.
-      ``n_groups`` on the macro row is repurposed to record K.
+      ``n_groups`` on the macro row is repurposed to record K. The
+      independence assumption that justifies SE-of-mean is satisfied
+      because each subset is bootstrapped over a disjoint
+      ``match_group`` set; the same ``rng`` seed across subsets adds a
+      shared PRNG-stream coupling but doesn't break the disjoint-data
+      independence, only correlates the per-iteration noise.
 
     Asserts no ``match_group`` straddles subsets (same as
     ``compute_pairwise_metrics``).

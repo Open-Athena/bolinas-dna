@@ -528,6 +528,44 @@ def test_run_variant_score_bundle_rc_returns_both_strands(tmp_path):
     assert not np.allclose(both["fwd"], both["rc"], atol=1e-6)
 
 
+def test_run_variant_score_bundle_rc_bitwise_reproducible(tmp_path):
+    """Two runs of ``run_variant_score_bundle(rc=True)`` on identical
+    inputs must produce bit-identical dicts. snakemake's `params:` rerun
+    trigger compares output hashes — a non-determinism regression here
+    would silently break the "re-run on revision bump" contract."""
+    torch.manual_seed(0)
+    tokenizer = AutoTokenizer.from_pretrained("songlab/tokenizer-dna-mlm")
+    model = _DeterministicCausalLM(vocab_size=8)
+    model.eval()
+    genome = Genome(_write_long_fasta(tmp_path))
+    dataset = _make_variant_dataset()
+    window_size = 16
+
+    out_a = run_variant_score_bundle(
+        model,
+        tokenizer,
+        dataset,
+        genome,
+        window_size,
+        rc=True,
+        data_transform_on_the_fly=True,
+        inference_kwargs=_INFERENCE_KWARGS,
+    )
+    out_b = run_variant_score_bundle(
+        model,
+        tokenizer,
+        dataset,
+        genome,
+        window_size,
+        rc=True,
+        data_transform_on_the_fly=True,
+        inference_kwargs=_INFERENCE_KWARGS,
+    )
+    assert set(out_a.keys()) == set(out_b.keys()) == {"fwd", "rc"}
+    np.testing.assert_array_equal(out_a["fwd"], out_b["fwd"])
+    np.testing.assert_array_equal(out_a["rc"], out_b["rc"])
+
+
 def test_run_inference_padding_roundtrip(tmp_path):
     """When n_examples is not a multiple of batch_size, ``_run_inference``
     pads the dataset to a clean multiple (so torch.compile sees only one
