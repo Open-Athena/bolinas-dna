@@ -1,0 +1,38 @@
+name: evals-upload-all
+
+workdir: .
+
+resources:
+  infra: aws/us-east-2
+  cpus: 4+
+  memory: 32+
+  disk_size: 50
+  labels:
+    project: dna
+
+# Mount the local HuggingFace credentials so `HfApi()` can authenticate on
+# the cluster without a separate login step.
+file_mounts:
+  ~/.cache/huggingface: ~/.cache/huggingface
+
+setup: |
+  command -v uv >/dev/null 2>&1 || curl -LsSf https://astral.sh/uv/install.sh | sh
+  source $HOME/.local/bin/env 2>/dev/null || true
+  cd ~/sky_workdir
+  uv sync --quiet
+
+run: |
+  source $HOME/.local/bin/env 2>/dev/null || true
+  cd ~/sky_workdir/snakemake/evals
+  # `rule upload_all` cascades: split_dataset_by_chrom (for matched
+  # datasets) + materialize_eval_harness_dataset (for the _harness_255
+  # variant) + hf_upload (with README.md). Existing dataset_unsplit
+  # parquets on S3 are the inputs; force-rerun split + materialize since
+  # `dataset_unsplit/mendelian_traits.parquet` was rebuilt and is newer
+  # than any pre-existing train/test split.
+  uv run snakemake \
+    --cores 1 \
+    -p \
+    --rerun-triggers=mtime \
+    --forcerun split_dataset_by_chrom materialize_eval_harness_dataset hf_upload \
+    -- upload_all
