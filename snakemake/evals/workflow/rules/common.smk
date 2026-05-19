@@ -1,6 +1,7 @@
 import bioframe as bf
 import pandas as pd
 import polars as pl
+import subprocess
 from pathlib import Path
 
 from bolinas.data.genome import Genome
@@ -71,6 +72,59 @@ def _reorder_columns(df):
     return df[primary + rest]
 
 
+# Commit SHA pinned at module-load so the HF README's pipeline permalink stays
+# stable for an entire snakemake run. Falls back to "main" if git isn't reachable
+# (shouldn't happen for sky workdir, but defensive).
+try:
+    GIT_SHA = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], text=True
+    ).strip()
+except Exception:
+    GIT_SHA = "main"
+
+_DATASET_DESCRIPTIONS = {
+    "mendelian_traits": (
+        "Matched eval dataset of Mendelian-disease pathogenic SNVs (HGMD ∪ "
+        "OMIM ∪ Smedley et al. 2016; AF<0.001) vs gnomAD common variants "
+        "(AF>0.001). 1:9 matched on chromosome × consequence_final plus "
+        "subset-targeted distance bins, with Euclidean nearest-neighbor on "
+        "TSS/exon distances. Missense positives capped at 1000 for VEP "
+        "inference speed."
+    ),
+    "complex_traits": (
+        "Matched eval dataset of UKBB fine-mapped complex-trait variants "
+        "(SuSiE+FINEMAP PIP > 0.9) vs negatives (max PIP < 0.01). 1:9 "
+        "matched on chromosome × consequence_final plus subset-targeted "
+        "distance bins, with Euclidean nearest-neighbor on TSS/exon "
+        "distances and MAF."
+    ),
+    "mendelian_traits_harness_255": (
+        "Eval-harness variant of `evals_mendelian_traits` with a 255 bp "
+        "window materialized per variant (`context`, `ref_completion`, "
+        "`alt_completion` columns). Two rows per input variant — one for "
+        "`strand=\"+\"` (FWD), one for `strand=\"-\"` (RC) — for "
+        "per-variant strand-averaged VEP scoring."
+    ),
+}
+
+
+def _format_hf_readme(dataset: str) -> str:
+    desc = _DATASET_DESCRIPTIONS.get(dataset, "Variant-effect-prediction eval dataset.")
+    return f"""---
+tags:
+- biology
+- genomics
+- dna
+---
+
+# evals_{dataset}
+
+{desc}
+
+Produced by [`snakemake/evals`](https://github.com/Open-Athena/bolinas-dna/tree/{GIT_SHA}/snakemake/evals) at commit `{GIT_SHA[:7]}`.
+"""
+
+
 rule download_genome:
     output:
         "results/genome.fa.gz",
@@ -127,6 +181,14 @@ rule hf_upload:
     run:
         api = HfApi()
         api.create_repo(params.repo_name, repo_type="dataset", exist_ok=True)
+        # README: minimal tag set + commit-pinned permalink to the producing
+        # pipeline (per CLAUDE.md / HuggingFace uploads convention).
+        api.upload_file(
+            path_or_fileobj=_format_hf_readme(wildcards.dataset).encode(),
+            path_in_repo="README.md",
+            repo_id=params.repo_name,
+            repo_type="dataset",
+        )
         for f in input:
             split = Path(f).stem
             api.upload_file(

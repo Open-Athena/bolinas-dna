@@ -33,31 +33,55 @@ batched VEP path.
 
 For each dataset, every positive is matched to 9 negatives via TraitGym's
 greedy-nearest-neighbor matcher (`bolinas.pipelines.evals.matching.match_features`).
-Matching is exact on `(chrom, consequence_final)`, then Euclidean-nearest on
-the (RobustScaler-scaled) continuous features, without replacement within a
-stratum. See `src/bolinas/pipelines/evals/matching.py` for the algorithm.
+Matching is exact on `(chrom, consequence_final)` plus subset-targeted
+distance bins (see below), then Euclidean-nearest on the (RobustScaler-scaled)
+continuous features, without replacement within a stratum. See
+`src/bolinas/pipelines/evals/matching.py` for the algorithm.
 
 **Gene-ID columns** (`tss_closest_pc_gene_id`, `tss_closest_nc_gene_id`,
 `exon_closest_pc_gene_id`, `exon_closest_nc_gene_id`) are *not* part of the
 categorical match key — exact gene matching dropped too many positives. They
 remain in the output parquets as passthrough metadata.
 
-**No binning**: distance and MAF features enter matching as continuous columns
-only. The earlier iter-33 design (issue #156) used a stack of subset-conditional
-distance bins and a per-subset MAF tiering as exact-match categoricals; those
-were tuned for 1:1 matching with PA and have been dropped. The helpers
-(`add_subset_distance_bins`, `add_tiered_maf_bin`, the `*_BIN_EDGES` /
-`MAF_TIERED_V1` constants) remain in `matching.py` for ad-hoc analysis and may
-be reintroduced if the diagnostics flag residual feature leak.
+**Per-(subset, feature) distance bins** as exact-match categoricals on top of
+the continuous nearest-neighbor step, applied via
+`add_subset_distance_bins_v2(df, scheme)`. Each entry adds a `{feature}_bin`
+column whose value is `"{subset[:8]}:b{i}"` for rows in that subset, `BIN_NA`
+otherwise — multiple subsets can share a feature column with disjoint
+subset-prefixed labels. Bin edges target only the AUPRC-leak cells flagged by
+the diagnostic (see [Matching diagnostics](#matching-diagnostics)); they're
+intentionally coarse to leave per-stratum negative pools intact at k=9.
+
+Mendelian scheme:
+
+| subset | feature | edges |
+|---|---|---|
+| `tss_proximal` | `distance_tss_pc` | `[0, 100, 1000, ∞]` |
+| `tss_proximal` | `distance_exon_pc` | `[0, 100, 1000, ∞]` |
+| `splicing` | `distance_exon_pc` | `[0, 5, 30, ∞]` |
+| `distal` | `distance_exon_pc` | `[0, 100, 1000, 5000, 10000, ∞]` |
+
+Complex-traits scheme mirrors mendelian's `tss_proximal` and `splicing`
+entries; `distal` is not binned (already at baseline).
+
+**Missense cap** (mendelian only): positives in the `missense_variant`
+consequence_group are subsampled (seed `42`) before matching, with the cap
+configured by `mendelian_traits.max_positives_per_subset.missense_variant` in
+`config/config.yaml`. The default `1000` is a ~5× VEP-inference speedup over
+the uncapped ~12.7k missense positives, with negligible loss of subset-AUPRC
+CI tightness; macro-average reporting handles imbalance for the global metric.
 
 Per-dataset specifics:
 
 - **mendelian_traits** (no MAF column in `dataset_all`):
   - continuous = `[distance_tss_pc, distance_tss_nc, distance_exon_pc, distance_exon_nc]`
-  - categorical = `[chrom, consequence_final]`
+  - categorical = `[chrom, consequence_final, distance_tss_pc_bin, distance_exon_pc_bin]`
 - **complex_traits**:
   - continuous = mendelian's + `MAF`
-  - categorical = `[chrom, consequence_final]`
+  - categorical = `[chrom, consequence_final, distance_tss_pc_bin, distance_exon_pc_bin]`
+
+The bin columns also serve as passthrough metadata on the output so
+downstream consumers can stratify by the same bins used for matching.
 
 ## Matching diagnostics
 
