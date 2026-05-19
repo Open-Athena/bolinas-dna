@@ -22,6 +22,12 @@ rule compute_scores:
         # tuning them doesn't force a re-run of finished work.
         window_size=lambda wc: get_model_config(wc.model)["window_size"],
         hf_path=lambda wc: f"{config['input_hf_prefix']}_{wc.dataset}",
+        # Pin the HF dataset commit. Bumping it triggers rerun via the
+        # `params:` hash. `load_dataset(revision=…)` raises
+        # `RevisionNotFoundError` on an unknown SHA — no silent fallback
+        # to `main`.
+        hf_revision=lambda wc: get_dataset_config(wc.dataset)["hf_revision"],
+        rc=config["inference"]["rc"],
     threads: config["inference"]["num_workers"]
     run:
         # batch_size is per-model but execution-only (numerics are batch-
@@ -29,7 +35,9 @@ rule compute_scores:
         # rather than declare it as a snakemake param. See note in `params:`.
         batch_size = get_model_batch_size(wildcards.model)
 
-        ds = load_dataset(params.hf_path, split=config["split"]).to_pandas()
+        ds = load_dataset(
+            params.hf_path, split=config["split"], revision=params.hf_revision
+        ).to_pandas()
         for col in REQUIRED_VARIANT_COLUMNS:
             assert col in ds.columns, f"dataset missing column {col!r}"
 
@@ -44,7 +52,7 @@ rule compute_scores:
             num_workers=config["inference"]["num_workers"],
             data_transform_on_the_fly=config["inference"]["data_transform_on_the_fly"],
             torch_compile=config["inference"]["torch_compile"],
-            rc_avg=config["inference"]["rc_avg"],
+            rc=params.rc,
         )
         assert len(scores) == len(ds)
 

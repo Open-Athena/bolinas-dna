@@ -1,8 +1,10 @@
 """S3 → tidy long-form parquet for the dashboard data loader.
 
-Reads per-(method, dataset) pairwise-accuracy parquets emitted by the eval
-snakemake pipelines, filters by protocol / score-type, and emits one row
-per ``(method, protocol, subset)`` for the dashboard.
+Reads per-(method, dataset) metrics parquets emitted by the eval snakemake
+pipelines, filters by protocol / score-type, and emits one row per
+``(method, protocol, subset)`` for the dashboard. The bolinas family
+emits AUPRC + cluster-bootstrap SE under the AUPRC migration; other
+families still emit PairwiseAccuracy + Wald-binomial SE.
 
   - ``snakemake/analysis/evals_v2/``  → one parquet per ``(model, dataset)``,
     filter by ``score_type`` + ``split``.
@@ -57,12 +59,17 @@ EVO2_DATASET_SHORT: dict[str, str] = {
 # the protocol entry here.
 PROTOCOLS: dict[str, dict[str, dict[str, str]]] = {
     "bolinas": {
+        # Default LLR / JSD pick the FWD+RC `_avg` columns. The per-strand
+        # `_fwd` / `_rc` columns are also in the parquet for diagnostics
+        # but aren't exposed as separate protocols here.
         "LLR": {
-            "mendelian_traits": "minus_llr",
-            "complex_traits": "abs_llr",
-            "eqtl": "abs_llr",
+            "mendelian_traits": "minus_llr_avg",
+            "complex_traits": "abs_llr_avg",
         },
-        "JSD": {d: "next_token_jsd_mean" for d in ALL_DATASETS},
+        "JSD": {
+            "mendelian_traits": "jsd_avg",
+            "complex_traits": "jsd_avg",
+        },
     },
     "conservation": {
         "score": {d: "score" for d in ALL_DATASETS},
@@ -83,14 +90,17 @@ PROTOCOLS: dict[str, dict[str, dict[str, str]]] = {
         },
     },
     "evo2": {
-        # Same score-column convention as bolinas — gives the dashboard a
-        # LLR ↔ JSD toggle for direct comparison with the bolinas gLMs.
+        # Evo2 metrics live on a pinned gist (legacy PA schema, pre-AUPRC).
+        # When the gist is re-emitted under the AUPRC pipeline, bump the
+        # commit SHA above and rename these to `_avg` variants.
         "LLR": {
             "mendelian_traits": "minus_llr",
             "complex_traits": "abs_llr",
-            "eqtl": "abs_llr",
         },
-        "JSD": {d: "next_token_jsd_mean" for d in ALL_DATASETS},
+        "JSD": {
+            "mendelian_traits": "next_token_jsd_mean",
+            "complex_traits": "next_token_jsd_mean",
+        },
     },
 }
 
@@ -191,6 +201,15 @@ def fetch_method_metrics(
             f"{protocol!r} (score_type={score_type!r}) in {path}. The pipeline "
             f"may need to be re-run with this protocol included."
         )
+    # Schema bridge: bolinas family migrated from PairwiseAccuracy
+    # (n_pairs/n_ties) to AUPRC (n_groups/n_rows). Map n_groups → n_pairs
+    # (semantically the bootstrap unit count for AUPRC, the pair count
+    # for PA), and fill n_ties with 0 — AUPRC has no ties. Other
+    # families still emit the legacy schema.
+    if method.family == "bolinas":
+        df = df.rename({"n_groups": "n_pairs"}).with_columns(
+            pl.lit(0, dtype=pl.Int64).alias("n_ties")
+        )
     return df.select(["subset", "value", "se", "n_pairs", "n_ties"])
 
 
@@ -210,10 +229,10 @@ def normalized_rows(dataset: str) -> pl.DataFrame:
       - ``family``          — ``Model.family``
       - ``protocol``        — protocol name (e.g. ``LLR``, ``JSD``, ``cLLR``)
       - ``subset``          — consequence subset OR ``_global_`` / ``_macro_avg_``
-      - ``value``           — PairwiseAccuracy
-      - ``se``              — Wald binomial SE
-      - ``n_pairs``         — pair count (or K = qualifying subsets for ``_macro_avg_``)
-      - ``n_ties``          — tied-pair count
+      - ``value``           — metric value (AUPRC for bolinas; PairwiseAccuracy for other families)
+      - ``se``              — SE (bootstrap for bolinas; Wald binomial elsewhere)
+      - ``n_pairs``         — bootstrap unit count (match groups for AUPRC, pairs for PA; or K = qualifying subsets for ``_macro_avg_``)
+      - ``n_ties``          — tied-pair count (always 0 for AUPRC bolinas rows)
     """
     # Soft-fail surface, intentionally narrow: only the two legitimate
     # "no data for this protocol yet" exception types.

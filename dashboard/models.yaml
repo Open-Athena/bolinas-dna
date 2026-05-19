@@ -85,7 +85,7 @@
 # refactor. New entries append at the bottom.
 # ---------------------------------------------------------------------------
 
-- id: exp55-mammals
+- id: exp55-mammals-step-16999
   display: exp55-mammals
   family: bolinas
   description: promoters, mammals
@@ -100,7 +100,7 @@
     gcs: gs://marin-dna-us-central1/checkpoints/exp55-mammals-r01-52f413/hf/step-16999
   datasets: [mendelian_traits, complex_traits, eqtl]
 
-- id: exp58-mammals
+- id: exp58-mammals-step-16999
   display: exp58-mammals
   family: bolinas
   description: CDS, mammals
@@ -115,7 +115,7 @@
     gcs: gs://marin-dna-us-central1/checkpoints/exp58-mammals-r01-23d451/hf/step-16999
   datasets: [mendelian_traits, complex_traits, eqtl]
 
-- id: exp58-animals
+- id: exp58-animals-step-16999
   display: exp58-animals
   family: bolinas
   description: CDS, animals
@@ -130,7 +130,7 @@
     gcs: gs://marin-dna-us-central1/checkpoints/exp58-animals-r01-1e3682/hf/step-16999
   datasets: [mendelian_traits, complex_traits, eqtl]
 
-- id: exp59-mammals
+- id: exp59-mammals-step-16999
   display: exp59-mammals
   family: bolinas
   description: downstream, mammals
@@ -145,7 +145,7 @@
     gcs: gs://marin-dna-us-central1/checkpoints/exp59-mammals-r01-1d9235/hf/step-16999
   datasets: [mendelian_traits, complex_traits, eqtl]
 
-- id: exp136-proj_v30
+- id: exp136-proj_v30-step-9999
   display: exp136-proj_v30
   family: bolinas
   description: enhancers, mammals
@@ -159,24 +159,6 @@
   checkpoint:
     gcs: gs://marin-us-central1/checkpoints/dna-bolinas-enhancer-curation-v0.1-proj_v30-6692f0/hf/step-9999
   datasets: [mendelian_traits, complex_traits, eqtl]
-
-# Legacy `exp166-p1B` (step-16398 on HF) — retained for #162/#172 only.
-# Superseded by `exp166-v0.1-p1B-step-27329` on mendelian; that v0.1 run
-# hasn't been scored on complex/eqtl yet.
-- id: exp166-p1B
-  display: exp166-p1B
-  family: bolinas
-  description: zoonomia, generalist, 1B
-  training:
-    data: zoonomia_v1
-    params: 1.0e9
-    window_size: 255
-    objective: CLM
-  experiment: 166
-  issue: https://github.com/Open-Athena/bolinas-dna/issues/166
-  checkpoint:
-    hf: bolinas-dna/exp166-p1B-step-16398
-  datasets: [complex_traits, eqtl]
 
 # Convergence-style entries (final checkpoint only here per "last checkpoint
 # per run" convention). Scored on mendelian only in the evals_v2 config.
@@ -320,7 +302,8 @@
     gcs: gs://marin-dna-us-central1/checkpoints/exp58-vertebrates-r01-771c3a/hf/step-16999
   datasets: [mendelian_traits]
 
-# Supersedes the legacy `exp166-p1B` HF entry (step-16398) on mendelian.
+# Canonical 1B zoonomia generalist (v0.1 retrain; the earlier
+# `exp166-p1B-step-16398` HF export was retired from the eval config).
 - id: exp166-v0.1-p1B-step-27329
   display: exp166-v0.1-p1B
   family: bolinas

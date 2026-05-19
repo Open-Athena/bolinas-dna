@@ -2,12 +2,13 @@
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from datasets import load_dataset
 
 from bolinas.pipelines.evals.conservation import REQUIRED_VARIANT_COLUMNS
 from bolinas.pipelines.evals.inference import compute_variant_scores
-from bolinas.pipelines.evals.metrics import compute_pairwise_metrics
+from bolinas.pipelines.evals.metrics import SCORE_PROTOCOLS, compute_auprc_metrics
 
 
 def get_dataset_config(name):
@@ -32,6 +33,14 @@ for _m in config["models"]:
     assert (
         _has_gcs ^ _has_hf
     ), f"model {_m['name']!r} must have exactly one of `gcs_path` or `hf_repo`"
+
+# Same fail-fast for per-dataset score_protocol — a typo would surface
+# late as a KeyError inside the metrics rule's `SCORE_PROTOCOLS[protocol]`.
+for _d in config["datasets"]:
+    assert _d["score_protocol"] in SCORE_PROTOCOLS, (
+        f"dataset {_d['name']!r} `score_protocol` must be one of "
+        f"{sorted(SCORE_PROTOCOLS)}, got {_d['score_protocol']!r}"
+    )
 
 
 # Wildcard alternations used across rules.

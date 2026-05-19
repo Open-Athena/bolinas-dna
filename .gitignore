@@ -5,6 +5,7 @@ results/
 tmp/
 *.tmp
 weights/
+plots/output/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

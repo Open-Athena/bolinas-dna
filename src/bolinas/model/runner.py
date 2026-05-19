@@ -122,9 +122,9 @@ def run_variant_score_bundle(
     dataset: datasets.Dataset,
     genome: Genome,
     window_size: int,
-    rc_avg: bool = False,
+    rc: bool = False,
     **kwargs: Any,
-) -> Any:
+) -> dict[str, np.ndarray]:
     """Run the variant-score bundle (LLR + next-token JSD) in one forward pass.
 
     Two scores per variant:
@@ -146,7 +146,7 @@ def run_variant_score_bundle(
     (equal for odd ``window_size``, off-by-one for even); after
     tokenization both shift by ``n_prefix``. We don't fuse FWD+RC into
     ``_run_strand_aware`` because ``var_pos`` differs across strands for
-    even ``window_size`` and the strand-averaging logic is small.
+    even ``window_size``.
 
     Args:
         model: HF-shaped causal LM (see module docstring for interface).
@@ -154,15 +154,16 @@ def run_variant_score_bundle(
         dataset: Dataset with variant information (chrom, pos, ref, alt).
         genome: Genome object for sequence extraction.
         window_size: Window size for sequence context.
-        rc_avg: If True, also score the reverse-complemented window for
-            each variant and return the element-wise average of FWD and
-            RC predictions. Doubles inference cost.
+        rc: If True, also score the reverse-complemented window for
+            each variant and return both strands' arrays. Doubles
+            inference cost. Callers compose the per-strand arrays
+            (averaging, applying ``minus_llr``/``abs_llr``, etc.).
         **kwargs: Additional arguments passed to run_inference.
 
     Returns:
-        Numpy array with shape [B, 2]:
-            - [:, 0]: LLR
-            - [:, 1]: next_token_jsd_mean
+        Dict ``{"fwd": [B, 2]}`` when ``rc=False``, or
+        ``{"fwd": [B, 2], "rc": [B, 2]}`` when ``rc=True``. Column 0
+        of each array is LLR; column 1 is ``next_token_jsd_mean``.
     """
     n_prefix, _ = _get_special_token_counts(tokenizer)
     nuc_ids_dict = _get_nucleotide_token_ids(tokenizer)
@@ -187,11 +188,10 @@ def run_variant_score_bundle(
             **kwargs,
         )
 
-    fwd = _one("+")
-    if not rc_avg:
-        return fwd
-    rc = _one("-")
-    return (np.asarray(fwd) + np.asarray(rc)) / 2
+    out: dict[str, np.ndarray] = {"fwd": np.asarray(_one("+"))}
+    if rc:
+        out["rc"] = np.asarray(_one("-"))
+    return out
 
 
 def _run_inference(

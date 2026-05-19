@@ -9,13 +9,12 @@ Public, version-controlled leaderboards for genomic language models trained unde
 
 ## Leaderboards
 
-- [**Mendelian traits**](./leaderboards/mendelian) — OMIM ∪ HGMD ∪ Smedley pathogenic SNVs vs gnomAD common-frequency, gene-matched 1:1. Sort axis: Macro Avg.
-- [**Complex traits**](./leaderboards/complex) — UKBB fine-mapped variants (`max(PIP) > 0.9`) vs non-fine-mapped, gene + MAF-matched. Sort axis: Global.
-- [**eQTL**](./leaderboards/eqtl) — GTEx v8 fine-mapped eQTLs (49 tissues pooled, `max(PIP) > 0.9`) vs non-fine-mapped. Sort axis: Global.
+- [**Mendelian traits**](./leaderboards/mendelian) — OMIM ∪ HGMD ∪ Smedley pathogenic SNVs vs gnomAD common (`AF ≥ 5%`), 1:9 matched on consequence + chrom + continuous distance features. Sort axis: Macro Avg.
+- [**Complex traits**](./leaderboards/complex) — UKBB fine-mapped variants (`max(PIP) > 0.9`) vs non-fine-mapped, 1:9 matched on consequence + chrom + distance + MAF. Sort axis: Global.
 
 ## Protocols / Scoring approaches
 
-A model family's PairwiseAccuracy depends on which score column you compute it from. These pages compare protocols head-to-head — same models, same dataset, different scoring approach.
+A model family's AUPRC depends on which score column you compute it from. These pages compare protocols head-to-head — same models, same dataset, different scoring approach.
 
 - [**Bolinas**](./protocols/bolinas) — LLR vs JSD
 - [**Evo 2**](./protocols/evo2) — LLR vs JSD

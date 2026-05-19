@@ -12,15 +12,13 @@ export default {
   // diverging RdYlGn for deltas) and only read against a light page.
   theme: "air",
 
-  // Sidebar navigation. v1 ships Mendelian only; complex_traits / eqtl
-  // will be added later (see the dashboard plan).
+  // Sidebar navigation. eQTL was retired in PR #194 — see #172.
   pages: [
     {
       name: "Leaderboards",
       pages: [
         {name: "Mendelian traits", path: "/leaderboards/mendelian"},
         {name: "Complex traits", path: "/leaderboards/complex"},
-        {name: "eQTL", path: "/leaderboards/eqtl"},
       ],
     },
     {

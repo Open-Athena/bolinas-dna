@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 from datasets import Dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -20,13 +19,14 @@ def compute_variant_scores(
     num_workers: int = 4,
     data_transform_on_the_fly: bool = True,
     torch_compile: bool = False,
-    rc_avg: bool = False,
+    rc: bool = False,
 ) -> pd.DataFrame:
-    """Compute variant scores from a CLM: LLR + embedding distances + next-token JSD.
+    """Compute variant scores from a CLM: per-strand LLR + next-token JSD.
 
-    Takes a dataset of genomic variants and computes the full score bundle
-    using a causal language model. Returns only scores, preserving input
-    row order for alignment.
+    Takes a dataset of genomic variants and computes the score bundle
+    using a causal language model. Returns the raw per-strand atoms
+    only; downstream code derives ``_avg`` / ``minus_llr_*`` /
+    ``abs_llr_*`` variants.
 
     Args:
         checkpoint_path: Path to model checkpoint directory.
@@ -39,20 +39,23 @@ def compute_variant_scores(
         num_workers: Number of workers for data loading.
         data_transform_on_the_fly: Whether to transform data on the fly during inference.
         torch_compile: Whether to use torch.compile for faster inference.
-        rc_avg: If True, also score the reverse-complemented window for each
-            variant and return the element-wise FWD/RC average. Doubles
-            inference cost. See ``run_variant_score_bundle`` for the
-            semantics on the JSD column.
+        rc: If True, also score the reverse-complemented window for
+            each variant and emit per-strand columns. Doubles inference
+            cost.
 
     Returns:
-        DataFrame with columns [llr, minus_llr, abs_llr, next_token_jsd_mean].
-        Rows align with input dataset by index.
+        DataFrame with per-strand score atoms. Rows align with input
+        dataset by index.
 
-        - llr: Raw log-likelihood ratio
-        - minus_llr: Negated LLR (higher = more deleterious)
-        - abs_llr: Absolute LLR (higher = more impactful)
-        - next_token_jsd_mean: mean per-position 4-nuc JSD over downstream
-          positions (called ``down_jsd_mean`` in issue #175)
+        - ``rc=False`` → 2 columns: ``llr_fwd``, ``jsd_fwd``.
+        - ``rc=True``  → 4 columns: ``llr_fwd``, ``llr_rc``,
+          ``jsd_fwd``, ``jsd_rc``.
+
+        ``llr_*`` is the raw log-likelihood ratio; ``jsd_*`` is the mean
+        per-position 4-nucleotide softmax JSD over downstream positions
+        (called ``down_jsd_mean`` in Open-Athena/bolinas-dna#175).
+        Downstream consumers compute ``_avg``, ``minus_llr_*``, and
+        ``abs_llr_*`` as needed.
     """
     checkpoint_path = Path(checkpoint_path)
     # Don't Path()-cast genome_path: would break s3:// URIs (POSIX path
@@ -74,7 +77,7 @@ def compute_variant_scores(
         hf_dataset,
         genome,
         context_size,
-        rc_avg=rc_avg,
+        rc=rc,
         data_transform_on_the_fly=data_transform_on_the_fly,
         inference_kwargs={
             "per_device_eval_batch_size": batch_size,
@@ -85,16 +88,8 @@ def compute_variant_scores(
         },
     )
 
-    llr = results[:, 0]
-    next_token_jsd_mean = results[:, 1]
-
-    scores = pd.DataFrame(
-        {
-            "llr": llr,
-            "minus_llr": -llr,
-            "abs_llr": np.abs(llr),
-            "next_token_jsd_mean": next_token_jsd_mean,
-        }
-    )
-
-    return scores
+    cols: dict[str, object] = {}
+    for strand, arr in results.items():
+        cols[f"llr_{strand}"] = arr[:, 0]
+        cols[f"jsd_{strand}"] = arr[:, 1]
+    return pd.DataFrame(cols)

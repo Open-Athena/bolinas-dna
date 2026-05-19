@@ -17,11 +17,10 @@ import {PillSelect, DirectionPicker, labeledRow} from "../components/controls.js
 ```js
 const FAMILY = "bolinas";
 const PROTOCOLS = ["LLR", "JSD"];
-const DATASETS = ["mendelian_traits", "complex_traits", "eqtl"];
+const DATASETS = ["mendelian_traits", "complex_traits"];
 const DATASET_LABEL = {
   mendelian_traits: "Mendelian traits",
   complex_traits: "Complex traits",
-  eqtl: "eQTL",
 };
 
 const allRows = leaderboard.toArray().map(r => ({
@@ -117,9 +116,9 @@ if (baseline !== alternative) {
 }
 ```
 
-Each cell below is **${alternative} PA − ${baseline} PA**, in percentage points. Green = ${alternative} scores higher; red = the reverse; yellow = no meaningful change.
+Each cell below is **${alternative} AUPRC − ${baseline} AUPRC**, in percentage points. Green = ${alternative} scores higher; red = the reverse; yellow = no meaningful change.
 
-Cells aggregate across the same matched pairs the [${DATASET_LABEL[dataset]} leaderboard](../leaderboards/${dataset === "mendelian_traits" ? "mendelian" : dataset === "complex_traits" ? "complex" : "eqtl"}) uses — only the score column changes. See [About](../about) for the protocol definitions.
+Cells aggregate across the same matched groups the [${DATASET_LABEL[dataset]} leaderboard](../leaderboards/${dataset === "mendelian_traits" ? "mendelian" : "complex"}) uses — only the score column changes. See [About](../about) for the protocol definitions.
 
 <style>
 :root { --observablehq-max-width: 1920px; }
