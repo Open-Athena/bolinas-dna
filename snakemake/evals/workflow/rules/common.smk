@@ -11,6 +11,7 @@ from huggingface_hub import HfApi
 
 from bolinas.pipelines.evals.labeling import label_variants_by_pip
 from bolinas.pipelines.evals.materialize import materialize_sequences
+from bolinas.pipelines.evals import hf_readme
 from bolinas.pipelines.evals.matching import (
     CAT_BASE,
     add_subset_distance_bins_v2,
@@ -82,47 +83,6 @@ try:
 except Exception:
     GIT_SHA = "main"
 
-_DATASET_DESCRIPTIONS = {
-    "mendelian_traits": (
-        "Matched eval dataset of Mendelian-disease pathogenic SNVs (HGMD ∪ "
-        "OMIM ∪ Smedley et al. 2016; AF<0.001) vs gnomAD common variants "
-        "(AF>0.001). 1:9 matched on chromosome × consequence_final plus "
-        "subset-targeted distance bins, with Euclidean nearest-neighbor on "
-        "TSS/exon distances. Missense positives capped at 1000 for VEP "
-        "inference speed."
-    ),
-    "complex_traits": (
-        "Matched eval dataset of UKBB fine-mapped complex-trait variants "
-        "(SuSiE+FINEMAP PIP > 0.9) vs negatives (max PIP < 0.01). 1:9 "
-        "matched on chromosome × consequence_final plus subset-targeted "
-        "distance bins, with Euclidean nearest-neighbor on TSS/exon "
-        "distances and MAF."
-    ),
-    "mendelian_traits_harness_255": (
-        "Eval-harness variant of `evals_mendelian_traits` with a 255 bp "
-        "window materialized per variant (`context`, `ref_completion`, "
-        "`alt_completion` columns). Two rows per input variant — one for "
-        "`strand=\"+\"` (FWD), one for `strand=\"-\"` (RC) — for "
-        "per-variant strand-averaged VEP scoring."
-    ),
-}
-
-
-def _format_hf_readme(dataset: str) -> str:
-    desc = _DATASET_DESCRIPTIONS.get(dataset, "Variant-effect-prediction eval dataset.")
-    return f"""---
-tags:
-- biology
-- genomics
-- dna
----
-
-# evals_{dataset}
-
-{desc}
-
-Produced by [`snakemake/evals`](https://github.com/Open-Athena/bolinas-dna/tree/{GIT_SHA}/snakemake/evals) at commit `{GIT_SHA[:7]}`.
-"""
 
 
 rule download_genome:
@@ -171,9 +131,18 @@ rule materialize_eval_harness_dataset:
         ds.to_parquet(output[0])
 
 
+def _hf_qc_input(wildcards):
+    """QC parquet input — only matched datasets have one (not the harness derivative)."""
+    if wildcards.dataset.endswith("_harness_255"):
+        return []
+    return f"results/qc/{wildcards.dataset}.parquet"
+
+
 rule hf_upload:
     input:
-        expand("results/dataset/{{dataset}}/{split}.parquet", split=SPLITS),
+        train="results/dataset/{dataset}/train.parquet",
+        test="results/dataset/{dataset}/test.parquet",
+        qc=_hf_qc_input,
     output:
         touch("results/upload.done/{dataset}"),
     params:
@@ -181,15 +150,22 @@ rule hf_upload:
     run:
         api = HfApi()
         api.create_repo(params.repo_name, repo_type="dataset", exist_ok=True)
-        # README: minimal tag set + commit-pinned permalink to the producing
-        # pipeline (per CLAUDE.md / HuggingFace uploads convention).
+        # README: per-dataset card with splits, columns, retention, AUPRC-leak
+        # diagnostic, provenance (commit-pinned permalink to the pipeline).
+        readme = hf_readme.render(
+            wildcards.dataset,
+            sha=GIT_SHA,
+            train_path=input.train,
+            test_path=input.test,
+            qc_path=input.qc if input.qc else None,
+        )
         api.upload_file(
-            path_or_fileobj=_format_hf_readme(wildcards.dataset).encode(),
+            path_or_fileobj=readme.encode(),
             path_in_repo="README.md",
             repo_id=params.repo_name,
             repo_type="dataset",
         )
-        for f in input:
+        for f in [input.train, input.test]:
             split = Path(f).stem
             api.upload_file(
                 path_or_fileobj=f,
