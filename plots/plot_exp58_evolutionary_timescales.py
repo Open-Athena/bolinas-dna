@@ -105,9 +105,7 @@ def main() -> None:
                 linewidth=1.5,
                 markersize=5,
             )
-        ax.set_title(
-            f"{SUBSET_LABELS[subset]}\n(n={n_groups} vs. {n_rows - n_groups})"
-        )
+        ax.set_title(f"{SUBSET_LABELS[subset]}\n(n={n_groups} vs. {n_rows - n_groups})")
         ax.set_xlabel("Training Step")
         ax.set_ylabel("AUPRC")
         ax.grid(False)
